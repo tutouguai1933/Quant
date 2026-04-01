@@ -1,24 +1,46 @@
 # 当前进度
 
-- 当前正在做：收口 `Freqtrade` 这条线的页面体验和运维基线，把市场页、单币图表页和真实 dry-run 准备状态统一写清楚。
-- 上次停留位置：已完成 `Freqtrade` 的 `memory / rest` 双后端、安全边界、策略页执行器状态、订单和持仓同步来源。
+- 当前正在做：统一研究驾驶舱这一轮已经完成实现、测试和真实页面验证，当前处于最终 review 和 git 提交前收口阶段。
+- 上次停留位置：刚完成 `research_brief / research_cockpit` 接入市场页、单币图表页和策略页，并在重启本地服务后确认真实返回已生效。
 - 近期关键决定：
   - 当前继续采用多 session 分工：
-    - 这个 session 负责 `Freqtrade` 执行层和 `Phase B` 页面体验收口
-    - 另一个 session 负责 `Qlib` 研究层
-  - 市场页已经不再只是价格列表，现在会显示：
-    - 更适合哪套策略
-    - 趋势状态
-    - 推荐下一步
-  - 单币图表页已经不再只是 K 线摘要，现在会显示：
-    - 策略解释
-    - 突破 / 回调判断
-    - 入场参考和止损参考
-    - Freqtrade 准备情况
-  - 当前真实 `Freqtrade` 最后还差一件事：
-    - 本地还没有接上一台真实 Freqtrade REST 服务
-    - `.env.quant.local` 里也还没补 `QUANT_FREQTRADE_API_URL`、用户名和密码
-    - 所以最终的真实 dry-run 端到端验收还没完成
-  - 当前下一步已经收敛为：
-    - 先接真实 Freqtrade REST 服务完成最终 dry-run 验收
-    - 再把图表页里的信号点、止损位做成更直观的图层
+    - 我负责 `Qlib` 研究层和统一研究展示口径
+    - 另一个 session 负责 `Freqtrade` 执行层
+  - `Qlib` 这条线当前已经完成三步：
+    - 第一步：最小训练、最小推理、结果展示
+    - 第二步：研究结果以“软门控”方式进入策略判断
+    - 第三步：市场页、单币图表页、策略页开始共用统一研究摘要
+  - 当前软门控规则保持不变：
+    - 原策略仍然是主判断源
+    - `score >= 0.60` 只确认现有做多信号，不单独触发新信号
+    - `score <= 0.40` 会压低原本的做多信号，把它降回 `watch`
+    - `0.40 < score < 0.60` 维持观望，不让研究层单独拍板
+  - 统一研究驾驶舱当前已经落地的字段口径包括：
+    - `research_bias`
+    - `recommended_strategy`
+    - `confidence`
+    - `research_gate`
+    - `primary_reason`
+    - `research_explanation`
+    - `signal_count`
+    - `entry_hint`
+    - `stop_hint`
+    - `model_version`
+    - `generated_at`
+  - 这一轮关键实现已经完成：
+    - 新增 `services/api/app/services/research_cockpit_service.py`
+    - `GET /api/v1/market` 返回 `research_brief`
+    - `GET /api/v1/market/{symbol}/chart` 返回 `research_cockpit`
+    - 策略工作台卡片返回 `research_cockpit`
+    - 市场页、单币图表页、策略页开始共用统一研究字段
+  - 当前研究层协同边界继续保持：
+    - 默认运行目录仍是 `/tmp/quant-qlib-runtime`
+    - 多 session 并行时可以设置 `QUANT_QLIB_SESSION_ID`
+    - 没安装 `qlib` 时继续走 `qlib-fallback`
+  - 这一轮已经完成的验证包括：
+    - API 测试通过
+    - worker 测试通过
+    - 前端测试通过
+    - 类型检查和构建通过
+    - 真实接口已返回 `research_brief / research_cockpit`
+    - 真实页面已看到“研究倾向 / 研究门控 / 入场参考 / 止损参考”

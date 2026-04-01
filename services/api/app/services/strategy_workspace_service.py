@@ -8,6 +8,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from services.api.app.services.market_service import MarketService
+from services.api.app.services.research_cockpit_service import build_market_research_brief
 from services.api.app.services.research_service import ResearchService, research_service
 from services.api.app.services.signal_service import SignalService, signal_service
 from services.api.app.services.strategy_catalog import StrategyCatalogService, strategy_catalog_service
@@ -94,6 +95,12 @@ class StrategyWorkspaceService:
                         research_summary=research_summary,
                     ),
                 }
+            )
+            cards[-1]["research_cockpit"] = build_market_research_brief(
+                symbol=primary_symbol,
+                recommended_strategy=str(strategy.get("key", "")),
+                evaluation=dict(cards[-1]["current_evaluation"] or {}),
+                research_summary=research_summary,
             )
         return cards
 

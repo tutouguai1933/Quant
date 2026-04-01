@@ -4,7 +4,7 @@ import { AppShell } from "../../../components/app-shell";
 import { CandleChart } from "../../../components/candle-chart";
 import { MetricGrid } from "../../../components/metric-grid";
 import { PageHero } from "../../../components/page-hero";
-import { getLatestResearch, getLatestResearchFallback, getMarketChart, type MarketCandle, type MarketChartData } from "../../../lib/api";
+import { getLatestResearch, getLatestResearchFallback, getMarketChart, type MarketCandle, type MarketChartData, type ResearchCockpitSummary } from "../../../lib/api";
 import { getControlSessionState } from "../../../lib/session";
 
 
@@ -50,6 +50,8 @@ export default async function MarketSymbolPage({ params }: PageProps) {
   const strategyContext = chartData?.strategy_context ?? getEmptyStrategyContext();
   const freqtradeReadiness = chartData?.freqtrade_readiness ?? getEmptyFreqtradeReadiness();
   const markers = chartData?.markers ?? { signals: [], entries: [], stops: [] };
+  const research_cockpit = chartData?.research_cockpit ?? getEmptyResearchCockpit();
+  const researchGate = asRecord(research_cockpit.research_gate);
 
   return (
     <AppShell
@@ -78,7 +80,7 @@ export default async function MarketSymbolPage({ params }: PageProps) {
           {
             label: "推荐策略",
             value: formatPreferredStrategy(strategyContext.recommended_strategy),
-            detail: formatTrendState(strategyContext.trend_state),
+            detail: `${formatTrendState(strategyContext.trend_state)} / ${formatResearchBias(research_cockpit.research_bias)}`,
           },
         ]}
       />
@@ -87,7 +89,8 @@ export default async function MarketSymbolPage({ params }: PageProps) {
         <p className="eyebrow">策略解释</p>
         <h3>{normalizedSymbol} 当前更适合怎么处理</h3>
         <p>主判断：{formatPreferredStrategy(strategyContext.recommended_strategy)} / {formatTrendState(strategyContext.trend_state)}</p>
-        <p>当前原因：{formatText(strategyContext.primary_reason, "n/a")}</p>
+        <p>研究门控：{formatText(researchGate.status, "unavailable")}</p>
+        <p>当前原因：{formatText(research_cockpit.primary_reason || strategyContext.primary_reason, "n/a")}</p>
         <p>推荐下一步：{formatText(strategyContext.next_step, "先继续观察。")}</p>
       </section>
 
@@ -110,7 +113,7 @@ export default async function MarketSymbolPage({ params }: PageProps) {
           },
           {
             label: "止损参考",
-            value: formatLatestMarkerPrice(markers.stops),
+            value: formatText(research_cockpit.stop_hint, formatLatestMarkerPrice(markers.stops)),
             detail: "当前最该盯住的失效位或保护位",
           },
         ]}
@@ -119,16 +122,17 @@ export default async function MarketSymbolPage({ params }: PageProps) {
       <section className="panel">
         <p className="eyebrow">止损参考</p>
         <h3>先确认失效位，再考虑是否继续执行</h3>
-        <p>最新入场参考：{formatLatestMarkerPrice(markers.entries)}</p>
-        <p>最新止损参考：{formatLatestMarkerPrice(markers.stops)}</p>
-        <p>信号标记数量：{String(markers.signals.length)}</p>
+        <p>最新入场参考：{formatText(research_cockpit.entry_hint, formatLatestMarkerPrice(markers.entries))}</p>
+        <p>最新止损参考：{formatText(research_cockpit.stop_hint, formatLatestMarkerPrice(markers.stops))}</p>
+        <p>信号标记数量：{String(research_cockpit.signal_count ?? markers.signals.length)}</p>
       </section>
 
       <section className="panel">
         <p className="eyebrow">研究解释</p>
         <h3>{normalizedSymbol} 的研究解释</h3>
-        <p>{explanation}</p>
-        <p>生成时间：{formatText(symbolResearch?.generated_at, "n/a")}</p>
+        <p>研究倾向：{formatResearchBias(research_cockpit.research_bias)}</p>
+        <p>{formatText(research_cockpit.research_explanation, explanation)}</p>
+        <p>生成时间：{formatText(research_cockpit.generated_at || symbolResearch?.generated_at, "n/a")}</p>
       </section>
 
       <section className="panel">
@@ -168,6 +172,22 @@ function getEmptyFreqtradeReadiness(): MarketChartData["freqtrade_readiness"] {
     ready_for_real_freqtrade: false,
     reason: "unknown",
     next_step: "",
+  };
+}
+
+function getEmptyResearchCockpit(): ResearchCockpitSummary {
+  return {
+    research_bias: "unavailable",
+    recommended_strategy: "none",
+    confidence: "low",
+    research_gate: { status: "unavailable" },
+    primary_reason: "",
+    research_explanation: "",
+    model_version: "",
+    generated_at: "",
+    signal_count: 0,
+    entry_hint: "n/a",
+    stop_hint: "n/a",
   };
 }
 
@@ -214,4 +234,17 @@ function formatReason(item: Record<string, unknown> | undefined): string {
 function formatLatestMarkerPrice(items: Array<Record<string, unknown>>): string {
   const latest = items[items.length - 1];
   return formatText(latest?.price, "n/a");
+}
+
+function formatResearchBias(value: string): string {
+  if (value === "bullish") {
+    return "bullish / 偏多";
+  }
+  if (value === "bearish") {
+    return "bearish / 偏空";
+  }
+  if (value === "neutral") {
+    return "neutral / 中性";
+  }
+  return "unavailable / 暂不可用";
 }

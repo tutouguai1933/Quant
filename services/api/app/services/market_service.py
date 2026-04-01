@@ -7,8 +7,10 @@ from decimal import Decimal, InvalidOperation
 from services.api.app.adapters.binance.market_client import BinanceMarketClient
 from services.api.app.services.indicator_service import build_empty_marker_groups
 from services.api.app.services.indicator_service import build_indicator_summary
+from services.api.app.services.research_cockpit_service import build_market_research_brief
+from services.api.app.services.research_cockpit_service import build_symbol_research_cockpit
 from services.api.app.services.strategy_catalog import StrategyCatalogService, strategy_catalog_service
-from services.api.app.services.strategy_engine import evaluate_trend_breakout, evaluate_trend_pullback
+from services.api.app.services.strategy_engine import apply_research_soft_gate, evaluate_trend_breakout, evaluate_trend_pullback
 
 
 def normalize_market_snapshot(item: dict[str, object]) -> dict[str, object]:
@@ -36,9 +38,11 @@ class MarketService:
         self,
         client: BinanceMarketClient | None = None,
         catalog_service: StrategyCatalogService | None = None,
+        research_reader: object | None = None,
     ) -> None:
         self._client = client or BinanceMarketClient()
         self._catalog_service = catalog_service or strategy_catalog_service
+        self._research_reader = research_reader or _NullResearchReader()
 
     def list_market_snapshots(self, symbols: tuple[str, ...]) -> list[dict[str, object]]:
         """只返回配置白名单里的市场快照。"""
@@ -54,6 +58,15 @@ class MarketService:
                 continue
             snapshot = normalize_market_snapshot(row)
             snapshot.update(self._build_market_strategy_summary(normalized_symbol, catalog_whitelist))
+            snapshot["research_brief"] = build_market_research_brief(
+                symbol=normalized_symbol,
+                recommended_strategy=str(snapshot.get("recommended_strategy", "none")),
+                evaluation=_resolve_primary_evaluation(
+                    str(snapshot.get("recommended_strategy", "none")),
+                    dict(snapshot.get("strategy_summary") or {}),
+                ),
+                research_summary=self._get_symbol_research(normalized_symbol),
+            )
             snapshots.append(snapshot)
         return snapshots
 
@@ -76,11 +89,23 @@ class MarketService:
                     limit=limit,
                     allowed_symbols=allowed_symbols,
                 )
+                strategy_context = _build_empty_strategy_context(normalized_symbol, "symbol_not_in_market_whitelist")
+                markers = build_empty_marker_groups()
                 return {
                     "items": [],
                     "overlays": dict(chart.get("overlays") or {}),
-                    "markers": build_empty_marker_groups(),
-                    "strategy_context": _build_empty_strategy_context(normalized_symbol, "symbol_not_in_market_whitelist"),
+                    "markers": markers,
+                    "strategy_context": strategy_context,
+                    "research_cockpit": build_symbol_research_cockpit(
+                        symbol=normalized_symbol,
+                        recommended_strategy=str(strategy_context.get("recommended_strategy", "none")),
+                        evaluation=_resolve_primary_evaluation(
+                            str(strategy_context.get("recommended_strategy", "none")),
+                            dict(strategy_context.get("evaluations") or {}),
+                        ),
+                        research_summary=self._get_symbol_research(normalized_symbol),
+                        markers=markers,
+                    ),
                 }
         summary = self._build_market_strategy_summary(
             symbol.strip().upper(),
@@ -99,11 +124,23 @@ class MarketService:
             trend_state=str(summary.get("trend_state", "neutral")),
             strategy_summary=dict(summary.get("strategy_summary") or {}),
         )
+        markers = _build_strategy_markers(items, strategy_context)
+        research_summary = self._get_symbol_research(symbol.strip().upper())
         return {
             "items": items,
             "overlays": dict(chart.get("overlays") or {}),
-            "markers": _build_strategy_markers(items, strategy_context),
+            "markers": markers,
             "strategy_context": strategy_context,
+            "research_cockpit": build_symbol_research_cockpit(
+                symbol=symbol.strip().upper(),
+                recommended_strategy=str(strategy_context.get("recommended_strategy", "none")),
+                evaluation=_resolve_primary_evaluation(
+                    str(strategy_context.get("recommended_strategy", "none")),
+                    dict(strategy_context.get("evaluations") or {}),
+                ),
+                research_summary=research_summary,
+                markers=markers,
+            ),
         }
 
     def _read_base_chart(
@@ -141,8 +178,19 @@ class MarketService:
         """给市场快照补上最小策略视角。"""
 
         normalized_whitelist = {item.strip().upper() for item in catalog_whitelist if item.strip()}
-        breakout_result = self._evaluate_catalog_strategy(symbol, "trend_breakout", tuple(normalized_whitelist))
-        pullback_result = self._evaluate_catalog_strategy(symbol, "trend_pullback", tuple(normalized_whitelist))
+        research_summary = self._get_symbol_research(symbol)
+        breakout_result = self._evaluate_catalog_strategy(
+            symbol,
+            "trend_breakout",
+            tuple(normalized_whitelist),
+            research_summary=research_summary,
+        )
+        pullback_result = self._evaluate_catalog_strategy(
+            symbol,
+            "trend_pullback",
+            tuple(normalized_whitelist),
+            research_summary=research_summary,
+        )
         preferred_strategy, trend_state = _classify_market_state(breakout_result, pullback_result)
 
         return {
@@ -160,6 +208,7 @@ class MarketService:
         symbol: str,
         strategy_key: str,
         allowed_symbols: tuple[str, ...],
+        research_summary: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """按策略目录默认参数评估当前 symbol。"""
 
@@ -202,20 +251,26 @@ class MarketService:
             }
 
         if strategy_key == "trend_breakout":
-            return evaluate_trend_breakout(
+            return apply_research_soft_gate(
+                evaluate_trend_breakout(
+                    symbol,
+                    items,
+                    timeframe=timeframe,
+                    lookback_bars=lookback_bars,
+                    breakout_buffer_pct=extra_param_value,
+                ),
+                research_summary,
+            )
+
+        return apply_research_soft_gate(
+            evaluate_trend_pullback(
                 symbol,
                 items,
                 timeframe=timeframe,
                 lookback_bars=lookback_bars,
-                breakout_buffer_pct=extra_param_value,
-            )
-
-        return evaluate_trend_pullback(
-            symbol,
-            items,
-            timeframe=timeframe,
-            lookback_bars=lookback_bars,
-            pullback_depth_pct=extra_param_value,
+                pullback_depth_pct=extra_param_value,
+            ),
+            research_summary,
         )
 
     def _find_catalog_strategy(self, strategy_key: str) -> dict[str, object] | None:
@@ -225,6 +280,22 @@ class MarketService:
         for strategy in catalog.get("strategies", []):
             if strategy.get("key") == strategy_key:
                 return strategy
+        return None
+
+    def _get_symbol_research(self, symbol: str) -> dict[str, object] | None:
+        """读取单个币种研究摘要。"""
+
+        getter = getattr(self._research_reader, "get_symbol_research", None)
+        if callable(getter):
+            return getter(symbol)
+        return None
+
+
+class _NullResearchReader:
+    """研究层未注入时的空读取器。"""
+
+    @staticmethod
+    def get_symbol_research(symbol: str) -> dict[str, object] | None:
         return None
 
 
@@ -246,6 +317,20 @@ def _classify_market_state(
     if breakout_decision == "watch":
         return "trend_breakout", "uptrend"
     return "none", "neutral"
+
+
+def _resolve_primary_evaluation(
+    recommended_strategy: str,
+    strategy_summary: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    """返回当前页面最该展示的主评估结果。"""
+
+    if recommended_strategy in strategy_summary:
+        return dict(strategy_summary[recommended_strategy] or {})
+    for strategy_key in ("trend_breakout", "trend_pullback"):
+        if strategy_key in strategy_summary:
+            return dict(strategy_summary[strategy_key] or {})
+    return {}
 
 
 def _build_empty_strategy_context(symbol: str, reason: str) -> dict[str, object]:

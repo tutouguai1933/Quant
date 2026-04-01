@@ -50,7 +50,7 @@ export default async function MarketPage() {
       </section>
 
       <DataTable
-        columns={["Symbol", "Last Price", "24h Change", "Quote Volume", "白名单", "推荐策略", "趋势状态", "更适合哪套策略", "Action"]}
+        columns={["Symbol", "Last Price", "24h Change", "Quote Volume", "白名单", "推荐策略", "趋势状态", "研究倾向", "更适合哪套策略", "Action"]}
         rows={items.map((item) => ({
           id: item.symbol,
           cells: [
@@ -61,6 +61,7 @@ export default async function MarketPage() {
             item.is_whitelisted ? "yes" : "no",
             formatPreferredStrategy(item.recommended_strategy),
             formatTrendState(item.trend_state),
+            formatResearchBias(item.research_brief.research_bias),
             formatPrimaryReason(item),
             <a key={item.symbol} href={`/market/${encodeURIComponent(item.symbol)}`}>
               看图表并继续判断
@@ -95,6 +96,10 @@ function formatTrendState(value: MarketSnapshot["trend_state"]): string {
 }
 
 function formatPrimaryReason(item: MarketSnapshot): string {
+  const reason = String(item.research_brief.primary_reason ?? "").trim();
+  if (reason) {
+    return reason;
+  }
   if (item.recommended_strategy === "trend_breakout") {
     return String(item.strategy_summary.trend_breakout?.reason ?? "等待突破确认");
   }
@@ -102,4 +107,17 @@ function formatPrimaryReason(item: MarketSnapshot): string {
     return String(item.strategy_summary.trend_pullback?.reason ?? "等待回踩确认");
   }
   return "当前没有明显优势策略";
+}
+
+function formatResearchBias(value: string): string {
+  if (value === "bullish") {
+    return "bullish / 偏多";
+  }
+  if (value === "bearish") {
+    return "bearish / 偏空";
+  }
+  if (value === "neutral") {
+    return "neutral / 中性";
+  }
+  return "unavailable / 暂不可用";
 }

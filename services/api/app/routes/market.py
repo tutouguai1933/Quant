@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from services.api.app.core.settings import Settings
 from services.api.app.services.market_service import MarketService
+from services.api.app.services.research_service import research_service
 
 try:
     from fastapi import APIRouter
@@ -21,7 +22,7 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
-service = MarketService()
+service = MarketService(research_reader=research_service)
 
 
 def _success(data: dict, meta: dict | None = None) -> dict:

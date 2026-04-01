@@ -51,6 +51,9 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(breakout_card["current_evaluation"]["decision"], "signal")
         self.assertEqual(breakout_card["current_evaluation"]["confidence"], "high")
         self.assertEqual(breakout_card["current_evaluation"]["research_gate"]["status"], "confirmed_by_research")
+        self.assertEqual(breakout_card["research_cockpit"]["research_bias"], "bullish")
+        self.assertEqual(breakout_card["research_cockpit"]["confidence"], "high")
+        self.assertEqual(breakout_card["research_cockpit"]["research_gate"]["status"], "confirmed_by_research")
         self.assertEqual(breakout_card["research_summary"]["model_version"], "qlib-minimal-20260402093000")
         self.assertEqual(breakout_card["research_summary"]["score"], "0.7100")
         self.assertEqual(pullback_card["current_evaluation"]["strategy_id"], "trend_pullback")
@@ -73,6 +76,8 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
 
         self.assertEqual(breakout_card["research_summary"]["explanation"], "暂无研究结果")
         self.assertEqual(breakout_card["current_evaluation"]["research_gate"]["status"], "unavailable")
+        self.assertEqual(breakout_card["research_cockpit"]["research_bias"], "unavailable")
+        self.assertEqual(breakout_card["research_cockpit"]["research_explanation"], "该币种暂无研究结论")
 
 
 class _FakeCatalogService:

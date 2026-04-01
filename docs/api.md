@@ -116,11 +116,22 @@
 
 每张策略卡片里还会带：
 
-- 研究分数
+- 研究倾向
 - 模型版本
 - 研究解释摘要
 - 判断信心
 - 研究门控状态
+
+统一研究摘要字段当前包括：
+
+- `research_bias`
+- `recommended_strategy`
+- `confidence`
+- `research_gate`
+- `primary_reason`
+- `research_explanation`
+- `model_version`
+- `generated_at`
 
 ### `GET /api/v1/signals/research/latest`
 
@@ -185,6 +196,7 @@
 - `items`
 - `overlays`
 - `markers`
+- `research_cockpit`
 - `strategy_context`
 - `freqtrade_readiness`
 
@@ -195,6 +207,11 @@
   - `signals`
   - `entries`
   - `stops`
+- `research_cockpit` 会说明：
+  - 当前研究倾向
+  - 当前研究门控状态
+  - 当前最重要的原因
+  - 当前入场参考和止损参考
 - `strategy_context` 会说明：
   - 当前更适合哪套策略
   - 当前趋势状态
@@ -211,6 +228,21 @@
 - 研究分数
 - 模型版本
 - 研究解释
+
+### `GET /api/v1/market`
+
+市场总览现在每个币种会额外返回：
+
+- `research_brief`
+
+它是统一研究摘要的简版，当前主要给市场页展示：
+
+- 研究倾向
+- 当前推荐策略
+- 判断信心
+- 研究门控状态
+- 当前原因
+- 模型版本
 
 ### `GET /api/v1/orders` 和 `GET /api/v1/positions`
 

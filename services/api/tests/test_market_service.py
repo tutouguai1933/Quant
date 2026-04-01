@@ -82,6 +82,23 @@ class FakeStrategyCatalogService:
         }
 
 
+class FakeResearchService:
+    def __init__(self, symbols: dict[str, dict[str, object]] | None = None) -> None:
+        self.symbols = symbols or {
+            "BTCUSDT": {
+                "symbol": "BTCUSDT",
+                "score": "0.7100",
+                "signal": "long",
+                "model_version": "qlib-minimal-20260402120000",
+                "explanation": "trend_gap=2.1%",
+                "generated_at": "2026-04-02T12:00:00+00:00",
+            }
+        }
+
+    def get_symbol_research(self, symbol: str) -> dict[str, object] | None:
+        return self.symbols.get(symbol.strip().upper())
+
+
 class MarketServiceTests(unittest.TestCase):
     @staticmethod
     def _make_candle_row(
@@ -235,6 +252,40 @@ class MarketServiceTests(unittest.TestCase):
         self.assertIn(items[0]["recommended_strategy"], {"trend_breakout", "trend_pullback", "none"})
         self.assertIn(items[0]["trend_state"], {"uptrend", "pullback", "neutral"})
 
+    def test_list_market_snapshots_returns_research_brief(self) -> None:
+        client = FakeMarketClient(
+            tickers=[
+                {
+                    "symbol": "BTCUSDT",
+                    "lastPrice": "68000.00",
+                    "priceChangePercent": "3.10",
+                    "quoteVolume": "182000000.0",
+                }
+            ],
+            klines_by_request={
+                ("BTCUSDT", "1h"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710003599999],
+                    [1710003600000, "100", "102", "99", "101", "11", 1710007199999],
+                    [1710007200000, "101", "103", "100", "102", "12", 1710010799999],
+                    [1710010800000, "102", "106", "101", "105", "13", 1710014399999],
+                ],
+            },
+        )
+        service = MarketService(
+            client=client,
+            catalog_service=FakeStrategyCatalogService(["BTCUSDT"]),
+            research_reader=FakeResearchService(),
+        )
+
+        items = service.list_market_snapshots(("BTCUSDT",))
+        brief = items[0]["research_brief"]
+
+        self.assertEqual(brief["research_bias"], "bullish")
+        self.assertEqual(brief["recommended_strategy"], "trend_breakout")
+        self.assertEqual(brief["confidence"], "high")
+        self.assertEqual(brief["research_gate"]["status"], "confirmed_by_research")
+        self.assertEqual(brief["model_version"], "qlib-minimal-20260402120000")
+
     def test_get_symbol_chart_normalizes_kline_rows(self) -> None:
         client = FakeMarketClient(
             klines=[
@@ -255,6 +306,32 @@ class MarketServiceTests(unittest.TestCase):
         self.assertFalse(chart["overlays"]["ema_fast"]["ready"])
         self.assertTrue(chart["overlays"]["ema_fast"]["warnings"])
         self.assertEqual(chart["markers"]["signals"], [])
+
+    def test_get_symbol_chart_returns_research_cockpit(self) -> None:
+        client = FakeMarketClient(
+            klines_by_request={
+                ("BTCUSDT", "1h"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710003599999],
+                    [1710003600000, "100", "102", "99", "101", "11", 1710007199999],
+                    [1710007200000, "101", "103", "100", "102", "12", 1710010799999],
+                    [1710010800000, "102", "106", "101", "105", "13", 1710014399999],
+                ],
+            }
+        )
+        service = MarketService(
+            client=client,
+            catalog_service=FakeStrategyCatalogService(["BTCUSDT"]),
+            research_reader=FakeResearchService(),
+        )
+
+        chart = service.get_symbol_chart("BTCUSDT", interval="1h", limit=50, allowed_symbols=("BTCUSDT",))
+        cockpit = chart["research_cockpit"]
+
+        self.assertEqual(cockpit["research_bias"], "bullish")
+        self.assertEqual(cockpit["research_gate"]["status"], "confirmed_by_research")
+        self.assertEqual(cockpit["signal_count"], 1)
+        self.assertEqual(cockpit["entry_hint"], "103.515")
+        self.assertEqual(cockpit["stop_hint"], "99")
 
     def test_build_indicator_summary_marks_insufficient_samples_not_ready(self) -> None:
         items = [
@@ -395,6 +472,8 @@ class MarketServiceTests(unittest.TestCase):
         self.assertEqual(chart_response["data"]["markers"]["entries"], [])
         self.assertEqual(chart_response["data"]["markers"]["stops"], [])
         self.assertIn("strategy_context", chart_response["data"])
+        self.assertIn("research_brief", response["data"]["items"][0])
+        self.assertIn("research_cockpit", chart_response["data"])
         self.assertIn("freqtrade_readiness", chart_response["data"])
 
     def test_market_chart_returns_strategy_context_and_marker_hints(self) -> None:

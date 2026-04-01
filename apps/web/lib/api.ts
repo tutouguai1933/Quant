@@ -40,6 +40,7 @@ export type StrategyWorkspaceCard = {
   runtime_name: string;
   latest_signal: Record<string, unknown> | null;
   research_summary: ResearchSymbolSummary;
+  research_cockpit: ResearchCockpitSummary;
   current_evaluation: Record<string, unknown>;
 };
 
@@ -104,6 +105,7 @@ export type MarketSnapshot = {
   recommended_strategy: "trend_breakout" | "trend_pullback" | "none";
   trend_state: "uptrend" | "pullback" | "neutral";
   strategy_summary: Record<string, Record<string, unknown>>;
+  research_brief: ResearchCockpitSummary;
 };
 
 export type MarketCandle = {
@@ -147,6 +149,20 @@ export type ResearchSymbolSummary = {
   generated_at: string;
 };
 
+export type ResearchCockpitSummary = {
+  research_bias: string;
+  recommended_strategy: "trend_breakout" | "trend_pullback" | "none";
+  confidence: string;
+  research_gate: Record<string, unknown>;
+  primary_reason: string;
+  research_explanation: string;
+  model_version: string;
+  generated_at: string;
+  signal_count?: number;
+  entry_hint?: string;
+  stop_hint?: string;
+};
+
 export type LatestResearchItem = {
   status: string;
   backend: string;
@@ -165,6 +181,7 @@ export type MarketChartData = {
   items: MarketCandle[];
   overlays: ChartIndicatorSummary;
   markers: ChartMarkerGroups;
+  research_cockpit: ResearchCockpitSummary;
   strategy_context: {
     recommended_strategy: "trend_breakout" | "trend_pullback" | "none";
     trend_state: "uptrend" | "pullback" | "neutral";
@@ -472,6 +489,7 @@ export async function getMarketChart(symbol: string): Promise<
       items: items.map((item) => normalizeMarketCandle(item)),
       overlays: normalizeChartIndicatorSummary(data.overlays),
       markers: normalizeChartMarkerGroups(data.markers),
+      research_cockpit: normalizeResearchCockpitSummary(data.research_cockpit),
       strategy_context: normalizeMarketStrategyContext(data.strategy_context),
       freqtrade_readiness: normalizeFreqtradeReadiness(data.freqtrade_readiness),
     },
@@ -519,6 +537,7 @@ function normalizeMarketSnapshot(item: unknown): MarketSnapshot {
     recommended_strategy: preferredStrategy,
     trend_state: trendState,
     strategy_summary: normalizeStrategySummary(row.strategy_summary),
+    research_brief: normalizeResearchCockpitSummary(row.research_brief),
   };
 }
 
@@ -702,9 +721,27 @@ function normalizeStrategyCards(value: unknown): StrategyWorkspaceCard[] {
       runtime_name: String(row.runtime_name ?? row.runtimeName ?? ""),
       latest_signal: isPlainObject(row.latest_signal) ? row.latest_signal : null,
       research_summary: normalizeResearchSymbolSummary(row.research_summary, symbols[0] ?? ""),
+      research_cockpit: normalizeResearchCockpitSummary(row.research_cockpit),
       current_evaluation: isPlainObject(row.current_evaluation) ? row.current_evaluation : {},
     };
   });
+}
+
+function normalizeResearchCockpitSummary(item: unknown): ResearchCockpitSummary {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  return {
+    research_bias: String(row.research_bias ?? "unavailable"),
+    recommended_strategy: normalizeMarketStrategy(row.recommended_strategy),
+    confidence: String(row.confidence ?? "low"),
+    research_gate: isPlainObject(row.research_gate) ? row.research_gate : {},
+    primary_reason: String(row.primary_reason ?? ""),
+    research_explanation: String(row.research_explanation ?? ""),
+    model_version: String(row.model_version ?? row.modelVersion ?? ""),
+    generated_at: String(row.generated_at ?? row.generatedAt ?? ""),
+    signal_count: row.signal_count === undefined ? undefined : Number(row.signal_count ?? 0),
+    entry_hint: row.entry_hint === undefined ? undefined : String(row.entry_hint ?? ""),
+    stop_hint: row.stop_hint === undefined ? undefined : String(row.stop_hint ?? ""),
+  };
 }
 
 function normalizeLatestResearchItem(item: unknown): LatestResearchItem {
@@ -817,6 +854,16 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
           explanation: "暂无研究结果",
           generated_at: "",
         },
+        research_cockpit: normalizeResearchCockpitSummary({
+          research_bias: "unavailable",
+          recommended_strategy: "trend_breakout",
+          confidence: "low",
+          research_gate: { status: "unavailable" },
+          primary_reason: "api_unavailable",
+          research_explanation: "该币种暂无研究结论",
+          model_version: "",
+          generated_at: "",
+        }),
         current_evaluation: { decision: "evaluation_unavailable", reason: "api_unavailable" },
       },
       {
@@ -837,6 +884,16 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
           explanation: "暂无研究结果",
           generated_at: "",
         },
+        research_cockpit: normalizeResearchCockpitSummary({
+          research_bias: "unavailable",
+          recommended_strategy: "trend_pullback",
+          confidence: "low",
+          research_gate: { status: "unavailable" },
+          primary_reason: "api_unavailable",
+          research_explanation: "该币种暂无研究结论",
+          model_version: "",
+          generated_at: "",
+        }),
         current_evaluation: { decision: "evaluation_unavailable", reason: "api_unavailable" },
       },
     ],

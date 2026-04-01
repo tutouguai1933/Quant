@@ -175,6 +175,7 @@ function ActionForm({ action, label }: ActionFormProps) {
 }
 
 function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
+  const gate = asResearchGate(item.research_cockpit.research_gate);
   return (
     <article className="action-card strategy-card">
       <div className="stack-xs">
@@ -194,11 +195,11 @@ function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
           <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} />
         </p>
         <p>判断原因：{String(item.current_evaluation.reason ?? "n/a")}</p>
-        <p>判断信心：{formatValue(item.current_evaluation.confidence, "n/a")}</p>
-        <p>研究门控：{formatValue(asResearchGate(item.current_evaluation).status, "n/a")}</p>
-        <p>研究分数：{formatValue(item.research_summary.score, "n/a")}</p>
-        <p>模型版本：{formatValue(item.research_summary.model_version, "n/a")}</p>
-        <p>研究解释：{formatValue(item.research_summary.explanation, "暂无研究结果")}</p>
+        <p>研究倾向：{formatResearchBias(item.research_cockpit.research_bias)}</p>
+        <p>判断信心：{formatValue(item.research_cockpit.confidence, "n/a")}</p>
+        <p>研究门控：{formatValue(gate.status, "n/a")}</p>
+        <p>模型版本：{formatValue(item.research_cockpit.model_version, "n/a")}</p>
+        <p>研究解释：{formatValue(item.research_cockpit.research_explanation, "暂无研究结果")}</p>
         <p>观察币种：{item.symbols.join(" / ")}</p>
         <p>参数摘要：{formatParamSummary(item.default_params)}</p>
         <p>最近信号：{formatLatestSignal(item.latest_signal)}</p>
@@ -226,9 +227,22 @@ function formatLatestSignal(item: Record<string, unknown> | null): string {
 }
 
 function asResearchGate(evaluation: Record<string, unknown>): Record<string, unknown> {
-  const gate = evaluation.research_gate;
+  const gate = evaluation;
   if (gate && typeof gate === "object" && !Array.isArray(gate)) {
     return gate as Record<string, unknown>;
   }
   return {};
+}
+
+function formatResearchBias(value: string): string {
+  if (value === "bullish") {
+    return "bullish / 偏多";
+  }
+  if (value === "bearish") {
+    return "bearish / 偏空";
+  }
+  if (value === "neutral") {
+    return "neutral / 中性";
+  }
+  return "unavailable / 暂不可用";
 }
