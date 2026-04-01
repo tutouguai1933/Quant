@@ -185,11 +185,25 @@
 - `items`
 - `overlays`
 - `markers`
+- `strategy_context`
+- `freqtrade_readiness`
 
 其中：
 
 - `overlays` 已包含最小指标摘要
-- `markers` 目前还是最小结构，后续会继续补
+- `markers` 已包含：
+  - `signals`
+  - `entries`
+  - `stops`
+- `strategy_context` 会说明：
+  - 当前更适合哪套策略
+  - 当前趋势状态
+  - 两套策略各自的判断结果和原因
+  - 下一步动作
+- `freqtrade_readiness` 会说明：
+  - 当前后端是 `memory` 还是 `rest`
+  - 当前是否已经具备真实 Freqtrade dry-run 条件
+  - 当前还缺什么
 
 图表页现在还会另外读取研究结果接口，用于显示：
 

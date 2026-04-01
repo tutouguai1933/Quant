@@ -1,40 +1,24 @@
 # 当前进度
 
-- 当前正在做：在已完成 qlib 软门控的基础上，开始设计“统一研究驾驶舱”，准备把市场页、单币图表页和策略页的研究表达统一起来。
-- 上次停留位置：刚完成 qlib 软门控实现、测试、真实验证和首个 git 提交。
+- 当前正在做：收口 `Freqtrade` 这条线的页面体验和运维基线，把市场页、单币图表页和真实 dry-run 准备状态统一写清楚。
+- 上次停留位置：已完成 `Freqtrade` 的 `memory / rest` 双后端、安全边界、策略页执行器状态、订单和持仓同步来源。
 - 近期关键决定：
   - 当前继续采用多 session 分工：
-    - 我负责 `Qlib` 研究层
-    - 另一个 session 负责 `Freqtrade` 执行层
-  - `Qlib` 这条线当前已经完成两步：
-    - 第一步：最小训练、最小推理、结果展示
-    - 第二步：研究结果以“软门控”方式进入策略判断
-  - 当前软门控规则保持不变：
-    - 原策略仍然是主判断源
-    - `score >= 0.60` 只确认现有做多信号，不单独触发新信号
-    - `score <= 0.40` 会压低原本的做多信号，把它降回 `watch`
-    - `0.40 < score < 0.60` 维持观望，不让研究层单独拍板
-  - 下一阶段范围已经明确，不再只做零散页面补丁，而是做“统一研究驾驶舱”：
-    - 市场页回答“先看哪个币、研究层站哪边”
-    - 单币图表页回答“为什么这样判断、信号点和止损位在哪里”
-    - 策略页回答“当前策略能不能放行、研究层是在支持还是压低”
-  - 统一研究驾驶舱当前已经固定的字段口径包括：
-    - `research_bias`
-    - `recommended_strategy`
-    - `confidence`
-    - `research_gate`
-    - `primary_reason`
-    - `research_explanation`
-    - `signal_count`
-    - `entry_hint`
-    - `stop_hint`
-    - `model_version`
-    - `generated_at`
-  - 当前研究层协同边界继续保持：
-    - 默认运行目录仍是 `/tmp/quant-qlib-runtime`
-    - 多 session 并行时可以设置 `QUANT_QLIB_SESSION_ID`
-    - 没安装 `qlib` 时继续走 `qlib-fallback`
+    - 这个 session 负责 `Freqtrade` 执行层和 `Phase B` 页面体验收口
+    - 另一个 session 负责 `Qlib` 研究层
+  - 市场页已经不再只是价格列表，现在会显示：
+    - 更适合哪套策略
+    - 趋势状态
+    - 推荐下一步
+  - 单币图表页已经不再只是 K 线摘要，现在会显示：
+    - 策略解释
+    - 突破 / 回调判断
+    - 入场参考和止损参考
+    - Freqtrade 准备情况
+  - 当前真实 `Freqtrade` 最后还差一件事：
+    - 本地还没有接上一台真实 Freqtrade REST 服务
+    - `.env.quant.local` 里也还没补 `QUANT_FREQTRADE_API_URL`、用户名和密码
+    - 所以最终的真实 dry-run 端到端验收还没完成
   - 当前下一步已经收敛为：
-    - 先写统一研究驾驶舱设计文档
-    - 再补实现计划
-    - 然后按“失败测试 -> 实现 -> review -> 验证 -> 提交”推进
+    - 先接真实 Freqtrade REST 服务完成最终 dry-run 验收
+    - 再把图表页里的信号点、止损位做成更直观的图层
