@@ -1,0 +1,144 @@
+# Quant Current Plan
+
+## 当前状态
+
+这个仓库已经不再是“只有文档的 greenfield”。  
+当前实际进度是：
+
+- `Phase A` 已完成
+- `Phase B` 已完成前 `5` 个任务
+- 平台总架构回归设计已完成
+- 系统已经可以真实启动 API 和 WebUI
+- 已能读取 Binance 真实行情和真实余额
+- 已能完成一条真实 `dry-run` 主链路
+
+## 已完成清单
+
+### 基础阶段
+
+- [x] 仓库骨架与基础文档
+- [x] 统一契约与数据库模型
+- [x] Control Plane API 骨架
+- [x] WebUI 基础页面骨架
+- [x] 最小信号流水线
+- [x] Freqtrade 执行适配器与同步链路
+- [x] 基础风控与任务系统
+- [x] 单管理员鉴权
+- [x] 最小演示与验收流程
+
+### 真实 dry-run 阶段
+
+- [x] Binance 市场数据接入
+- [x] Binance 余额接入
+- [x] 市场页与单币图表页
+- [x] `dry-run / demo / live` 运行边界
+
+### Phase B
+
+- [x] Task 1：统一白名单和策略目录
+- [x] Task 2：图表指标基础
+- [x] Task 3：`trend_breakout`
+- [x] Task 4：`trend_pullback`
+- [x] Task 5：策略中心
+
+## 当前系统真实能力
+
+### 已可使用
+
+- 登录控制台
+- 查看市场页
+- 查看单币图表页
+- 查看余额页
+- 查看订单页
+- 查看持仓页
+- 查看风险页
+- 查看任务页
+- 在策略中心查看：
+  - 两套策略卡片
+  - 当前判断
+  - 默认参数
+  - 白名单摘要
+  - 最近信号
+  - 最近执行结果
+- 走通 `signal -> risk -> execution -> sync -> display`
+
+### 仍未开放
+
+- 真实下单
+- 在线参数编辑
+- 多用户权限
+- 多市场
+- 完整研究平台
+
+## 下一步执行顺序
+
+后续继续按 `Phase B` 收口，但不再回到大而全路线。
+
+### Next 1：市场页补策略视角
+
+- [ ] 显示白名单币种当前更适合哪套策略
+- [ ] 显示趋势状态：`uptrend / pullback / neutral`
+- [ ] 让市场页成为策略观察入口，而不是纯价格列表
+
+### Next 2：图表页补策略解释
+
+- [ ] 显示 `EMA20 / EMA55`
+- [ ] 显示突破参考线或回踩参考线
+- [ ] 显示最近信号点
+- [ ] 显示止损线
+- [ ] 增加“为什么当前判断是 signal / watch / block”的解释卡片
+
+### Next 3：Phase B 验收闭环
+
+- [ ] 从市场页进入图表页
+- [ ] 从图表页进入策略中心
+- [ ] 从策略中心进入 dry-run 派发
+- [ ] 在订单、持仓、任务、风险页看见完整反馈
+
+## 当前架构边界
+
+- 只做 `crypto`
+- 只做 `Binance`
+- 只做 `Freqtrade`
+- 当前执行仍以 `dry-run` 为主
+- 首批策略固定为：
+  - `trend_breakout`
+  - `trend_pullback`
+
+## 平台回归 Todo
+
+### 已完成
+
+- [x] 明确总路线为“适配器优先，总控自研”
+- [x] 明确 `WebUI + Backend + OpenClaw` 属于控制平面
+- [x] 明确 `Qlib` 属于研究层
+- [x] 明确 `Freqtrade` 属于加密执行层
+- [x] 明确 `Lean / vn.py` 属于扩展执行层
+- [x] 输出平台架构回归设计文档
+
+### 下一批重点
+
+- [x] Freqtrade 真实集成计划
+- [x] Qlib 最小研究层计划
+- [x] Lean / vn.py / OpenClaw 扩展位计划
+- [x] Freqtrade 真实 REST 适配器
+- [x] Freqtrade bot 状态与订单持仓同步
+- [x] Qlib 最小训练与推理闭环
+- [x] 策略页接入研究分数与解释
+- [ ] 补 Lean / vn.py 扩展目录与接口位
+- [ ] 补 OpenClaw 非交易任务入口
+
+## 文档计划入口
+
+- [2026-04-02-platform-architecture-restoration-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-02-platform-architecture-restoration-design.md)
+- [2026-04-02-freqtrade-real-integration-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-freqtrade-real-integration-implementation.md)
+- [2026-04-02-qlib-minimal-research-layer-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-minimal-research-layer-implementation.md)
+- [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
+
+## 当前文档入口
+
+- [README.md](/home/djy/Quant/README.md)：项目现状和运行方式
+- [docs/architecture.md](/home/djy/Quant/docs/architecture.md)：模块职责和调用关系
+- [docs/api.md](/home/djy/Quant/docs/api.md)：当前接口边界
+- [docs/ops.md](/home/djy/Quant/docs/ops.md)：实际运行和验收方式
+- [CONTEXT.md](/home/djy/Quant/CONTEXT.md)：给下个会话看的最轻量进度记录
