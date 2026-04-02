@@ -16,6 +16,7 @@ class MarketWorkspaceTests(unittest.TestCase):
             WEB_APP / "market" / "page.tsx",
             WEB_APP / "market" / "[symbol]" / "page.tsx",
             WEB_COMPONENTS / "candle-chart.tsx",
+            WEB_COMPONENTS / "market-symbol-workspace.tsx",
             WEB_COMPONENTS / "market-filter-bar.tsx",
             WEB_COMPONENTS / "market-focus-board.tsx",
             WEB_COMPONENTS / "timeframe-tabs.tsx",
@@ -60,15 +61,24 @@ class MarketWorkspaceTests(unittest.TestCase):
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
         global_styles = (WEB_APP / "globals.css").read_text(encoding="utf-8")
 
-        self.assertIn("TimeframeTabs", page_content)
-        self.assertIn("TradingChartPanel", page_content)
-        self.assertIn("ResearchSidecard", page_content)
-        self.assertIn("MultiTimeframeSummary", page_content)
+        self.assertIn("MarketSymbolWorkspace", page_content)
         self.assertIn("active_interval", page_content)
         self.assertIn("supported_intervals", page_content)
         self.assertIn("multi_timeframe_summary", page_content)
         self.assertIn("trading-layout", page_content)
         self.assertIn(".trading-layout", global_styles)
+
+    def test_symbol_page_uses_client_trading_workspace_and_not_static_svg_main_chart(self) -> None:
+        page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
+        chart_content = (WEB_COMPONENTS / "pro-kline-chart.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("MarketSymbolWorkspace", page_content)
+        self.assertIn('"use client"', chart_content)
+        self.assertIn("crosshair", chart_content)
+        self.assertIn("priceScale", chart_content)
+        self.assertIn("timeScale", chart_content)
+        self.assertIn("histogram", chart_content)
+        self.assertNotIn("<svg", chart_content)
 
     def test_navigation_contains_market_entry(self) -> None:
         shell_content = (WEB_COMPONENTS / "app-shell.tsx").read_text(encoding="utf-8")
