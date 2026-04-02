@@ -12,7 +12,7 @@ class StrategyCatalogService:
     """提供固定的策略目录和默认交易白名单。"""
 
     def __init__(self) -> None:
-        self._whitelist: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT")
+        self._whitelist: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT")
         self._strategies: tuple[dict[str, object], ...] = (
             {
                 "key": "trend_breakout",

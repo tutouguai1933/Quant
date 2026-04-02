@@ -217,6 +217,13 @@
 - 读取策略状态、订单、持仓
 - 执行 `start / pause / stop`
 
+### `infra/freqtrade`
+
+负责：
+- 提供 `WSL + Docker + Binance Spot + dry-run` 的最小部署骨架
+- 把公开配置和私密配置拆开，避免把密钥写进仓库
+- 给控制平面保留稳定的本机 REST 接入位
+
 ## 页面结构
 
 ### 市场页

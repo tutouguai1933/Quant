@@ -19,6 +19,7 @@
 - 订单页、持仓页展示同步来源
 - `demo / dry-run / live` 安全边界
 - 远端 dry-run 模式校验
+- 仓库内 Spot dry-run Docker 部署骨架
 
 当前仍然保留的边界：
 
@@ -31,6 +32,7 @@
 ## 运行约定
 
 - 所有 Python 相关命令默认先进入 conda 环境 `quant`
+- 当前推荐的真实接入方式：`WSL + Docker + Binance Spot + dry-run`
 
 ```bash
 source /home/djy/miniforge3/etc/profile.d/conda.sh
@@ -60,6 +62,40 @@ export QUANT_FREQTRADE_PASSWORD='YourPassword'
 
 - 如果不提供这组配置，系统会自动回退到 `memory`
 - 如果只配了一部分，会直接报错，不会半配置运行
+
+## Docker 骨架
+
+仓库里现在已经提供：
+
+- `infra/freqtrade/docker-compose.yml`
+- `infra/freqtrade/.env.example`
+- `infra/freqtrade/user_data/config.base.json`
+- `infra/freqtrade/user_data/config.private.json.example`
+
+最小命令：
+
+```bash
+cd /home/djy/Quant/infra/freqtrade
+cp .env.example .env
+cp user_data/config.private.json.example user_data/config.private.json
+docker compose up -d
+```
+
+预期结果：
+
+- 本机 `127.0.0.1:8080` 会起来一台 Freqtrade REST API
+- 控制平面补齐 `QUANT_FREQTRADE_API_URL / USERNAME / PASSWORD` 后，会从 `memory` 切到 `rest`
+
+说明：
+
+- 当前骨架固定为 `Spot`
+- 第一批交易对白名单固定为：
+  - `BTC/USDT`
+  - `ETH/USDT`
+  - `SOL/USDT`
+  - `DOGE/USDT`
+- 你现在这组只读 Binance Key 可以先用于控制平面侧的真实余额和市场读取
+- 后续如果 Freqtrade dry-run 联调需要更完整权限，再换成专用 `Spot Trading` Key
 
 ## 当前页面上会看到什么
 

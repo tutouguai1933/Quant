@@ -1,0 +1,12 @@
+{
+  "exchange": {
+    "key": "REPLACE_WITH_BINANCE_API_KEY",
+    "secret": "REPLACE_WITH_BINANCE_API_SECRET"
+  },
+  "api_server": {
+    "username": "Freqtrader",
+    "password": "REPLACE_WITH_STRONG_PASSWORD",
+    "jwt_secret_key": "REPLACE_WITH_LONG_RANDOM_SECRET",
+    "ws_token": "REPLACE_WITH_LONG_RANDOM_WS_TOKEN"
+  }
+}

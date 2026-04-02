@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass, field
 
 
-DEFAULT_MARKET_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT")
+DEFAULT_MARKET_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT")
 ALLOWED_RUNTIME_MODES = {"demo", "dry-run", "live"}
 
 

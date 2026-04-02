@@ -123,6 +123,7 @@
 - [x] Lean / vn.py / OpenClaw 扩展位计划
 - [x] Freqtrade 真实 REST 适配器
 - [x] Freqtrade bot 状态与订单持仓同步
+- [x] Freqtrade Spot dry-run Docker 部署骨架
 - [ ] 接上一台真实 Freqtrade REST 服务完成最终 dry-run 验收
 - [x] Qlib 最小训练与推理闭环
 - [x] 策略页接入研究分数与解释

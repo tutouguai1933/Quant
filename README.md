@@ -83,6 +83,7 @@
   - 最近信号
   - 最近执行结果
 - Freqtrade 执行层现在已经从“只会内存假执行”升级成“memory / rest 双后端门面”
+- 仓库里现在已经有 `WSL + Docker + Binance Spot + dry-run` 的 Freqtrade 部署骨架
 - Freqtrade 这条线现在已经补上明确安全门：
   - `demo` 和 `live` 不会因为残留凭据误碰真实 Freqtrade
   - `dry-run` 会校验远端 Freqtrade 的真实模式
@@ -111,7 +112,7 @@
 - `OpenClaw` 触发非交易任务还没接入
 - 真实 Freqtrade 的完整实盘放行仍未开放
 - 真实 Freqtrade REST 服务的完整端到端 dry-run 验收还没做完
-  - 当前原因：本地还没有接上一台真实 Freqtrade REST 服务，也还没补齐对应 REST 配置
+  - 当前原因：仓库里已经有 Docker 骨架，但本地还没有真正把容器拉起并补齐 REST 配置
 - 真实 `Qlib` 依赖和完整实验平台还没接入
 
 ## 项目结构
@@ -123,6 +124,7 @@ services/worker             研究层最小运行入口和研究逻辑
 packages/db                 数据库结构
 docs                        架构、接口、运维说明
 infra/scripts               演示脚本
+infra/freqtrade             Freqtrade Spot dry-run Docker 骨架
 ```
 
 ## 关键模块
@@ -145,6 +147,8 @@ infra/scripts               演示脚本
   Binance 市场和账户读取
 - `services/api/app/adapters/freqtrade/client.py`
   Freqtrade 执行适配器
+- `infra/freqtrade`
+  Freqtrade Spot dry-run Docker 部署骨架
 - `services/api/app/services/research_service.py`
   研究结果读取、训练、推理入口
 - `services/api/app/services/research_cockpit_service.py`
@@ -181,6 +185,15 @@ uvicorn services.api.app.main:app --host 127.0.0.1 --port 8000
 ```bash
 cd apps/web
 pnpm start --hostname 127.0.0.1 --port 3000
+```
+
+### Freqtrade Spot Dry-Run
+
+```bash
+cd infra/freqtrade
+cp .env.example .env
+cp user_data/config.private.json.example user_data/config.private.json
+docker compose up -d
 ```
 
 ### 默认地址
@@ -238,6 +251,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] 两套首批波段策略最小版
 - [x] 策略中心
 - [x] Qlib 最小研究层
+- [x] Freqtrade Spot dry-run Docker 骨架
 - [x] 市场页显示策略适配与趋势状态
 - [x] 图表页显示策略解释和止损参考
 - [ ] 图表页把信号点和止损线做成更直观的图层

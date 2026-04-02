@@ -11,3 +11,8 @@ out/
 coverage/
 .DS_Store
 .env.quant.local
+infra/freqtrade/.env
+infra/freqtrade/user_data/config.private.json
+infra/freqtrade/user_data/data/
+infra/freqtrade/user_data/backtest_results/
+infra/freqtrade/user_data/logs/

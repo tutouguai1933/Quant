@@ -1,46 +1,19 @@
 # 当前进度
 
-- 当前正在做：统一研究驾驶舱这一轮已经完成实现、测试和真实页面验证，当前处于最终 review 和 git 提交前收口阶段。
-- 上次停留位置：刚完成 `research_brief / research_cockpit` 接入市场页、单币图表页和策略页，并在重启本地服务后确认真实返回已生效。
+- 当前正在做：补 `WSL + Docker + Binance Spot + dry-run` 的 Freqtrade 真实接入骨架，并把默认白名单切到 `BTC / ETH / SOL / DOGE`。
+- 上次停留位置：刚完成 Freqtrade 的 `memory / rest` 双后端和市场页、单币页的真实页面验收。
 - 近期关键决定：
   - 当前继续采用多 session 分工：
-    - 我负责 `Qlib` 研究层和统一研究展示口径
-    - 另一个 session 负责 `Freqtrade` 执行层
-  - `Qlib` 这条线当前已经完成三步：
-    - 第一步：最小训练、最小推理、结果展示
-    - 第二步：研究结果以“软门控”方式进入策略判断
-    - 第三步：市场页、单币图表页、策略页开始共用统一研究摘要
-  - 当前软门控规则保持不变：
-    - 原策略仍然是主判断源
-    - `score >= 0.60` 只确认现有做多信号，不单独触发新信号
-    - `score <= 0.40` 会压低原本的做多信号，把它降回 `watch`
-    - `0.40 < score < 0.60` 维持观望，不让研究层单独拍板
-  - 统一研究驾驶舱当前已经落地的字段口径包括：
-    - `research_bias`
-    - `recommended_strategy`
-    - `confidence`
-    - `research_gate`
-    - `primary_reason`
-    - `research_explanation`
-    - `signal_count`
-    - `entry_hint`
-    - `stop_hint`
-    - `model_version`
-    - `generated_at`
-  - 这一轮关键实现已经完成：
-    - 新增 `services/api/app/services/research_cockpit_service.py`
-    - `GET /api/v1/market` 返回 `research_brief`
-    - `GET /api/v1/market/{symbol}/chart` 返回 `research_cockpit`
-    - 策略工作台卡片返回 `research_cockpit`
-    - 市场页、单币图表页、策略页开始共用统一研究字段
-  - 当前研究层协同边界继续保持：
-    - 默认运行目录仍是 `/tmp/quant-qlib-runtime`
-    - 多 session 并行时可以设置 `QUANT_QLIB_SESSION_ID`
-    - 没安装 `qlib` 时继续走 `qlib-fallback`
-  - 这一轮已经完成的验证包括：
-    - API 测试通过
-    - worker 测试通过
-    - 前端测试通过
-    - 类型检查和构建通过
-    - 真实接口已返回 `research_brief / research_cockpit`
-    - 真实页面已看到“研究倾向 / 研究门控 / 入场参考 / 止损参考”
+    - 这个 session 负责 `Freqtrade` 执行层和 Docker 实接位
+    - 另一个 session 负责 `Qlib` 研究层
+  - 当前已经完成：
+    - 默认市场白名单切到 `BTCUSDT / ETHUSDT / SOLUSDT / DOGEUSDT`
+    - 仓库内新增 `infra/freqtrade` Docker 部署骨架
+    - 已把公开配置、私密配置样板和最小 README 分开
+  - 当前真实联调还差：
+    - 真正把 Freqtrade 容器拉起来
+    - 在本地补 `QUANT_FREQTRADE_API_URL / USERNAME / PASSWORD`
+    - 用控制平面完成最终 dry-run 验收
+  - 当前下一步已经收敛为：
+    - 先让 Docker 里的 Freqtrade 真正启动
+    - 再把控制平面从 `memory` 切到 `rest`
