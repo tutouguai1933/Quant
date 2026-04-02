@@ -107,6 +107,9 @@ class FrontendRefactorTests(unittest.TestCase):
         content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
         strategy_card_section = content.split("function StrategyCard", 1)[1]
 
+        self.assertNotIn("研究倾向：", strategy_card_section)
+        self.assertNotIn("判断信心：", strategy_card_section)
+        self.assertNotIn("主判断：", strategy_card_section)
         self.assertNotIn("研究解释：", strategy_card_section)
         self.assertNotIn("模型版本：", strategy_card_section)
         self.assertNotIn("研究门控：", strategy_card_section)

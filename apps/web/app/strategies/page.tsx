@@ -216,11 +216,6 @@ function formatParamSummary(params: Record<string, unknown>): string {
     .join(" · ");
 }
 
-function formatValue(value: unknown, fallback: string): string {
-  const text = String(value ?? "").trim();
-  return text.length > 0 ? text : fallback;
-}
-
 function formatLatestSignal(item: Record<string, unknown> | null): string {
   if (!item) {
     return "暂无持久化信号";
