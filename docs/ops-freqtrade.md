@@ -52,6 +52,9 @@ conda activate quant
 
 ```bash
 export QUANT_RUNTIME_MODE=dry-run
+export QUANT_BINANCE_MARKET_BASE_URL='https://api.binance.com'
+export QUANT_BINANCE_ACCOUNT_BASE_URL='https://api.binance.com'
+export QUANT_BINANCE_TIMEOUT_SECONDS='10'
 export QUANT_FREQTRADE_API_URL='http://127.0.0.1:8080'
 export QUANT_FREQTRADE_API_USERNAME='Freqtrader'
 export QUANT_FREQTRADE_API_PASSWORD='YourPassword'
@@ -69,6 +72,10 @@ export QUANT_FREQTRADE_PASSWORD='YourPassword'
 
 - 如果不提供这组配置，系统会自动回退到 `memory`
 - 如果只配了一部分，会直接报错，不会半配置运行
+- 如果服务器在中国大陆，公开行情建议单独改成：
+  - `QUANT_BINANCE_MARKET_BASE_URL='https://data-api.binance.vision'`
+- 账户同步和真实下单仍然依赖 `api.binance.com`
+- 如果这一段直连超时，需要给服务器补代理，或者改用海外节点
 
 live 安全门最小配置：
 
@@ -166,6 +173,17 @@ docker compose up -d
 - `9011`: API
 - `9012`: WebUI
 - `9013`: Freqtrade REST
+- `9016`: Mihomo 代理
+- `9017`: Mihomo 控制器
+
+服务器本次联调结果：
+
+- `9011 / 9012 / 9013 / 9016 / 9017` 容器已经成功拉起
+- 外网已经可以直接打开 `9012`
+- `Mihomo` 已经接入，并固定在单一节点
+- 公开行情和 `Freqtrade` 已经能通过代理访问 Binance
+- 市场接口在代理偶发抖动时会回退为空结果，不再直接返回 `500`
+- 签名账户链路目前仍受 Binance 白名单限制
 
 ## 服务器调试顺序
 

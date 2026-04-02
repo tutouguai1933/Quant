@@ -143,6 +143,25 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Settings.from_env()
 
+    def test_binance_endpoint_overrides_and_timeout_are_loaded(self) -> None:
+        self._clear_runtime_env()
+        os.environ["QUANT_BINANCE_MARKET_BASE_URL"] = "https://data-api.binance.vision"
+        os.environ["QUANT_BINANCE_ACCOUNT_BASE_URL"] = "https://api1.binance.com"
+        os.environ["QUANT_BINANCE_TIMEOUT_SECONDS"] = "6.5"
+
+        settings = Settings.from_env()
+
+        self.assertEqual(settings.binance_market_base_url, "https://data-api.binance.vision")
+        self.assertEqual(settings.binance_account_base_url, "https://api1.binance.com")
+        self.assertEqual(settings.binance_timeout_seconds, 6.5)
+
+    def test_binance_timeout_requires_positive_number(self) -> None:
+        self._clear_runtime_env()
+        os.environ["QUANT_BINANCE_TIMEOUT_SECONDS"] = "0"
+
+        with self.assertRaises(ValueError):
+            Settings.from_env()
+
     def _clear_runtime_env(self) -> None:
         os.environ.pop("QUANT_RUNTIME_MODE", None)
         os.environ.pop("BINANCE_API_KEY", None)
@@ -155,6 +174,9 @@ class SettingsTests(unittest.TestCase):
         os.environ.pop("QUANT_LIVE_ALLOWED_SYMBOLS", None)
         os.environ.pop("QUANT_LIVE_MAX_STAKE_USDT", None)
         os.environ.pop("QUANT_LIVE_MAX_OPEN_TRADES", None)
+        os.environ.pop("QUANT_BINANCE_MARKET_BASE_URL", None)
+        os.environ.pop("QUANT_BINANCE_ACCOUNT_BASE_URL", None)
+        os.environ.pop("QUANT_BINANCE_TIMEOUT_SECONDS", None)
 
 
 if __name__ == "__main__":

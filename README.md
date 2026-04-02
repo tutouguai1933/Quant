@@ -1,7 +1,7 @@
 # Quant
 
 > 面向个人加密量化交易的研究与执行控制平面  
-> 当前状态：`Phase A` 已完成，`Phase B` 主体体验已收口，`Qlib` 最小研究层和多周期交易视图已打通，系统已经进入“真实 dry-run 工作台 + 最小研究闭环”阶段；`live` 安全门和 live 容器骨架已就绪，并已完成首笔真实 `Binance Spot` 买单验收。最新代码已经把 live 同步判定收紧，但真实平仓验收暂时被 Binance IP 白名单变更阻塞。
+> 当前状态：`Phase A` 已完成，`Phase B` 主体体验已收口，`Qlib` 最小研究层和多周期交易视图已打通，系统已经进入“真实 dry-run 工作台 + 最小研究闭环”阶段；`live` 安全门和 live 容器骨架已就绪，并已完成首笔真实 `Binance Spot` 买单验收。阿里云统一部署已经拉起，并已接入 Mihomo 代理；公开行情和 Freqtrade 已恢复，但服务器上的签名账户链路仍受 Binance 白名单限制。
 
 ## 这是什么
 
@@ -148,8 +148,13 @@
 - 已完成首笔真实 `DOGE/USDT` 买单，控制平面、订单页、持仓页和 Binance 余额都能看到结果
 - `live` 模式下派发后的同步任务已经修好，现在会直接走 Binance 账户同步，不再因为 Freqtrade 快照超时而失败
 - 真实平仓代码路径已经收紧到“只平当前币种或当前交易”，并已补上更严格的 live 同步确认
+- 阿里云服务器上的 API / WebUI / Freqtrade 容器已经成功拉起
+- 阿里云服务器上的 Mihomo 代理容器已经接入
+- 阿里云外网已经能直接打开 `9012` 的 WebUI 页面
 - `OpenClaw` 触发非交易任务还没接入
-- 真实 `DOGE` 平仓验收暂时还没完成，因为 Binance 白名单还没有更新到当前公网出口 IP
+- 服务器上的 Binance 公开行情与 Freqtrade 现在都通过固定代理节点访问
+- 市场接口在代理瞬时失败时会自动回退为空结果，不再直接报错
+- 服务器上的账户同步和真实下单链路仍需要 Binance 白名单放过当前代理出口
 - 真实 `Qlib` 依赖和完整实验平台还没接入
 
 ## 项目结构
@@ -162,6 +167,7 @@ packages/db                 数据库结构
 docs                        架构、接口、运维说明
 infra/scripts               演示脚本
 infra/freqtrade             Freqtrade Spot dry-run Docker 骨架
+infra/deploy                阿里云统一部署骨架
 ```
 
 ## 关键模块
@@ -206,6 +212,7 @@ infra/freqtrade             Freqtrade Spot dry-run Docker 骨架
 - 所有 Python 相关命令都在 conda 环境 `quant` 中执行
 - WebUI 命令仍在 `apps/web` 下单独执行
 - 日常开发以 `WSL` 为主，真实联调和最终部署以阿里云服务器为主
+- 如果服务器位于中国大陆，公开行情和签名账户接口要分开检查
 
 ### API
 
@@ -298,6 +305,17 @@ docker compose up -d --build
 - `9011`: API
 - `9012`: WebUI
 - `9013`: Freqtrade REST
+- `9016`: Mihomo 代理
+- `9017`: Mihomo 控制器
+
+大陆服务器补充说明：
+
+- 公开行情建议单独设置：
+  - `QUANT_BINANCE_MARKET_BASE_URL=https://data-api.binance.vision`
+- 账户同步和真实下单仍然依赖 `api.binance.com`
+- 当前仓库已经提供 `infra/mihomo` 和统一部署里的代理接入位
+- 如果签名接口仍返回空结果，需要把当前固定代理节点的出口 IP 加到 Binance API 白名单
+- 现在 API 已支持这两个地址分开配置，并且 Binance 请求都会按超时收口，不会一直卡住
 
 ## 服务器端口管理
 
@@ -379,6 +397,9 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] 图表页显示策略解释和止损参考
 - [x] 图表页把信号点和止损线做成更直观的图层
 - [x] GitHub 基线 + 阿里云统一部署骨架
+- [x] 阿里云首轮容器拉起与端口联调
+- [x] 阿里云 Mihomo 代理接入与公开行情恢复
+- [ ] 阿里云 Binance 签名账户链路收口
 - [ ] 完成 `Phase B` 剩余验收闭环
 - [ ] 接入 `OpenClaw` 非交易任务触发
 

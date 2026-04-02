@@ -8,7 +8,7 @@
   - 图表切换走客户端局部加载和前端短缓存，不再用 `router.refresh`
   - 登录 cookie 固定保持 7 天，页面可见性只看 cookie，受保护动作继续走服务端校验
   - 市场页改成先出壳子和加载骨架，再用同源代理补市场数据，避免直接跨端口取数
-- 当前正在做：`Freqtrade` 这条线已经把 live 同步判定、live 订单范围和 sync 重试补偿修好；当前真实平仓验收被 Binance IP 白名单变更阻塞。
+- 当前正在做：阿里云统一部署已经拉起 API / WebUI / Freqtrade / Mihomo 四个容器，外网能直接打开市场页；现在已经把大陆服务器上的 Binance 公开行情、Freqtrade 和代理链路接通，并把公开行情失败时的 500 改成了空结果降级。
 - 上次停留位置：已经完成首笔真实 `DOGE/USDT` 买单，并修掉了 `live /tasks/sync` 超时问题。
 - 近期关键决定：
   - `GitHub` 私有仓库现在作为唯一代码基线
@@ -29,10 +29,19 @@
     - live 订单同步范围优先跟随 `QUANT_LIVE_ALLOWED_SYMBOLS`，并会临时并入本次派发的 symbol
     - sync 任务首次失败后，重试成功会把 signal 状态补成 `synced`
     - 本地默认环境已经重新切回 `dry-run`
+  - 阿里云部署这次新增确认：
+    - Docker 和 compose 已安装
+    - 仓库已经从 GitHub 克隆到服务器
+    - `/home/djy/.port-registry.yaml` 已同步 Quant 主范围
+    - `infra/deploy` 已成功拉起 `9011 / 9012 / 9013 / 9016 / 9017`
+    - 服务器外网可以直接访问 WebUI
+    - `Mihomo` 已经接入，并固定到单一节点
+    - `data-api.binance.vision` 与 `api.binance.com` 现在都可以通过代理访问
+    - 市场接口在代理偶发抖动时会返回空结果，不再直接报 500
   - 当前阻塞：
-    - 真实平仓验收还没完成
-    - 原因不是代码，而是当前公网出口 IP 已变成 `151.242.36.38`
-    - 如果 Binance API 开了 IP 白名单，需要先把这个新 IP 补进去，`Freqtrade live` 容器才能重新启动
+    - 服务器上的签名账户同步还没有恢复真实余额
+    - 根因不是应用本身，而是 Binance API 白名单还没放过当前代理出口
+    - 在把当前代理出口 IP 加到 Binance 白名单前，余额、订单和真实 live 联调会继续以空结果收口
   - `Qlib` 这一侧已经固定：
     - 市场页先筛选，单币页先看图，策略页最后执行
     - 研究结果继续采用“软门控”，不单独制造新信号

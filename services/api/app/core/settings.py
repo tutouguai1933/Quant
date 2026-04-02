@@ -13,6 +13,10 @@ from decimal import Decimal, InvalidOperation
 
 DEFAULT_MARKET_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT")
 ALLOWED_RUNTIME_MODES = {"demo", "dry-run", "live"}
+DEFAULT_BINANCE_BASE_URL = "https://api.binance.com"
+DEFAULT_BINANCE_MARKET_BASE_URL = DEFAULT_BINANCE_BASE_URL
+DEFAULT_BINANCE_ACCOUNT_BASE_URL = DEFAULT_BINANCE_BASE_URL
+DEFAULT_BINANCE_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,9 @@ class Settings:
     market_symbols: tuple[str, ...]
     binance_api_key: str = field(repr=False)
     binance_api_secret: str = field(repr=False)
+    binance_market_base_url: str = DEFAULT_BINANCE_MARKET_BASE_URL
+    binance_account_base_url: str = DEFAULT_BINANCE_ACCOUNT_BASE_URL
+    binance_timeout_seconds: float = DEFAULT_BINANCE_TIMEOUT_SECONDS
     freqtrade_api_url: str = field(default="", repr=False)
     freqtrade_api_username: str = field(default="", repr=False)
     freqtrade_api_password: str = field(default="", repr=False)
@@ -42,6 +49,22 @@ class Settings:
 
         binance_api_key = os.getenv("BINANCE_API_KEY", "").strip()
         binance_api_secret = os.getenv("BINANCE_API_SECRET", "").strip()
+        binance_market_base_url = (
+            os.getenv("QUANT_BINANCE_MARKET_BASE_URL") or DEFAULT_BINANCE_MARKET_BASE_URL
+        ).strip().rstrip("/")
+        binance_account_base_url = (
+            os.getenv("QUANT_BINANCE_ACCOUNT_BASE_URL") or DEFAULT_BINANCE_ACCOUNT_BASE_URL
+        ).strip().rstrip("/")
+        raw_binance_timeout = (
+            os.getenv("QUANT_BINANCE_TIMEOUT_SECONDS", str(DEFAULT_BINANCE_TIMEOUT_SECONDS)).strip()
+            or str(DEFAULT_BINANCE_TIMEOUT_SECONDS)
+        )
+        try:
+            binance_timeout_seconds = float(raw_binance_timeout)
+        except ValueError as exc:
+            raise ValueError("QUANT_BINANCE_TIMEOUT_SECONDS 必须是数字") from exc
+        if binance_timeout_seconds <= 0:
+            raise ValueError("QUANT_BINANCE_TIMEOUT_SECONDS 必须大于 0")
         freqtrade_api_url = (
             os.getenv("QUANT_FREQTRADE_URL")
             or os.getenv("QUANT_FREQTRADE_API_URL")
@@ -113,6 +136,9 @@ class Settings:
             binance_api_key=binance_api_key,
             binance_api_secret=binance_api_secret,
             market_symbols=market_symbols,
+            binance_market_base_url=binance_market_base_url,
+            binance_account_base_url=binance_account_base_url,
+            binance_timeout_seconds=binance_timeout_seconds,
             freqtrade_api_url=freqtrade_api_url,
             freqtrade_api_username=freqtrade_api_username,
             freqtrade_api_password=freqtrade_api_password,

@@ -7,6 +7,10 @@
 当前 `Freqtrade` 已经完成真实 `Spot + dry-run + REST` 接入，控制平面不再只依赖内存态执行。
 当前还额外补上了 live 本地安全门和 live 容器骨架，并已完成首笔真实 `DOGE/USDT` 买单验收。
 当前 Docker 运行方式保留 `host` 网络，以兼容这台环境的本机代理；但 Freqtrade REST 自身只监听 `127.0.0.1`，不会对外网卡开放。
+阿里云统一部署已经成功拉起 `API / WebUI / Freqtrade / Mihomo` 四个容器。
+当前这台大陆服务器已经通过固定代理节点恢复公开行情与 Freqtrade 对 Binance 的访问，但签名账户链路仍受 Binance API 白名单限制。
+因此系统现在把 Binance 公开行情和签名账户链路拆成了两套可单独配置的地址与超时设置。
+当前默认口径是：公开行情优先走 `data-api.binance.vision`，签名账户和真实下单继续走 `api.binance.com`。
 当前环境分工也已经固定：
 
 - `WSL` 负责日常开发、测试和本地页面联调
@@ -341,6 +345,11 @@
 负责：
 - 读取 Binance 市场数据
 - 读取 Binance 账户数据
+
+补充：
+- 公开行情和签名账户现在可以分开配置基础地址
+- 所有 Binance 请求都会按统一超时收口
+- 这样大陆服务器至少可以先跑通公开行情，不会把账户链路一起拖死
 
 ### `services/api/app/adapters/freqtrade/client.py`
 

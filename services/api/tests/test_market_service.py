@@ -5,6 +5,7 @@ import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import URLError
 from unittest.mock import patch
 
 
@@ -12,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from services.api.app.adapters.binance.market_client import BinanceMarketClient  # noqa: E402
 from services.api.app.main import app  # noqa: E402
 from services.api.app.routes import market as market_route  # noqa: E402
 from services.api.app.services.indicator_service import build_indicator_summary  # noqa: E402
@@ -137,6 +139,24 @@ class MarketServiceTests(unittest.TestCase):
         self.assertEqual(item["last_price"], "68000.00")
         self.assertEqual(item["change_percent"], "3.10")
         self.assertEqual(item["quote_volume"], "182000000.0")
+
+    def test_binance_market_client_returns_empty_data_when_remote_call_fails(self) -> None:
+        def failing_opener(url: str, timeout: float | None = None):
+            raise URLError("tls eof")
+
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_BINANCE_MARKET_BASE_URL": "https://data-api.binance.vision",
+                "QUANT_BINANCE_TIMEOUT_SECONDS": "6",
+            },
+            clear=False,
+        ):
+            client = BinanceMarketClient(opener=failing_opener)
+
+        self.assertEqual(client.get_tickers(), [])
+        self.assertEqual(client.get_klines("BTCUSDT"), [])
+        self.assertEqual(client.get_exchange_info(("BTCUSDT",)), {"symbols": []})
 
     def test_normalize_kline_series(self) -> None:
         raw = [

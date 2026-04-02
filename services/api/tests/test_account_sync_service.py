@@ -5,6 +5,8 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from io import BytesIO
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
@@ -14,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from services.api.app.adapters.binance.account_client import BinanceAccountClient  # noqa: E402
+from services.api.app.adapters.binance.market_client import BinanceMarketClient  # noqa: E402
 from services.api.app.routes import balances, orders, positions  # noqa: E402
 from services.api.app.services.account_sync_service import (  # noqa: E402
     AccountSyncService,
@@ -122,12 +125,14 @@ class FakeResponse:
 class FakeBinanceOpener:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.timeouts: list[float | None] = []
 
-    def __call__(self, request) -> FakeResponse:
+    def __call__(self, request, timeout=None) -> FakeResponse:
         parsed = urlparse(request.full_url)
         query = parse_qs(parsed.query)
         symbol = query.get("symbol", [""])[0]
         self.calls.append(f"{parsed.path}:{symbol}")
+        self.timeouts.append(timeout)
 
         if parsed.path == "/api/v3/account":
             return FakeResponse(
@@ -235,6 +240,55 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(client.get_orders(symbol="BTCUSDT"), [])
         self.assertEqual(client.get_trades(symbol="BTCUSDT"), [])
         self.assertEqual(client.get_positions(), [])
+
+    def test_binance_account_client_returns_empty_lists_when_signed_request_is_rejected(self) -> None:
+        def rejecting_opener(request, timeout=None):
+            raise HTTPError(
+                request.full_url,
+                401,
+                "Unauthorized",
+                hdrs=None,
+                fp=BytesIO(b'{"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}'),
+            )
+
+        client = BinanceAccountClient(
+            api_key="k",
+            api_secret="s",
+            base_url="https://example.com",
+            opener=rejecting_opener,
+        )
+
+        self.assertEqual(client.get_balances(), [])
+        self.assertEqual(client.get_orders(symbol="BTCUSDT"), [])
+        self.assertEqual(client.get_trades(symbol="BTCUSDT"), [])
+        self.assertEqual(client.get_positions(), [])
+
+    def test_default_binance_clients_use_env_endpoint_overrides(self) -> None:
+        opener = FakeBinanceOpener()
+
+        def fake_market_urlopen(url: str, timeout: float | None = None):
+            self.assertEqual(url, "https://data-api.binance.vision/api/v3/ticker/24hr")
+            self.assertEqual(timeout, 6.0)
+            return FakeResponse("[]")
+
+        with patch.dict(
+            os.environ,
+            {
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+                "QUANT_BINANCE_MARKET_BASE_URL": "https://data-api.binance.vision",
+                "QUANT_BINANCE_ACCOUNT_BASE_URL": "https://api1.binance.com",
+                "QUANT_BINANCE_TIMEOUT_SECONDS": "6",
+            },
+            clear=False,
+        ):
+            market_client = BinanceMarketClient(opener=fake_market_urlopen)
+            account_client = BinanceAccountClient(opener=opener)
+
+            self.assertEqual(market_client.get_tickers(), [])
+            self.assertEqual(account_client.base_url, "https://api1.binance.com")
+            self.assertEqual(account_client.get_balances()[0]["asset"], "BTC")
+            self.assertEqual(opener.timeouts, [6.0])
 
     def test_account_sync_service_normalizes_orders_and_positions_fields(self) -> None:
         service = AccountSyncService(FakeMarketLikeAccountClient())

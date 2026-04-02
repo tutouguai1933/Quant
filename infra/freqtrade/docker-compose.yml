@@ -8,8 +8,14 @@ services:
       - ./user_data:/freqtrade/user_data
     env_file:
       - .env
+    environment:
+      HTTP_PROXY: ${QUANT_PROXY_HTTP:-}
+      HTTPS_PROXY: ${QUANT_PROXY_HTTP:-}
+      ALL_PROXY: ${QUANT_PROXY_SOCKS:-}
+      NO_PROXY: ${NO_PROXY:-127.0.0.1,localhost,freqtrade,mihomo}
     command: >
       trade
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PUBLIC_CONFIG:-config.base.json}
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PRIVATE_CONFIG:-config.private.json}
+      --config /freqtrade/user_data/${QUANT_FREQTRADE_PROXY_CONFIG:-config.proxy.noop.json}
       --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}
