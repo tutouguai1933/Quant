@@ -14,11 +14,12 @@ approves installing qlib later.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from services.api.app.domain.contracts import SignalContract, SignalSide, SignalSource
+from services.api.app.domain.contracts import SignalContract, SignalSide, SignalSource, SignalStatus
 from services.api.app.services.research_service import research_service
 
 
@@ -59,6 +60,8 @@ class SignalService:
         self._signals: dict[int, SignalContract] = {}
         self._next_signal_id = 1
         self._last_run: TrainingRunSummary | None = None
+        self._dispatch_lock = threading.Lock()
+        self._dispatch_claims: set[int] = set()
 
     def list_signals(self, limit: int = 100) -> list[dict[str, object]]:
         self._ensure_seed_data()
@@ -71,11 +74,37 @@ class SignalService:
         return None if signal is None else signal.to_dict()
 
     def update_signal_status(self, signal_id: int, status: str) -> dict[str, object] | None:
-        signal = self._signals.get(signal_id)
-        if signal is None:
-            return None
-        signal.status = status
-        return signal.to_dict()
+        with self._dispatch_lock:
+            signal = self._signals.get(signal_id)
+            if signal is None:
+                return None
+            signal.status = status
+            return signal.to_dict()
+
+    def claim_latest_dispatchable_signal(self, strategy_id: int) -> dict[str, object] | None:
+        """原子地认领一条可派发信号，避免并发重复派发。"""
+
+        self._ensure_seed_data()
+        dispatchable_statuses = {SignalStatus.RECEIVED.value, SignalStatus.ACCEPTED.value}
+        with self._dispatch_lock:
+            ordered_signals = sorted(self._signals.values(), key=lambda item: item.signal_id or 0, reverse=True)
+            for signal in ordered_signals:
+                signal_id = signal.signal_id or 0
+                if signal.strategy_id != strategy_id:
+                    continue
+                if signal.status not in dispatchable_statuses:
+                    continue
+                if signal_id in self._dispatch_claims:
+                    continue
+                self._dispatch_claims.add(signal_id)
+                return signal.to_dict()
+        return None
+
+    def release_dispatch_claim(self, signal_id: int) -> None:
+        """释放派发认领，允许后续状态继续推进。"""
+
+        with self._dispatch_lock:
+            self._dispatch_claims.discard(signal_id)
 
     def ingest_signal(self, payload: dict[str, object]) -> dict[str, object]:
         signal = SignalContract(

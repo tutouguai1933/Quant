@@ -32,6 +32,10 @@
 - [x] Binance 余额接入
 - [x] 市场页与单币图表页
 - [x] `dry-run / demo / live` 运行边界
+- [x] Freqtrade `flat` 改成按当前币种或当前交易收敛，不再全平
+- [x] 本地防重复派发
+- [x] 执行成功回执优先返回真实 Freqtrade 字段
+- [x] Freqtrade Docker 改成“host 网络 + REST 仅监听 127.0.0.1”
 
 ### Phase B
 

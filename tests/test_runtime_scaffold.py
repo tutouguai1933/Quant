@@ -35,6 +35,17 @@ class RuntimeScaffoldTests(unittest.TestCase):
         for file_path in expected_files:
             self.assertTrue(file_path.exists(), f"missing file: {file_path}")
 
+    def test_freqtrade_compose_binds_rest_api_to_localhost_only(self) -> None:
+        compose_file = REPO_ROOT / "infra" / "freqtrade" / "docker-compose.yml"
+        self.assertTrue(compose_file.exists(), f"missing file: {compose_file}")
+        compose_content = compose_file.read_text(encoding="utf-8")
+        self.assertIn("network_mode: host", compose_content)
+
+        base_config = REPO_ROOT / "infra" / "freqtrade" / "user_data" / "config.base.json"
+        self.assertTrue(base_config.exists(), f"missing file: {base_config}")
+        base_content = base_config.read_text(encoding="utf-8")
+        self.assertIn('"listen_ip_address": "127.0.0.1"', base_content)
+
 
 if __name__ == "__main__":
     unittest.main()

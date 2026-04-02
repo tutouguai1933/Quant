@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -282,6 +283,51 @@ class ApiSkeletonTests(unittest.TestCase):
 
         self.assertEqual(response["error"]["code"], "execution_failed")
         self.assertIn("freqtrade busy", response["error"]["message"])
+
+    def test_dispatch_latest_signal_skips_already_dispatched_signal(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        first_response = dispatch_latest_signal(1, token=token)
+        second_response = dispatch_latest_signal(1, token=token)
+
+        self.assertIsNone(first_response["error"])
+        self.assertEqual(second_response["error"]["code"], "signal_not_ready")
+        self.assertIn("pending signal", second_response["error"]["message"])
+
+    def test_dispatch_latest_signal_blocks_concurrent_duplicate_dispatch(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        original_dispatch = strategies_route.execution_service.dispatch_signal
+        entered = threading.Event()
+        release = threading.Event()
+        call_count = {"value": 0}
+
+        def blocking_dispatch(signal_id: int) -> dict[str, object]:
+            call_count["value"] += 1
+            entered.set()
+            release.wait(timeout=2)
+            return original_dispatch(signal_id)
+
+        strategies_route.execution_service.dispatch_signal = blocking_dispatch  # type: ignore[assignment]
+        responses: list[dict[str, object]] = []
+        try:
+            thread = threading.Thread(target=lambda: responses.append(dispatch_latest_signal(1, token=token)))
+            thread.start()
+            entered.wait(timeout=2)
+            second_response = dispatch_latest_signal(1, token=token)
+            release.set()
+            thread.join(timeout=5)
+        finally:
+            strategies_route.execution_service.dispatch_signal = original_dispatch  # type: ignore[assignment]
+
+        self.assertEqual(call_count["value"], 1)
+        self.assertEqual(second_response["error"]["code"], "signal_not_ready")
+        self.assertEqual(len(responses), 1)
+        self.assertIsNone(responses[0]["error"])
 
     def test_protected_views_require_token(self) -> None:
         tasks_response = list_tasks()

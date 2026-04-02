@@ -1,6 +1,6 @@
 # 当前进度
 
-- 当前正在做：`Freqtrade` 真实 Spot dry-run 已经在 `WSL + Docker + Binance` 跑通，正在收口文档和提交。
+- 当前正在做：`Freqtrade` 真实 Spot dry-run 的收口已经完成，正在准备提交。
 - 上次停留位置：刚把控制平面从内存态执行切到真实 `freqtrade-rest-sync`，并完成一次真实下单模拟。
 - 近期关键决定：
   - 继续采用多 session 分工：
@@ -18,6 +18,10 @@
     - 交易视图重构的实现计划已经落盘，下一步只差选择执行方式：
       - `Subagent-Driven`
       - `Inline Execution`
+    - 我这边已完成 Task 1 的第一步后端契约：
+      - 新增 `market_timeframe_service`
+      - `MarketService.get_symbol_chart()` 已补 `active_interval / supported_intervals / multi_timeframe_summary`
+      - 多周期摘要走独立可传 `interval` 的策略评估路径，市场列表逻辑保持不变
   - `Freqtrade` 当前固定走：
     - `WSL + Docker`
     - `Binance Spot`
@@ -27,10 +31,15 @@
     - 真实订单、持仓、策略状态同步
     - 真实订单页与持仓页页面验证
     - 重复派发时返回结构化业务错误，不再抛 500
+    - 同一条信号只允许派发一次，第二次会在本地直接拦下
+    - `flat` 不再全平全局持仓，只会平当前币种；如果明确给 `trade_id`，只平那一笔
+    - 执行回执优先使用真实 Freqtrade 返回的 `trade_id / order_id / price / status`
+    - Freqtrade Docker 继续用 `host` 网络，但 REST 只监听 `127.0.0.1`
   - 当前已确认的真实结果：
     - 控制平面能识别 `freqtrade / rest / dry-run`
     - 订单页能看到真实 dry-run 成交单
     - 持仓页能看到 `BTC/USDT long`
+    - 市场服务多周期契约测试已通过
   - 当前仍保留的边界：
     - `live` 仍不开放
     - `OpenClaw / Lean / vn.py` 仍只保留扩展位

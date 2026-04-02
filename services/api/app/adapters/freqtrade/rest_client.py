@@ -64,6 +64,17 @@ def _to_decimal_string(value: object, default: str = "0.0000000000") -> str:
         return default
 
 
+def _trade_sort_key(item: dict[str, object]) -> tuple[int, str]:
+    """给 trade 列表提供稳定的“最新优先”排序键。"""
+
+    raw_trade_id = item.get("trade_id") or item.get("id") or 0
+    try:
+        numeric_id = int(str(raw_trade_id))
+    except Exception:
+        numeric_id = 0
+    return numeric_id, str(raw_trade_id)
+
+
 @dataclass(frozen=True)
 class FreqtradeRestConfig:
     """Freqtrade REST 连接配置。"""
@@ -144,15 +155,24 @@ class FreqtradeRestClient:
         side = str(action["side"])
         quantity = Decimal(str(action["quantity"]))
         if side == "flat":
-            self._request_json(
-                "POST",
-                "/api/v1/forceexit",
-                auth=True,
-                payload={"tradeid": "all"},
-            )
+            explicit_trade_id = action.get("trade_id") or action.get("venue_trade_id")
+            target_trades = self._resolve_flat_trades(symbol, trade_id=explicit_trade_id)
+            primary_trade = target_trades[0]
+            response: dict[str, object] = {}
+            hydrated_trade: dict[str, object] | None = None
+            for target_trade in target_trades:
+                response = self._request_json(
+                    "POST",
+                    "/api/v1/forceexit",
+                    auth=True,
+                    payload={"tradeid": target_trade["trade_id"]},
+                )
+                current_trade = self._find_trade_history(symbol, trade_id=target_trade["trade_id"]) or target_trade
+                if str(target_trade["trade_id"]) == str(primary_trade["trade_id"]):
+                    hydrated_trade = current_trade
         else:
             stake_amount = self._resolve_stake_amount(default=Decimal("50"))
-            self._request_json(
+            response = self._request_json(
                 "POST",
                 "/api/v1/forceenter",
                 auth=True,
@@ -164,25 +184,17 @@ class FreqtradeRestClient:
                     "entry_tag": "quant-control-plane",
                 },
             )
+            trade_id = response.get("trade_id") or response.get("id")
+            hydrated_trade = self._find_open_trade(symbol, trade_id=trade_id) or self._find_trade_history(symbol, trade_id=trade_id)
 
-        order_id = f"ft-rest-order-{self._next_order_id}"
-        self._next_order_id += 1
-        timestamp = utc_now().isoformat()
-        return {
-            "id": order_id,
-            "venueOrderId": order_id,
-            "runtimeMode": self._get_remote_mode(default="unknown"),
-            "symbol": symbol,
-            "side": side if side != "flat" else "flat",
-            "orderType": "market",
-            "status": "filled",
-            "quantity": f"{quantity:.10f}",
-            "executedQty": f"{quantity:.10f}",
-            "avgPrice": "86000.0000000000",
-            "sourceSignalId": action["source_signal_id"],
-            "strategyId": action.get("strategy_id"),
-            "updatedAt": timestamp,
-        }
+        return self._build_order_feedback(
+            action=action,
+            symbol=symbol,
+            side=side,
+            requested_quantity=quantity,
+            response=response,
+            hydrated_trade=hydrated_trade,
+        )
 
     def _resolve_stake_amount(self, default: Decimal) -> Decimal:
         """读取远端 stake_amount，确保 forceenter 使用正确的计价币金额。"""
@@ -233,6 +245,12 @@ class FreqtradeRestClient:
             "base_url": self._config.base_url,
         }
 
+    def _get_status_items(self) -> list[dict[str, object]]:
+        """读取远端当前状态列表。"""
+
+        payload = self._request_json("GET", "/api/v1/status", auth=True)
+        return _payload_items(payload, "status")
+
     def _get_balances(self) -> list[dict[str, object]]:
         """读取账户余额列表。"""
 
@@ -243,8 +261,7 @@ class FreqtradeRestClient:
     def _get_positions(self) -> list[dict[str, object]]:
         """读取当前持仓列表。"""
 
-        payload = self._request_json("GET", "/api/v1/status", auth=True)
-        items = _payload_items(payload, "status")
+        items = self._get_status_items()
         positions: list[dict[str, object]] = []
         for item in items:
             symbol = str(item.get("pair") or item.get("symbol") or "")
@@ -293,8 +310,7 @@ class FreqtradeRestClient:
         if orders:
             return orders
 
-        payload = self._request_json("GET", "/api/v1/status", auth=True)
-        status_items = _payload_items(payload, "status")
+        status_items = self._get_status_items()
         for item in status_items:
             symbol = str(item.get("pair") or item.get("symbol") or "")
             compact_symbol = symbol.replace("/", "").upper()
@@ -327,6 +343,156 @@ class FreqtradeRestClient:
                     }
                 )
         return orders
+
+    def _find_open_trade(self, symbol: str, trade_id: object | None = None) -> dict[str, object] | None:
+        """按交易对或 trade_id 查找当前仍在状态列表里的交易。"""
+
+        normalized_symbol = _normalize_symbol(symbol)
+        normalized_trade_id = str(trade_id) if trade_id not in (None, "") else None
+        symbol_matches = self._list_open_trades(normalized_symbol)
+        if normalized_trade_id:
+            for item in symbol_matches:
+                item_trade_id = str(item.get("trade_id") or item.get("id") or "")
+                if item_trade_id == normalized_trade_id:
+                    return dict(item)
+            return None
+        if not symbol_matches:
+            return None
+        return dict(symbol_matches[0])
+
+    def _list_open_trades(self, symbol: str) -> list[dict[str, object]]:
+        """按交易对收集当前所有打开交易，并把最新的排在前面。"""
+
+        normalized_symbol = _normalize_symbol(symbol)
+        symbol_matches: list[dict[str, object]] = []
+        for item in self._get_status_items():
+            raw_pair = str(item.get("pair") or item.get("symbol") or "").strip()
+            if not raw_pair:
+                continue
+            pair = _normalize_symbol(raw_pair)
+            if pair == normalized_symbol:
+                symbol_matches.append(dict(item))
+        symbol_matches.sort(key=_trade_sort_key, reverse=True)
+        return symbol_matches
+
+    def _find_trade_history(self, symbol: str, trade_id: object | None = None) -> dict[str, object] | None:
+        """按交易对或 trade_id 查找历史成交。"""
+
+        normalized_symbol = _normalize_symbol(symbol)
+        normalized_trade_id = str(trade_id) if trade_id not in (None, "") else None
+        payload = self._request_json("GET", "/api/v1/trades", auth=True)
+        symbol_matches: list[dict[str, object]] = []
+        for item in _payload_items(payload, "trades"):
+            raw_pair = str(item.get("pair") or item.get("symbol") or "").strip()
+            if not raw_pair:
+                continue
+            pair = _normalize_symbol(raw_pair)
+            item_trade_id = str(item.get("trade_id") or item.get("id") or "")
+            if normalized_trade_id and item_trade_id == normalized_trade_id:
+                return dict(item)
+            if pair == normalized_symbol:
+                symbol_matches.append(dict(item))
+        if not symbol_matches:
+            return None
+        symbol_matches.sort(key=_trade_sort_key, reverse=True)
+        return symbol_matches[0]
+
+    def _resolve_flat_trades(self, symbol: str, trade_id: object | None = None) -> list[dict[str, object]]:
+        """解析平仓目标：默认平当前币种全部打开交易，也支持只平指定 trade_id。"""
+
+        if trade_id not in (None, ""):
+            trade = self._find_open_trade(symbol, trade_id=trade_id)
+            if trade is None:
+                raise FreqtradeRestError(f"Freqtrade 当前没有可平的 {symbol} 交易 {trade_id}")
+            return [trade]
+
+        trades = self._list_open_trades(symbol)
+        if not trades:
+            raise FreqtradeRestError(f"Freqtrade 当前没有可平的 {symbol} 持仓")
+        return trades
+
+    def _build_order_feedback(
+        self,
+        action: dict[str, object],
+        symbol: str,
+        side: str,
+        requested_quantity: Decimal,
+        response: dict[str, object],
+        hydrated_trade: dict[str, object] | None,
+    ) -> dict[str, object]:
+        """优先使用远端交易结果拼出执行回执。"""
+
+        timestamp = utc_now().isoformat()
+        trade = hydrated_trade or {}
+        nested_order = self._extract_nested_order(trade)
+        trade_id = trade.get("trade_id") or trade.get("id") or response.get("trade_id") or response.get("id")
+        order_id = (
+            nested_order.get("order_id")
+            or nested_order.get("id")
+            or response.get("order_id")
+            or response.get("id")
+            or trade_id
+            or f"ft-rest-order-{self._next_order_id}"
+        )
+        if str(order_id).startswith("ft-rest-order-"):
+            self._next_order_id += 1
+
+        quantity_value = (
+            nested_order.get("filled")
+            or nested_order.get("amount")
+            or trade.get("amount")
+            or trade.get("amount_requested")
+            or trade.get("stake_amount")
+            or requested_quantity
+        )
+        price_value = (
+            nested_order.get("safe_price")
+            or nested_order.get("average_price")
+            or trade.get("open_rate")
+            or trade.get("current_rate")
+            or trade.get("average_price")
+            or trade.get("price")
+            or response.get("price")
+        )
+        status_value = (
+            nested_order.get("status")
+            or trade.get("status")
+            or response.get("status")
+            or "submitted"
+        )
+        order_type_value = (
+            nested_order.get("order_type")
+            or nested_order.get("type")
+            or response.get("order_type")
+            or "market"
+        )
+
+        return {
+            "id": str(trade_id or order_id),
+            "venueOrderId": str(order_id),
+            "runtimeMode": self._get_remote_mode(default="unknown"),
+            "symbol": symbol,
+            "side": "flat" if side == "flat" else "long",
+            "orderType": str(order_type_value),
+            "status": str(status_value),
+            "quantity": _to_decimal_string(quantity_value),
+            "executedQty": _to_decimal_string(quantity_value),
+            "avgPrice": _to_decimal_string(price_value),
+            "sourceSignalId": action["source_signal_id"],
+            "strategyId": action.get("strategy_id"),
+            "updatedAt": timestamp,
+        }
+
+    @staticmethod
+    def _extract_nested_order(trade: dict[str, object]) -> dict[str, object]:
+        """从交易详情里取最后一笔订单。"""
+
+        orders = trade.get("orders")
+        if isinstance(orders, list) and orders:
+            last_order = orders[-1]
+            if isinstance(last_order, dict):
+                return dict(last_order)
+        return {}
 
     def _get_remote_mode(self, default: str | None = None) -> str:
         """读取远端 Freqtrade 实际运行模式。"""

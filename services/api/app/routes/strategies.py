@@ -199,12 +199,11 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:
         return _unauthorized()
-    signals = signal_service.list_signals(limit=100)
-    latest = next((signal for signal in signals if signal.get("strategy_id") == strategy_id), None)
+    latest = signal_service.claim_latest_dispatchable_signal(strategy_id)
     if latest is None:
         return {
             "data": None,
-            "error": {"code": "signal_not_found", "message": f"no signal available for strategy {strategy_id}"},
+            "error": {"code": "signal_not_ready", "message": f"no pending signal available for strategy {strategy_id}"},
             "meta": {"strategy_id": strategy_id, "source": "control-plane-api"},
         }
 
@@ -218,6 +217,7 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
     )
     decision = risk_task.get("result")
     if risk_task["status"] != "succeeded" or decision["status"] == "block":
+        signal_service.release_dispatch_claim(int(latest["signal_id"]))
         return {
             "data": None,
             "error": {
@@ -234,6 +234,7 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
     try:
         result = execution_service.dispatch_signal(int(latest["signal_id"]))
     except Exception as exc:
+        signal_service.release_dispatch_claim(int(latest["signal_id"]))
         return {
             "data": None,
             "error": {
@@ -255,6 +256,7 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
     )
     if sync_task["status"] == "succeeded":
         signal_service.update_signal_status(int(latest["signal_id"]), "synced")
+    signal_service.release_dispatch_claim(int(latest["signal_id"]))
     return _success(
         {"item": result, "risk_decision": decision, "risk_task": risk_task, "sync_task": sync_task},
         {

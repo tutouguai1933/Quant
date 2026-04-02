@@ -108,6 +108,14 @@
 
 - 顶部总览
 - 执行器运行摘要
+
+### `POST /api/v1/strategies/{strategy_id}/dispatch-latest-signal`
+
+当前会先在控制平面本地筛掉已经 `dispatched / synced` 的信号。
+
+如果当前策略没有可继续派发的信号，会返回：
+
+- `error.code = signal_not_ready`
 - 研究层总览
 - 白名单
 - 两套策略卡片

@@ -21,6 +21,9 @@
 - 远端 dry-run 模式校验
 - 仓库内 Spot dry-run Docker 部署骨架
 - 一次真实 Spot dry-run 端到端联调
+- 本地防重复派发
+- `flat` 只收敛到当前币种或当前交易
+- 成功执行回执优先使用真实 Freqtrade 返回
 
 当前仍然保留的边界：
 
@@ -90,6 +93,8 @@ docker compose up -d
 说明：
 
 - 当前骨架固定为 `Spot`
+- Docker 继续使用 `host` 网络
+- 但 Freqtrade REST 自己只监听 `127.0.0.1:8080`
 - 第一批交易对白名单固定为：
   - `BTC/USDT`
   - `ETH/USDT`
@@ -97,6 +102,7 @@ docker compose up -d
   - `DOGE/USDT`
 - 你现在这组只读 Binance Key 可以先用于控制平面侧的真实余额和市场读取
 - 后续如果 Freqtrade dry-run 联调需要更完整权限，再换成专用 `Spot Trading` Key
+- 如果你本机依赖代理出网，容器里继续使用这台机器的本机代理即可
 
 ## 当前页面上会看到什么
 
@@ -143,3 +149,4 @@ docker compose up -d
 - 当前已经完成一次真实 `Freqtrade REST + Binance Spot + dry-run` 联调
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
+- 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位

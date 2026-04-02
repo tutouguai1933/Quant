@@ -107,11 +107,71 @@ def _make_server(state: dict[str, object]) -> tuple[ThreadingHTTPServer, str]:
                 return
             if path == "/api/v1/forceenter":
                 state["forceenter_seen"] = body
-                self._send_json(200, {"trade_id": 77, "status": "ok"})
+                forceenter_response = dict(state.get("forceenter_response", {"trade_id": 77, "status": "ok"}))
+                trade_id = forceenter_response.get("trade_id", 77)
+                pair = str(body.get("pair") or forceenter_response.get("pair") or "BTC/USDT")
+                amount = forceenter_response.get("amount", state.get("forceenter_amount", 0.00075))
+                rate = forceenter_response.get("open_rate", state.get("forceenter_price", 66299.98))
+                status_payload = {
+                    "trade_id": trade_id,
+                    "pair": pair,
+                    "amount": amount,
+                    "open_rate": rate,
+                    "current_rate": rate,
+                    "profit_abs": 0,
+                    "strategy_id": body.get("strategy_id", 1),
+                    "orders": [
+                        {
+                            "order_id": f"dry_run_buy_{pair}_{trade_id}",
+                            "status": "closed",
+                            "filled": amount,
+                            "safe_price": rate,
+                            "ft_order_side": "buy",
+                            "order_type": "market",
+                        }
+                    ],
+                }
+                state["positions"] = [status_payload]
+                state["trades"] = [
+                    {
+                        "trade_id": trade_id,
+                        "pair": pair,
+                        "status": "closed",
+                        "amount": amount,
+                        "open_rate": rate,
+                        "order_id": f"dry_run_buy_{pair}_{trade_id}",
+                    }
+                ]
+                self._send_json(200, forceenter_response)
                 return
             if path == "/api/v1/forceexit":
                 state["forceexit_seen"] = body
-                self._send_json(200, {"trade_id": 77, "status": "ok"})
+                state.setdefault("forceexit_calls", []).append(body)
+                closed_trade = None
+                trade_id = body.get("tradeid")
+                for item in state.get("positions", []):
+                    if str(item.get("trade_id")) == str(trade_id):
+                        closed_trade = dict(item)
+                        break
+                if closed_trade is not None:
+                    pair = str(closed_trade.get("pair") or "BTC/USDT")
+                    amount = closed_trade.get("amount", 0.00075)
+                    rate = closed_trade.get("current_rate") or closed_trade.get("open_rate") or 66299.98
+                    state["positions"] = [
+                        item for item in state.get("positions", []) if str(item.get("trade_id")) != str(trade_id)
+                    ]
+                    state["trades"] = [
+                        {
+                            "trade_id": trade_id,
+                            "pair": pair,
+                            "status": "closed",
+                            "amount": amount,
+                            "open_rate": rate,
+                            "order_id": f"dry_run_sell_{pair}_{trade_id}",
+                            "side": "flat",
+                        }
+                    ]
+                self._send_json(200, {"trade_id": trade_id, "status": "ok"})
                 return
             self._send_json(404, {"detail": "not found"})
 
@@ -173,11 +233,195 @@ class FreqtradeRestClientTests(unittest.TestCase):
         self.assertEqual(snapshot.strategies[0]["name"], "TrendBreakout")
         self.assertEqual(runtime["mode"], "dry-run")
         self.assertEqual(order["runtimeMode"], "dry-run")
-        self.assertTrue(str(order["id"]).startswith("ft-rest-order-"))
+        self.assertEqual(order["id"], "77")
+        self.assertEqual(order["venueOrderId"], "dry_run_buy_BTC/USDT_77")
+        self.assertEqual(order["status"], "closed")
+        self.assertEqual(order["avgPrice"], "66299.9800000000")
+        self.assertEqual(order["quantity"], "0.0007500000")
         self.assertEqual(state["login_seen"], True)
         self.assertEqual(state["action_seen"], "start")
         self.assertTrue(any(urlsplit(item["path"]).path == "/api/v1/forceenter" for item in state["requests"]))
         self.assertEqual(state["forceenter_seen"]["stakeamount"], 50.0)
+
+    def test_client_forceexit_targets_current_symbol_instead_of_all_trades(self) -> None:
+        state: dict[str, object] = {
+            "positions": [
+                {
+                    "trade_id": 11,
+                    "pair": "BTC/USDT",
+                    "amount": 0.001,
+                    "open_rate": 65000,
+                    "current_rate": 65100,
+                },
+                {
+                    "trade_id": 12,
+                    "pair": "ETH/USDT",
+                    "amount": 0.01,
+                    "open_rate": 3200,
+                    "current_rate": 3210,
+                },
+            ],
+            "trades": [],
+        }
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            order = client.submit_execution_action(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "flat",
+                    "quantity": "0.0010000000",
+                    "source_signal_id": 5,
+                    "strategy_id": 1,
+                }
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual([item["tradeid"] for item in state["forceexit_calls"]], [11])
+        self.assertEqual(order["symbol"], "BTC/USDT")
+        self.assertEqual(order["status"], "closed")
+
+    def test_client_forceexit_closes_all_open_trades_for_same_symbol(self) -> None:
+        state: dict[str, object] = {
+            "positions": [
+                {
+                    "trade_id": 11,
+                    "pair": "BTC/USDT",
+                    "amount": 0.001,
+                    "open_rate": 65000,
+                    "current_rate": 65100,
+                },
+                {
+                    "trade_id": 12,
+                    "pair": "BTC/USDT",
+                    "amount": 0.002,
+                    "open_rate": 65200,
+                    "current_rate": 65300,
+                },
+            ],
+            "trades": [],
+        }
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            order = client.submit_execution_action(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "flat",
+                    "quantity": "0.0020000000",
+                    "source_signal_id": 5,
+                    "strategy_id": 1,
+                }
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(sorted(item["tradeid"] for item in state["forceexit_calls"]), [11, 12])
+        self.assertEqual(order["id"], "12")
+
+    def test_client_forceexit_can_target_single_trade_when_trade_id_is_provided(self) -> None:
+        state: dict[str, object] = {
+            "positions": [
+                {
+                    "trade_id": 11,
+                    "pair": "BTC/USDT",
+                    "amount": 0.001,
+                    "open_rate": 65000,
+                    "current_rate": 65100,
+                },
+                {
+                    "trade_id": 12,
+                    "pair": "BTC/USDT",
+                    "amount": 0.002,
+                    "open_rate": 65200,
+                    "current_rate": 65300,
+                },
+            ],
+            "trades": [],
+        }
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            order = client.submit_execution_action(
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "flat",
+                    "quantity": "0.0010000000",
+                    "source_signal_id": 5,
+                    "strategy_id": 1,
+                    "trade_id": 11,
+                }
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual([item["tradeid"] for item in state["forceexit_calls"]], [11])
+        self.assertEqual(order["id"], "11")
+
+    def test_client_raises_clear_error_when_flat_target_has_no_open_trade(self) -> None:
+        state: dict[str, object] = {"positions": [], "trades": []}
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                client.submit_execution_action(
+                    {
+                        "symbol": "BTCUSDT",
+                        "side": "flat",
+                        "quantity": "0.0010000000",
+                        "source_signal_id": 5,
+                        "strategy_id": 1,
+                    }
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertIn("BTC/USDT", str(ctx.exception))
 
     def test_client_falls_back_to_runtime_strategy_when_list_endpoint_unavailable(self) -> None:
         state: dict[str, object] = {
