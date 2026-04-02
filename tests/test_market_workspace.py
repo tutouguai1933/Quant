@@ -49,6 +49,13 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("优先关注", content)
         self.assertIn("高信心", content)
 
+    def test_market_focus_board_uses_research_brief_strategy_source(self) -> None:
+        content = (WEB_COMPONENTS / "market-focus-board.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("research_brief.recommended_strategy", content)
+        self.assertNotIn("right.recommended_strategy", content)
+        self.assertNotIn("item.recommended_strategy", content)
+
     def test_symbol_page_uses_trading_view_components(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
         global_styles = (WEB_APP / "globals.css").read_text(encoding="utf-8")

@@ -16,7 +16,7 @@ export function MarketFocusBoard({ items }: MarketFocusBoardProps) {
       if (confidenceScore !== 0) {
         return confidenceScore;
       }
-      return getStrategyScore(right.recommended_strategy) - getStrategyScore(left.recommended_strategy);
+      return getStrategyScore(right.research_brief.recommended_strategy) - getStrategyScore(left.research_brief.recommended_strategy);
     })
     .slice(0, 3);
 
@@ -40,7 +40,7 @@ export function MarketFocusBoard({ items }: MarketFocusBoardProps) {
             <p className="metric-label">{item.symbol}</p>
             <p className="metric-value">{formatConfidence(item.research_brief.confidence)}</p>
             <p className="metric-detail">
-              {formatPreferredStrategy(item.recommended_strategy)} / {formatTrendState(item.trend_state)}
+              {formatPreferredStrategy(item.research_brief.recommended_strategy)} / {formatTrendState(item.trend_state)}
             </p>
             <a href={`/market/${encodeURIComponent(item.symbol)}`}>看单币页</a>
           </article>
@@ -62,7 +62,7 @@ function getConfidenceScore(value: string): number {
 }
 
 /* 把推荐策略转换成优先级分数。 */
-function getStrategyScore(value: MarketSnapshot["recommended_strategy"]): number {
+function getStrategyScore(value: MarketSnapshot["research_brief"]["recommended_strategy"]): number {
   if (value === "trend_breakout" || value === "trend_pullback") {
     return 2;
   }
@@ -70,7 +70,7 @@ function getStrategyScore(value: MarketSnapshot["recommended_strategy"]): number
 }
 
 /* 格式化推荐策略文案。 */
-function formatPreferredStrategy(value: MarketSnapshot["recommended_strategy"]): string {
+function formatPreferredStrategy(value: MarketSnapshot["research_brief"]["recommended_strategy"]): string {
   if (value === "trend_breakout") {
     return "趋势突破";
   }
