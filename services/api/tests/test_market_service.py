@@ -35,6 +35,7 @@ class FakeMarketClient:
         self.last_symbol: str | None = None
         self.last_interval: str | None = None
         self.last_limit: int | None = None
+        self.requests: list[tuple[str, str, int]] = []
 
     def get_tickers(self) -> list[dict[str, object]]:
         return list(self.tickers)
@@ -43,6 +44,7 @@ class FakeMarketClient:
         self.last_symbol = symbol
         self.last_interval = interval
         self.last_limit = limit
+        self.requests.append((symbol, interval, limit))
         requested_rows = self.klines_by_request.get((symbol, interval))
         if requested_rows is not None:
             return list(requested_rows)
@@ -298,8 +300,7 @@ class MarketServiceTests(unittest.TestCase):
         chart = service.get_symbol_chart("BTCUSDT", interval="1h", limit=50)
 
         self.assertEqual(client.last_symbol, "BTCUSDT")
-        self.assertEqual(client.last_interval, "1h")
-        self.assertEqual(client.last_limit, 50)
+        self.assertIn(("BTCUSDT", "1h", 50), client.requests)
         self.assertEqual(len(chart["items"]), 1)
         self.assertEqual(chart["items"][0]["close"], "68000")
         self.assertEqual(chart["overlays"]["ema_fast"]["sample_size"], 1)
@@ -377,6 +378,115 @@ class MarketServiceTests(unittest.TestCase):
             [item["interval"] for item in chart["multi_timeframe_summary"]],
             ["1d", "4h", "1h", "15m"],
         )
+
+    def test_get_symbol_chart_falls_back_to_default_interval_when_interval_is_invalid(self) -> None:
+        client = FakeMarketClient(
+            klines_by_request={
+                ("BTCUSDT", "4h"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710014399999],
+                    [1710014400000, "100", "102", "99", "101", "11", 1710028799999],
+                    [1710028800000, "101", "103", "100", "102", "12", 1710043199999],
+                    [1710043200000, "102", "106", "101", "105", "13", 1710057599999],
+                ],
+                ("BTCUSDT", "1h"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710003599999],
+                    [1710003600000, "100", "102", "99", "101", "11", 1710007199999],
+                    [1710007200000, "101", "103", "100", "102", "12", 1710010799999],
+                    [1710010800000, "102", "106", "101", "105", "13", 1710014399999],
+                ],
+                ("BTCUSDT", "1d"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710086399999],
+                    [1710086400000, "100", "102", "99", "101", "11", 1710172799999],
+                    [1710172800000, "101", "103", "100", "102", "12", 1710259199999],
+                    [1710259200000, "102", "106", "101", "105", "13", 1710345599999],
+                ],
+                ("BTCUSDT", "15m"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710000899999],
+                    [1710000900000, "100", "102", "99", "101", "11", 1710001799999],
+                    [1710001800000, "101", "103", "100", "102", "12", 1710002699999],
+                    [1710002700000, "102", "106", "101", "105", "13", 1710003599999],
+                ],
+            }
+        )
+        service = MarketService(
+            client=client,
+            catalog_service=FakeStrategyCatalogService(["BTCUSDT"]),
+            research_reader=FakeResearchService(),
+        )
+
+        chart = service.get_symbol_chart("BTCUSDT", interval="weird", limit=50)
+
+        self.assertEqual(chart["active_interval"], "4h")
+        self.assertIn(("BTCUSDT", "4h", 50), client.requests)
+
+    def test_get_symbol_chart_does_not_leak_multi_timeframe_summary_outside_whitelist(self) -> None:
+        client = FakeMarketClient(
+            klines_by_request={
+                ("BTCUSDT", "15m"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710000899999],
+                    [1710000900000, "100", "102", "99", "101", "11", 1710001799999],
+                    [1710001800000, "101", "103", "100", "102", "12", 1710002699999],
+                    [1710002700000, "102", "106", "101", "105", "13", 1710003599999],
+                ],
+            }
+        )
+        service = MarketService(
+            client=client,
+            catalog_service=FakeStrategyCatalogService(["BTCUSDT"]),
+            research_reader=FakeResearchService(),
+        )
+
+        chart = service.get_symbol_chart("BTCUSDT", interval="15m", limit=50, allowed_symbols=("ETHUSDT",))
+
+        self.assertEqual(chart["items"], [])
+        self.assertEqual(chart["active_interval"], "15m")
+        self.assertEqual(chart["supported_intervals"][0], "1m")
+        self.assertEqual(chart["supported_intervals"][-1], "1w")
+        self.assertEqual(chart["multi_timeframe_summary"], [])
+        self.assertEqual(client.requests, [])
+
+    def test_get_symbol_chart_avoids_duplicate_reads_for_same_interval(self) -> None:
+        client = FakeMarketClient(
+            klines_by_request={
+                ("BTCUSDT", "1h"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710003599999],
+                    [1710003600000, "100", "102", "99", "101", "11", 1710007199999],
+                    [1710007200000, "101", "103", "100", "102", "12", 1710010799999],
+                    [1710010800000, "102", "106", "101", "105", "13", 1710014399999],
+                ],
+                ("BTCUSDT", "15m"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710000899999],
+                    [1710000900000, "100", "102", "99", "101", "11", 1710001799999],
+                    [1710001800000, "101", "103", "100", "102", "12", 1710002699999],
+                    [1710002700000, "102", "106", "101", "105", "13", 1710003599999],
+                ],
+                ("BTCUSDT", "4h"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710014399999],
+                    [1710014400000, "100", "102", "99", "101", "11", 1710028799999],
+                    [1710028800000, "101", "103", "100", "102", "12", 1710043199999],
+                    [1710043200000, "102", "106", "101", "105", "13", 1710057599999],
+                ],
+                ("BTCUSDT", "1d"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710086399999],
+                    [1710086400000, "100", "102", "99", "101", "11", 1710172799999],
+                    [1710172800000, "101", "103", "100", "102", "12", 1710259199999],
+                    [1710259200000, "102", "106", "101", "105", "13", 1710345599999],
+                ],
+            }
+        )
+        service = MarketService(
+            client=client,
+            catalog_service=FakeStrategyCatalogService(["BTCUSDT"]),
+            research_reader=FakeResearchService(),
+        )
+
+        service.get_symbol_chart("BTCUSDT", interval="15m", limit=50)
+
+        interval_counts = {
+            interval: len([request for request in client.requests if request[1] == interval])
+            for interval in ("1d", "4h", "1h", "15m")
+        }
+        self.assertEqual(interval_counts, {"1d": 1, "4h": 1, "1h": 1, "15m": 1})
 
     def test_build_indicator_summary_marks_insufficient_samples_not_ready(self) -> None:
         items = [

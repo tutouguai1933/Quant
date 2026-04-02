@@ -16,6 +16,9 @@ from services.api.app.services.strategy_catalog import StrategyCatalogService, s
 from services.api.app.services.strategy_engine import apply_research_soft_gate, evaluate_trend_breakout, evaluate_trend_pullback
 
 
+ChartCache = dict[tuple[str, tuple[str, ...] | None], dict[str, object]]
+
+
 def normalize_market_snapshot(item: dict[str, object]) -> dict[str, object]:
     """把 Binance 24h ticker 统一成控制平面的市场快照结构。"""
 
@@ -85,15 +88,6 @@ class MarketService:
         normalized_symbol = symbol.strip().upper()
         active_interval = normalize_market_interval(interval)
         catalog_whitelist = tuple(self._catalog_service.get_whitelist())
-        multi_timeframe_summary = build_multi_timeframe_summary(
-            symbol=normalized_symbol,
-            intervals=("1d", "4h", "1h", "15m"),
-            evaluate_interval=lambda candidate_interval: self._build_market_strategy_summary(
-                normalized_symbol,
-                catalog_whitelist,
-                interval=candidate_interval,
-            ),
-        )
 
         if allowed_symbols is not None:
             allowed_set = {item.strip().upper() for item in allowed_symbols if item.strip()}
@@ -112,7 +106,7 @@ class MarketService:
                     "markers": markers,
                     "active_interval": active_interval,
                     "supported_intervals": get_supported_market_intervals(),
-                    "multi_timeframe_summary": multi_timeframe_summary,
+                    "multi_timeframe_summary": [],
                     "strategy_context": strategy_context,
                     "research_cockpit": build_symbol_research_cockpit(
                         symbol=normalized_symbol,
@@ -125,11 +119,6 @@ class MarketService:
                         markers=markers,
                     ),
                 }
-        summary = self._build_market_strategy_summary(
-            normalized_symbol,
-            catalog_whitelist,
-            interval=active_interval,
-        )
         chart = self._read_base_chart(
             symbol=symbol,
             interval=active_interval,
@@ -137,6 +126,40 @@ class MarketService:
             allowed_symbols=allowed_symbols,
         )
         items = list(chart.get("items", []))
+        normalized_catalog_whitelist = tuple(item.strip().upper() for item in catalog_whitelist if item.strip())
+        strategy_chart_cache: ChartCache = {}
+        if normalized_symbol in normalized_catalog_whitelist:
+            strategy_chart_cache[_build_chart_cache_key(active_interval, normalized_catalog_whitelist)] = {
+                "limit": limit,
+                "chart": {
+                    "items": items,
+                    "overlays": dict(chart.get("overlays") or {}),
+                },
+            }
+        summary_cache: dict[str, dict[str, object]] = {}
+
+        def resolve_interval_summary(candidate_interval: str) -> dict[str, object]:
+            normalized_interval = normalize_market_interval(candidate_interval)
+            if normalized_interval not in summary_cache:
+                summary_cache[normalized_interval] = self._build_market_strategy_summary(
+                    normalized_symbol,
+                    catalog_whitelist,
+                    interval=normalized_interval,
+                    chart_cache=strategy_chart_cache,
+                )
+            return summary_cache[normalized_interval]
+
+        multi_timeframe_summary = build_multi_timeframe_summary(
+            symbol=normalized_symbol,
+            intervals=("1d", "4h", "1h", "15m"),
+            evaluate_interval=resolve_interval_summary,
+        )
+        summary = summary_cache.get(active_interval) or self._build_market_strategy_summary(
+            normalized_symbol,
+            catalog_whitelist,
+            interval=active_interval,
+            chart_cache=strategy_chart_cache,
+        )
         strategy_context = _build_strategy_context(
             symbol=normalized_symbol,
             recommended_strategy=str(summary.get("recommended_strategy", "none")),
@@ -197,6 +220,7 @@ class MarketService:
         symbol: str,
         catalog_whitelist: tuple[str, ...],
         interval: str | None = None,
+        chart_cache: ChartCache | None = None,
     ) -> dict[str, object]:
         """给市场快照补上最小策略视角。"""
 
@@ -207,6 +231,7 @@ class MarketService:
             "trend_breakout",
             tuple(normalized_whitelist),
             interval=interval,
+            chart_cache=chart_cache,
             research_summary=research_summary,
         )
         pullback_result = self._evaluate_catalog_strategy(
@@ -214,6 +239,7 @@ class MarketService:
             "trend_pullback",
             tuple(normalized_whitelist),
             interval=interval,
+            chart_cache=chart_cache,
             research_summary=research_summary,
         )
         preferred_strategy, trend_state = _classify_market_state(breakout_result, pullback_result)
@@ -234,6 +260,7 @@ class MarketService:
         strategy_key: str,
         allowed_symbols: tuple[str, ...],
         interval: str | None = None,
+        chart_cache: ChartCache | None = None,
         research_summary: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """按策略目录默认参数评估当前 symbol。"""
@@ -261,11 +288,12 @@ class MarketService:
                 "reason": "invalid_catalog_defaults",
             }
 
-        chart = self._read_base_chart(
+        chart = self._read_strategy_chart(
             symbol=symbol,
             interval=timeframe,
             limit=lookback_bars + 1,
             allowed_symbols=allowed_symbols,
+            chart_cache=chart_cache,
         )
         items = list(chart.get("items", []))
         if not items:
@@ -299,6 +327,45 @@ class MarketService:
             research_summary,
         )
 
+    def _read_strategy_chart(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        limit: int,
+        allowed_symbols: tuple[str, ...],
+        chart_cache: ChartCache | None,
+    ) -> dict[str, object]:
+        """读取策略评估图表，并在单次请求内复用。"""
+
+        if chart_cache is None:
+            return self._read_base_chart(
+                symbol=symbol,
+                interval=interval,
+                limit=limit,
+                allowed_symbols=allowed_symbols,
+            )
+
+        cache_key = _build_chart_cache_key(interval, allowed_symbols)
+        cached = chart_cache.get(cache_key)
+        if cached is not None and int(cached.get("limit", 0) or 0) >= limit:
+            return dict(cached.get("chart") or {})
+
+        chart = self._read_base_chart(
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+            allowed_symbols=allowed_symbols,
+        )
+        chart_cache[cache_key] = {
+            "limit": limit,
+            "chart": {
+                "items": list(chart.get("items", [])),
+                "overlays": dict(chart.get("overlays") or {}),
+            },
+        }
+        return chart
+
     def _find_catalog_strategy(self, strategy_key: str) -> dict[str, object] | None:
         """读取策略目录项。"""
 
@@ -323,6 +390,14 @@ class _NullResearchReader:
     @staticmethod
     def get_symbol_research(symbol: str) -> dict[str, object] | None:
         return None
+
+
+def _build_chart_cache_key(interval: str, allowed_symbols: tuple[str, ...] | None) -> tuple[str, tuple[str, ...] | None]:
+    """生成请求内图表缓存键。"""
+
+    if allowed_symbols is None:
+        return interval, None
+    return interval, tuple(item.strip().upper() for item in allowed_symbols if item.strip())
 
 
 def _classify_market_state(
