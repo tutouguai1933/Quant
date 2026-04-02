@@ -397,7 +397,8 @@ def _build_chart_cache_key(interval: str, allowed_symbols: tuple[str, ...] | Non
 
     if allowed_symbols is None:
         return interval, None
-    return interval, tuple(item.strip().upper() for item in allowed_symbols if item.strip())
+    normalized_symbols = sorted({item.strip().upper() for item in allowed_symbols if item.strip()})
+    return interval, tuple(normalized_symbols)
 
 
 def _classify_market_state(

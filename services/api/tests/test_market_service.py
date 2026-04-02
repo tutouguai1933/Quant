@@ -17,6 +17,7 @@ from services.api.app.routes import market as market_route  # noqa: E402
 from services.api.app.services.indicator_service import build_indicator_summary  # noqa: E402
 from services.api.app.services.market_service import MarketService  # noqa: E402
 from services.api.app.services.market_service import (  # noqa: E402
+    _build_chart_cache_key,
     normalize_kline_series,
     normalize_market_snapshot,
 )
@@ -487,6 +488,12 @@ class MarketServiceTests(unittest.TestCase):
             for interval in ("1d", "4h", "1h", "15m")
         }
         self.assertEqual(interval_counts, {"1d": 1, "4h": 1, "1h": 1, "15m": 1})
+
+    def test_build_chart_cache_key_ignores_allowed_symbol_order(self) -> None:
+        self.assertEqual(
+            _build_chart_cache_key("15m", ("BTCUSDT", "ETHUSDT")),
+            _build_chart_cache_key("15m", ("ETHUSDT", "BTCUSDT")),
+        )
 
     def test_build_indicator_summary_marks_insufficient_samples_not_ready(self) -> None:
         items = [
