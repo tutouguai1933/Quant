@@ -115,7 +115,7 @@ class MarketService:
                             str(strategy_context.get("recommended_strategy", "none")),
                             dict(strategy_context.get("evaluations") or {}),
                         ),
-                        research_summary=self._get_symbol_research(normalized_symbol),
+                        research_summary=None,
                         markers=markers,
                     ),
                 }

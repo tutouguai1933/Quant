@@ -445,6 +445,11 @@ class MarketServiceTests(unittest.TestCase):
         self.assertEqual(chart["supported_intervals"][-1], "1w")
         self.assertEqual(chart["multi_timeframe_summary"], [])
         self.assertEqual(client.requests, [])
+        self.assertEqual(chart["research_cockpit"]["research_bias"], "unavailable")
+        self.assertEqual(chart["research_cockpit"]["research_gate"]["status"], "unavailable")
+        self.assertEqual(chart["research_cockpit"]["research_explanation"], "该币种暂无研究结论")
+        self.assertEqual(chart["research_cockpit"]["model_version"], "")
+        self.assertEqual(chart["research_cockpit"]["generated_at"], "")
 
     def test_get_symbol_chart_avoids_duplicate_reads_for_same_interval(self) -> None:
         client = FakeMarketClient(

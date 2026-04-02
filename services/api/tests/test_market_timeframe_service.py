@@ -10,6 +10,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from services.api.app.services.market_timeframe_service import (  # noqa: E402
+    build_multi_timeframe_summary,
     get_supported_market_intervals,
     normalize_market_interval,
 )
@@ -23,6 +24,21 @@ class MarketTimeframeServiceTests(unittest.TestCase):
         self.assertEqual(
             get_supported_market_intervals(),
             ("1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"),
+        )
+
+    def test_build_multi_timeframe_summary_keeps_interval_order_and_symbol(self) -> None:
+        summary = build_multi_timeframe_summary(
+            symbol="btcusdt",
+            intervals=("1d", "4h"),
+            evaluate_interval=lambda interval: {"decision": f"seen:{interval}"},
+        )
+
+        self.assertEqual(
+            summary,
+            [
+                {"symbol": "BTCUSDT", "interval": "1d", "decision": "seen:1d"},
+                {"symbol": "BTCUSDT", "interval": "4h", "decision": "seen:4h"},
+            ],
         )
 
 
