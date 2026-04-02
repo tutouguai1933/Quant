@@ -36,7 +36,7 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
-            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "研究倾向", "推荐策略", "模型版本", "判断信心", "研究门控", "主判断", "执行器控制", "整台 Freqtrade 执行器"],
+            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "推荐策略", "执行决策", "执行建议", "执行器控制", "整台 Freqtrade 执行器"],
             WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "任务反馈", "触发训练"],
             WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果"],
         }
@@ -102,6 +102,14 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("这里不再重复看图", content)
         self.assertNotIn("图表图层摘要", content)
         self.assertNotIn("止损参考", content)
+
+    def test_strategy_card_drops_explanatory_research_fields(self) -> None:
+        content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
+        strategy_card_section = content.split("function StrategyCard", 1)[1]
+
+        self.assertNotIn("研究解释：", strategy_card_section)
+        self.assertNotIn("模型版本：", strategy_card_section)
+        self.assertNotIn("研究门控：", strategy_card_section)
 
 
 if __name__ == "__main__":

@@ -181,8 +181,7 @@ function ActionForm({ action, label }: ActionFormProps) {
 }
 
 function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
-  const gate = asResearchGate(item.research_cockpit.research_gate);
-  const primaryReason = formatValue(item.research_cockpit.primary_reason || item.current_evaluation.reason, "n/a");
+  const executionHint = formatExecutionHint(item.current_evaluation);
   return (
     <article className="action-card strategy-card">
       <div className="stack-xs">
@@ -202,12 +201,7 @@ function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
           <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} />
         </p>
         <p>推荐策略：{formatPreferredStrategy(item.research_cockpit.recommended_strategy)}</p>
-        <p>研究倾向：{formatResearchBias(item.research_cockpit.research_bias)}</p>
-        <p>判断信心：{formatValue(item.research_cockpit.confidence, "n/a")}</p>
-        <p>研究门控：{formatValue(gate.status, "n/a")}</p>
-        <p>主判断：{primaryReason}</p>
-        <p>模型版本：{formatValue(item.research_cockpit.model_version, "n/a")}</p>
-        <p>研究解释：{formatValue(item.research_cockpit.research_explanation, "暂无研究结果")}</p>
+        <p>执行建议：{executionHint}</p>
         <p>观察币种：{item.symbols.join(" / ")}</p>
         <p>参数摘要：{formatParamSummary(item.default_params)}</p>
         <p>最近信号：{formatLatestSignal(item.latest_signal)}</p>
@@ -234,25 +228,18 @@ function formatLatestSignal(item: Record<string, unknown> | null): string {
   return `${String(item.symbol ?? "")} / ${String(item.status ?? "")}`;
 }
 
-function asResearchGate(evaluation: Record<string, unknown>): Record<string, unknown> {
-  const gate = evaluation;
-  if (gate && typeof gate === "object" && !Array.isArray(gate)) {
-    return gate as Record<string, unknown>;
+function formatExecutionHint(item: Record<string, unknown>): string {
+  const decision = String(item.decision ?? "").trim();
+  if (decision === "signal") {
+    return "可以继续看最新信号并决定是否派发。";
   }
-  return {};
-}
-
-function formatResearchBias(value: string): string {
-  if (value === "bullish") {
-    return "bullish / 偏多";
+  if (decision === "watch") {
+    return "先保持观察，暂时不要派发。";
   }
-  if (value === "bearish") {
-    return "bearish / 偏空";
+  if (decision === "block") {
+    return "当前不适合执行，先不要派发。";
   }
-  if (value === "neutral") {
-    return "neutral / 中性";
-  }
-  return "unavailable / 暂不可用";
+  return "先确认执行器状态和最新信号。";
 }
 
 function formatPreferredStrategy(value: StrategyWorkspaceCard["research_cockpit"]["recommended_strategy"]): string {
