@@ -169,7 +169,8 @@ docker compose up -d
   - 真实成交数量约 `12 DOGE`
   - 订单状态为 `FILLED`
   - 持仓页和订单页都能读到真实结果
-- 当前剩余问题不是下单失败，而是派发后那次 `sync_task` 超时失败，需要后续继续修
+- `live` 模式下的 `sync_task` 现在已经改成直接使用 Binance 账户同步
+- 已经做过一次真实 `/tasks/sync` 验证，返回成功，并带回真实余额、订单和持仓
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位

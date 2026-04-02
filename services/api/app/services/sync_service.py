@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from services.api.app.core.settings import Settings
+from services.api.app.services.account_sync_service import account_sync_service
 from services.api.app.adapters.freqtrade.client import freqtrade_client
 
 
@@ -10,6 +12,21 @@ class SyncService:
 
     def sync_execution_state(self) -> dict[str, object]:
         return freqtrade_client.get_snapshot().to_dict()
+
+    def sync_task_state(self, limit: int = 100) -> dict[str, object]:
+        """为任务系统返回一次同步结果。"""
+
+        runtime_mode = Settings.from_env().runtime_mode
+        if runtime_mode != "live":
+            return self.sync_execution_state()
+        return {
+            "balances": account_sync_service.list_balances(limit=limit),
+            "orders": account_sync_service.list_orders(limit=limit),
+            "positions": account_sync_service.list_positions(limit=limit),
+            "strategies": [],
+            "source": "binance-account-sync",
+            "truth_source": "binance",
+        }
 
     def get_runtime_snapshot(self) -> dict[str, object]:
         """返回执行器当前运行快照。"""

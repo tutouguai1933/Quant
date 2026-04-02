@@ -140,7 +140,7 @@ class TaskScheduler:
             source = str(payload.get("pipeline_source", "mock"))
             return signal_service.run_pipeline(source=source)
         if task_type == "sync":
-            return sync_service.sync_execution_state()
+            return sync_service.sync_task_state()
         if task_type == "reconcile":
             return {"status": "completed", "detail": "reconcile placeholder completed"}
         if task_type == "archive":

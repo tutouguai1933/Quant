@@ -136,7 +136,9 @@
 - [x] live 运行安全门
 - [x] live `DOGE/USDT + 1 USDT` 容器骨架
 - [x] live 首笔真实 Spot 买单验收
-  结果：真实订单已成交；当前剩余问题是派发后的 `sync_task` 会超时失败
+  结果：真实订单已成交
+- [x] live 模式下的 `sync_task` 超时修复
+  结果：`live` 下改为直接使用 Binance 账户同步，真实 `/tasks/sync` 已验证成功
 - [x] Qlib 最小训练与推理闭环
 - [x] 策略页接入研究分数与解释
 - [ ] 补 Lean / vn.py 扩展目录与接口位
