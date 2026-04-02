@@ -171,7 +171,7 @@ class FreqtradeRestClient:
                 if str(target_trade["trade_id"]) == str(primary_trade["trade_id"]):
                     hydrated_trade = current_trade
         else:
-            stake_amount = self._resolve_stake_amount(default=Decimal("50"))
+            stake_amount = self._resolve_action_stake_amount(action)
             response = self._request_json(
                 "POST",
                 "/api/v1/forceenter",
@@ -195,6 +195,20 @@ class FreqtradeRestClient:
             response=response,
             hydrated_trade=hydrated_trade,
         )
+
+    def _resolve_action_stake_amount(self, action: dict[str, object]) -> Decimal:
+        """优先使用控制平面已经校验过的 stake_amount。"""
+
+        explicit_stake_amount = action.get("stake_amount")
+        if explicit_stake_amount not in (None, ""):
+            try:
+                parsed = Decimal(str(explicit_stake_amount))
+            except Exception as exc:
+                raise FreqtradeRestError(f"invalid explicit stake_amount: {explicit_stake_amount}") from exc
+            if parsed <= 0:
+                raise FreqtradeRestError("explicit stake_amount must be greater than 0")
+            return parsed
+        return self._resolve_stake_amount(default=Decimal("50"))
 
     def _resolve_stake_amount(self, default: Decimal) -> Decimal:
         """读取远端 stake_amount，确保 forceenter 使用正确的计价币金额。"""
@@ -232,8 +246,10 @@ class FreqtradeRestClient:
 
         remote_mode = "unknown"
         connection_status = "error"
+        config_summary: dict[str, object] = {}
         try:
-            remote_mode = self._get_remote_mode()
+            config_summary = self._get_remote_config_summary()
+            remote_mode = str(config_summary.get("mode", "unknown"))
             connection_status = "connected" if remote_mode != "unknown" else "configured"
         except FreqtradeRestError:
             connection_status = "error"
@@ -243,6 +259,10 @@ class FreqtradeRestClient:
             "mode": remote_mode,
             "connection_status": connection_status,
             "base_url": self._config.base_url,
+            "stake_amount": config_summary.get("stake_amount", ""),
+            "max_open_trades": config_summary.get("max_open_trades"),
+            "trading_mode": config_summary.get("trading_mode", ""),
+            "bot_state": config_summary.get("bot_state", ""),
         }
 
     def _get_status_items(self) -> list[dict[str, object]]:
@@ -497,11 +517,16 @@ class FreqtradeRestClient:
     def _get_remote_mode(self, default: str | None = None) -> str:
         """读取远端 Freqtrade 实际运行模式。"""
 
+        return str(self._get_remote_config_summary(default_mode=default).get("mode", default or "unknown"))
+
+    def _get_remote_config_summary(self, default_mode: str | None = None) -> dict[str, object]:
+        """读取远端关键配置，供运行快照和 live 安全门共用。"""
+
         try:
             payload = self._request_json("GET", "/api/v1/show_config", auth=True)
         except FreqtradeRestError:
-            if default is not None:
-                return default
+            if default_mode is not None:
+                return {"mode": default_mode}
             raise
 
         candidates = [payload]
@@ -510,11 +535,38 @@ class FreqtradeRestClient:
         if isinstance(payload.get("config"), dict):
             candidates.append(payload["config"])
 
+        mode = default_mode or "unknown"
+        stake_amount = ""
+        max_open_trades: int | None = None
+        trading_mode = ""
+        bot_state = ""
         for item in candidates:
             dry_run = item.get("dry_run")
             if isinstance(dry_run, bool):
-                return "dry-run" if dry_run else "live"
-        return default or "unknown"
+                mode = "dry-run" if dry_run else "live"
+            raw_stake_amount = item.get("stake_amount")
+            if raw_stake_amount not in (None, ""):
+                stake_amount = str(raw_stake_amount)
+            raw_max_open_trades = item.get("max_open_trades")
+            if raw_max_open_trades not in (None, ""):
+                try:
+                    max_open_trades = int(raw_max_open_trades)
+                except Exception:
+                    max_open_trades = None
+            raw_trading_mode = item.get("trading_mode")
+            if raw_trading_mode not in (None, ""):
+                trading_mode = str(raw_trading_mode)
+            raw_state = item.get("state")
+            if raw_state not in (None, ""):
+                bot_state = str(raw_state)
+
+        return {
+            "mode": mode,
+            "stake_amount": stake_amount,
+            "max_open_trades": max_open_trades,
+            "trading_mode": trading_mode,
+            "bot_state": bot_state,
+        }
 
     def _get_strategies(self) -> list[dict[str, object]]:
         """读取策略列表。"""

@@ -10,6 +10,6 @@ services:
       - .env
     command: >
       trade
-      --config /freqtrade/user_data/config.base.json
-      --config /freqtrade/user_data/config.private.json
+      --config /freqtrade/user_data/${QUANT_FREQTRADE_PUBLIC_CONFIG:-config.base.json}
+      --config /freqtrade/user_data/${QUANT_FREQTRADE_PRIVATE_CONFIG:-config.private.json}
       --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}

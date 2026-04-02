@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
 
 DEFAULT_MARKET_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT")
@@ -26,6 +27,10 @@ class Settings:
     freqtrade_api_username: str = field(default="", repr=False)
     freqtrade_api_password: str = field(default="", repr=False)
     freqtrade_api_timeout_seconds: float = 10.0
+    allow_live_execution: bool = False
+    live_allowed_symbols: tuple[str, ...] = ()
+    live_max_stake_usdt: Decimal | None = None
+    live_max_open_trades: int | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -59,27 +64,40 @@ class Settings:
             raise ValueError("QUANT_FREQTRADE_API_TIMEOUT_SECONDS 必须是数字") from exc
         if freqtrade_api_timeout_seconds <= 0:
             raise ValueError("QUANT_FREQTRADE_API_TIMEOUT_SECONDS 必须大于 0")
+        allow_live_execution = os.getenv("QUANT_ALLOW_LIVE_EXECUTION", "").strip().lower() == "true"
 
         raw_symbols = os.getenv("QUANT_MARKET_SYMBOLS")
         if raw_symbols is None:
             market_symbols = DEFAULT_MARKET_SYMBOLS
         else:
-            normalized_symbols: list[str] = []
-            seen_symbols: set[str] = set()
-            for item in raw_symbols.split(","):
-                symbol = item.strip().upper()
-                if not symbol:
-                    raise ValueError("QUANT_MARKET_SYMBOLS 不能为空")
-                if not re.fullmatch(r"[A-Z0-9]+", symbol):
-                    raise ValueError("QUANT_MARKET_SYMBOLS 只能包含大写字母和数字")
-                if symbol in seen_symbols:
-                    continue
-                seen_symbols.add(symbol)
-                normalized_symbols.append(symbol)
-
-            market_symbols = tuple(normalized_symbols)
+            market_symbols = cls._parse_symbol_list(raw_symbols, env_name="QUANT_MARKET_SYMBOLS")
             if not market_symbols:
                 raise ValueError("QUANT_MARKET_SYMBOLS 不能为空")
+
+        raw_live_symbols = os.getenv("QUANT_LIVE_ALLOWED_SYMBOLS")
+        live_allowed_symbols = ()
+        if raw_live_symbols is not None and raw_live_symbols.strip():
+            live_allowed_symbols = cls._parse_symbol_list(raw_live_symbols, env_name="QUANT_LIVE_ALLOWED_SYMBOLS")
+
+        raw_live_max_stake = os.getenv("QUANT_LIVE_MAX_STAKE_USDT", "").strip()
+        live_max_stake_usdt: Decimal | None = None
+        if raw_live_max_stake:
+            try:
+                live_max_stake_usdt = Decimal(raw_live_max_stake)
+            except InvalidOperation as exc:
+                raise ValueError("QUANT_LIVE_MAX_STAKE_USDT 必须是数字") from exc
+            if live_max_stake_usdt <= 0:
+                raise ValueError("QUANT_LIVE_MAX_STAKE_USDT 必须大于 0")
+
+        raw_live_max_open_trades = os.getenv("QUANT_LIVE_MAX_OPEN_TRADES", "").strip()
+        live_max_open_trades: int | None = None
+        if raw_live_max_open_trades:
+            try:
+                live_max_open_trades = int(raw_live_max_open_trades)
+            except ValueError as exc:
+                raise ValueError("QUANT_LIVE_MAX_OPEN_TRADES 必须是整数") from exc
+            if live_max_open_trades <= 0:
+                raise ValueError("QUANT_LIVE_MAX_OPEN_TRADES 必须大于 0")
 
         freqtrade_config_values = (freqtrade_api_url, freqtrade_api_username, freqtrade_api_password)
         has_freqtrade_config = any(freqtrade_config_values)
@@ -90,7 +108,6 @@ class Settings:
 
         if runtime_mode == "live" and (not binance_api_key or not binance_api_secret):
             raise ValueError("live 模式需要提供 BINANCE_API_KEY 和 BINANCE_API_SECRET")
-
         return cls(
             runtime_mode=runtime_mode,
             binance_api_key=binance_api_key,
@@ -100,7 +117,29 @@ class Settings:
             freqtrade_api_username=freqtrade_api_username,
             freqtrade_api_password=freqtrade_api_password,
             freqtrade_api_timeout_seconds=freqtrade_api_timeout_seconds,
+            allow_live_execution=allow_live_execution,
+            live_allowed_symbols=live_allowed_symbols,
+            live_max_stake_usdt=live_max_stake_usdt,
+            live_max_open_trades=live_max_open_trades,
         )
+
+    @staticmethod
+    def _parse_symbol_list(raw_value: str, env_name: str) -> tuple[str, ...]:
+        """解析并标准化交易对列表。"""
+
+        normalized_symbols: list[str] = []
+        seen_symbols: set[str] = set()
+        for item in raw_value.split(","):
+            symbol = item.strip().upper()
+            if not symbol:
+                raise ValueError(f"{env_name} 不能为空")
+            if not re.fullmatch(r"[A-Z0-9]+", symbol):
+                raise ValueError(f"{env_name} 只能包含大写字母和数字")
+            if symbol in seen_symbols:
+                continue
+            seen_symbols.add(symbol)
+            normalized_symbols.append(symbol)
+        return tuple(normalized_symbols)
 
     def has_freqtrade_rest_config(self) -> bool:
         """判断是否启用了 Freqtrade REST 配置。"""
@@ -110,7 +149,7 @@ class Settings:
     def should_use_freqtrade_rest(self) -> bool:
         """判断当前阶段是否允许切到真实 Freqtrade REST 后端。"""
 
-        return self.runtime_mode == "dry-run" and self.has_freqtrade_rest_config()
+        return self.runtime_mode in {"dry-run", "live"} and self.has_freqtrade_rest_config()
 
     @property
     def freqtrade_url(self) -> str:

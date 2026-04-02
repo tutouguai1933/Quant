@@ -29,6 +29,34 @@ from services.api.app.services.signal_service import SignalService  # noqa: E402
 from services.api.app.services.sync_service import SyncService  # noqa: E402
 
 
+class _FakeBinanceMarketClient:
+    def __init__(self, min_notional_map: dict[str, str]) -> None:
+        self._min_notional_map = {key.upper(): value for key, value in min_notional_map.items()}
+
+    def get_exchange_info(self, symbols: tuple[str, ...] | None = None) -> dict[str, object]:
+        requested_symbols = tuple(symbols or self._min_notional_map.keys())
+        items: list[dict[str, object]] = []
+        for symbol in requested_symbols:
+            normalized_symbol = str(symbol).upper()
+            min_notional = self._min_notional_map.get(normalized_symbol, "5")
+            items.append(
+                {
+                    "symbol": normalized_symbol,
+                    "filters": [
+                        {
+                            "filterType": "NOTIONAL",
+                            "minNotional": min_notional,
+                            "applyMinToMarket": True,
+                            "maxNotional": "9000000.00000000",
+                            "applyMaxToMarket": False,
+                            "avgPriceMins": 5,
+                        }
+                    ],
+                }
+            )
+        return {"symbols": items}
+
+
 class ExecutionFlowTests(unittest.TestCase):
     def setUp(self) -> None:
         self._env_backup = os.environ.copy()
@@ -151,19 +179,553 @@ class ExecutionFlowTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ExecutionService().dispatch_signal(1)
 
-    def test_live_mode_stays_blocked_until_real_executor_is_connected(self) -> None:
-        with patch.dict(
-            os.environ,
-            {
-                "QUANT_RUNTIME_MODE": "live",
-                "QUANT_ALLOW_LIVE_EXECUTION": "true",
-                "BINANCE_API_KEY": "k",
-                "BINANCE_API_SECRET": "s",
-            },
-            clear=False,
-        ):
-            with self.assertRaises(NotImplementedError):
-                ExecutionService().dispatch_signal(1)
+    def test_live_mode_rejects_non_whitelisted_symbol_even_when_executor_is_live(self) -> None:
+        state: dict[str, object] = {
+            "positions": [],
+            "trades": [],
+            "balances": [{"asset": "USDT", "total": "20.0", "available": "20.0", "locked": "0.0"}],
+            "strategies": [{"id": 1, "name": "TrendBreakout", "status": "running"}],
+            "dry_run": False,
+            "stake_amount": 1,
+            "max_open_trades": 1,
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def _record(self) -> None:
+                state.setdefault("requests", []).append(
+                    {
+                        "method": self.command,
+                        "path": self.path,
+                        "authorization": self.headers.get("Authorization", ""),
+                    }
+                )
+
+            def _read_body(self) -> dict[str, object]:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    return {}
+                raw = self.rfile.read(length).decode("utf-8")
+                return json.loads(raw) if raw else {}
+
+            def _send_json(self, status: int, payload: dict[str, object]) -> None:
+                encoded = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def do_GET(self) -> None:  # noqa: N802
+                path = urlsplit(self.path).path
+                self._record()
+                if path == "/api/v1/show_config":
+                    self._send_json(
+                        200,
+                        {
+                            "dry_run": False,
+                            "stake_amount": 1,
+                            "max_open_trades": 1,
+                            "trading_mode": "spot",
+                        },
+                    )
+                    return
+                if path == "/api/v1/status":
+                    self._send_json(200, {"status": state["positions"]})
+                    return
+                if path == "/api/v1/trades":
+                    self._send_json(200, {"trades": state["trades"]})
+                    return
+                if path == "/api/v1/balance":
+                    self._send_json(200, {"balances": state["balances"]})
+                    return
+                if path == "/api/v1/strategies":
+                    self._send_json(200, {"strategies": state["strategies"]})
+                    return
+                self._send_json(200, {"status": "pong"})
+
+            def do_POST(self) -> None:  # noqa: N802
+                body = self._read_body()
+                path = urlsplit(self.path).path
+                self._record()
+                if path == "/api/v1/token/login":
+                    expected = "Basic " + base64.b64encode(b"bot:secret").decode("ascii")
+                    if self.headers.get("Authorization") != expected:
+                        self._send_json(401, {"detail": "unauthorized"})
+                        return
+                    self._send_json(200, {"access_token": "token-1", "refresh_token": "refresh-1"})
+                    return
+                if path == "/api/v1/forceenter":
+                    self._send_json(200, {"trade_id": 99, "status": "ok"})
+                    return
+                self._send_json(404, {"detail": "not found"})
+
+            def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.timeout = 1
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = int(server.server_address[1])
+            with patch.dict(
+                os.environ,
+                {
+                    "QUANT_RUNTIME_MODE": "live",
+                    "QUANT_ALLOW_LIVE_EXECUTION": "true",
+                    "BINANCE_API_KEY": "k",
+                    "BINANCE_API_SECRET": "s",
+                    "QUANT_FREQTRADE_API_URL": f"http://127.0.0.1:{port}",
+                    "QUANT_FREQTRADE_API_USERNAME": "bot",
+                    "QUANT_FREQTRADE_API_PASSWORD": "secret",
+                    "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+                    "QUANT_LIVE_MAX_STAKE_USDT": "1",
+                    "QUANT_LIVE_MAX_OPEN_TRADES": "1",
+                },
+                clear=False,
+            ):
+                original_client = freqtrade_client_module.freqtrade_client
+                original_execution_client = execution_service_module.freqtrade_client
+                original_sync_client = sync_service_module.freqtrade_client
+                original_signal_service = execution_service_module.signal_service
+                try:
+                    signal_service = SignalService()
+                    signal = signal_service.ingest_signal(
+                        {
+                            "symbol": "BTCUSDT",
+                            "side": "long",
+                            "score": "0.91",
+                            "confidence": "0.88",
+                            "target_weight": "0.25",
+                            "generated_at": datetime.now(timezone.utc).isoformat(),
+                            "source": "rule-based",
+                            "strategy_id": 1,
+                        }
+                    )
+                    execution_service = ExecutionService(market_client=_FakeBinanceMarketClient({"BTCUSDT": "5"}))
+                    client = FreqtradeClient()
+                    freqtrade_client_module.freqtrade_client = client
+                    execution_service_module.freqtrade_client = client
+                    sync_service_module.freqtrade_client = client
+                    execution_service_module.signal_service = signal_service
+                    with self.assertRaises(PermissionError):
+                        execution_service.dispatch_signal(int(signal["signal_id"]))
+                finally:
+                    freqtrade_client_module.freqtrade_client = original_client
+                    execution_service_module.freqtrade_client = original_execution_client
+                    sync_service_module.freqtrade_client = original_sync_client
+                    execution_service_module.signal_service = original_signal_service
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_live_mode_allows_first_doge_order_with_1_usdt_limit(self) -> None:
+        state: dict[str, object] = {
+            "positions": [],
+            "trades": [],
+            "balances": [{"asset": "USDT", "total": "20.0", "available": "20.0", "locked": "0.0"}],
+            "strategies": [{"id": 1, "name": "TrendBreakout", "status": "running"}],
+            "dry_run": False,
+            "stake_amount": 1,
+            "max_open_trades": 1,
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def _record(self) -> None:
+                state.setdefault("requests", []).append(
+                    {
+                        "method": self.command,
+                        "path": self.path,
+                        "authorization": self.headers.get("Authorization", ""),
+                    }
+                )
+
+            def _read_body(self) -> dict[str, object]:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    return {}
+                raw = self.rfile.read(length).decode("utf-8")
+                return json.loads(raw) if raw else {}
+
+            def _send_json(self, status: int, payload: dict[str, object]) -> None:
+                encoded = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def do_GET(self) -> None:  # noqa: N802
+                path = urlsplit(self.path).path
+                self._record()
+                if path == "/api/v1/show_config":
+                    self._send_json(
+                        200,
+                        {
+                            "dry_run": False,
+                            "stake_amount": 1,
+                            "max_open_trades": 1,
+                            "trading_mode": "spot",
+                        },
+                    )
+                    return
+                if path == "/api/v1/status":
+                    self._send_json(200, {"status": state["positions"]})
+                    return
+                if path == "/api/v1/trades":
+                    self._send_json(200, {"trades": state["trades"]})
+                    return
+                if path == "/api/v1/balance":
+                    self._send_json(200, {"balances": state["balances"]})
+                    return
+                if path == "/api/v1/strategies":
+                    self._send_json(200, {"strategies": state["strategies"]})
+                    return
+                self._send_json(200, {"status": "pong"})
+
+            def do_POST(self) -> None:  # noqa: N802
+                body = self._read_body()
+                path = urlsplit(self.path).path
+                self._record()
+                if path == "/api/v1/token/login":
+                    expected = "Basic " + base64.b64encode(b"bot:secret").decode("ascii")
+                    if self.headers.get("Authorization") != expected:
+                        self._send_json(401, {"detail": "unauthorized"})
+                        return
+                    self._send_json(200, {"access_token": "token-1", "refresh_token": "refresh-1"})
+                    return
+                if path == "/api/v1/forceenter":
+                    state["forceenter_seen"] = body
+                    self._send_json(
+                        200,
+                        {
+                            "trade_id": 199,
+                            "status": "ok",
+                            "pair": "DOGE/USDT",
+                            "amount": 8,
+                            "open_rate": 0.125,
+                        },
+                    )
+                    return
+                self._send_json(404, {"detail": "not found"})
+
+            def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.timeout = 1
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = int(server.server_address[1])
+            with patch.dict(
+                os.environ,
+                {
+                    "QUANT_RUNTIME_MODE": "live",
+                    "QUANT_ALLOW_LIVE_EXECUTION": "true",
+                    "BINANCE_API_KEY": "k",
+                    "BINANCE_API_SECRET": "s",
+                    "QUANT_FREQTRADE_API_URL": f"http://127.0.0.1:{port}",
+                    "QUANT_FREQTRADE_API_USERNAME": "bot",
+                    "QUANT_FREQTRADE_API_PASSWORD": "secret",
+                    "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+                    "QUANT_LIVE_MAX_STAKE_USDT": "1",
+                    "QUANT_LIVE_MAX_OPEN_TRADES": "1",
+                },
+                clear=False,
+            ):
+                original_client = freqtrade_client_module.freqtrade_client
+                original_execution_client = execution_service_module.freqtrade_client
+                original_sync_client = sync_service_module.freqtrade_client
+                original_signal_service = execution_service_module.signal_service
+                try:
+                    signal_service = SignalService()
+                    signal = signal_service.ingest_signal(
+                        {
+                            "symbol": "DOGEUSDT",
+                            "side": "long",
+                            "score": "0.91",
+                            "confidence": "0.88",
+                            "target_weight": "0.25",
+                            "generated_at": datetime.now(timezone.utc).isoformat(),
+                            "source": "rule-based",
+                            "strategy_id": 1,
+                        }
+                    )
+                    execution_service = ExecutionService(market_client=_FakeBinanceMarketClient({"DOGEUSDT": "1"}))
+                    client = FreqtradeClient()
+                    freqtrade_client_module.freqtrade_client = client
+                    execution_service_module.freqtrade_client = client
+                    sync_service_module.freqtrade_client = client
+                    execution_service_module.signal_service = signal_service
+
+                    dispatch_result = execution_service.dispatch_signal(int(signal["signal_id"]))
+                finally:
+                    freqtrade_client_module.freqtrade_client = original_client
+                    execution_service_module.freqtrade_client = original_execution_client
+                    sync_service_module.freqtrade_client = original_sync_client
+                    execution_service_module.signal_service = original_signal_service
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(dispatch_result["runtime"]["mode"], "live")
+        self.assertEqual(dispatch_result["runtime"]["backend"], "rest")
+        self.assertEqual(dispatch_result["order"]["runtimeMode"], "live")
+        self.assertEqual(dispatch_result["order"]["symbol"], "DOGE/USDT")
+        self.assertEqual(state["forceenter_seen"]["pair"], "DOGE/USDT")
+        self.assertEqual(state["forceenter_seen"]["side"], "long")
+        self.assertEqual(state["forceenter_seen"]["stakeamount"], 1.0)
+
+    def test_live_mode_rejects_missing_spot_trading_mode(self) -> None:
+        state: dict[str, object] = {
+            "positions": [],
+            "trades": [],
+            "balances": [{"asset": "USDT", "total": "20.0", "available": "20.0", "locked": "0.0"}],
+            "strategies": [{"id": 1, "name": "TrendBreakout", "status": "running"}],
+            "dry_run": False,
+            "stake_amount": 1,
+            "max_open_trades": 1,
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def _record(self) -> None:
+                state.setdefault("requests", []).append({"method": self.command, "path": self.path})
+
+            def _read_body(self) -> dict[str, object]:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    return {}
+                raw = self.rfile.read(length).decode("utf-8")
+                return json.loads(raw) if raw else {}
+
+            def _send_json(self, status: int, payload: dict[str, object]) -> None:
+                encoded = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def do_GET(self) -> None:  # noqa: N802
+                path = urlsplit(self.path).path
+                self._record()
+                if path == "/api/v1/show_config":
+                    self._send_json(200, {"dry_run": False, "stake_amount": 1, "max_open_trades": 1})
+                    return
+                if path == "/api/v1/status":
+                    self._send_json(200, {"status": state["positions"]})
+                    return
+                if path == "/api/v1/trades":
+                    self._send_json(200, {"trades": state["trades"]})
+                    return
+                if path == "/api/v1/balance":
+                    self._send_json(200, {"balances": state["balances"]})
+                    return
+                if path == "/api/v1/strategies":
+                    self._send_json(200, {"strategies": state["strategies"]})
+                    return
+                self._send_json(200, {"status": "pong"})
+
+            def do_POST(self) -> None:  # noqa: N802
+                path = urlsplit(self.path).path
+                if path == "/api/v1/token/login":
+                    expected = "Basic " + base64.b64encode(b"bot:secret").decode("ascii")
+                    if self.headers.get("Authorization") != expected:
+                        self._send_json(401, {"detail": "unauthorized"})
+                        return
+                    self._send_json(200, {"access_token": "token-1", "refresh_token": "refresh-1"})
+                    return
+                self._send_json(404, {"detail": "not found"})
+
+            def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.timeout = 1
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = int(server.server_address[1])
+            with patch.dict(
+                os.environ,
+                {
+                    "QUANT_RUNTIME_MODE": "live",
+                    "QUANT_ALLOW_LIVE_EXECUTION": "true",
+                    "BINANCE_API_KEY": "k",
+                    "BINANCE_API_SECRET": "s",
+                    "QUANT_FREQTRADE_API_URL": f"http://127.0.0.1:{port}",
+                    "QUANT_FREQTRADE_API_USERNAME": "bot",
+                    "QUANT_FREQTRADE_API_PASSWORD": "secret",
+                    "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+                    "QUANT_LIVE_MAX_STAKE_USDT": "1",
+                    "QUANT_LIVE_MAX_OPEN_TRADES": "1",
+                },
+                clear=False,
+            ):
+                original_client = freqtrade_client_module.freqtrade_client
+                original_execution_client = execution_service_module.freqtrade_client
+                original_sync_client = sync_service_module.freqtrade_client
+                original_signal_service = execution_service_module.signal_service
+                try:
+                    signal_service = SignalService()
+                    signal = signal_service.ingest_signal(
+                        {
+                            "symbol": "DOGEUSDT",
+                            "side": "long",
+                            "score": "0.91",
+                            "confidence": "0.88",
+                            "target_weight": "0.25",
+                            "generated_at": datetime.now(timezone.utc).isoformat(),
+                            "source": "rule-based",
+                            "strategy_id": 1,
+                        }
+                    )
+                    execution_service = ExecutionService(market_client=_FakeBinanceMarketClient({"DOGEUSDT": "1"}))
+                    client = FreqtradeClient()
+                    freqtrade_client_module.freqtrade_client = client
+                    execution_service_module.freqtrade_client = client
+                    sync_service_module.freqtrade_client = client
+                    execution_service_module.signal_service = signal_service
+                    with self.assertRaises(PermissionError):
+                        execution_service.dispatch_signal(int(signal["signal_id"]))
+                finally:
+                    freqtrade_client_module.freqtrade_client = original_client
+                    execution_service_module.freqtrade_client = original_execution_client
+                    sync_service_module.freqtrade_client = original_sync_client
+                    execution_service_module.signal_service = original_signal_service
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_live_mode_rejects_remote_max_open_trades_above_local_limit(self) -> None:
+        state: dict[str, object] = {
+            "positions": [],
+            "trades": [],
+            "balances": [{"asset": "USDT", "total": "20.0", "available": "20.0", "locked": "0.0"}],
+            "strategies": [{"id": 1, "name": "TrendBreakout", "status": "running"}],
+            "dry_run": False,
+            "stake_amount": 1,
+            "max_open_trades": 3,
+            "trading_mode": "spot",
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def _record(self) -> None:
+                state.setdefault("requests", []).append({"method": self.command, "path": self.path})
+
+            def _read_body(self) -> dict[str, object]:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0:
+                    return {}
+                raw = self.rfile.read(length).decode("utf-8")
+                return json.loads(raw) if raw else {}
+
+            def _send_json(self, status: int, payload: dict[str, object]) -> None:
+                encoded = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def do_GET(self) -> None:  # noqa: N802
+                path = urlsplit(self.path).path
+                self._record()
+                if path == "/api/v1/show_config":
+                    self._send_json(
+                        200,
+                        {"dry_run": False, "stake_amount": 1, "max_open_trades": 3, "trading_mode": "spot"},
+                    )
+                    return
+                if path == "/api/v1/status":
+                    self._send_json(200, {"status": state["positions"]})
+                    return
+                if path == "/api/v1/trades":
+                    self._send_json(200, {"trades": state["trades"]})
+                    return
+                if path == "/api/v1/balance":
+                    self._send_json(200, {"balances": state["balances"]})
+                    return
+                if path == "/api/v1/strategies":
+                    self._send_json(200, {"strategies": state["strategies"]})
+                    return
+                self._send_json(200, {"status": "pong"})
+
+            def do_POST(self) -> None:  # noqa: N802
+                path = urlsplit(self.path).path
+                if path == "/api/v1/token/login":
+                    expected = "Basic " + base64.b64encode(b"bot:secret").decode("ascii")
+                    if self.headers.get("Authorization") != expected:
+                        self._send_json(401, {"detail": "unauthorized"})
+                        return
+                    self._send_json(200, {"access_token": "token-1", "refresh_token": "refresh-1"})
+                    return
+                self._send_json(404, {"detail": "not found"})
+
+            def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.timeout = 1
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = int(server.server_address[1])
+            with patch.dict(
+                os.environ,
+                {
+                    "QUANT_RUNTIME_MODE": "live",
+                    "QUANT_ALLOW_LIVE_EXECUTION": "true",
+                    "BINANCE_API_KEY": "k",
+                    "BINANCE_API_SECRET": "s",
+                    "QUANT_FREQTRADE_API_URL": f"http://127.0.0.1:{port}",
+                    "QUANT_FREQTRADE_API_USERNAME": "bot",
+                    "QUANT_FREQTRADE_API_PASSWORD": "secret",
+                    "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+                    "QUANT_LIVE_MAX_STAKE_USDT": "1",
+                    "QUANT_LIVE_MAX_OPEN_TRADES": "1",
+                },
+                clear=False,
+            ):
+                original_client = freqtrade_client_module.freqtrade_client
+                original_execution_client = execution_service_module.freqtrade_client
+                original_sync_client = sync_service_module.freqtrade_client
+                original_signal_service = execution_service_module.signal_service
+                try:
+                    signal_service = SignalService()
+                    signal = signal_service.ingest_signal(
+                        {
+                            "symbol": "DOGEUSDT",
+                            "side": "long",
+                            "score": "0.91",
+                            "confidence": "0.88",
+                            "target_weight": "0.25",
+                            "generated_at": datetime.now(timezone.utc).isoformat(),
+                            "source": "rule-based",
+                            "strategy_id": 1,
+                        }
+                    )
+                    execution_service = ExecutionService(market_client=_FakeBinanceMarketClient({"DOGEUSDT": "1"}))
+                    client = FreqtradeClient()
+                    freqtrade_client_module.freqtrade_client = client
+                    execution_service_module.freqtrade_client = client
+                    sync_service_module.freqtrade_client = client
+                    execution_service_module.signal_service = signal_service
+                    with self.assertRaises(PermissionError):
+                        execution_service.dispatch_signal(int(signal["signal_id"]))
+                finally:
+                    freqtrade_client_module.freqtrade_client = original_client
+                    execution_service_module.freqtrade_client = original_execution_client
+                    sync_service_module.freqtrade_client = original_sync_client
+                    execution_service_module.signal_service = original_signal_service
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
     def test_rest_mode_uses_real_backend_for_execution_and_sync(self) -> None:
         state: dict[str, object] = {

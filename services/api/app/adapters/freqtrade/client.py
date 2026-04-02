@@ -152,6 +152,10 @@ class _MemoryFreqtradeBackend:
             "mode": self._runtime_mode(),
             "connection_status": "not_configured",
             "base_url": "",
+            "stake_amount": "",
+            "max_open_trades": None,
+            "trading_mode": "spot",
+            "bot_state": "",
         }
 
     def _runtime_mode(self) -> str:

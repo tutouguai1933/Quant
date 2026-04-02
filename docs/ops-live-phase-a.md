@@ -3,14 +3,14 @@
 ## `dry-run` 和 `live` 的差别
 
 - `dry-run` 会走完整的下单链路，但仍保持当前阶段的受控执行方式，方便观察信号、订单和持仓变化。
-- `live` 代表进入真实放行前的最后保护边界。当前阶段会先校验凭据和确认开关，但仍然阻止真实执行，避免返回伪造的 live 成交结果。
+- `live` 代表进入真实执行前的最后保护边界。当前阶段已经会走真实执行路径，但会先过本地安全门，再决定是否放行。
 - 当前阶段的 `FreqtradeClient.get_runtime_snapshot()` 会明确返回运行模式，`mode` 只能是 `demo`、`dry-run` 或 `live`。
 
 ## 当前阶段建议
 
 - 目前推荐只跑 `dry-run`。
 - `demo` 仍保留现有的内存假执行，适合开发和回归检查。
-- `live` 目前只用于校验“是否具备切换条件”，还不会放行真实下单。
+- `live` 现在已经有真实执行路径，但当前首笔真实单仍未验收通过。
 - 所有 Python 相关命令默认先进入 conda 环境 `quant`。
 
 ## 你需要准备
@@ -40,10 +40,11 @@
 3. Binance 凭据已配置并可用。
 4. 已确认信号、仓位、订单和风控结果都符合预期。
 5. 已在 `dry-run` 下完成一次完整验证，没有异常告警。
-6. 后续任务里的真实 live 执行器已经接通，否则当前阶段仍会阻止执行。
+6. 真实 Freqtrade REST 已经接通，并且远端明确处于 `live + spot`。
+7. `QUANT_LIVE_ALLOWED_SYMBOLS / QUANT_LIVE_MAX_STAKE_USDT / QUANT_LIVE_MAX_OPEN_TRADES` 已配置。
 
 ## 说明
 
 - 如果没有设置 `QUANT_ALLOW_LIVE_EXECUTION=true`，`ExecutionService.dispatch_signal()` 在 `live` 模式下会直接拒绝执行。
-- 即使已经设置确认开关并且凭据齐全，Phase A 当前也会继续阻止 `live` 执行，直到真实执行器接通。
-- 这个开关是当前阶段的最小确认措施，命名已经和代码保持一致。
+- 即使已经设置确认开关，当前仍必须满足：真实 REST、`spot`、白名单、单笔金额上限、最大持仓数和 Binance 最小下单额。
+- 当前首笔真实单没有打出去的原因是 Binance key 返回 `401 / -2015`，不是控制平面代码没有放行。

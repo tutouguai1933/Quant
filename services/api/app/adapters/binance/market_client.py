@@ -27,3 +27,15 @@ class BinanceMarketClient:
         url = f"{self.base_url}/api/v3/klines?{query}"
         with urlopen(url) as response:
             return json.load(response)
+
+    def get_exchange_info(self, symbols: tuple[str, ...] | None = None) -> dict[str, object]:
+        """读取指定交易对的交易规则。"""
+
+        query: dict[str, object] = {}
+        if symbols:
+            query["symbols"] = json.dumps([symbol.strip().upper() for symbol in symbols if symbol.strip()])
+        query_string = urlencode(query)
+        suffix = f"?{query_string}" if query_string else ""
+        url = f"{self.base_url}/api/v3/exchangeInfo{suffix}"
+        with urlopen(url) as response:
+            return json.load(response)

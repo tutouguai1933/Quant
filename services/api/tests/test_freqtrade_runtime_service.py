@@ -66,7 +66,15 @@ def _make_server(state: dict[str, object]) -> tuple[ThreadingHTTPServer, str]:
                 self._send_json(200, {"trades": state.get("trades", [])})
                 return
             if path == "/api/v1/show_config":
-                self._send_json(200, {"dry_run": state.get("dry_run", True)})
+                self._send_json(
+                    200,
+                    {
+                        "dry_run": state.get("dry_run", True),
+                        "stake_amount": state.get("stake_amount", 50),
+                        "max_open_trades": state.get("max_open_trades", 3),
+                        "trading_mode": state.get("trading_mode", "spot"),
+                    },
+                )
                 return
             if path == "/api/v1/balance":
                 self._send_json(200, {"balances": state.get("balances", [])})
@@ -200,6 +208,41 @@ class FreqtradeRuntimeServiceTests(unittest.TestCase):
 
         self.assertEqual(snapshot["backend"], "memory")
         self.assertEqual(snapshot["mode"], "demo")
+
+    def test_live_rest_runtime_snapshot_exposes_live_guard_fields(self) -> None:
+        state: dict[str, object] = {
+            "positions": [],
+            "trades": [],
+            "balances": [],
+            "strategies": [{"id": 1, "name": "TrendBreakout", "status": "running"}],
+            "dry_run": False,
+            "stake_amount": 1,
+            "max_open_trades": 1,
+            "trading_mode": "spot",
+        }
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            os.environ["QUANT_RUNTIME_MODE"] = "live"
+            os.environ["BINANCE_API_KEY"] = "key"
+            os.environ["BINANCE_API_SECRET"] = "secret"
+            os.environ["QUANT_FREQTRADE_API_URL"] = base_url
+            os.environ["QUANT_FREQTRADE_API_USERNAME"] = "bot"
+            os.environ["QUANT_FREQTRADE_API_PASSWORD"] = "secret"
+
+            client = FreqtradeClient()
+            snapshot = client.get_runtime_snapshot()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(snapshot["backend"], "rest")
+        self.assertEqual(snapshot["mode"], "live")
+        self.assertEqual(snapshot["stake_amount"], "1")
+        self.assertEqual(snapshot["max_open_trades"], 1)
+        self.assertEqual(snapshot["trading_mode"], "spot")
 
 
 if __name__ == "__main__":

@@ -1,46 +1,49 @@
 # 当前进度
 
-- 当前正在做：`Freqtrade` 真实 Spot dry-run 的收口已经完成，正在准备提交。
-- 上次停留位置：刚把控制平面从内存态执行切到真实 `freqtrade-rest-sync`，并完成一次真实下单模拟。
+- 当前正在做：`Qlib` 这条线已经完成“多周期交易视图 + 页面新动线”收口，最后在整理文档、验证和 git 提交。
+- 上次停留位置：刚把市场页改成筛选入口、把单币页改成交易主区、把策略页收成执行页，并补完图表层和多周期接口。
 - 近期关键决定：
   - 继续采用多 session 分工：
-    - 当前这个 session 负责 `Freqtrade` 执行层
-    - 另一个 session 负责 `Qlib` 研究层
-  - `Qlib` 这一侧已经额外确认下一阶段设计：
-    - 交易所 K 线继续做图表主数据
-    - `Qlib` 负责研究判断、图表打点、多周期摘要和解释
-    - 页面动线固定为：
+    - 当前这个 session 负责 `Qlib` 研究层与市场/图表/策略页面动线
+    - 另一个 session 负责 `Freqtrade` 执行层与真实 dry-run / live 联调
+  - `Qlib` 这一侧已经完成并固定：
+    - 页面动线：
       - 市场页先筛选
       - 单币页先看图再判断
       - 策略页最后做执行决策
     - 首批周期按 Binance 常见习惯对齐：
       - `1m / 3m / 5m / 15m / 30m / 1h / 4h / 1d / 1w`
-    - 交易视图重构的实现计划已经落盘，下一步只差选择执行方式：
-      - `Subagent-Driven`
-      - `Inline Execution`
-    - 我这边已完成 Task 1 的第一步后端契约：
-      - 新增 `market_timeframe_service`
-      - `MarketService.get_symbol_chart()` 已补 `active_interval / supported_intervals / multi_timeframe_summary`
-      - 多周期摘要走独立可传 `interval` 的策略评估路径，市场列表逻辑保持不变
-  - `Freqtrade` 当前固定走：
+    - 单币页现在已经有：
+      - 周期切换
+      - 自绘 SVG K 线主图
+      - 入场线 / 止损线 / 信号点
+      - 研究侧卡
+      - 多周期摘要
+    - 市场页现在已经改成筛选入口：
+      - 优先关注
+      - 高信心
+      - 多周期状态
+      - 研究倾向 / 推荐策略 / 判断信心 / 主判断
+    - 策略页现在只保留执行相关信息：
+      - 执行器状态
+      - 执行决策
+      - 策略卡片
+      - 最近信号
+      - 最近执行结果
+      - 动作控制
+    - 后端图表接口已经补齐：
+      - `active_interval`
+      - `supported_intervals`
+      - `multi_timeframe_summary`
+  - `Freqtrade` 当前仍固定走：
     - `WSL + Docker`
     - `Binance Spot`
-    - `dry-run`
-  - 当前已经完成：
-    - 真实 Freqtrade REST 登录、启动、暂停、停止
-    - 真实订单、持仓、策略状态同步
-    - 真实订单页与持仓页页面验证
-    - 重复派发时返回结构化业务错误，不再抛 500
-    - 同一条信号只允许派发一次，第二次会在本地直接拦下
-    - `flat` 不再全平全局持仓，只会平当前币种；如果明确给 `trade_id`，只平那一笔
-    - 执行回执优先使用真实 Freqtrade 返回的 `trade_id / order_id / price / status`
-    - Freqtrade Docker 继续用 `host` 网络，但 REST 只监听 `127.0.0.1`
-  - 当前已确认的真实结果：
-    - 控制平面能识别 `freqtrade / rest / dry-run`
-    - 订单页能看到真实 dry-run 成交单
-    - 持仓页能看到 `BTC/USDT long`
-    - 市场服务多周期契约测试已通过
+    - 默认仍回到 `dry-run`
+  - 当前已经确认：
+    - API / worker / frontend 测试都已通过
+    - `market`、单币页和策略页都已做真实页面验证
+    - `Qlib` 研究结果继续采用“软门控”，不单独制造新信号
   - 当前仍保留的边界：
-    - `live` 仍不开放
-    - `OpenClaw / Lean / vn.py` 仍只保留扩展位
-    - `Qlib` 仍由另一条 session 继续推进
+    - 图表已经进入可读的交易视图，但还不是完整高级交互图表
+    - `Qlib` 仍是最小研究层，不是完整实验平台
+    - 最终整体验收还要等另一条 session 把 `Freqtrade` 真实联调完全收口

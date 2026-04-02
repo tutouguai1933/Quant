@@ -1,7 +1,7 @@
 # Quant
 
 > 面向个人加密量化交易的研究与执行控制平面  
-> 当前状态：`Phase A` 已完成，`Phase B` 主体体验已收口，`Qlib` 最小研究层已打通，系统已经进入“真实 dry-run 工作台 + 最小研究闭环”阶段。
+> 当前状态：`Phase A` 已完成，`Phase B` 主体体验已收口，`Qlib` 最小研究层和多周期交易视图已打通，系统已经进入“真实 dry-run 工作台 + 最小研究闭环”阶段；`live` 安全门和 live 容器骨架已就绪，但首笔真实单仍被 Binance key 鉴权拦住。
 
 ## 这是什么
 
@@ -19,7 +19,7 @@
 - 只做 `crypto`
 - 只接 `Binance`
 - 只接 `Freqtrade`
-- 执行模式先以 `dry-run` 为主
+- 执行模式当前仍以 `dry-run` 为主
 
 ## 现在已经做到哪里
 
@@ -56,10 +56,11 @@
   - 研究倾向
   - 推荐下一步
 - 单币图表页已经会显示：
-  - 图表图层摘要
+  - 多周期切换
+  - 自绘 SVG K 线主图
+  - 信号点、入场参考和止损参考
   - 策略解释
   - 突破 / 回调判断
-  - 入场参考和止损参考
   - 研究门控和研究倾向
   - 判断信心和主判断
   - Freqtrade 准备情况
@@ -74,12 +75,11 @@
 - 策略已经不是只有开关了，系统里已有两套首批波段策略：
   - `trend_breakout`
   - `trend_pullback`
-- 策略页现在已经升级成“策略中心”
-- 策略中心会统一展示：
+- 策略页现在已经收成“执行页”
+- 策略页会统一展示：
+  - 执行器状态
+  - 执行决策
   - 两套策略卡片
-  - 当前判断
-  - 判断信心
-  - 研究门控状态
   - 默认参数摘要
   - 白名单摘要
   - 最近信号
@@ -94,20 +94,40 @@
   - 同一条信号只允许派发一次，重复点击会在控制平面本地直接拦下
   - 成功回执现在优先返回真实 `trade_id / order_id / price / status`
   - Docker 仍用 `host` 网络，但 REST 只监听 `127.0.0.1`
+  - `live` 新增了本地安全门：
+    - 必须显式允许
+    - 必须连上真实 `Freqtrade REST`
+    - 远端必须确认 `live + spot`
+    - 必须命中 live 白名单
+    - 必须满足单笔金额上限
+    - 必须满足最大持仓数
+    - 必须满足 Binance 最小下单额
+- 仓库里现在已经有 `WSL + Docker + Binance Spot + live` 的最小骨架：
+  - `infra/freqtrade/user_data/config.live.base.json`
+  - 默认只允许 `DOGE/USDT`
+  - `stake_amount=1`
+  - `max_open_trades=1`
 - Qlib 研究层现在已经从“最小 mock 信号来源”升级成“可训练、可推理、可解释的最小研究层”
 - Qlib 研究结果现在已经会以“软门控”方式参与策略判断，不再只是展示
 - 市场页、单币图表页、策略页现在开始共用统一研究摘要
-- 策略页现在会显示执行器状态
-- 策略页现在也会显示研究状态、模型版本、研究倾向、判断信心和研究门控状态
+- 市场页现在已经改成“筛选入口”
+- 市场页现在会显示：
+  - 多周期状态
+  - 研究倾向
+  - 推荐策略
+  - 判断信心
+  - 主判断
+- 单币图表页现在已经改成“交易主区”
 - 单币图表页现在会显示研究解释摘要、研究门控和研究倾向
-- 单币图表页现在会把信号点、入场参考、止损参考压成轻量图表图层摘要
+- 单币图表页现在会把信号点、入场参考、止损参考直接画到主图里
+- 策略页现在会显示执行器状态、执行决策和执行建议
 - 市场页、单币图表页、策略页现在统一显示：
   - 研究倾向
   - 推荐策略
   - 判断信心
   - 主判断
-- 市场页现在会先提示“更适合突破 / 更适合回调 / 继续观察”
-- 单币图表页现在会把“主判断、原因、下一步动作、止损参考”放到一条线上
+- 市场页现在会先提示“优先关注 / 高信心 / 多周期状态”
+- 单币图表页现在会把“主判断、原因、下一步动作、止损参考”放到同一条交易动线上
 - 信号页现在可以直接触发研究训练和研究推理
 - 订单页和持仓页现在会显示同步来源
 - 当前已经完成一轮真实页面验收：
@@ -119,9 +139,9 @@
 
 ### 还没做
 
-- 真实下单仍未开放
+- 真实下单代码路径已打通，但当前这组 Binance key 仍未通过真实验收
 - 高级交互式图表仍然还没做完
-- 图表页当前已经有轻量图表图层摘要，但还不是完整交互图层
+- 图表页当前已经是可读的交易视图，但还不是完整交互图层
 - `OpenClaw` 触发非交易任务还没接入
 - 真实 Freqtrade 的完整实盘放行仍未开放
 - 真实 `Qlib` 依赖和完整实验平台还没接入
@@ -164,6 +184,8 @@ infra/freqtrade             Freqtrade Spot dry-run Docker 骨架
   研究结果读取、训练、推理入口
 - `services/api/app/services/research_cockpit_service.py`
   统一研究摘要生成
+- `services/api/app/services/market_timeframe_service.py`
+  图表周期规范和多周期摘要生成
 - `services/worker/qlib_runner.py`
   最小训练、最小推理和结果落盘
 - `services/worker/qlib_features.py`
@@ -198,7 +220,7 @@ cd apps/web
 pnpm start --hostname 127.0.0.1 --port 3000
 ```
 
-### Freqtrade Spot Dry-Run
+### Freqtrade Spot Dry-Run / Live Scaffold
 
 ```bash
 cd infra/freqtrade
@@ -206,6 +228,12 @@ cp .env.example .env
 cp user_data/config.private.json.example user_data/config.private.json
 docker compose up -d
 ```
+
+说明：
+
+- 默认 `QUANT_FREQTRADE_PUBLIC_CONFIG=config.base.json`，走 `dry-run`
+- 如果后面要切 live，可把 `.env` 里的 `QUANT_FREQTRADE_PUBLIC_CONFIG` 改成 `config.live.base.json`
+- 当前 live 骨架默认只放 `DOGE/USDT`，且 `stake_amount=1`
 
 ### 默认地址
 
@@ -222,7 +250,7 @@ docker compose up -d
 - `dry-run`
   读取真实 Binance 数据，但执行仍是 dry-run
 - `live`
-  目前仍被刻意拦住，不放行真实下单
+  代码路径和安全门已具备，但当前 Binance key 仍未通过真实验收
 
 ## 测试命令
 
@@ -265,7 +293,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] Freqtrade Spot dry-run Docker 骨架
 - [x] 市场页显示策略适配与趋势状态
 - [x] 图表页显示策略解释和止损参考
-- [ ] 图表页把信号点和止损线做成更直观的图层
+- [x] 图表页把信号点和止损线做成更直观的图层
 - [ ] 完成 `Phase B` 剩余验收闭环
 - [ ] 接入 `OpenClaw` 非交易任务触发
 
@@ -284,6 +312,8 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [2026-04-02-platform-architecture-restoration-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-02-platform-architecture-restoration-design.md)
 - [2026-04-02-freqtrade-real-integration-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-freqtrade-real-integration-implementation.md)
 - [2026-04-02-qlib-minimal-research-layer-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-minimal-research-layer-implementation.md)
+- [2026-04-02-qlib-trading-view-flow-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-02-qlib-trading-view-flow-design.md)
+- [2026-04-02-qlib-trading-view-flow-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-trading-view-flow-implementation.md)
 - [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
 - [ops-freqtrade.md](/home/djy/Quant/docs/ops-freqtrade.md)
 - [2026-04-01-live-trading-phase-b-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-01-live-trading-phase-b-design.md)

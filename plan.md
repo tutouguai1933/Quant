@@ -36,6 +36,9 @@
 - [x] 本地防重复派发
 - [x] 执行成功回执优先返回真实 Freqtrade 字段
 - [x] Freqtrade Docker 改成“host 网络 + REST 仅监听 127.0.0.1”
+- [x] live 本地安全门
+- [x] live Docker 配置骨架
+- [ ] 首笔真实 live Spot 买单验收
 
 ### Phase B
 
@@ -68,7 +71,7 @@
 
 ### 仍未开放
 
-- 真实下单
+- 真实下单最终验收
 - 在线参数编辑
 - 多用户权限
 - 多市场
@@ -129,6 +132,9 @@
 - [x] Freqtrade bot 状态与订单持仓同步
 - [x] Freqtrade Spot dry-run Docker 部署骨架
 - [x] 接上一台真实 Freqtrade REST 服务完成最终 dry-run 验收
+- [x] live 运行安全门
+- [x] live `DOGE/USDT + 1 USDT` 容器骨架
+- [ ] live 首笔真实 Spot 买单验收
 - [x] Qlib 最小训练与推理闭环
 - [x] 策略页接入研究分数与解释
 - [ ] 补 Lean / vn.py 扩展目录与接口位

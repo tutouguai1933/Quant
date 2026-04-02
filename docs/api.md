@@ -108,6 +108,20 @@
 
 - 顶部总览
 - 执行器运行摘要
+- 研究层总览
+- 白名单
+- 两套策略卡片
+- 最近信号
+- 最近执行结果
+
+前端策略页当前主要拿它来展示：
+
+- 运行状态
+- 当前判断
+- 推荐策略
+- 执行建议
+- 参数摘要
+- 最近信号
 
 ### `POST /api/v1/strategies/{strategy_id}/dispatch-latest-signal`
 
@@ -116,11 +130,6 @@
 如果当前策略没有可继续派发的信号，会返回：
 
 - `error.code = signal_not_ready`
-- 研究层总览
-- 白名单
-- 两套策略卡片
-- 最近信号
-- 最近执行结果
 
 每张策略卡片里还会带：
 
@@ -204,6 +213,9 @@
 - `items`
 - `overlays`
 - `markers`
+- `active_interval`
+- `supported_intervals`
+- `multi_timeframe_summary`
 - `research_cockpit`
 - `strategy_context`
 - `freqtrade_readiness`
@@ -215,6 +227,9 @@
   - `signals`
   - `entries`
   - `stops`
+- `active_interval` 会说明当前主图实际使用的周期
+- `supported_intervals` 会给出页面可切换的完整周期列表
+- `multi_timeframe_summary` 会给出市场页和单币页共用的多周期判断摘要
 - `research_cockpit` 会说明：
   - 当前研究倾向
   - 当前研究门控状态
@@ -231,13 +246,6 @@
   - 当前是否已经具备真实 Freqtrade dry-run 条件
   - 当前还缺什么
 
-图表页现在还会另外读取研究结果接口，用于显示：
-
-- 研究状态
-- 研究分数
-- 模型版本
-- 研究解释
-
 ### `GET /api/v1/market`
 
 市场总览现在每个币种会额外返回：
@@ -252,6 +260,16 @@
 - 研究门控状态
 - 当前原因
 - 模型版本
+
+市场页当前也会结合接口原有字段一起展示：
+
+- 当前价格
+- 当前趋势状态
+- 多周期状态
+- 研究倾向
+- 推荐策略
+- 判断信心
+- 主判断
 
 统一研究摘要当前字段口径是：
 
@@ -283,6 +301,27 @@
 - `freqtrade-sync`
 - `freqtrade-rest-sync`
 - 或 `binance-account-sync`
+
+### `POST /api/v1/strategies/{strategy_id}/dispatch-latest-signal`
+
+这个接口在 `live` 模式下现在会额外做本地安全门检查：
+
+- 必须显式打开 `QUANT_ALLOW_LIVE_EXECUTION=true`
+- 必须连接真实 `Freqtrade REST`
+- 远端必须确认自己处于 `live`
+- 当前只允许 `spot`
+- 必须命中 `QUANT_LIVE_ALLOWED_SYMBOLS`
+- 必须满足 `QUANT_LIVE_MAX_STAKE_USDT`
+- 必须满足 `QUANT_LIVE_MAX_OPEN_TRADES`
+- 必须满足 Binance 最小下单额
+
+当前仓库默认的最小 live 骨架是：
+
+- `DOGE/USDT`
+- 单笔 `1 USDT`
+- 最多 `1` 个真实仓位
+
+如果这些条件不满足，接口会直接返回业务错误，不会把真实下单直接放给远端。
 
 ### `POST /api/v1/strategies/{strategy_id}/start|pause|stop`
 

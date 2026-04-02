@@ -24,11 +24,12 @@
 - 本地防重复派发
 - `flat` 只收敛到当前币种或当前交易
 - 成功执行回执优先使用真实 Freqtrade 返回
+- live 本地安全门
+- live 容器配置骨架
 
 当前仍然保留的边界：
 
-- `live` 仍不会放开真实执行
-- 当前只有 `dry-run + 已配置 REST` 才会切到真实 Freqtrade 后端
+- `live` 代码路径已经打开，但当前还没完成首笔真实成交验收
 - `start / pause / stop` 现在明确控制的是整台执行器
 - 真实 Freqtrade 的信号派发参数如果和你部署版本不一致，可能需要微调
 - 如果还没配 Freqtrade REST 变量，图表页会明确提示 `not_ready`
@@ -36,7 +37,7 @@
 ## 运行约定
 
 - 所有 Python 相关命令默认先进入 conda 环境 `quant`
-- 当前推荐的真实接入方式：`WSL + Docker + Binance Spot + dry-run`
+- 当前推荐的真实接入方式：`WSL + Docker + Binance Spot`，默认先走 `dry-run`
 
 ```bash
 source /home/djy/miniforge3/etc/profile.d/conda.sh
@@ -67,6 +68,16 @@ export QUANT_FREQTRADE_PASSWORD='YourPassword'
 - 如果不提供这组配置，系统会自动回退到 `memory`
 - 如果只配了一部分，会直接报错，不会半配置运行
 
+live 安全门最小配置：
+
+```bash
+export QUANT_RUNTIME_MODE=live
+export QUANT_ALLOW_LIVE_EXECUTION=true
+export QUANT_LIVE_ALLOWED_SYMBOLS='DOGEUSDT'
+export QUANT_LIVE_MAX_STAKE_USDT='1'
+export QUANT_LIVE_MAX_OPEN_TRADES='1'
+```
+
 ## Docker 骨架
 
 仓库里现在已经提供：
@@ -74,6 +85,7 @@ export QUANT_FREQTRADE_PASSWORD='YourPassword'
 - `infra/freqtrade/docker-compose.yml`
 - `infra/freqtrade/.env.example`
 - `infra/freqtrade/user_data/config.base.json`
+- `infra/freqtrade/user_data/config.live.base.json`
 - `infra/freqtrade/user_data/config.private.json.example`
 
 最小命令：
@@ -103,6 +115,11 @@ docker compose up -d
 - 你现在这组只读 Binance Key 可以先用于控制平面侧的真实余额和市场读取
 - 后续如果 Freqtrade dry-run 联调需要更完整权限，再换成专用 `Spot Trading` Key
 - 如果你本机依赖代理出网，容器里继续使用这台机器的本机代理即可
+- 如果要切 live：
+  - `.env` 里把 `QUANT_FREQTRADE_PUBLIC_CONFIG` 切到 `config.live.base.json`
+  - 当前 live 骨架默认只允许 `DOGE/USDT`
+  - 默认 `stake_amount=1`
+  - 默认 `max_open_trades=1`
 
 ## 当前页面上会看到什么
 
@@ -147,6 +164,8 @@ docker compose up -d
 - 当前最稳的验证路径仍然是 `dry-run`
 - 当前已经做过一轮本地真实页面验收，市场页和图表页也已经能明确提示下一步
 - 当前已经完成一次真实 `Freqtrade REST + Binance Spot + dry-run` 联调
+- 当前 live 首单的代码路径已经打通，但真实 Binance 返回了 `401 / -2015`
+- 这说明当前问题在 key 本身、IP 白名单或 Spot Trading 权限，不在控制平面代码
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位

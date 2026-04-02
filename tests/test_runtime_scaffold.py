@@ -40,11 +40,22 @@ class RuntimeScaffoldTests(unittest.TestCase):
         self.assertTrue(compose_file.exists(), f"missing file: {compose_file}")
         compose_content = compose_file.read_text(encoding="utf-8")
         self.assertIn("network_mode: host", compose_content)
+        self.assertIn("QUANT_FREQTRADE_PUBLIC_CONFIG", compose_content)
 
         base_config = REPO_ROOT / "infra" / "freqtrade" / "user_data" / "config.base.json"
         self.assertTrue(base_config.exists(), f"missing file: {base_config}")
         base_content = base_config.read_text(encoding="utf-8")
         self.assertIn('"listen_ip_address": "127.0.0.1"', base_content)
+
+        live_config = REPO_ROOT / "infra" / "freqtrade" / "user_data" / "config.live.base.json"
+        self.assertTrue(live_config.exists(), f"missing file: {live_config}")
+        live_content = live_config.read_text(encoding="utf-8")
+        self.assertIn('"dry_run": false', live_content)
+        self.assertIn('"stake_amount": 1', live_content)
+        self.assertIn('"max_open_trades": 1', live_content)
+        self.assertIn('"DOGE/USDT"', live_content)
+        self.assertIn('"initial_state": "stopped"', live_content)
+        self.assertIn('"force_entry_enable": false', live_content)
 
 
 if __name__ == "__main__":
