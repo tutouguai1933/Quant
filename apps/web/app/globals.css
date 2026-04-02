@@ -258,6 +258,13 @@ input {
   gap: 18px;
 }
 
+.trading-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
 .action-grid {
   display: grid;
   gap: 14px;
@@ -403,7 +410,8 @@ input {
   }
 
   .metric-grid,
-  .content-grid {
+  .content-grid,
+  .trading-layout {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -423,7 +431,8 @@ input {
 
   .metric-grid,
   .content-grid,
-  .action-grid {
+  .action-grid,
+  .trading-layout {
     grid-template-columns: 1fr;
   }
 }

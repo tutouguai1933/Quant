@@ -40,6 +40,7 @@ class MarketWorkspaceTests(unittest.TestCase):
 
     def test_symbol_page_uses_trading_view_components(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
+        global_styles = (WEB_APP / "globals.css").read_text(encoding="utf-8")
 
         self.assertIn("TimeframeTabs", page_content)
         self.assertIn("TradingChartPanel", page_content)
@@ -48,6 +49,8 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("active_interval", page_content)
         self.assertIn("supported_intervals", page_content)
         self.assertIn("multi_timeframe_summary", page_content)
+        self.assertIn("trading-layout", page_content)
+        self.assertIn(".trading-layout", global_styles)
 
     def test_navigation_contains_market_entry(self) -> None:
         shell_content = (WEB_COMPONENTS / "app-shell.tsx").read_text(encoding="utf-8")
