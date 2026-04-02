@@ -52,6 +52,16 @@ export default async function MarketSymbolPage({ params }: PageProps) {
   const markers = chartData?.markers ?? { signals: [], entries: [], stops: [] };
   const research_cockpit = chartData?.research_cockpit ?? getEmptyResearchCockpit();
   const researchGate = asRecord(research_cockpit.research_gate);
+  const signalCount = Number(research_cockpit.signal_count ?? markers.signals.length);
+  const entryHint = formatText(research_cockpit.entry_hint, formatLatestMarkerPrice(markers.entries));
+  const stopHint = formatText(research_cockpit.stop_hint, formatLatestMarkerPrice(markers.stops));
+  const overlay_summary = formatText(
+    research_cockpit.overlay_summary,
+    `${String(signalCount)} 个信号点 / 入场 ${entryHint} / 止损 ${stopHint}`,
+  );
+  const recommendedStrategy = research_cockpit.recommended_strategy || strategyContext.recommended_strategy;
+  const primaryReason = formatText(research_cockpit.primary_reason || strategyContext.primary_reason, "n/a");
+  const confidence = formatConfidence(research_cockpit.confidence);
 
   return (
     <AppShell
@@ -66,7 +76,14 @@ export default async function MarketSymbolPage({ params }: PageProps) {
         description="当前页的重点不只是看 K 线，而是把策略判断、止损参考和下一步动作放到一条线上。"
       />
 
-      <CandleChart symbol={symbol} items={items} />
+      <CandleChart
+        symbol={symbol}
+        items={items}
+        signalCount={signalCount}
+        entryHint={entryHint}
+        stopHint={stopHint}
+        researchBias={formatResearchBias(research_cockpit.research_bias)}
+      />
 
       <MetricGrid
         items={[
@@ -79,18 +96,27 @@ export default async function MarketSymbolPage({ params }: PageProps) {
           },
           {
             label: "推荐策略",
-            value: formatPreferredStrategy(strategyContext.recommended_strategy),
+            value: formatPreferredStrategy(recommendedStrategy),
             detail: `${formatTrendState(strategyContext.trend_state)} / ${formatResearchBias(research_cockpit.research_bias)}`,
           },
         ]}
       />
 
       <section className="panel">
-        <p className="eyebrow">策略解释</p>
-        <h3>{normalizedSymbol} 当前更适合怎么处理</h3>
-        <p>主判断：{formatPreferredStrategy(strategyContext.recommended_strategy)} / {formatTrendState(strategyContext.trend_state)}</p>
+        <p className="eyebrow">图表图层摘要</p>
+        <h3>先看图上的关键位置，再决定要不要继续执行</h3>
+        <p>{overlay_summary}</p>
+        <p>研究倾向：{formatResearchBias(research_cockpit.research_bias)}</p>
+        <p>推荐策略：{formatPreferredStrategy(recommendedStrategy)}</p>
+        <p>判断信心：{confidence}</p>
         <p>研究门控：{formatText(researchGate.status, "unavailable")}</p>
-        <p>当前原因：{formatText(research_cockpit.primary_reason || strategyContext.primary_reason, "n/a")}</p>
+      </section>
+
+      <section className="panel">
+        <p className="eyebrow">当前判断</p>
+        <h3>{normalizedSymbol} 当前更适合怎么处理</h3>
+        <p>推荐策略：{formatPreferredStrategy(recommendedStrategy)} / {formatTrendState(strategyContext.trend_state)}</p>
+        <p>主判断：{primaryReason}</p>
         <p>推荐下一步：{formatText(strategyContext.next_step, "先继续观察。")}</p>
       </section>
 
@@ -108,12 +134,12 @@ export default async function MarketSymbolPage({ params }: PageProps) {
           },
           {
             label: "信号点",
-            value: String(markers.signals.length),
+            value: String(signalCount),
             detail: "当前图表页返回的策略信号标记数量",
           },
           {
             label: "止损参考",
-            value: formatText(research_cockpit.stop_hint, formatLatestMarkerPrice(markers.stops)),
+            value: stopHint,
             detail: "当前最该盯住的失效位或保护位",
           },
         ]}
@@ -122,9 +148,9 @@ export default async function MarketSymbolPage({ params }: PageProps) {
       <section className="panel">
         <p className="eyebrow">止损参考</p>
         <h3>先确认失效位，再考虑是否继续执行</h3>
-        <p>最新入场参考：{formatText(research_cockpit.entry_hint, formatLatestMarkerPrice(markers.entries))}</p>
-        <p>最新止损参考：{formatText(research_cockpit.stop_hint, formatLatestMarkerPrice(markers.stops))}</p>
-        <p>信号标记数量：{String(research_cockpit.signal_count ?? markers.signals.length)}</p>
+        <p>最新入场参考：{entryHint}</p>
+        <p>最新止损参考：{stopHint}</p>
+        <p>信号标记数量：{String(signalCount)}</p>
       </section>
 
       <section className="panel">
@@ -188,6 +214,7 @@ function getEmptyResearchCockpit(): ResearchCockpitSummary {
     signal_count: 0,
     entry_hint: "n/a",
     stop_hint: "n/a",
+    overlay_summary: "0 个信号点 / 入场 n/a / 止损 n/a",
   };
 }
 
@@ -211,6 +238,16 @@ function formatPreferredStrategy(value: MarketChartData["strategy_context"]["rec
     return "趋势回调";
   }
   return "继续观察";
+}
+
+function formatConfidence(value: string): string {
+  if (value === "high") {
+    return "high / 高";
+  }
+  if (value === "medium") {
+    return "medium / 中";
+  }
+  return "low / 低";
 }
 
 function formatTrendState(value: MarketChartData["strategy_context"]["trend_state"]): string {

@@ -1,19 +1,29 @@
 # 当前进度
 
-- 当前正在做：补 `WSL + Docker + Binance Spot + dry-run` 的 Freqtrade 真实接入骨架，并把默认白名单切到 `BTC / ETH / SOL / DOGE`。
-- 上次停留位置：刚完成 Freqtrade 的 `memory / rest` 双后端和市场页、单币页的真实页面验收。
+- 当前正在做：`Qlib` 这一侧已经完成“轻量图表图层摘要 + 三页统一研究文案”这一轮实现、测试和真实页面验证，当前处于最终提交前收口阶段。
+- 上次停留位置：刚完成统一研究驾驶舱，把 `research_brief / research_cockpit` 接到市场页、单币页和策略页。
 - 近期关键决定：
   - 当前继续采用多 session 分工：
-    - 这个 session 负责 `Freqtrade` 执行层和 Docker 实接位
-    - 另一个 session 负责 `Qlib` 研究层
-  - 当前已经完成：
-    - 默认市场白名单切到 `BTCUSDT / ETHUSDT / SOLUSDT / DOGEUSDT`
-    - 仓库内新增 `infra/freqtrade` Docker 部署骨架
-    - 已把公开配置、私密配置样板和最小 README 分开
-  - 当前真实联调还差：
-    - 真正把 Freqtrade 容器拉起来
-    - 在本地补 `QUANT_FREQTRADE_API_URL / USERNAME / PASSWORD`
-    - 用控制平面完成最终 dry-run 验收
-  - 当前下一步已经收敛为：
-    - 先让 Docker 里的 Freqtrade 真正启动
-    - 再把控制平面从 `memory` 切到 `rest`
+    - 我负责 `Qlib` 研究层和研究展示口径
+    - 另一个 session 负责 `Freqtrade` 执行层
+  - 软门控规则保持不变：
+    - 原策略仍然是主判断源
+    - `score >= 0.60` 只确认现有做多信号
+    - `score <= 0.40` 会压低现有做多信号
+    - `0.40 < score < 0.60` 维持观望
+  - 这一轮已经新增：
+    - `research_cockpit.overlay_summary`
+    - 单币页轻量图表图层摘要
+    - 市场页、单币页、策略页统一使用“研究倾向 / 推荐策略 / 判断信心 / 主判断”这套口径
+  - 当前已经完成的验证：
+    - API 测试通过
+    - worker 测试通过
+    - 前端测试通过
+    - `pnpm build` 通过
+    - `pnpm exec tsc --noEmit` 在 `build` 生成 `.next/types` 后通过
+    - 真实接口已返回 `overlay_summary`
+    - 真实页面已看到市场页、单币页、策略页的新字段和统一标签
+  - 当前协同边界保持不变：
+    - 默认研究运行目录仍是 `/tmp/quant-qlib-runtime`
+    - 多 session 并行时可以设置 `QUANT_QLIB_SESSION_ID`
+    - 没安装 `qlib` 时继续走 `qlib-fallback`

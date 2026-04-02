@@ -31,22 +31,27 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("白名单", content)
         self.assertIn("研究倾向", content)
         self.assertIn("推荐策略", content)
-        self.assertIn("趋势状态", content)
-        self.assertIn("推荐下一步", content)
-        self.assertIn("更适合哪套策略", content)
+        self.assertIn("判断信心", content)
+        self.assertIn("主判断", content)
 
     def test_symbol_page_wires_chart_api_and_component(self) -> None:
         content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
+        chart_content = (WEB_COMPONENTS / "candle-chart.tsx").read_text(encoding="utf-8")
         self.assertIn("getMarketChart", content)
         self.assertIn("getLatestResearch", content)
         self.assertIn("CandleChart", content)
         self.assertIn("AppShell", content)
         self.assertIn("research_cockpit", content)
+        self.assertIn("overlay_summary", content)
+        self.assertIn("图表图层摘要", content)
         self.assertIn("研究门控", content)
+        self.assertIn("判断信心", content)
         self.assertIn("研究解释", content)
-        self.assertIn("策略解释", content)
-        self.assertIn("止损参考", content)
+        self.assertIn("推荐策略", content)
         self.assertIn("Freqtrade 准备情况", content)
+        self.assertIn("信号点", chart_content)
+        self.assertIn("入场参考", chart_content)
+        self.assertIn("止损参考", chart_content)
 
     def test_navigation_contains_market_entry(self) -> None:
         shell_content = (WEB_COMPONENTS / "app-shell.tsx").read_text(encoding="utf-8")
@@ -85,6 +90,7 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("sample_size", content)
         self.assertIn("last_candle_closed", content)
         self.assertIn("warnings", content)
+        self.assertIn("overlay_summary", content)
 
 
 if __name__ == "__main__":

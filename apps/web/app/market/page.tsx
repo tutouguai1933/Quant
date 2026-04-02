@@ -37,31 +37,29 @@ export default async function MarketPage() {
       <MetricGrid
         items={[
           { label: "白名单币种", value: String(items.length), detail: "当前只观察固定币种池，不做大范围扫描" },
-          { label: "更适合突破", value: String(items.filter((item) => item.recommended_strategy === "trend_breakout").length), detail: "优先去看突破参考线和放量情况" },
-          { label: "更适合回调", value: String(items.filter((item) => item.recommended_strategy === "trend_pullback").length), detail: "优先去看回踩位和失效位" },
-          { label: "中性观察", value: String(items.filter((item) => item.recommended_strategy === "none").length), detail: "当前没有明显优势策略，先观察" },
+          { label: "更适合突破", value: String(items.filter((item) => item.research_brief.recommended_strategy === "trend_breakout").length), detail: "优先去看突破参考线和放量情况" },
+          { label: "更适合回调", value: String(items.filter((item) => item.research_brief.recommended_strategy === "trend_pullback").length), detail: "优先去看回踩位和失效位" },
+          { label: "中性观察", value: String(items.filter((item) => item.research_brief.recommended_strategy === "none").length), detail: "当前没有明显优势策略，先观察" },
         ]}
       />
 
       <section className="panel">
-        <p className="eyebrow">推荐下一步</p>
-        <h3>先看哪套策略更占优，再决定要不要继续深入</h3>
-        <p>市场页现在的任务不是只报价格，而是先告诉你每个币种更适合哪套策略。看完这里，再进单币图表页确认判断原因。</p>
+        <p className="eyebrow">统一研究口径</p>
+        <h3>先看研究倾向、推荐策略和判断信心</h3>
+        <p>市场页这一层先帮你做快速筛选。看完研究倾向、推荐策略和主判断，再进入单币页确认图上关键位置。</p>
       </section>
 
       <DataTable
-        columns={["Symbol", "Last Price", "24h Change", "Quote Volume", "白名单", "推荐策略", "趋势状态", "研究倾向", "更适合哪套策略", "Action"]}
+        columns={["Symbol", "Last Price", "24h Change", "研究倾向", "推荐策略", "判断信心", "主判断", "Action"]}
         rows={items.map((item) => ({
           id: item.symbol,
           cells: [
             item.symbol,
             item.last_price,
             item.change_percent,
-            item.quote_volume,
-            item.is_whitelisted ? "yes" : "no",
-            formatPreferredStrategy(item.recommended_strategy),
-            formatTrendState(item.trend_state),
             formatResearchBias(item.research_brief.research_bias),
+            formatPreferredStrategy(item.research_brief.recommended_strategy),
+            formatConfidence(item.research_brief.confidence),
             formatPrimaryReason(item),
             <a key={item.symbol} href={`/market/${encodeURIComponent(item.symbol)}`}>
               看图表并继续判断
@@ -95,16 +93,26 @@ function formatTrendState(value: MarketSnapshot["trend_state"]): string {
   return "neutral / 中性";
 }
 
+function formatConfidence(value: string): string {
+  if (value === "high") {
+    return "high / 高";
+  }
+  if (value === "medium") {
+    return "medium / 中";
+  }
+  return "low / 低";
+}
+
 function formatPrimaryReason(item: MarketSnapshot): string {
   const reason = String(item.research_brief.primary_reason ?? "").trim();
   if (reason) {
     return reason;
   }
-  if (item.recommended_strategy === "trend_breakout") {
-    return String(item.strategy_summary.trend_breakout?.reason ?? "等待突破确认");
+  if (item.research_brief.recommended_strategy === "trend_breakout") {
+    return `${String(item.strategy_summary.trend_breakout?.reason ?? "等待突破确认")} / ${formatTrendState(item.trend_state)}`;
   }
-  if (item.recommended_strategy === "trend_pullback") {
-    return String(item.strategy_summary.trend_pullback?.reason ?? "等待回踩确认");
+  if (item.research_brief.recommended_strategy === "trend_pullback") {
+    return `${String(item.strategy_summary.trend_pullback?.reason ?? "等待回踩确认")} / ${formatTrendState(item.trend_state)}`;
   }
   return "当前没有明显优势策略";
 }

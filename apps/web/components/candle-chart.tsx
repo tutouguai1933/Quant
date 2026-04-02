@@ -6,10 +6,14 @@ import type { MarketCandle } from "../lib/api";
 type CandleChartProps = {
   items: MarketCandle[];
   symbol: string;
+  signalCount: number;
+  entryHint: string;
+  stopHint: string;
+  researchBias: string;
 };
 
 /* 渲染单币图表摘要。 */
-export function CandleChart({ items, symbol }: CandleChartProps) {
+export function CandleChart({ items, symbol, signalCount, entryHint, stopHint, researchBias }: CandleChartProps) {
   if (!items.length) {
     return (
       <section className="empty-panel">
@@ -57,6 +61,29 @@ export function CandleChart({ items, symbol }: CandleChartProps) {
           <p className="metric-label">成交量</p>
           <p className="metric-value">{latest.volume}</p>
           <p className="metric-detail">最后一根 K 线</p>
+        </article>
+      </div>
+
+      <div className="metric-grid">
+        <article className="metric-card">
+          <p className="metric-label">信号点</p>
+          <p className="metric-value">{String(signalCount)}</p>
+          <p className="metric-detail">当前图表返回的关键信号数量</p>
+        </article>
+        <article className="metric-card">
+          <p className="metric-label">入场参考</p>
+          <p className="metric-value">{entryHint}</p>
+          <p className="metric-detail">最近可参考的入场位置</p>
+        </article>
+        <article className="metric-card">
+          <p className="metric-label">止损参考</p>
+          <p className="metric-value">{stopHint}</p>
+          <p className="metric-detail">最近需要盯住的失效位</p>
+        </article>
+        <article className="metric-card">
+          <p className="metric-label">研究倾向</p>
+          <p className="metric-value">{researchBias}</p>
+          <p className="metric-detail">图表图层和研究判断共用同一口径</p>
         </article>
       </div>
     </section>

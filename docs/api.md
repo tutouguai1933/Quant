@@ -212,6 +212,7 @@
   - 当前研究门控状态
   - 当前最重要的原因
   - 当前入场参考和止损参考
+  - 当前图表图层摘要 `overlay_summary`
 - `strategy_context` 会说明：
   - 当前更适合哪套策略
   - 当前趋势状态
@@ -243,6 +244,24 @@
 - 研究门控状态
 - 当前原因
 - 模型版本
+
+统一研究摘要当前字段口径是：
+
+- `research_bias`
+- `recommended_strategy`
+- `confidence`
+- `research_gate`
+- `primary_reason`
+- `research_explanation`
+- `model_version`
+- `generated_at`
+
+单币图表页使用的完整版还会额外带：
+
+- `signal_count`
+- `entry_hint`
+- `stop_hint`
+- `overlay_summary`
 
 ### `GET /api/v1/orders` 和 `GET /api/v1/positions`
 

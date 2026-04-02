@@ -52,6 +52,11 @@ def build_symbol_research_cockpit(
     summary["signal_count"] = len(signals)
     summary["entry_hint"] = _latest_marker_price(entries)
     summary["stop_hint"] = _latest_marker_price(stops)
+    summary["overlay_summary"] = _build_overlay_summary(
+        signal_count=summary["signal_count"],
+        entry_hint=summary["entry_hint"],
+        stop_hint=summary["stop_hint"],
+    )
     return summary
 
 
@@ -172,6 +177,16 @@ def _latest_marker_price(markers: list[dict[str, object]] | None) -> str:
     latest_marker = markers[-1]
     price = str(latest_marker.get("price", "")).strip()
     return price or "n/a"
+
+
+def _build_overlay_summary(*, signal_count: object, entry_hint: object, stop_hint: object) -> str:
+    """把图表关键点位压成稳定的一行摘要。"""
+
+    return (
+        f"{int(signal_count)} 个信号点 / "
+        f"入场 {_normalize_text(entry_hint, 'n/a')} / "
+        f"止损 {_normalize_text(stop_hint, 'n/a')}"
+    )
 
 
 def _normalize_marker_list(value: object) -> list[dict[str, object]]:

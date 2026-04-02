@@ -93,12 +93,14 @@ class ResearchCockpitServiceTests(unittest.TestCase):
                 "signal_count",
                 "entry_hint",
                 "stop_hint",
+                "overlay_summary",
             },
         )
         self.assertEqual(summary["research_bias"], "bullish")
         self.assertEqual(summary["signal_count"], 1)
         self.assertEqual(summary["entry_hint"], "105")
         self.assertEqual(summary["stop_hint"], "99")
+        self.assertEqual(summary["overlay_summary"], "1 个信号点 / 入场 105 / 止损 99")
         self.assertEqual(summary["research_gate"]["status"], "confirmed_by_research")
 
     def test_build_symbol_research_cockpit_degrades_invalid_score_and_missing_research(self) -> None:
@@ -132,6 +134,7 @@ class ResearchCockpitServiceTests(unittest.TestCase):
         self.assertEqual(invalid_score_summary["research_explanation"], "研究结果暂不可用")
         self.assertEqual(invalid_score_summary["entry_hint"], "n/a")
         self.assertEqual(invalid_score_summary["stop_hint"], "n/a")
+        self.assertEqual(invalid_score_summary["overlay_summary"], "0 个信号点 / 入场 n/a / 止损 n/a")
         self.assertEqual(missing_research_summary["research_explanation"], "该币种暂无研究结论")
         self.assertEqual(missing_research_summary["research_gate"]["status"], "unavailable")
 
@@ -202,6 +205,7 @@ class ResearchCockpitServiceTests(unittest.TestCase):
         self.assertEqual(summary["signal_count"], 0)
         self.assertEqual(summary["entry_hint"], "n/a")
         self.assertEqual(summary["stop_hint"], "n/a")
+        self.assertEqual(summary["overlay_summary"], "0 个信号点 / 入场 n/a / 止损 n/a")
 
 
 if __name__ == "__main__":

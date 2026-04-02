@@ -161,6 +161,7 @@ export type ResearchCockpitSummary = {
   signal_count?: number;
   entry_hint?: string;
   stop_hint?: string;
+  overlay_summary?: string;
 };
 
 export type LatestResearchItem = {
@@ -741,6 +742,7 @@ function normalizeResearchCockpitSummary(item: unknown): ResearchCockpitSummary 
     signal_count: row.signal_count === undefined ? undefined : Number(row.signal_count ?? 0),
     entry_hint: row.entry_hint === undefined ? undefined : String(row.entry_hint ?? ""),
     stop_hint: row.stop_hint === undefined ? undefined : String(row.stop_hint ?? ""),
+    overlay_summary: row.overlay_summary === undefined ? undefined : String(row.overlay_summary ?? ""),
   };
 }
 

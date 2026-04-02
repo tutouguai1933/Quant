@@ -176,6 +176,7 @@ function ActionForm({ action, label }: ActionFormProps) {
 
 function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
   const gate = asResearchGate(item.research_cockpit.research_gate);
+  const primaryReason = formatValue(item.research_cockpit.primary_reason || item.current_evaluation.reason, "n/a");
   return (
     <article className="action-card strategy-card">
       <div className="stack-xs">
@@ -194,10 +195,11 @@ function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
           {" "}
           <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} />
         </p>
-        <p>判断原因：{String(item.current_evaluation.reason ?? "n/a")}</p>
+        <p>推荐策略：{formatPreferredStrategy(item.research_cockpit.recommended_strategy)}</p>
         <p>研究倾向：{formatResearchBias(item.research_cockpit.research_bias)}</p>
         <p>判断信心：{formatValue(item.research_cockpit.confidence, "n/a")}</p>
         <p>研究门控：{formatValue(gate.status, "n/a")}</p>
+        <p>主判断：{primaryReason}</p>
         <p>模型版本：{formatValue(item.research_cockpit.model_version, "n/a")}</p>
         <p>研究解释：{formatValue(item.research_cockpit.research_explanation, "暂无研究结果")}</p>
         <p>观察币种：{item.symbols.join(" / ")}</p>
@@ -245,4 +247,14 @@ function formatResearchBias(value: string): string {
     return "neutral / 中性";
   }
   return "unavailable / 暂不可用";
+}
+
+function formatPreferredStrategy(value: StrategyWorkspaceCard["research_cockpit"]["recommended_strategy"]): string {
+  if (value === "trend_breakout") {
+    return "趋势突破";
+  }
+  if (value === "trend_pullback") {
+    return "趋势回调";
+  }
+  return "继续观察";
 }
