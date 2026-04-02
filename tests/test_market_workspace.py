@@ -17,8 +17,11 @@ class MarketWorkspaceTests(unittest.TestCase):
             WEB_APP / "market" / "[symbol]" / "page.tsx",
             WEB_COMPONENTS / "candle-chart.tsx",
             WEB_COMPONENTS / "market-symbol-workspace.tsx",
+            WEB_COMPONENTS / "market-snapshot-workspace.tsx",
             WEB_COMPONENTS / "market-filter-bar.tsx",
             WEB_COMPONENTS / "market-focus-board.tsx",
+            WEB_COMPONENTS / "pro-chart-script.tsx",
+            WEB_COMPONENTS / "pro-kline-chart.tsx",
             WEB_COMPONENTS / "timeframe-tabs.tsx",
             WEB_COMPONENTS / "trading-chart-panel.tsx",
             WEB_COMPONENTS / "research-sidecard.tsx",
@@ -29,26 +32,29 @@ class MarketWorkspaceTests(unittest.TestCase):
             self.assertTrue(file_path.exists(), f"missing file: {file_path}")
 
     def test_market_page_wires_list_api_and_table(self) -> None:
-        content = (WEB_APP / "market" / "page.tsx").read_text(encoding="utf-8")
-        self.assertIn("listMarketSnapshots", content)
-        self.assertIn("AppShell", content)
-        self.assertIn("DataTable", content)
-        self.assertIn("/market/", content)
-        self.assertIn("research_brief", content)
-        self.assertIn("白名单", content)
-        self.assertIn("研究倾向", content)
-        self.assertIn("推荐策略", content)
-        self.assertIn("判断信心", content)
-        self.assertIn("主判断", content)
+        page_content = (WEB_APP / "market" / "page.tsx").read_text(encoding="utf-8")
+        workspace_content = (WEB_COMPONENTS / "market-snapshot-workspace.tsx").read_text(encoding="utf-8")
+        self.assertIn("MarketSnapshotWorkspace", page_content)
+        self.assertIn("getMarketSnapshotsSnapshot", page_content)
+        self.assertNotIn("listMarketSnapshots()", page_content)
+        self.assertIn("DataTable", workspace_content)
+        self.assertIn("/market/", workspace_content)
+        self.assertIn("research_brief", workspace_content)
+        self.assertIn("研究倾向", workspace_content)
+        self.assertIn("推荐策略", workspace_content)
+        self.assertIn("判断信心", workspace_content)
+        self.assertIn("主判断", workspace_content)
 
     def test_market_page_uses_filter_bar_and_focus_board(self) -> None:
-        content = (WEB_APP / "market" / "page.tsx").read_text(encoding="utf-8")
+        page_content = (WEB_APP / "market" / "page.tsx").read_text(encoding="utf-8")
+        workspace_content = (WEB_COMPONENTS / "market-snapshot-workspace.tsx").read_text(encoding="utf-8")
+        focus_board_content = (WEB_COMPONENTS / "market-focus-board.tsx").read_text(encoding="utf-8")
 
-        self.assertIn("MarketFilterBar", content)
-        self.assertIn("MarketFocusBoard", content)
-        self.assertIn("多周期状态", content)
-        self.assertIn("优先关注", content)
-        self.assertIn("高信心", content)
+        self.assertIn("MarketFilterBar", page_content)
+        self.assertIn("MarketFocusBoard", workspace_content)
+        self.assertIn("多周期状态", workspace_content)
+        self.assertIn("优先关注", focus_board_content)
+        self.assertIn("高信心", focus_board_content)
 
     def test_market_focus_board_uses_research_brief_strategy_source(self) -> None:
         content = (WEB_COMPONENTS / "market-focus-board.tsx").read_text(encoding="utf-8")
@@ -59,14 +65,15 @@ class MarketWorkspaceTests(unittest.TestCase):
 
     def test_symbol_page_uses_trading_view_components(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
+        workspace_content = (WEB_COMPONENTS / "market-symbol-workspace.tsx").read_text(encoding="utf-8")
         global_styles = (WEB_APP / "globals.css").read_text(encoding="utf-8")
 
         self.assertIn("MarketSymbolWorkspace", page_content)
         self.assertIn("active_interval", page_content)
         self.assertIn("supported_intervals", page_content)
-        self.assertIn("multi_timeframe_summary", page_content)
-        self.assertIn("trading-layout", page_content)
-        self.assertIn(".trading-layout", global_styles)
+        self.assertIn("multi_timeframe_summary", workspace_content)
+        self.assertIn("TradingChartPanel", workspace_content)
+        self.assertIn(".terminal-layout", global_styles)
 
     def test_symbol_page_uses_client_trading_workspace_and_not_static_svg_main_chart(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")

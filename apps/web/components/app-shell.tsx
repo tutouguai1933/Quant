@@ -55,7 +55,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
 
         <div className="sidebar-note">
           <p className="eyebrow">当前模式</p>
-          <p>{isAuthenticated ? "已登录，可直接执行受保护操作。" : "未登录，先进入 Login 完成管理员认证。"}</p>
+          <p>{isAuthenticated ? "已登录，页面会直接复用这份会话状态。" : "未登录，先进入 Login 完成管理员认证。"}</p>
         </div>
       </aside>
 
@@ -69,7 +69,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
 
           <div className="topbar-actions">
             <span className={isAuthenticated ? "session-pill session-pill-live" : "session-pill"}>
-              {isAuthenticated ? "会话已就绪" : "需要登录"}
+              {isAuthenticated ? "会话已就绪 / 7 天保持" : "需要登录"}
             </span>
 
             {isAuthenticated ? (

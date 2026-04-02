@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   try {
     const response = await loginAdmin(username, password);
     if (response.error) {
-      return NextResponse.redirect(new URL(`/login?state=error&next=${encodeURIComponent(nextPath)}`, baseUrl));
+      return NextResponse.redirect(new URL(`/login?state=error&next=${encodeURIComponent(nextPath)}`, baseUrl), 303);
     }
 
     const cookieStore = await cookies();
@@ -29,8 +29,11 @@ export async function POST(request: Request) {
       maxAge: 60 * 60 * 24 * 7,
     });
 
-    return NextResponse.redirect(new URL(`${nextPath}?tone=success&title=${encodeURIComponent("登录反馈")}&message=${encodeURIComponent("管理员认证成功，受保护页面已解锁。")}`, baseUrl));
+    return NextResponse.redirect(
+      new URL(`${nextPath}?tone=success&title=${encodeURIComponent("登录反馈")}&message=${encodeURIComponent("管理员认证成功，受保护页面已解锁。")}`, baseUrl),
+      303,
+    );
   } catch {
-    return NextResponse.redirect(new URL(`/login?state=error&next=${encodeURIComponent(nextPath)}`, baseUrl));
+    return NextResponse.redirect(new URL(`/login?state=error&next=${encodeURIComponent(nextPath)}`, baseUrl), 303);
   }
 }

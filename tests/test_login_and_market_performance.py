@@ -14,10 +14,12 @@ class LoginAndMarketPerformanceTests(unittest.TestCase):
         content = (WEB_APP / "login" / "submit" / "route.ts").read_text(encoding="utf-8")
         self.assertIn("maxAge", content)
         self.assertIn("60 * 60 * 24 * 7", content)
+        self.assertIn("303", content)
 
     def test_market_page_switches_to_client_loading_shell(self) -> None:
         content = (WEB_APP / "market" / "page.tsx").read_text(encoding="utf-8")
         self.assertIn("MarketSnapshotWorkspace", content)
+        self.assertIn("Suspense", content)
         self.assertNotIn("listMarketSnapshots()", content)
 
     def test_market_snapshot_workspace_contains_cache_and_loading_shell(self) -> None:

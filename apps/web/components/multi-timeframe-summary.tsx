@@ -1,8 +1,7 @@
-/* 这个文件负责渲染单币页的多周期摘要骨架。 */
+/* 这个文件负责渲染单币页的多周期摘要。 */
 
 import { StatusBadge } from "./status-badge";
 import type { MultiTimeframeSummaryItem } from "../lib/api";
-
 
 type MultiTimeframeSummaryProps = {
   items: MultiTimeframeSummaryItem[];
@@ -23,10 +22,10 @@ export function MultiTimeframeSummary({ items }: MultiTimeframeSummaryProps) {
   return (
     <section className="panel">
       <p className="eyebrow">多周期摘要</p>
-      <h3>同一个币，先横向看四个关键周期</h3>
-      <div className="action-grid">
+      <h3>同一个币，先横向看几个关键周期</h3>
+      <div className="summary-rail">
         {items.map((item) => (
-          <article key={item.interval} className="action-card">
+          <article key={item.interval} className="summary-card">
             <strong>{item.interval}</strong>
             <p>趋势：{item.trend_state}</p>
             <p>研究：{item.research_bias}</p>

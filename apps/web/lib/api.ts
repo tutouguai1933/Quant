@@ -220,10 +220,14 @@ export type LoginPageModel = {
 };
 
 const API_BASE_URL = "http://127.0.0.1:8000/api/v1";
+const WEB_PROXY_BASE_URL = "/api/control";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
 const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
 
 export function buildApiUrl(path: string): string {
+  if (typeof window !== "undefined") {
+    return `${WEB_PROXY_BASE_URL}${path}`;
+  }
   return `${API_BASE_URL}${path}`;
 }
 

@@ -57,6 +57,16 @@
 - `GET /api/v1/market`
 - `GET /api/v1/market/{symbol}/chart`
 
+前端为了让客户端工作区能直接刷新市场和图表，又不受浏览器跨端口限制，新增了同源代理：
+
+- `GET /api/control/market`
+- `GET /api/control/market/{symbol}/chart`
+
+说明：
+
+- 这两个是 Web 前端自己的代理入口，不替代后端 `api/v1`
+- 前端客户端组件优先走同源代理，后端服务端组件仍直接读 `api/v1`
+
 ### 研究层
 
 - `GET /api/v1/signals/research/latest`
@@ -220,6 +230,12 @@
 - `strategy_context`
 - `freqtrade_readiness`
 
+当前单币页的客户端交易工作区会用这个接口做：
+
+- 首次服务端预取
+- 周期切换时的局部刷新
+- 前端短缓存复用
+
 其中：
 
 - `overlays` 已包含最小指标摘要
@@ -258,6 +274,8 @@
 - 当前推荐策略
 - 判断信心
 - 研究门控状态
+
+当前市场页会先显示骨架，再通过前端工作区补这份快照数据。
 - 当前原因
 - 模型版本
 
@@ -288,6 +306,16 @@
 - `entry_hint`
 - `stop_hint`
 - `overlay_summary`
+
+### `GET /api/control/[...path]`
+
+这是 Web 端新增的同源代理入口，当前主要给浏览器里的市场页和单币图表页使用。
+
+当前作用：
+
+- 把前端客户端读取的 `/market` 和 `/market/{symbol}/chart` 请求代理到本地控制面 API
+- 避免浏览器直接跨端口请求 `127.0.0.1:8000`
+- 让市场页骨架加载和单币页局部切周期都能走同源请求
 
 ### `GET /api/v1/orders` 和 `GET /api/v1/positions`
 

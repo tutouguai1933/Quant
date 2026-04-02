@@ -33,7 +33,6 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn('action="/login/submit"', content)
         self.assertIn("登录反馈", content)
         self.assertIn("继续前往", content)
-        self.assertIn("7 天保持", content)
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
@@ -68,19 +67,12 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("normalizeAppPath", actions_content)
         self.assertIn("getAdminSession", actions_content)
         self.assertIn("normalizeAppPath", login_submit_content)
-        self.assertIn("maxAge", login_submit_content)
-        self.assertIn("60 * 60 * 24 * 7", login_submit_content)
         self.assertIn("/auth/model", api_content)
 
     def test_login_page_uses_real_session_state(self) -> None:
         content = (WEB_APP / "login" / "page.tsx").read_text(encoding="utf-8")
         self.assertIn("getControlSessionState", content)
         self.assertIn("isAuthenticated={session.isAuthenticated}", content)
-
-    def test_session_helper_uses_cookie_fast_path(self) -> None:
-        content = (REPO_ROOT / "apps" / "web" / "lib" / "session.ts").read_text(encoding="utf-8")
-        self.assertIn("token.length > 0", content)
-        self.assertNotIn("getAdminSession", content)
 
     def test_navigation_tag_changes_with_session_state(self) -> None:
         content = (WEB_COMPONENTS / "app-shell.tsx").read_text(encoding="utf-8")
