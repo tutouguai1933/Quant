@@ -1,0 +1,17 @@
+.git
+.next
+node_modules
+__pycache__
+*.pyc
+dist
+out
+coverage
+.codex
+.superpowers
+.env.quant.local
+infra/freqtrade/user_data/data
+infra/freqtrade/user_data/backtest_results
+infra/freqtrade/user_data/logs
+infra/freqtrade/user_data/config.private.json
+infra/deploy/.env
+infra/deploy/api.env

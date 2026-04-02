@@ -205,6 +205,7 @@ infra/freqtrade             Freqtrade Spot dry-run Docker 骨架
 
 - 所有 Python 相关命令都在 conda 环境 `quant` 中执行
 - WebUI 命令仍在 `apps/web` 下单独执行
+- 日常开发以 `WSL` 为主，真实联调和最终部署以阿里云服务器为主
 
 ### API
 
@@ -248,6 +249,83 @@ docker compose up -d
 - 管理员账号：`admin / 1933`
 - 研究运行目录默认值：`/tmp/quant-qlib-runtime`
 - 多 session 并行时建议额外设置：`QUANT_QLIB_SESSION_ID=<你的 session 名>`
+
+## 云服务器部署方式
+
+推荐工作方式：
+
+- `GitHub` 私有仓库作为唯一代码基线
+- `WSL`
+  - 写代码
+  - 跑单元测试
+  - 做页面开发
+  - 做本地 `demo / dry-run`
+- `阿里云服务器`
+  - 跑 `Freqtrade`
+  - 跑控制平面 API
+  - 跑 WebUI
+  - 持有真实环境变量
+  - 作为 Binance 白名单出口
+
+这样做的目的很简单：
+
+- 本地开发更快
+- 真实出口 IP 更稳定
+- 真实 `dry-run / live` 问题不会再被校园网出口干扰
+- 多 session 和服务器都能基于同一份 GitHub 代码继续推进
+
+### 服务器部署骨架
+
+仓库里现在已经补了这套统一部署骨架：
+
+- `infra/deploy/docker-compose.yml`
+- `infra/deploy/.env.example`
+- `infra/deploy/api.env.example`
+- `services/api/Dockerfile`
+- `apps/web/Dockerfile`
+
+最小启动方式：
+
+```bash
+cd infra/deploy
+cp .env.example .env
+cp api.env.example api.env
+docker compose up -d --build
+```
+
+默认职责：
+
+- `9011`: API
+- `9012`: WebUI
+- `9013`: Freqtrade REST
+
+## 服务器端口管理
+
+服务器端口管理和本地保持同一套规则：
+
+- `Quant` 主应用固定使用自己的主范围
+- 如果某个 session 需要临时联调，就新增一个临时条目，命名规则是 `Quant-Debug-N`，例如 `Quant-Debug-1`
+- 临时条目占用下一段连续端口，例如 `9021-9030`
+- 联调结束后删除临时条目，让后续 session 继续复用
+
+当前主范围约定：
+
+- `9011`: API
+- `9012`: WebUI
+- `9013`: Freqtrade REST
+- `9014`: Qlib
+- `9015`: OpenClaw
+
+端口登记文件在：
+
+- `/home/djy/.port-registry.yaml`
+
+### 服务器调试顺序
+
+1. 先确认端口有没有起来
+2. 再看容器或服务日志
+3. 再看 API 是否返回正确内容
+4. 最后才看页面状态
 
 ## 运行模式
 
@@ -300,6 +378,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] 市场页显示策略适配与趋势状态
 - [x] 图表页显示策略解释和止损参考
 - [x] 图表页把信号点和止损线做成更直观的图层
+- [x] GitHub 基线 + 阿里云统一部署骨架
 - [ ] 完成 `Phase B` 剩余验收闭环
 - [ ] 接入 `OpenClaw` 非交易任务触发
 

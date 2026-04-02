@@ -141,6 +141,8 @@
   结果：`live` 下改为直接使用 Binance 账户同步，真实 `/tasks/sync` 已验证成功
 - [x] live 同步判定改成“必须对上刚派发的订单”
 - [x] live 订单同步范围与 live 白名单对齐，并补上 sync 重试成功后的 signal 状态恢复
+- [x] GitHub 私有仓库作为唯一代码基线
+- [x] 阿里云统一部署骨架（API / WebUI / Freqtrade）
 - [ ] 真实 `DOGE` 平仓验收
   阻塞：当前公网出口 IP 已变为 `151.242.36.38`，Binance 白名单未同步更新，live 容器重新启动时报 `-2015`
 - [x] Qlib 最小训练与推理闭环

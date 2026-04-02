@@ -38,6 +38,8 @@
 
 - 所有 Python 相关命令默认先进入 conda 环境 `quant`
 - 当前推荐的真实接入方式：`WSL + Docker + Binance Spot`，默认先走 `dry-run`
+- 日常开发在 `WSL` 做，真实 `dry-run / live` 验证和最终部署放到阿里云服务器
+- `GitHub` 私有仓库作为唯一代码基线，服务器从仓库拉代码再部署
 
 ```bash
 source /home/djy/miniforge3/etc/profile.d/conda.sh
@@ -120,6 +122,66 @@ docker compose up -d
   - 当前 live 骨架默认只允许 `DOGE/USDT`
   - 默认 `stake_amount=1`
   - 默认 `max_open_trades=1`
+
+## 服务器端口管理
+
+服务器端口管理和本地使用同一套规则：
+
+- `Quant` 主应用固定用主范围
+- 临时联调会话单独新增 `Quant-Debug-N`
+- 每个条目默认占 10 个连续端口
+- 联调结束后删除临时条目
+
+推荐做法：
+
+- 正式服务固定占用 `9011-9020`
+- 临时联调按顺序申请下一段，例如 `9021-9030`
+- 所有占用都写进 `/home/djy/.port-registry.yaml`
+
+当前主范围建议：
+
+- `9011`: API
+- `9012`: WebUI
+- `9013`: Freqtrade REST
+- `9014`: Qlib
+- `9015`: OpenClaw
+
+## 服务器统一部署
+
+服务器统一部署目录：
+
+- `infra/deploy`
+
+最小启动步骤：
+
+1. 在服务器拉取最新 GitHub 代码
+2. 进入 `infra/deploy`
+3. 复制 `.env.example` 为 `.env`
+4. 复制 `api.env.example` 为 `api.env`
+5. 准备好 `../freqtrade/.env` 和 `../freqtrade/user_data/config.private.json`
+6. 执行 `docker compose up -d --build`
+
+统一部署后的默认端口：
+
+- `9011`: API
+- `9012`: WebUI
+- `9013`: Freqtrade REST
+
+## 服务器调试顺序
+
+服务器上排查问题时，按这个顺序走：
+
+1. 先看端口有没有被正确监听
+2. 再看容器或服务日志
+3. 再看 API 是否返回预期结果
+4. 最后看页面状态是否真的变化
+
+这样做的原因是：
+
+- 先确认服务有没有起来
+- 再确认服务本身有没有报错
+- 再确认接口是不是通的
+- 最后才判断是不是前端问题
 
 ## 当前页面上会看到什么
 

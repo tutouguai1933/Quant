@@ -12,6 +12,8 @@ out/
 coverage/
 .DS_Store
 .env.quant.local
+infra/deploy/.env
+infra/deploy/api.env
 infra/freqtrade/.env
 infra/freqtrade/user_data/config.private.json
 infra/freqtrade/user_data/data/

@@ -1,0 +1,44 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+    container_name: ${QUANT_API_CONTAINER_NAME:-quant-api}
+    restart: unless-stopped
+    env_file:
+      - ${QUANT_API_ENV_FILE:-./api.env}
+    environment:
+      QUANT_FREQTRADE_API_URL: http://freqtrade:8080
+    ports:
+      - "${QUANT_API_PORT:-9011}:9011"
+    depends_on:
+      - freqtrade
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    container_name: ${QUANT_WEB_CONTAINER_NAME:-quant-web}
+    restart: unless-stopped
+    environment:
+      QUANT_API_BASE_URL: http://api:9011/api/v1
+    ports:
+      - "${QUANT_WEB_PORT:-9012}:9012"
+    depends_on:
+      - api
+
+  freqtrade:
+    image: ${QUANT_FREQTRADE_IMAGE:-freqtradeorg/freqtrade:stable}
+    container_name: ${QUANT_FREQTRADE_CONTAINER_NAME:-quant-freqtrade}
+    restart: unless-stopped
+    env_file:
+      - ${QUANT_FREQTRADE_ENV_FILE:-../freqtrade/.env}
+    volumes:
+      - ../freqtrade/user_data:/freqtrade/user_data
+    ports:
+      - "${QUANT_FREQTRADE_PORT:-9013}:8080"
+    command: >
+      trade
+      --config /freqtrade/user_data/${QUANT_FREQTRADE_PUBLIC_CONFIG:-config.base.json}
+      --config /freqtrade/user_data/${QUANT_FREQTRADE_PRIVATE_CONFIG:-config.private.json}
+      --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}

@@ -11,6 +11,13 @@
 - 当前正在做：`Freqtrade` 这条线已经把 live 同步判定、live 订单范围和 sync 重试补偿修好；当前真实平仓验收被 Binance IP 白名单变更阻塞。
 - 上次停留位置：已经完成首笔真实 `DOGE/USDT` 买单，并修掉了 `live /tasks/sync` 超时问题。
 - 近期关键决定：
+  - `GitHub` 私有仓库现在作为唯一代码基线
+  - 阿里云服务器从“真实验证环境”扩展成“统一部署环境”
+  - 仓库内已经补了 `infra/deploy/`，用于统一启动 API、WebUI 和 Freqtrade
+  - 开发与部署环境分离：
+    - `WSL` 继续作为主要开发环境
+    - 阿里云服务器作为真实 `dry-run / live` 验证和最终部署环境
+    - 服务器端口管理也沿用“主范围固定、临时 Debug 条目按需申请和回收”的规则
   - 保持多 session 分工：
     - 当前这个 session 继续收口 `Freqtrade` 执行层与真实 `live`
     - 另一个 session 继续推进 `Qlib` 研究层、市场页和图表页体验
