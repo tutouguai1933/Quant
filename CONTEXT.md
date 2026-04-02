@@ -6,6 +6,15 @@
   - 继续采用多 session 分工：
     - 当前这个 session 负责 `Freqtrade` 执行层
     - 另一个 session 负责 `Qlib` 研究层
+  - `Qlib` 这一侧已经额外确认下一阶段设计：
+    - 交易所 K 线继续做图表主数据
+    - `Qlib` 负责研究判断、图表打点、多周期摘要和解释
+    - 页面动线固定为：
+      - 市场页先筛选
+      - 单币页先看图再判断
+      - 策略页最后做执行决策
+    - 首批周期按 Binance 常见习惯对齐：
+      - `1m / 3m / 5m / 15m / 30m / 1h / 4h / 1d / 1w`
   - `Freqtrade` 当前固定走：
     - `WSL + Docker`
     - `Binance Spot`
