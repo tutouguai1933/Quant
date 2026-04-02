@@ -7,6 +7,9 @@ from decimal import Decimal, InvalidOperation
 from services.api.app.adapters.binance.market_client import BinanceMarketClient
 from services.api.app.services.indicator_service import build_empty_marker_groups
 from services.api.app.services.indicator_service import build_indicator_summary
+from services.api.app.services.market_timeframe_service import build_multi_timeframe_summary
+from services.api.app.services.market_timeframe_service import get_supported_market_intervals
+from services.api.app.services.market_timeframe_service import normalize_market_interval
 from services.api.app.services.research_cockpit_service import build_market_research_brief
 from services.api.app.services.research_cockpit_service import build_symbol_research_cockpit
 from services.api.app.services.strategy_catalog import StrategyCatalogService, strategy_catalog_service
@@ -79,13 +82,25 @@ class MarketService:
     ) -> dict[str, object]:
         """返回指定币种的标准化图表数据。"""
 
+        normalized_symbol = symbol.strip().upper()
+        active_interval = normalize_market_interval(interval)
+        catalog_whitelist = tuple(self._catalog_service.get_whitelist())
+        multi_timeframe_summary = build_multi_timeframe_summary(
+            symbol=normalized_symbol,
+            intervals=("1d", "4h", "1h", "15m"),
+            evaluate_interval=lambda candidate_interval: self._build_market_strategy_summary(
+                normalized_symbol,
+                catalog_whitelist,
+                interval=candidate_interval,
+            ),
+        )
+
         if allowed_symbols is not None:
-            normalized_symbol = symbol.strip().upper()
             allowed_set = {item.strip().upper() for item in allowed_symbols if item.strip()}
             if normalized_symbol not in allowed_set:
                 chart = self._read_base_chart(
                     symbol=symbol,
-                    interval=interval,
+                    interval=active_interval,
                     limit=limit,
                     allowed_symbols=allowed_symbols,
                 )
@@ -95,6 +110,9 @@ class MarketService:
                     "items": [],
                     "overlays": dict(chart.get("overlays") or {}),
                     "markers": markers,
+                    "active_interval": active_interval,
+                    "supported_intervals": get_supported_market_intervals(),
+                    "multi_timeframe_summary": multi_timeframe_summary,
                     "strategy_context": strategy_context,
                     "research_cockpit": build_symbol_research_cockpit(
                         symbol=normalized_symbol,
@@ -108,31 +126,35 @@ class MarketService:
                     ),
                 }
         summary = self._build_market_strategy_summary(
-            symbol.strip().upper(),
-            tuple(self._catalog_service.get_whitelist()),
+            normalized_symbol,
+            catalog_whitelist,
+            interval=active_interval,
         )
         chart = self._read_base_chart(
             symbol=symbol,
-            interval=interval,
+            interval=active_interval,
             limit=limit,
             allowed_symbols=allowed_symbols,
         )
         items = list(chart.get("items", []))
         strategy_context = _build_strategy_context(
-            symbol=symbol.strip().upper(),
+            symbol=normalized_symbol,
             recommended_strategy=str(summary.get("recommended_strategy", "none")),
             trend_state=str(summary.get("trend_state", "neutral")),
             strategy_summary=dict(summary.get("strategy_summary") or {}),
         )
         markers = _build_strategy_markers(items, strategy_context)
-        research_summary = self._get_symbol_research(symbol.strip().upper())
+        research_summary = self._get_symbol_research(normalized_symbol)
         return {
             "items": items,
             "overlays": dict(chart.get("overlays") or {}),
             "markers": markers,
+            "active_interval": active_interval,
+            "supported_intervals": get_supported_market_intervals(),
+            "multi_timeframe_summary": multi_timeframe_summary,
             "strategy_context": strategy_context,
             "research_cockpit": build_symbol_research_cockpit(
-                symbol=symbol.strip().upper(),
+                symbol=normalized_symbol,
                 recommended_strategy=str(strategy_context.get("recommended_strategy", "none")),
                 evaluation=_resolve_primary_evaluation(
                     str(strategy_context.get("recommended_strategy", "none")),
@@ -174,6 +196,7 @@ class MarketService:
         self,
         symbol: str,
         catalog_whitelist: tuple[str, ...],
+        interval: str | None = None,
     ) -> dict[str, object]:
         """给市场快照补上最小策略视角。"""
 
@@ -183,12 +206,14 @@ class MarketService:
             symbol,
             "trend_breakout",
             tuple(normalized_whitelist),
+            interval=interval,
             research_summary=research_summary,
         )
         pullback_result = self._evaluate_catalog_strategy(
             symbol,
             "trend_pullback",
             tuple(normalized_whitelist),
+            interval=interval,
             research_summary=research_summary,
         )
         preferred_strategy, trend_state = _classify_market_state(breakout_result, pullback_result)
@@ -208,6 +233,7 @@ class MarketService:
         symbol: str,
         strategy_key: str,
         allowed_symbols: tuple[str, ...],
+        interval: str | None = None,
         research_summary: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """按策略目录默认参数评估当前 symbol。"""
@@ -222,7 +248,7 @@ class MarketService:
             }
 
         default_params = dict(strategy.get("default_params") or {})
-        timeframe = _parse_text_param(default_params.get("timeframe"))
+        timeframe = normalize_market_interval(interval) if interval is not None else _parse_text_param(default_params.get("timeframe"))
         lookback_bars = _parse_positive_int(default_params.get("lookback_bars"))
         extra_param_key = "breakout_buffer_pct" if strategy_key == "trend_breakout" else "pullback_depth_pct"
         extra_param_value = _parse_decimal(default_params.get(extra_param_key))
