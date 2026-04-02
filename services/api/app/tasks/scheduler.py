@@ -46,6 +46,7 @@ class TaskScheduler:
 
         task["result"] = result
         self._set_status(task, "succeeded")
+        self._apply_success_side_effects(task)
         return dict(task)
 
     def run_custom_task(
@@ -68,6 +69,7 @@ class TaskScheduler:
 
         task["result"] = result
         self._set_status(task, "succeeded")
+        self._apply_success_side_effects(task)
         return dict(task)
 
     def retry_task(self, task_id: int, clear_failure: bool = True) -> dict[str, object] | None:
@@ -92,6 +94,7 @@ class TaskScheduler:
 
         task["result"] = result
         self._set_status(task, "succeeded")
+        self._apply_success_side_effects(task)
         return dict(task)
 
     def _create_task(
@@ -140,7 +143,14 @@ class TaskScheduler:
             source = str(payload.get("pipeline_source", "mock"))
             return signal_service.run_pipeline(source=source)
         if task_type == "sync":
-            return sync_service.sync_task_state()
+            return sync_service.sync_task_state(
+                limit=int(payload.get("limit", 100)),
+                expected_symbol=str(payload.get("expected_symbol", "")),
+                expected_side=str(payload.get("expected_side", "")),
+                expected_order_id=str(payload.get("expected_order_id", "")),
+                expected_updated_at=str(payload.get("expected_updated_at", "")),
+                expected_quantity=str(payload.get("expected_quantity", "")),
+            )
         if task_type == "reconcile":
             return {"status": "completed", "detail": "reconcile placeholder completed"}
         if task_type == "archive":
@@ -152,6 +162,20 @@ class TaskScheduler:
         if task_type == "risk_check":
             return {"status": "recorded", "detail": "risk evaluation completed"}
         raise RuntimeError(f"unsupported task type: {task_type}")
+
+    def _apply_success_side_effects(self, task: dict[str, object]) -> None:
+        """在任务成功后补齐最小状态推进。"""
+
+        if str(task.get("task_type")) != "sync":
+            return
+        payload = dict(task.get("payload") or {})
+        source_signal_id = payload.get("source_signal_id")
+        if source_signal_id in (None, ""):
+            return
+        try:
+            signal_service.update_signal_status(int(source_signal_id), "synced")
+        except Exception:
+            return
 
 
 task_scheduler = TaskScheduler()

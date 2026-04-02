@@ -174,3 +174,11 @@ class Settings:
         """返回是否启用了真实 REST 后端。"""
 
         return self.should_use_freqtrade_rest()
+
+    @property
+    def account_sync_order_symbols(self) -> tuple[str, ...]:
+        """返回账户订单同步应覆盖的交易对范围。"""
+
+        if self.runtime_mode == "live":
+            return self.live_allowed_symbols
+        return self.market_symbols

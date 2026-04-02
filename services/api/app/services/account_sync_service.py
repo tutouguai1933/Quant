@@ -105,12 +105,13 @@ class AccountSyncService:
         balances = self._call_client_list("get_balances")
         return [normalize_balance_row(row) for row in balances[:limit]]
 
-    def list_orders(self, limit: int = 100) -> list[dict[str, object]]:
+    def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
         """返回账户订单列表。"""
 
         settings = Settings.from_env()
+        order_symbols = symbols or settings.account_sync_order_symbols
         orders: list[dict[str, object]] = []
-        for symbol in settings.market_symbols:
+        for symbol in order_symbols:
             orders.extend(
                 _normalize_order_row(row)
                 for row in self._call_client_list("get_orders", symbol=symbol, limit=limit)

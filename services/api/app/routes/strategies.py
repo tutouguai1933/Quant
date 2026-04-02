@@ -248,14 +248,17 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
             },
         }
     signal_service.update_signal_status(int(latest["signal_id"]), "dispatched")
+    sync_payload: dict[str, object] = {}
+    if str(result.get("runtime", {}).get("mode", "")).strip().lower() == "live":
+        sync_payload.update(sync_service.build_live_sync_payload(result))
+    sync_payload["source_signal_id"] = int(latest["signal_id"])
     sync_task = task_scheduler.run_named_task(
         task_type="sync",
         source="system",
         target_type="strategy",
         target_id=strategy_id,
+        payload=sync_payload,
     )
-    if sync_task["status"] == "succeeded":
-        signal_service.update_signal_status(int(latest["signal_id"]), "synced")
     signal_service.release_dispatch_claim(int(latest["signal_id"]))
     return _success(
         {"item": result, "risk_decision": decision, "risk_task": risk_task, "sync_task": sync_task},

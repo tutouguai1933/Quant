@@ -94,7 +94,7 @@ class RiskAndTaskTests(unittest.TestCase):
         self.assertEqual(retried["data"]["item"]["status"], "succeeded")
         self.assertIn("retrying", retried["data"]["item"]["status_history"])
 
-    def test_live_sync_task_falls_back_to_binance_account_snapshot(self) -> None:
+    def test_live_sync_task_uses_binance_account_snapshot(self) -> None:
         class ExplodingFreqtradeClient:
             def get_snapshot(self) -> dict[str, object]:
                 raise TimeoutError("timed out")
@@ -103,7 +103,7 @@ class RiskAndTaskTests(unittest.TestCase):
             def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
                 return [{"asset": "USDT", "available": "19.00000000", "locked": "0.00000000"}]
 
-            def list_orders(self, limit: int = 100) -> list[dict[str, object]]:
+            def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
                 return [{"id": "14136461324", "symbol": "DOGEUSDT", "status": "FILLED"}]
 
             def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
@@ -123,13 +123,21 @@ class RiskAndTaskTests(unittest.TestCase):
         self.assertEqual(response["data"]["item"]["result"]["orders"][0]["symbol"], "DOGEUSDT")
         self.assertEqual(response["data"]["item"]["result"]["positions"][0]["symbol"], "DOGE")
 
-    def test_live_dispatch_marks_signal_synced_when_account_sync_succeeds(self) -> None:
+    def test_live_dispatch_marks_signal_synced_when_expected_order_is_confirmed(self) -> None:
         class FakeAccountSyncService:
             def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
                 return [{"asset": "USDT", "available": "19.00000000", "locked": "0.00000000"}]
 
-            def list_orders(self, limit: int = 100) -> list[dict[str, object]]:
-                return [{"id": "14136461324", "symbol": "DOGEUSDT", "status": "FILLED"}]
+            def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+                return [
+                    {
+                        "id": "14136461324",
+                        "symbol": "DOGEUSDT",
+                        "status": "FILLED",
+                        "side": "buy",
+                        "updateTime": 1712044800000,
+                    }
+                ]
 
             def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
                 return [{"id": "position-DOGE", "symbol": "DOGE", "side": "long", "quantity": "12.00000000"}]
@@ -140,12 +148,24 @@ class RiskAndTaskTests(unittest.TestCase):
 
         fake_dispatch_result = {
             "action": {"symbol": "DOGE/USDT", "side": "long"},
-            "order": {"symbol": "DOGE/USDT", "status": "closed", "runtimeMode": "live"},
+            "order": {
+                "id": "trade-1",
+                "venueOrderId": "14136461324",
+                "symbol": "DOGE/USDT",
+                "status": "closed",
+                "runtimeMode": "live",
+                "updatedAt": "2026-04-02T00:00:00+00:00",
+            },
             "runtime": {"mode": "live", "backend": "rest", "connection_status": "connected"},
         }
         with patch.dict(
             os.environ,
-            {"QUANT_RUNTIME_MODE": "live", "BINANCE_API_KEY": "k", "BINANCE_API_SECRET": "s"},
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+                "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+            },
             clear=False,
         ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
@@ -157,6 +177,183 @@ class RiskAndTaskTests(unittest.TestCase):
         self.assertIsNone(response["error"])
         self.assertEqual(response["data"]["sync_task"]["status"], "succeeded")
         self.assertEqual(response["data"]["sync_task"]["result"]["orders"][0]["status"], "FILLED")
+        self.assertEqual(get_signal(1)["data"]["item"]["status"], "synced")
+
+    def test_live_dispatch_keeps_signal_dispatched_when_expected_order_is_missing(self) -> None:
+        class FakeAccountSyncService:
+            def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
+                return [{"asset": "USDT", "available": "19.00000000", "locked": "0.00000000"}]
+
+            def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+                return [
+                    {
+                        "id": "99999999999",
+                        "symbol": "DOGEUSDT",
+                        "status": "FILLED",
+                        "side": "buy",
+                        "updateTime": 1712044800000,
+                    }
+                ]
+
+            def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+                return [{"id": "position-DOGE", "symbol": "DOGE", "side": "long", "quantity": "12.00000000"}]
+
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        fake_dispatch_result = {
+            "action": {"symbol": "DOGE/USDT", "side": "long"},
+            "order": {
+                "id": "trade-1",
+                "venueOrderId": "14136461324",
+                "symbol": "DOGE/USDT",
+                "status": "closed",
+                "runtimeMode": "live",
+                "updatedAt": "2026-04-02T00:00:00+00:00",
+            },
+            "runtime": {"mode": "live", "backend": "rest", "connection_status": "connected"},
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+                "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+            },
+            clear=False,
+        ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
+            scheduler_module, "sync_service", sync_service_module.sync_service
+        ), patch.object(
+            strategies_route.execution_service, "dispatch_signal", return_value=fake_dispatch_result
+        ):
+            response = dispatch_latest_signal(1, token=token)
+
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["data"]["sync_task"]["status"], "failed")
+        self.assertIn("14136461324", response["data"]["sync_task"]["error_message"])
+        self.assertEqual(get_signal(1)["data"]["item"]["status"], "dispatched")
+
+    def test_live_dispatch_rejects_similar_recent_order_when_expected_order_id_differs(self) -> None:
+        class FakeAccountSyncService:
+            def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
+                return [{"asset": "USDT", "available": "19.00000000", "locked": "0.00000000"}]
+
+            def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+                return [
+                    {
+                        "id": "99999999999",
+                        "symbol": "DOGEUSDT",
+                        "status": "FILLED",
+                        "side": "buy",
+                        "executedQty": "12.00000000",
+                        "updateTime": 1775088005000,
+                    }
+                ]
+
+            def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+                return [{"id": "position-DOGE", "symbol": "DOGE", "side": "long", "quantity": "12.00000000"}]
+
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        fake_dispatch_result = {
+            "action": {"symbol": "DOGE/USDT", "side": "long"},
+            "order": {
+                "id": "trade-1",
+                "venueOrderId": "14136461324",
+                "symbol": "DOGE/USDT",
+                "status": "closed",
+                "runtimeMode": "live",
+                "executedQty": "12.00000000",
+                "updatedAt": "2026-04-02T00:00:00+00:00",
+            },
+            "runtime": {"mode": "live", "backend": "rest", "connection_status": "connected"},
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+                "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+            },
+            clear=False,
+        ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
+            scheduler_module, "sync_service", sync_service_module.sync_service
+        ), patch.object(
+            strategies_route.execution_service, "dispatch_signal", return_value=fake_dispatch_result
+        ):
+            response = dispatch_latest_signal(1, token=token)
+
+        self.assertEqual(response["data"]["sync_task"]["status"], "failed")
+        self.assertIn("14136461324", response["data"]["sync_task"]["error_message"])
+        self.assertEqual(get_signal(1)["data"]["item"]["status"], "dispatched")
+
+    def test_retry_sync_task_marks_signal_synced_after_confirmation_recovers(self) -> None:
+        class FakeAccountSyncService:
+            def __init__(self) -> None:
+                self._calls = 0
+
+            def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
+                return [{"asset": "USDT", "available": "19.00000000", "locked": "0.00000000"}]
+
+            def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+                self._calls += 1
+                if self._calls == 1:
+                    return []
+                return [
+                    {
+                        "id": "14136461324",
+                        "symbol": "DOGEUSDT",
+                        "status": "FILLED",
+                        "side": "buy",
+                        "updateTime": 1775088005000,
+                    }
+                ]
+
+            def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+                return [{"id": "position-DOGE", "symbol": "DOGE", "side": "long", "quantity": "12.00000000"}]
+
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        fake_dispatch_result = {
+            "action": {"symbol": "DOGE/USDT", "side": "long", "source_signal_id": 1},
+            "order": {
+                "id": "trade-1",
+                "venueOrderId": "14136461324",
+                "symbol": "DOGE/USDT",
+                "status": "closed",
+                "runtimeMode": "live",
+                "updatedAt": "2026-04-02T00:00:00+00:00",
+            },
+            "runtime": {"mode": "live", "backend": "rest", "connection_status": "connected"},
+        }
+        fake_account_sync_service = FakeAccountSyncService()
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+                "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+            },
+            clear=False,
+        ), patch.object(sync_service_module, "account_sync_service", fake_account_sync_service), patch.object(
+            scheduler_module, "sync_service", sync_service_module.sync_service
+        ), patch.object(
+            strategies_route.execution_service, "dispatch_signal", return_value=fake_dispatch_result
+        ):
+            response = dispatch_latest_signal(1, token=token)
+            task_id = int(response["data"]["sync_task"]["id"])
+            retry_response = retry_task(task_id, token=token)
+
+        self.assertEqual(response["data"]["sync_task"]["status"], "failed")
+        self.assertEqual(retry_response["data"]["item"]["status"], "succeeded")
         self.assertEqual(get_signal(1)["data"]["item"]["status"], "synced")
 
 

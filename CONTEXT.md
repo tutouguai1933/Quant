@@ -1,48 +1,23 @@
 # 当前进度
 
-- 当前正在做：Qlib 这条线已经把登录保持和市场页快路径收口，当前在整理本轮验证结果并准备提交。
-- 上次停留位置：市场页已改成先出骨架、再补市场数据；登录页已改成 7 天会话保持；页面会话读取已切到 cookie 快路径。
+- 当前正在做：`Freqtrade` 这条线已经把 live 同步判定、live 订单范围和 sync 重试补偿修好；当前真实平仓验收被 Binance IP 白名单变更阻塞。
+- 上次停留位置：已经完成首笔真实 `DOGE/USDT` 买单，并修掉了 `live /tasks/sync` 超时问题。
 - 近期关键决定：
-  - 页面状态只看 cookie 是否存在，避免每次进入页面都卡在完整会话校验上
-  - 登录 cookie 默认保持 7 天，减少反复登录
-  - 市场页先显示壳子和加载骨架，再用短缓存补市场快照
-
-- 当前正在做：`Freqtrade` 这条线已经修掉 `live` 模式下派发后的 `sync_task` 超时问题，当前在同步文档和提交。
-- 上次停留位置：已经完成第一笔真实 `Binance Spot` 买单验收，但派发返回里的 `sync_task` 仍然会超时失败。
-- 近期关键决定：
-  - 继续采用多 session 分工：
-    - 当前这个 session 负责 `Freqtrade` 执行层与真实 `live` 联调
-    - 另一个 session 负责 `Qlib` 研究层与市场/图表/策略页面动线
-  - `Freqtrade` 这一侧已经确认：
-    - 真实 `Binance API` 账户鉴权已通过
-    - 真实 `Freqtrade live` 容器已在 `WSL + Docker` 跑通
-    - 控制平面已经能把 `live + spot + whitelist + max_open_trades + min_notional` 这些条件全都检查掉
-    - 为了允许控制平面手动首单，`config.live.base.json` 现在开启了 `force_entry_enable=true`
-    - 已经成功完成第一笔真实 `DOGE/USDT` 买单：
-      - 真实成交数量约 `12 DOGE`
-      - 真实成交金额约 `1.08216 USDT`
-      - 订单状态为 `FILLED / closed`
-    - 成交后已经主动把真实执行器停下，避免继续自动交易
-    - 本地运行环境已经重新切回 `dry-run`，避免误碰下一笔真实单
-    - `live` 模式下的 `sync_task` 现在改成直接读取 Binance 账户同步结果，不再强依赖 Freqtrade 快照
-    - 已经做过一次真实 `live /tasks/sync` 验证，结果成功返回了真实余额、订单和持仓
-  - `Qlib` 这一侧已经完成并固定：
-    - 市场页先筛选，单币页先看图，策略页最后做执行
-    - 常用周期和多周期摘要已经接上
-    - 单币页已经有主图、信号点、入场线、止损线和研究解释
-    - 新一轮设计已经确认并落 spec：
-      - 主图改用专业金融图表库，目标体验尽量贴近 Binance
-      - 登录状态默认保持 7 天
-      - 市场页改成先出骨架、再补数据
-  - `Freqtrade` 当前仍固定走：
-    - `WSL + Docker`
-    - `Binance Spot`
-    - 默认仍回到 `dry-run`
-  - 当前已经确认：
-    - API / worker / frontend 测试都已通过
-    - `market`、单币页和策略页都已做真实页面验证
-    - `Qlib` 研究结果继续采用“软门控”，不单独制造新信号
-  - 当前仍保留的边界：
-    - 图表已经进入可读的交易视图，但还不是完整高级交互图表
-    - `Qlib` 仍是最小研究层，不是完整实验平台
-    - 最终整体验收还要等另一条 session 把 `Freqtrade` 真实联调完全收口
+  - 保持多 session 分工：
+    - 当前这个 session 继续收口 `Freqtrade` 执行层与真实 `live`
+    - 另一个 session 继续推进 `Qlib` 研究层、市场页和图表页体验
+  - `Freqtrade` 当前已经确认：
+    - 真实 `Spot + dry-run + REST` 已跑通
+    - 首笔真实 `DOGE/USDT` 买单已经成交
+    - `flat` 只平当前币种或当前交易，不会全平
+    - live 同步现在必须确认“刚派发的那一笔订单”才会把 signal 标成 `synced`
+    - live 订单同步范围优先跟随 `QUANT_LIVE_ALLOWED_SYMBOLS`，并会临时并入本次派发的 symbol
+    - sync 任务首次失败后，重试成功会把 signal 状态补成 `synced`
+    - 本地默认环境已经重新切回 `dry-run`
+  - 当前阻塞：
+    - 真实平仓验收还没完成
+    - 原因不是代码，而是当前公网出口 IP 已变成 `151.242.36.38`
+    - 如果 Binance API 开了 IP 白名单，需要先把这个新 IP 补进去，`Freqtrade live` 容器才能重新启动
+  - `Qlib` 这一侧已经固定：
+    - 市场页先筛选，单币页先看图，策略页最后执行
+    - 研究结果继续采用“软门控”，不单独制造新信号

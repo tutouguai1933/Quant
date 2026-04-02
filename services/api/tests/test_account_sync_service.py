@@ -286,6 +286,7 @@ class AccountSyncServiceTests(unittest.TestCase):
                 "BINANCE_API_KEY": "k",
                 "BINANCE_API_SECRET": "s",
                 "QUANT_MARKET_SYMBOLS": "BTCUSDT,ETHUSDT,SOLUSDT",
+                "QUANT_LIVE_ALLOWED_SYMBOLS": "BTCUSDT,ETHUSDT,SOLUSDT",
             },
         ):
             with patch(
@@ -319,6 +320,62 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual([item["symbol"] for item in position_response["data"]["items"]], ["BTC", "ETH"])
         self.assertEqual(position_response["data"]["items"][0]["quantity"], "1.5000000000")
         self.assertEqual(position_response["data"]["items"][1]["quantity"], "0.2500000000")
+
+    def test_live_mode_prefers_live_allowed_symbols_for_order_sync(self) -> None:
+        opener = FakeBinanceOpener()
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+                "QUANT_MARKET_SYMBOLS": "BTCUSDT,ETHUSDT",
+                "QUANT_LIVE_ALLOWED_SYMBOLS": "SOLUSDT",
+            },
+        ):
+            with patch(
+                "services.api.app.adapters.binance.account_client.create_binance_account_client",
+                side_effect=lambda: BinanceAccountClient(
+                    api_key="k",
+                    api_secret="s",
+                    base_url="https://example.com",
+                    opener=opener,
+                ),
+            ):
+                service = AccountSyncService()
+                orders_result = service.list_orders(limit=5)
+
+        self.assertEqual([item["symbol"] for item in orders_result], ["SOLUSDT"])
+        self.assertIn("/api/v3/allOrders:SOLUSDT", opener.calls)
+        self.assertNotIn("/api/v3/allOrders:BTCUSDT", opener.calls)
+        self.assertNotIn("/api/v3/allOrders:ETHUSDT", opener.calls)
+
+    def test_live_mode_without_live_whitelist_does_not_fallback_to_market_symbols(self) -> None:
+        opener = FakeBinanceOpener()
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+                "QUANT_MARKET_SYMBOLS": "BTCUSDT,ETHUSDT,SOLUSDT",
+                "QUANT_LIVE_ALLOWED_SYMBOLS": "",
+            },
+        ):
+            with patch(
+                "services.api.app.adapters.binance.account_client.create_binance_account_client",
+                side_effect=lambda: BinanceAccountClient(
+                    api_key="k",
+                    api_secret="s",
+                    base_url="https://example.com",
+                    opener=opener,
+                ),
+            ):
+                service = AccountSyncService()
+                orders_result = service.list_orders(limit=5)
+
+        self.assertEqual(orders_result, [])
+        self.assertEqual(opener.calls, [])
 
     def test_binance_account_client_reads_balances_orders_and_positions_from_opener(self) -> None:
         client = BinanceAccountClient(

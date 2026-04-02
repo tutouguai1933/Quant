@@ -92,6 +92,9 @@
 - 成功执行回执优先使用真实 Freqtrade 返回，而不是本地硬编码占位
 - 首笔真实成交已经验证控制平面、Binance 订单、Binance 持仓和页面读数是一致的
 - `live` 模式下的同步任务现在直接使用 Binance 账户同步结果，避免派发后再读 Freqtrade 快照时卡超时
+- `live` 同步现在只有在 Binance 账户里确认到“刚刚派发的那一笔订单”时，才会把 signal 推进到 `synced`
+- `live` 订单同步范围现在优先跟随 `QUANT_LIVE_ALLOWED_SYMBOLS`，同时会把本次派发的 symbol 临时并入，避免白名单外遗留仓位在平仓时漏单
+- sync 任务如果第一次失败，后续重试成功也会把 signal 状态补齐
 - live 现在会额外检查：
   - 是否显式允许 live
   - 是否连接到真实 `Freqtrade REST`
