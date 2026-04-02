@@ -268,6 +268,21 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertTrue(list_orders()["data"]["items"])
         self.assertTrue(list_positions()["data"]["items"])
 
+    def test_dispatch_latest_signal_returns_structured_error_when_execution_fails(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        original_dispatch = strategies_route.execution_service.dispatch_signal
+        strategies_route.execution_service.dispatch_signal = lambda signal_id: (_ for _ in ()).throw(RuntimeError("freqtrade busy"))  # type: ignore[assignment]
+        try:
+            response = dispatch_latest_signal(1, token=token)
+        finally:
+            strategies_route.execution_service.dispatch_signal = original_dispatch  # type: ignore[assignment]
+
+        self.assertEqual(response["error"]["code"], "execution_failed")
+        self.assertIn("freqtrade busy", response["error"]["message"])
+
     def test_protected_views_require_token(self) -> None:
         tasks_response = list_tasks()
         risk_response = list_risk_events()

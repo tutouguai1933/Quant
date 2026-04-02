@@ -231,7 +231,21 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
             },
         }
 
-    result = execution_service.dispatch_signal(int(latest["signal_id"]))
+    try:
+        result = execution_service.dispatch_signal(int(latest["signal_id"]))
+    except Exception as exc:
+        return {
+            "data": None,
+            "error": {
+                "code": "execution_failed",
+                "message": str(exc),
+            },
+            "meta": {
+                "strategy_id": strategy_id,
+                "source": "control-plane-api",
+                "risk_task_id": risk_task["id"],
+            },
+        }
     signal_service.update_signal_status(int(latest["signal_id"]), "dispatched")
     sync_task = task_scheduler.run_named_task(
         task_type="sync",

@@ -13,6 +13,7 @@ class FreqtradeDeploymentDocsTests(unittest.TestCase):
         self.assertTrue((REPO_ROOT / "infra/freqtrade/.env.example").exists())
         self.assertTrue((REPO_ROOT / "infra/freqtrade/user_data/config.base.json").exists())
         self.assertTrue((REPO_ROOT / "infra/freqtrade/user_data/config.private.json.example").exists())
+        self.assertTrue((REPO_ROOT / "infra/freqtrade/user_data/strategies/SampleStrategy.py").exists())
 
     def test_freqtrade_readme_mentions_spot_dry_run_and_symbols(self) -> None:
         content = (REPO_ROOT / "infra/freqtrade/README.md").read_text(encoding="utf-8")
@@ -31,6 +32,10 @@ class FreqtradeDeploymentDocsTests(unittest.TestCase):
         self.assertIn('"trading_mode": "spot"', content)
         self.assertIn('"dry_run": true', content)
         self.assertIn('"listen_port": 8080', content)
+        self.assertIn('"entry_pricing"', content)
+        self.assertIn('"exit_pricing"', content)
+        self.assertIn('"enable_ws": false', content)
+        self.assertIn('"force_entry_enable": true', content)
         self.assertIn('"BTC/USDT"', content)
         self.assertIn('"DOGE/USDT"', content)
 

@@ -1,12 +1,9 @@
-version: "3.9"
-
 services:
   freqtrade:
     image: ${QUANT_FREQTRADE_IMAGE:-freqtradeorg/freqtrade:stable}
     container_name: ${QUANT_FREQTRADE_CONTAINER_NAME:-quant-freqtrade}
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:${QUANT_FREQTRADE_HTTP_PORT:-8080}:8080"
+    network_mode: host
     volumes:
       - ./user_data:/freqtrade/user_data
     env_file:

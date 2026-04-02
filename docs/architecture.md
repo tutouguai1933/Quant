@@ -4,6 +4,8 @@
 
 系统当前已经进入“真实 dry-run 工作台 + 最小研究闭环”阶段。
 
+当前 `Freqtrade` 已经完成真实 `Spot + dry-run + REST` 接入，控制平面不再只依赖内存态执行。
+
 主链路是：
 
 `Binance 数据 -> Qlib 研究层 -> 策略判断 -> 风控 -> Freqtrade dry-run -> 订单/持仓/任务/风险 -> WebUI`

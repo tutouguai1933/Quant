@@ -68,7 +68,15 @@ def _make_server(state: dict[str, object]) -> tuple[ThreadingHTTPServer, str]:
                 self._send_json(200, {"trades": state.get("trades", [])})
                 return
             if path == "/api/v1/show_config":
-                self._send_json(200, {"dry_run": state.get("dry_run", True)})
+                self._send_json(
+                    200,
+                    {
+                        "dry_run": state.get("dry_run", True),
+                        "stake_amount": state.get("stake_amount", 50),
+                        "state": state.get("bot_state", "running"),
+                        "strategy": state.get("strategy_name", "Freqtrade Bot"),
+                    },
+                )
                 return
             if path == "/api/v1/balance":
                 self._send_json(200, {"balances": state.get("balances", [])})
@@ -123,6 +131,7 @@ class FreqtradeRestClientTests(unittest.TestCase):
             "trades": [{"id": "trade-1", "symbol": "BTC/USDT", "status": "filled"}],
             "strategies": [{"id": 1, "name": "TrendBreakout", "status": "running"}],
             "strategy_detail": {"id": 1, "name": "TrendBreakout", "status": "running"},
+            "stake_amount": 50,
         }
         server, base_url = _make_server(state)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -168,6 +177,99 @@ class FreqtradeRestClientTests(unittest.TestCase):
         self.assertEqual(state["login_seen"], True)
         self.assertEqual(state["action_seen"], "start")
         self.assertTrue(any(urlsplit(item["path"]).path == "/api/v1/forceenter" for item in state["requests"]))
+        self.assertEqual(state["forceenter_seen"]["stakeamount"], 50.0)
+
+    def test_client_falls_back_to_runtime_strategy_when_list_endpoint_unavailable(self) -> None:
+        state: dict[str, object] = {
+            "balances": [{"asset": "USDT", "total": "100.0", "available": "90.0", "locked": "10.0"}],
+            "positions": [],
+            "trades": [],
+            "dry_run": True,
+            "strategy_name": "Freqtrade Bot",
+        }
+        server, base_url = _make_server(state)
+        original_make_server = _make_server
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        original_handler = server.RequestHandlerClass.do_GET
+
+        def patched_do_get(self) -> None:  # type: ignore[no-redef]
+            path = urlsplit(self.path).path
+            if path == "/api/v1/strategies":
+                self.send_response(409)
+                self.send_header("Content-Type", "application/json")
+                payload = json.dumps({"detail": "Bot is not in the correct state."}).encode("utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            original_handler(self)
+
+        server.RequestHandlerClass.do_GET = patched_do_get
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            snapshot = client.get_snapshot()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+            server.RequestHandlerClass.do_GET = original_handler
+
+        self.assertEqual(snapshot.strategies[0]["name"], "Freqtrade Bot")
+        self.assertEqual(snapshot.strategies[0]["status"], "running")
+
+    def test_client_uses_open_trade_orders_when_closed_trade_list_is_empty(self) -> None:
+        state: dict[str, object] = {
+            "balances": [{"asset": "USDT", "total": "100.0", "available": "90.0", "locked": "10.0"}],
+            "positions": [
+                {
+                    "trade_id": 1,
+                    "pair": "BTC/USDT",
+                    "amount": 0.00075,
+                    "open_rate": 66299.98,
+                    "orders": [
+                        {
+                            "order_id": "dry_run_buy_BTC/USDT_1",
+                            "status": "closed",
+                            "filled": 0.00075,
+                            "safe_price": 66299.98,
+                            "ft_order_side": "buy",
+                            "order_type": "market",
+                        }
+                    ],
+                }
+            ],
+            "trades": [],
+            "dry_run": True,
+        }
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            snapshot = client.get_snapshot()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(snapshot.orders[0]["id"], "dry_run_buy_BTC/USDT_1")
+        self.assertEqual(snapshot.orders[0]["status"], "closed")
+        self.assertEqual(snapshot.orders[0]["symbol"], "BTC/USDT")
 
     def test_client_raises_clear_error_for_non_200(self) -> None:
         state: dict[str, object] = {

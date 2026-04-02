@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from urllib import error, parse, request
+from urllib import error, request
 
 def utc_now() -> datetime:
     """返回当前 UTC 时间。"""
@@ -144,18 +144,26 @@ class FreqtradeRestClient:
         side = str(action["side"])
         quantity = Decimal(str(action["quantity"]))
         if side == "flat":
-            self._request_json("POST", "/api/v1/forceexit", auth=True)
+            self._request_json(
+                "POST",
+                "/api/v1/forceexit",
+                auth=True,
+                payload={"tradeid": "all"},
+            )
         else:
-            params = parse.urlencode(
-                {
+            stake_amount = self._resolve_stake_amount(default=Decimal("50"))
+            self._request_json(
+                "POST",
+                "/api/v1/forceenter",
+                auth=True,
+                payload={
                     "pair": symbol,
                     "side": side,
-                    "stake_amount": str(quantity),
-                    "order_type": "market",
-                    "enter_tag": "quant-control-plane",
-                }
+                    "stakeamount": float(stake_amount),
+                    "ordertype": "market",
+                    "entry_tag": "quant-control-plane",
+                },
             )
-            self._request_json("POST", f"/api/v1/forceenter?{params}", auth=True)
 
         order_id = f"ft-rest-order-{self._next_order_id}"
         self._next_order_id += 1
@@ -175,6 +183,25 @@ class FreqtradeRestClient:
             "strategyId": action.get("strategy_id"),
             "updatedAt": timestamp,
         }
+
+    def _resolve_stake_amount(self, default: Decimal) -> Decimal:
+        """读取远端 stake_amount，确保 forceenter 使用正确的计价币金额。"""
+
+        try:
+            payload = self._request_json("GET", "/api/v1/show_config", auth=True)
+        except FreqtradeRestError:
+            return default
+
+        raw_value = payload.get("stake_amount")
+        if raw_value in (None, "", "unlimited"):
+            return default
+        try:
+            parsed = Decimal(str(raw_value))
+        except Exception:
+            return default
+        if parsed <= 0:
+            return default
+        return parsed
 
     def get_snapshot(self) -> Any:
         """读取余额、持仓、订单和策略列表。"""
@@ -263,6 +290,42 @@ class FreqtradeRestClient:
                     "updatedAt": utc_now().isoformat(),
                 }
             )
+        if orders:
+            return orders
+
+        payload = self._request_json("GET", "/api/v1/status", auth=True)
+        status_items = _payload_items(payload, "status")
+        for item in status_items:
+            symbol = str(item.get("pair") or item.get("symbol") or "")
+            compact_symbol = symbol.replace("/", "").upper()
+            for nested_order in item.get("orders", []) if isinstance(item.get("orders"), list) else []:
+                order_id = str(nested_order.get("order_id") or nested_order.get("id") or compact_symbol or "order")
+                filled_amount = nested_order.get("filled") or nested_order.get("amount") or item.get("amount")
+                price = (
+                    nested_order.get("safe_price")
+                    or nested_order.get("average_price")
+                    or item.get("open_rate")
+                    or item.get("price")
+                )
+                side = str(nested_order.get("ft_order_side") or nested_order.get("side") or "buy")
+                normalized_side = "flat" if side in {"sell", "exit"} else "long"
+                orders.append(
+                    {
+                        "id": order_id,
+                        "venueOrderId": order_id,
+                        "runtimeMode": self._get_remote_mode(default="unknown"),
+                        "symbol": symbol or compact_symbol,
+                        "side": normalized_side,
+                        "orderType": str(nested_order.get("order_type") or nested_order.get("type") or "market"),
+                        "status": str(nested_order.get("status") or "filled"),
+                        "quantity": _to_decimal_string(filled_amount),
+                        "executedQty": _to_decimal_string(filled_amount),
+                        "avgPrice": _to_decimal_string(price),
+                        "sourceSignalId": None,
+                        "strategyId": item.get("strategy_id"),
+                        "updatedAt": utc_now().isoformat(),
+                    }
+                )
         return orders
 
     def _get_remote_mode(self, default: str | None = None) -> str:
@@ -290,8 +353,16 @@ class FreqtradeRestClient:
     def _get_strategies(self) -> list[dict[str, object]]:
         """读取策略列表。"""
 
-        payload = self._request_json("GET", "/api/v1/strategies", auth=True)
-        items = _payload_items(payload, "strategies")
+        try:
+            payload = self._request_json("GET", "/api/v1/strategies", auth=True)
+            items = _payload_items(payload, "strategies")
+        except FreqtradeRestError:
+            items = []
+
+        if not items:
+            fallback = self._build_runtime_strategy()
+            return [fallback] if fallback else []
+
         strategies: list[dict[str, object]] = []
         for item in items:
             strategies.append(
@@ -307,7 +378,34 @@ class FreqtradeRestClient:
             )
         return strategies
 
-    def _request_json(self, method: str, path: str, auth: bool) -> dict[str, object]:
+    def _build_runtime_strategy(self) -> dict[str, object] | None:
+        """在运行态接口不可用时，用运行配置回填一个执行器视图。"""
+
+        try:
+            payload = self._request_json("GET", "/api/v1/show_config", auth=True)
+        except FreqtradeRestError:
+            return None
+
+        name = str(payload.get("strategy") or payload.get("bot_name") or "Freqtrade Bot")
+        state = str(payload.get("state") or "running").lower()
+        normalized_status = state if state in {"running", "paused", "stopped"} else "running"
+        return {
+            "id": 1,
+            "name": name,
+            "producerType": "freqtrade-rest",
+            "status": normalized_status,
+            "executor": "freqtrade",
+            "exchange": payload.get("exchange") or "binance",
+            "updatedAt": utc_now().isoformat(),
+        }
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        auth: bool,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         """执行一次 JSON 请求并处理错误。"""
 
         url = self._config.base_url + path
@@ -315,10 +413,8 @@ class FreqtradeRestClient:
         if auth:
             headers["Authorization"] = f"Bearer {self._ensure_access_token()}"
         body = None
-        if method in {"POST", "PUT", "PATCH"} and "?" not in path:
-            body = b"{}"
-            headers["Content-Type"] = "application/json"
-        elif method in {"POST", "PUT", "PATCH"} and "?" in path:
+        if method in {"POST", "PUT", "PATCH"}:
+            body = json.dumps(payload or {}).encode("utf-8")
             headers["Content-Type"] = "application/json"
         if not auth and path == "/api/v1/token/login":
             raise FreqtradeRestError("token login must use auth=True")

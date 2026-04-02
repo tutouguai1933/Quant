@@ -39,7 +39,7 @@ export default async function OrdersPage() {
         items={[
           { label: "订单数量", value: String(model.items.length), detail: "来自控制平面的聚合视图" },
           { label: "最新品种", value: model.items[0]?.symbol ?? "n/a", detail: "优先确认最新订单是不是你刚刚派发的品种" },
-          { label: "最新状态", value: model.items[0]?.status ?? "waiting", detail: "filled 才说明执行已经完成" },
+          { label: "最新状态", value: model.items[0]?.status ?? "waiting", detail: "看到 closed 或 filled，说明执行已经落地" },
         ]}
       />
 

@@ -146,16 +146,16 @@
   - 登录后策略页会显示 `已解锁`
   - 策略页会显示执行器状态和“执行器控制”说明
   - 点击“启动策略”后，页面能看到 `running`
-  - 点击“派发最新信号”后，订单页能看到 `filled`
+  - 点击“派发最新信号”后，订单页能看到真实 dry-run 订单状态（当前为 `closed`）
   - 点击“派发最新信号”后，持仓页能看到 `BTC/USDT` 和 `long`
 - 已完成 Phase B 相关体验收口：
   - 市场页会显示推荐策略、趋势状态和推荐下一步
   - 单币图表页会显示策略解释、入场参考、止损参考和 Freqtrade 准备情况
-- 当前仍未完成的是“接入一台真实 Freqtrade REST 服务并完成整条端到端 dry-run 验收”
-  - 当前阻塞原因：
-    - 本地还没配置 `QUANT_FREQTRADE_API_URL`
-    - 本地还没配置 Freqtrade REST 用户名和密码
-    - 也还没有接上一台可用的真实 Freqtrade REST 服务
+- 当前已经完成：
+  - 真实 `Freqtrade REST + Binance Spot + dry-run` 端到端联调
+  - Docker 容器启动与 REST 可用性验证
+  - 控制平面真实派发后一条 `BTC/USDT` dry-run 仓位
+  - 重复派发时返回结构化 `execution_failed` 错误，不再抛 500
 
 ## 验收标准
 

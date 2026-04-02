@@ -20,6 +20,7 @@
 - `demo / dry-run / live` 安全边界
 - 远端 dry-run 模式校验
 - 仓库内 Spot dry-run Docker 部署骨架
+- 一次真实 Spot dry-run 端到端联调
 
 当前仍然保留的边界：
 
@@ -131,7 +132,7 @@ docker compose up -d
 7. 打开单币图表页，确认能看到“策略解释”“止损参考”和“Freqtrade 准备情况”
 8. 登录策略页，确认能看到“执行器状态”
 9. 点击“启动策略”，确认页面里出现 `running`
-10. 点击“派发最新信号”，确认订单页出现 `filled`
+10. 点击“派发最新信号”，确认订单页出现真实 dry-run 订单状态（当前通常是 `closed`）
 11. 打开持仓页，确认能看到 `BTC/USDT` 和 `long`
 12. 打开订单页和持仓页，确认都能看到“同步来源”
 
@@ -139,5 +140,6 @@ docker compose up -d
 
 - 当前最稳的验证路径仍然是 `dry-run`
 - 当前已经做过一轮本地真实页面验收，市场页和图表页也已经能明确提示下一步
-- 但还没有对接真实 Freqtrade REST 服务完成最终端到端验收
+- 当前已经完成一次真实 `Freqtrade REST + Binance Spot + dry-run` 联调
+- 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调

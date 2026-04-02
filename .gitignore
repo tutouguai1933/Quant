@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 .codex
+.superpowers/
 *.tsbuildinfo
 .next/
 node_modules/
