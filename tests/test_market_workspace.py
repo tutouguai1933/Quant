@@ -66,6 +66,16 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("open_time", content)
         self.assertIn("close_time", content)
 
+    def test_trading_chart_panel_renders_candles_and_research_layers(self) -> None:
+        content = (WEB_COMPONENTS / "trading-chart-panel.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("<svg", content)
+        self.assertIn("entry", content)
+        self.assertIn("stop", content)
+        self.assertIn("signal", content)
+        self.assertIn("当前价格", content)
+        self.assertIn("当前周期", content)
+
     def test_market_api_handles_non_array_items(self) -> None:
         content = (WEB_LIB / "api.ts").read_text(encoding="utf-8")
         self.assertIn("Array.isArray", content)
