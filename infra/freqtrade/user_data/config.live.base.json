@@ -62,7 +62,7 @@
     "CORS_origins": []
   },
   "initial_state": "stopped",
-  "force_entry_enable": false,
+  "force_entry_enable": true,
   "internals": {
     "process_throttle_secs": 5
   }

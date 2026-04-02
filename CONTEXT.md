@@ -1,40 +1,22 @@
 # 当前进度
 
-- 当前正在做：`Qlib` 这条线已经完成“多周期交易视图 + 页面新动线”收口，最后在整理文档、验证和 git 提交。
-- 上次停留位置：刚把市场页改成筛选入口、把单币页改成交易主区、把策略页收成执行页，并补完图表层和多周期接口。
+- 当前正在做：`Freqtrade` 这条线已经完成 `live` 安全门、真实容器和真实下单重试，当前最后卡在 Binance 现货钱包可用余额不足。
+- 上次停留位置：已经打通真实 `Freqtrade REST + Binance Spot + dry-run`，并把 `live` 路径收敛到 `DOGE/USDT + 1 USDT`。
 - 近期关键决定：
   - 继续采用多 session 分工：
-    - 当前这个 session 负责 `Qlib` 研究层与市场/图表/策略页面动线
-    - 另一个 session 负责 `Freqtrade` 执行层与真实 dry-run / live 联调
+    - 当前这个 session 负责 `Freqtrade` 执行层与真实 `live` 联调
+    - 另一个 session 负责 `Qlib` 研究层与市场/图表/策略页面动线
+  - `Freqtrade` 这一侧已经确认：
+    - 真实 `Binance API` 账户鉴权已通过
+    - 真实 `Freqtrade live` 容器已在 `WSL + Docker` 跑通
+    - 控制平面已经能把 `live + spot + whitelist + max_open_trades + min_notional` 这些条件全都检查掉
+    - 为了允许控制平面手动首单，`config.live.base.json` 现在开启了 `force_entry_enable=true`
+    - 真实首单仍未完成，因为现货钱包当前只有约 `0.097 USDT` 可用余额，低于 Freqtrade 这次计算出的最小可用门槛 `1.1666666667 USDT`
+    - 本地运行环境已经重新切回 `dry-run`，避免误碰真实单
   - `Qlib` 这一侧已经完成并固定：
-    - 页面动线：
-      - 市场页先筛选
-      - 单币页先看图再判断
-      - 策略页最后做执行决策
-    - 首批周期按 Binance 常见习惯对齐：
-      - `1m / 3m / 5m / 15m / 30m / 1h / 4h / 1d / 1w`
-    - 单币页现在已经有：
-      - 周期切换
-      - 自绘 SVG K 线主图
-      - 入场线 / 止损线 / 信号点
-      - 研究侧卡
-      - 多周期摘要
-    - 市场页现在已经改成筛选入口：
-      - 优先关注
-      - 高信心
-      - 多周期状态
-      - 研究倾向 / 推荐策略 / 判断信心 / 主判断
-    - 策略页现在只保留执行相关信息：
-      - 执行器状态
-      - 执行决策
-      - 策略卡片
-      - 最近信号
-      - 最近执行结果
-      - 动作控制
-    - 后端图表接口已经补齐：
-      - `active_interval`
-      - `supported_intervals`
-      - `multi_timeframe_summary`
+    - 市场页先筛选，单币页先看图，策略页最后做执行
+    - 常用周期和多周期摘要已经接上
+    - 单币页已经有主图、信号点、入场线、止损线和研究解释
   - `Freqtrade` 当前仍固定走：
     - `WSL + Docker`
     - `Binance Spot`

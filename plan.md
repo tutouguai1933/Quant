@@ -39,6 +39,7 @@
 - [x] live 本地安全门
 - [x] live Docker 配置骨架
 - [ ] 首笔真实 live Spot 买单验收
+  当前阻塞：现货钱包可用余额约 `0.097 USDT`，低于 Freqtrade 计算出的最小可用门槛 `1.1666666667 USDT`
 
 ### Phase B
 
@@ -135,6 +136,7 @@
 - [x] live 运行安全门
 - [x] live `DOGE/USDT + 1 USDT` 容器骨架
 - [ ] live 首笔真实 Spot 买单验收
+  当前阻塞：现货钱包可用余额不足
 - [x] Qlib 最小训练与推理闭环
 - [x] 策略页接入研究分数与解释
 - [ ] 补 Lean / vn.py 扩展目录与接口位

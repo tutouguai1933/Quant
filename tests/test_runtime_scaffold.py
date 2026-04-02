@@ -55,7 +55,7 @@ class RuntimeScaffoldTests(unittest.TestCase):
         self.assertIn('"max_open_trades": 1', live_content)
         self.assertIn('"DOGE/USDT"', live_content)
         self.assertIn('"initial_state": "stopped"', live_content)
-        self.assertIn('"force_entry_enable": false', live_content)
+        self.assertIn('"force_entry_enable": true', live_content)
 
 
 if __name__ == "__main__":

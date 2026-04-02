@@ -164,8 +164,8 @@ docker compose up -d
 - 当前最稳的验证路径仍然是 `dry-run`
 - 当前已经做过一轮本地真实页面验收，市场页和图表页也已经能明确提示下一步
 - 当前已经完成一次真实 `Freqtrade REST + Binance Spot + dry-run` 联调
-- 当前 live 首单的代码路径已经打通，但真实 Binance 返回了 `401 / -2015`
-- 这说明当前问题在 key 本身、IP 白名单或 Spot Trading 权限，不在控制平面代码
+- 当前 live 首单的代码路径已经打通，`key / IP / Spot Trading` 这一层也已通过
+- 当前新的阻塞是现货钱包可用余额不足：控制平面读到约 `0.097 USDT`，而 Freqtrade 这次要求最少约 `1.1666666667 USDT`
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位
