@@ -15,6 +15,9 @@
       - 策略页最后做执行决策
     - 首批周期按 Binance 常见习惯对齐：
       - `1m / 3m / 5m / 15m / 30m / 1h / 4h / 1d / 1w`
+    - 交易视图重构的实现计划已经落盘，下一步只差选择执行方式：
+      - `Subagent-Driven`
+      - `Inline Execution`
   - `Freqtrade` 当前固定走：
     - `WSL + Docker`
     - `Binance Spot`
