@@ -16,6 +16,8 @@ class MarketWorkspaceTests(unittest.TestCase):
             WEB_APP / "market" / "page.tsx",
             WEB_APP / "market" / "[symbol]" / "page.tsx",
             WEB_COMPONENTS / "candle-chart.tsx",
+            WEB_COMPONENTS / "market-filter-bar.tsx",
+            WEB_COMPONENTS / "market-focus-board.tsx",
             WEB_COMPONENTS / "timeframe-tabs.tsx",
             WEB_COMPONENTS / "trading-chart-panel.tsx",
             WEB_COMPONENTS / "research-sidecard.tsx",
@@ -37,6 +39,15 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("推荐策略", content)
         self.assertIn("判断信心", content)
         self.assertIn("主判断", content)
+
+    def test_market_page_uses_filter_bar_and_focus_board(self) -> None:
+        content = (WEB_APP / "market" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("MarketFilterBar", content)
+        self.assertIn("MarketFocusBoard", content)
+        self.assertIn("多周期状态", content)
+        self.assertIn("优先关注", content)
+        self.assertIn("高信心", content)
 
     def test_symbol_page_uses_trading_view_components(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
