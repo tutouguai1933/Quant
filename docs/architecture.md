@@ -11,6 +11,7 @@
 当前这台大陆服务器已经通过固定代理节点恢复公开行情与 Freqtrade 对 Binance 的访问，但签名账户链路仍受 Binance API 白名单限制。
 因此系统现在把 Binance 公开行情和签名账户链路拆成了两套可单独配置的地址与超时设置。
 当前默认口径是：公开行情优先走 `data-api.binance.vision`，签名账户和真实下单继续走 `api.binance.com`。
+控制平面访问 Freqtrade REST 时会显式禁用代理，避免容器内的 `HTTP_PROXY` 误伤内部服务调用。
 当前环境分工也已经固定：
 
 - `WSL` 负责日常开发、测试和本地页面联调

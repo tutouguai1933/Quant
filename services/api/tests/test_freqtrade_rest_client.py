@@ -9,6 +9,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -559,6 +560,44 @@ class FreqtradeRestClientTests(unittest.TestCase):
             client.ping()
 
         self.assertIn("无法连接", str(ctx.exception))
+
+    def test_client_uses_direct_opener_instead_of_global_urlopen(self) -> None:
+        state: dict[str, object] = {}
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        from urllib import request as urllib_request
+
+        real_opener = urllib_request.build_opener(urllib_request.ProxyHandler({}))
+
+        class FakeOpener:
+            def open(self, req, timeout=None):
+                return real_opener.open(req, timeout=timeout)
+
+        try:
+            with patch(
+                "services.api.app.adapters.freqtrade.rest_client.request.build_opener",
+                return_value=FakeOpener(),
+            ) as build_opener, patch(
+                "services.api.app.adapters.freqtrade.rest_client.request.urlopen",
+                side_effect=AssertionError("global urlopen should not be used"),
+            ):
+                client = FreqtradeRestClient(
+                    FreqtradeRestConfig(
+                        base_url=base_url,
+                        username="bot",
+                        password="secret",
+                        timeout_seconds=2.0,
+                    )
+                )
+                ping = client.ping()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(ping["status"], "pong")
+        build_opener.assert_called_once()
 
 
 if __name__ == "__main__":

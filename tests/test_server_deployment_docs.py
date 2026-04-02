@@ -16,6 +16,7 @@ WEB_DOCKERFILE = REPO_ROOT / "apps" / "web" / "Dockerfile"
 WEB_API_MODULE = REPO_ROOT / "apps" / "web" / "lib" / "api.ts"
 MIHOMO_README = REPO_ROOT / "infra" / "mihomo" / "README.md"
 FREQTRADE_PROXY_CONFIG = REPO_ROOT / "infra" / "freqtrade" / "user_data" / "config.proxy.noop.json"
+FREQTRADE_DEPLOY_CONFIG = REPO_ROOT / "infra" / "freqtrade" / "user_data" / "config.deploy.json"
 
 
 class ServerDeploymentDocsTests(unittest.TestCase):
@@ -27,6 +28,7 @@ class ServerDeploymentDocsTests(unittest.TestCase):
         self.assertTrue(WEB_DOCKERFILE.exists(), f"missing file: {WEB_DOCKERFILE}")
         self.assertTrue(MIHOMO_README.exists(), f"missing file: {MIHOMO_README}")
         self.assertTrue(FREQTRADE_PROXY_CONFIG.exists(), f"missing file: {FREQTRADE_PROXY_CONFIG}")
+        self.assertTrue(FREQTRADE_DEPLOY_CONFIG.exists(), f"missing file: {FREQTRADE_DEPLOY_CONFIG}")
 
     def test_server_deploy_compose_uses_quant_ports(self) -> None:
         content = DEPLOY_COMPOSE.read_text(encoding="utf-8")
@@ -42,6 +44,7 @@ class ServerDeploymentDocsTests(unittest.TestCase):
         self.assertIn("quant-freqtrade", content)
         self.assertIn("mihomo", content)
         self.assertIn("QUANT_MIHOMO_PORT", content)
+        self.assertIn("QUANT_FREQTRADE_DEPLOY_CONFIG", content)
 
     def test_docs_explain_github_server_baseline_and_debug_ports(self) -> None:
         readme_content = README_DOC.read_text(encoding="utf-8")

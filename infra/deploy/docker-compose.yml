@@ -56,6 +56,7 @@ services:
     command: >
       trade
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PUBLIC_CONFIG:-config.base.json}
+      --config /freqtrade/user_data/${QUANT_FREQTRADE_DEPLOY_CONFIG:-config.deploy.json}
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PRIVATE_CONFIG:-config.private.json}
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PROXY_CONFIG:-config.proxy.noop.json}
       --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}

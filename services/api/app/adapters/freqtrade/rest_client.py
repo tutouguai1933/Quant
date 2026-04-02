@@ -106,6 +106,7 @@ class FreqtradeRestClient:
         self._config = config
         self._access_token: str | None = None
         self._next_order_id = 1
+        self._opener = request.build_opener(request.ProxyHandler({}))
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "FreqtradeRestClient":
@@ -639,7 +640,7 @@ class FreqtradeRestClient:
 
         token_request = request.Request(url, data=body, method=method, headers=headers)
         try:
-            with request.urlopen(token_request, timeout=self._config.timeout_seconds) as response:
+            with self._opener.open(token_request, timeout=self._config.timeout_seconds) as response:
                 payload = response.read().decode("utf-8").strip()
                 if not payload:
                     return {}
@@ -669,7 +670,7 @@ class FreqtradeRestClient:
         }
         login_request = request.Request(login_url, data=b"{}", method="POST", headers=headers)
         try:
-            with request.urlopen(login_request, timeout=self._config.timeout_seconds) as response:
+            with self._opener.open(login_request, timeout=self._config.timeout_seconds) as response:
                 payload = response.read().decode("utf-8").strip()
                 data = json.loads(payload) if payload else {}
         except error.HTTPError as exc:

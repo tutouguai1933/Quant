@@ -154,6 +154,7 @@
 - `OpenClaw` 触发非交易任务还没接入
 - 服务器上的 Binance 公开行情与 Freqtrade 现在都通过固定代理节点访问
 - 市场接口在代理瞬时失败时会自动回退为空结果，不再直接报错
+- 服务器上的订单和持仓接口已经恢复为 `200`，不再因为容器内代理干扰 Freqtrade 而报错
 - 服务器上的账户同步和真实下单链路仍需要 Binance 白名单放过当前代理出口
 - 真实 `Qlib` 依赖和完整实验平台还没接入
 
@@ -314,7 +315,7 @@ docker compose up -d --build
   - `QUANT_BINANCE_MARKET_BASE_URL=https://data-api.binance.vision`
 - 账户同步和真实下单仍然依赖 `api.binance.com`
 - 当前仓库已经提供 `infra/mihomo` 和统一部署里的代理接入位
-- 如果签名接口仍返回空结果，需要把当前固定代理节点的出口 IP 加到 Binance API 白名单
+- 如果签名接口仍返回空结果，需要把当前固定代理节点的出口 IP 加到 Binance API 白名单，而不是只加服务器公网 IP
 - 现在 API 已支持这两个地址分开配置，并且 Binance 请求都会按超时收口，不会一直卡住
 
 ## 服务器端口管理
