@@ -164,6 +164,15 @@ export type ResearchCockpitSummary = {
   overlay_summary?: string;
 };
 
+export type MultiTimeframeSummaryItem = {
+  interval: string;
+  trend_state: "uptrend" | "pullback" | "neutral";
+  research_bias: string;
+  recommended_strategy: "trend_breakout" | "trend_pullback" | "none";
+  confidence: string;
+  primary_reason: string;
+};
+
 export type LatestResearchItem = {
   status: string;
   backend: string;
@@ -182,6 +191,9 @@ export type MarketChartData = {
   items: MarketCandle[];
   overlays: ChartIndicatorSummary;
   markers: ChartMarkerGroups;
+  active_interval: string;
+  supported_intervals: string[];
+  multi_timeframe_summary: MultiTimeframeSummaryItem[];
   research_cockpit: ResearchCockpitSummary;
   strategy_context: {
     recommended_strategy: "trend_breakout" | "trend_pullback" | "none";
@@ -473,10 +485,14 @@ export async function listMarketSnapshots(): Promise<
   };
 }
 
-export async function getMarketChart(symbol: string): Promise<
+export async function getMarketChart(symbol: string, interval?: string): Promise<
   ApiEnvelope<MarketChartData>
 > {
-  const response = await fetchJson<MarketChartData>(`/market/${encodeURIComponent(symbol)}/chart`);
+  const normalizedInterval = String(interval ?? "").trim();
+  const chartPath = normalizedInterval.length > 0
+    ? `/market/${encodeURIComponent(symbol)}/chart?interval=${encodeURIComponent(normalizedInterval)}`
+    : `/market/${encodeURIComponent(symbol)}/chart`;
+  const response = await fetchJson<MarketChartData>(chartPath);
   if (response.error) {
     return response as ApiEnvelope<MarketChartData>;
   }
@@ -490,6 +506,9 @@ export async function getMarketChart(symbol: string): Promise<
       items: items.map((item) => normalizeMarketCandle(item)),
       overlays: normalizeChartIndicatorSummary(data.overlays),
       markers: normalizeChartMarkerGroups(data.markers),
+      active_interval: String(data.active_interval ?? "4h"),
+      supported_intervals: normalizeStringArray(data.supported_intervals, []),
+      multi_timeframe_summary: normalizeMultiTimeframeSummary(data.multi_timeframe_summary),
       research_cockpit: normalizeResearchCockpitSummary(data.research_cockpit),
       strategy_context: normalizeMarketStrategyContext(data.strategy_context),
       freqtrade_readiness: normalizeFreqtradeReadiness(data.freqtrade_readiness),
@@ -744,6 +763,24 @@ function normalizeResearchCockpitSummary(item: unknown): ResearchCockpitSummary 
     stop_hint: row.stop_hint === undefined ? undefined : String(row.stop_hint ?? ""),
     overlay_summary: row.overlay_summary === undefined ? undefined : String(row.overlay_summary ?? ""),
   };
+}
+
+function normalizeMultiTimeframeSummary(value: unknown): MultiTimeframeSummaryItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item) => {
+    const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+    return {
+      interval: String(row.interval ?? ""),
+      trend_state: normalizeTrendState(row.trend_state),
+      research_bias: String(row.research_bias ?? "unavailable"),
+      recommended_strategy: normalizeMarketStrategy(row.recommended_strategy),
+      confidence: String(row.confidence ?? "low"),
+      primary_reason: String(row.primary_reason ?? ""),
+    };
+  });
 }
 
 function normalizeLatestResearchItem(item: unknown): LatestResearchItem {

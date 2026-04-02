@@ -16,6 +16,10 @@ class MarketWorkspaceTests(unittest.TestCase):
             WEB_APP / "market" / "page.tsx",
             WEB_APP / "market" / "[symbol]" / "page.tsx",
             WEB_COMPONENTS / "candle-chart.tsx",
+            WEB_COMPONENTS / "timeframe-tabs.tsx",
+            WEB_COMPONENTS / "trading-chart-panel.tsx",
+            WEB_COMPONENTS / "research-sidecard.tsx",
+            WEB_COMPONENTS / "multi-timeframe-summary.tsx",
         ]
 
         for file_path in expected_files:
@@ -34,24 +38,16 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("判断信心", content)
         self.assertIn("主判断", content)
 
-    def test_symbol_page_wires_chart_api_and_component(self) -> None:
-        content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
-        chart_content = (WEB_COMPONENTS / "candle-chart.tsx").read_text(encoding="utf-8")
-        self.assertIn("getMarketChart", content)
-        self.assertIn("getLatestResearch", content)
-        self.assertIn("CandleChart", content)
-        self.assertIn("AppShell", content)
-        self.assertIn("research_cockpit", content)
-        self.assertIn("overlay_summary", content)
-        self.assertIn("图表图层摘要", content)
-        self.assertIn("研究门控", content)
-        self.assertIn("判断信心", content)
-        self.assertIn("研究解释", content)
-        self.assertIn("推荐策略", content)
-        self.assertIn("Freqtrade 准备情况", content)
-        self.assertIn("信号点", chart_content)
-        self.assertIn("入场参考", chart_content)
-        self.assertIn("止损参考", chart_content)
+    def test_symbol_page_uses_trading_view_components(self) -> None:
+        page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("TimeframeTabs", page_content)
+        self.assertIn("TradingChartPanel", page_content)
+        self.assertIn("ResearchSidecard", page_content)
+        self.assertIn("MultiTimeframeSummary", page_content)
+        self.assertIn("active_interval", page_content)
+        self.assertIn("supported_intervals", page_content)
+        self.assertIn("multi_timeframe_summary", page_content)
 
     def test_navigation_contains_market_entry(self) -> None:
         shell_content = (WEB_COMPONENTS / "app-shell.tsx").read_text(encoding="utf-8")
