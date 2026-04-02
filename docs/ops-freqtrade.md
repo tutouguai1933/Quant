@@ -29,7 +29,7 @@
 
 当前仍然保留的边界：
 
-- `live` 代码路径已经打开，但当前还没完成首笔真实成交验收
+- `live` 代码路径已经打开，并且已经完成首笔真实成交验收
 - `start / pause / stop` 现在明确控制的是整台执行器
 - 真实 Freqtrade 的信号派发参数如果和你部署版本不一致，可能需要微调
 - 如果还没配 Freqtrade REST 变量，图表页会明确提示 `not_ready`
@@ -164,8 +164,12 @@ docker compose up -d
 - 当前最稳的验证路径仍然是 `dry-run`
 - 当前已经做过一轮本地真实页面验收，市场页和图表页也已经能明确提示下一步
 - 当前已经完成一次真实 `Freqtrade REST + Binance Spot + dry-run` 联调
-- 当前 live 首单的代码路径已经打通，`key / IP / Spot Trading` 这一层也已通过
-- 当前新的阻塞是现货钱包可用余额不足：控制平面读到约 `0.097 USDT`，而 Freqtrade 这次要求最少约 `1.1666666667 USDT`
+- 当前已经完成首笔真实 `DOGE/USDT` 买单：
+  - 真实成交金额约 `1.08216 USDT`
+  - 真实成交数量约 `12 DOGE`
+  - 订单状态为 `FILLED`
+  - 持仓页和订单页都能读到真实结果
+- 当前剩余问题不是下单失败，而是派发后那次 `sync_task` 超时失败，需要后续继续修
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位

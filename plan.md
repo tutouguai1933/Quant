@@ -38,8 +38,8 @@
 - [x] Freqtrade Docker 改成“host 网络 + REST 仅监听 127.0.0.1”
 - [x] live 本地安全门
 - [x] live Docker 配置骨架
-- [ ] 首笔真实 live Spot 买单验收
-  当前阻塞：现货钱包可用余额约 `0.097 USDT`，低于 Freqtrade 计算出的最小可用门槛 `1.1666666667 USDT`
+- [x] 首笔真实 live Spot 买单验收
+  结果：已完成 `DOGE/USDT + 1 USDT` 首笔真实买单
 
 ### Phase B
 
@@ -135,8 +135,8 @@
 - [x] 接上一台真实 Freqtrade REST 服务完成最终 dry-run 验收
 - [x] live 运行安全门
 - [x] live `DOGE/USDT + 1 USDT` 容器骨架
-- [ ] live 首笔真实 Spot 买单验收
-  当前阻塞：现货钱包可用余额不足
+- [x] live 首笔真实 Spot 买单验收
+  结果：真实订单已成交；当前剩余问题是派发后的 `sync_task` 会超时失败
 - [x] Qlib 最小训练与推理闭环
 - [x] 策略页接入研究分数与解释
 - [ ] 补 Lean / vn.py 扩展目录与接口位

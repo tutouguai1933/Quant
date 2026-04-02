@@ -1,7 +1,7 @@
 # 当前进度
 
-- 当前正在做：`Freqtrade` 这条线已经完成 `live` 安全门、真实容器和真实下单重试，当前最后卡在 Binance 现货钱包可用余额不足。
-- 上次停留位置：已经打通真实 `Freqtrade REST + Binance Spot + dry-run`，并把 `live` 路径收敛到 `DOGE/USDT + 1 USDT`。
+- 当前正在做：`Freqtrade` 这条线已经完成第一笔真实 `Binance Spot` 买单验收，当前在同步文档，并把默认运行环境收回到 `dry-run`。
+- 上次停留位置：真实 `live` 路径已经打通，但当时卡在现货钱包可用余额不足。
 - 近期关键决定：
   - 继续采用多 session 分工：
     - 当前这个 session 负责 `Freqtrade` 执行层与真实 `live` 联调
@@ -11,8 +11,13 @@
     - 真实 `Freqtrade live` 容器已在 `WSL + Docker` 跑通
     - 控制平面已经能把 `live + spot + whitelist + max_open_trades + min_notional` 这些条件全都检查掉
     - 为了允许控制平面手动首单，`config.live.base.json` 现在开启了 `force_entry_enable=true`
-    - 真实首单仍未完成，因为现货钱包当前只有约 `0.097 USDT` 可用余额，低于 Freqtrade 这次计算出的最小可用门槛 `1.1666666667 USDT`
-    - 本地运行环境已经重新切回 `dry-run`，避免误碰真实单
+    - 已经成功完成第一笔真实 `DOGE/USDT` 买单：
+      - 真实成交数量约 `12 DOGE`
+      - 真实成交金额约 `1.08216 USDT`
+      - 订单状态为 `FILLED / closed`
+    - 成交后已经主动把真实执行器停下，避免继续自动交易
+    - 本地运行环境已经重新切回 `dry-run`，避免误碰下一笔真实单
+    - 当前还留着一个后续问题：派发接口里的 `sync_task` 这次超时失败了，但真实订单、真实持仓和页面数据都已经能读到
   - `Qlib` 这一侧已经完成并固定：
     - 市场页先筛选，单币页先看图，策略页最后做执行
     - 常用周期和多周期摘要已经接上
