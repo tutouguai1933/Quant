@@ -2,8 +2,6 @@
 
 import { cookies } from "next/headers";
 
-import { getAdminSession } from "./api";
-
 export const SESSION_COOKIE_NAME = "quant_admin_token";
 const KNOWN_APP_PATHS = new Set(["/", "/login", "/signals", "/market", "/strategies", "/balances", "/positions", "/orders", "/risk", "/tasks"]);
 
@@ -21,22 +19,12 @@ export function normalizeAppPath(value?: string | string[], fallback = "/"): str
   return KNOWN_APP_PATHS.has(resolved) ? resolved : fallback;
 }
 
-/* 返回当前 cookie 对应的有效会话状态。 */
+/* 返回当前 cookie 对应的页面会话状态，页面只看 cookie 是否存在。 */
 export async function getControlSessionState(): Promise<{ token: string; isAuthenticated: boolean }> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value ?? "";
-  if (!token) {
-    return { token: "", isAuthenticated: false };
-  }
-
-  try {
-    const response = await getAdminSession(token);
-    if (!response.error) {
-      return { token, isAuthenticated: true };
-    }
-  } catch {
-    // 会话校验失败时按未登录处理。
-  }
-
-  return { token: "", isAuthenticated: false };
+  return {
+    token,
+    isAuthenticated: token.length > 0,
+  };
 }

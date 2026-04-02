@@ -44,12 +44,13 @@ export default async function LoginPage({ searchParams }: PageProps) {
       <PageHero
         badge="登录"
         title="登录后，系统会直接把你送回下一步最关键的页面"
-        description="这里不做复杂权限体系，只保留单管理员入口。重点是让你知道登录完成后该继续去哪，而不是把你困在一个孤立页面里。"
+        description="这里不做复杂权限体系，只保留单管理员入口。登录后默认保持 7 天，重点是让你知道下一步该去哪，而不是反复重新登录。"
       />
 
       <MetricGrid
         items={[
           { label: "登录模式", value: "单管理员", detail: "当前阶段不扩展多用户和角色模型" },
+          { label: "会话时长", value: "7 天保持", detail: "登录成功后写入本地会话 cookie，页面会直接复用这份状态" },
           { label: "会话方式", value: model.sessionMode, detail: "登录成功后写入本地会话 cookie" },
           { label: "继续前往", value: nextPath, detail: "登录后会优先跳转到这个页面" },
         ]}

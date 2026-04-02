@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       httpOnly: true,
       sameSite: "lax",
       path: "/",
+      maxAge: 60 * 60 * 24 * 7,
     });
 
     return NextResponse.redirect(new URL(`${nextPath}?tone=success&title=${encodeURIComponent("登录反馈")}&message=${encodeURIComponent("管理员认证成功，受保护页面已解锁。")}`, baseUrl));
