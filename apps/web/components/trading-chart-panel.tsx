@@ -36,7 +36,7 @@ const CHART_PADDING = 28;
 /* 渲染交易主区的最小 SVG K 线视图。 */
 export function TradingChartPanel({ symbol, interval, items, markers }: TradingChartPanelProps) {
   const normalizedItems = items.slice(-24);
-  const latest = normalizedItems[normalizedItems.length - 1];
+  const currentPrice = resolveLatestCloseText(normalizedItems);
 
   if (!normalizedItems.length) {
     return (
@@ -51,7 +51,6 @@ export function TradingChartPanel({ symbol, interval, items, markers }: TradingC
 
   const priceDomain = resolvePriceDomain(normalizedItems, markers);
   const candles = buildChartCandles(normalizedItems, priceDomain);
-  const currentPrice = formatText(latest?.close, "n/a");
   const entryLine = resolveHorizontalLineY(markers.entries, candles, priceDomain);
   const stopLine = resolveHorizontalLineY(markers.stops, candles, priceDomain);
   const signals = buildSignalPoints(markers.signals, candles, priceDomain);
@@ -68,6 +67,7 @@ export function TradingChartPanel({ symbol, interval, items, markers }: TradingC
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
         role="img"
         aria-label={`${symbol} ${interval} candlestick chart`}
+        style={{ width: "100%", height: "auto", display: "block" }}
       >
         <rect
           x="0"
@@ -174,26 +174,29 @@ export function TradingChartPanel({ symbol, interval, items, markers }: TradingC
 
 /* 根据价格范围构造可绘制 K 线。 */
 function buildChartCandles(items: MarketCandle[], priceDomain: { min: number; max: number }): ChartCandle[] {
-  const step = items.length > 1
-    ? (CHART_WIDTH - CHART_PADDING * 2) / (items.length - 1)
+  const validItems = items.flatMap((item) => {
+    const prices = resolveCandleValues(item);
+    if (!prices) {
+      return [];
+    }
+    return [{ item, prices }];
+  });
+  const step = validItems.length > 1
+    ? (CHART_WIDTH - CHART_PADDING * 2) / (validItems.length - 1)
     : 0;
 
-  return items.map((item, index) => {
+  return validItems.map(({ item, prices }, index) => {
     const x = CHART_PADDING + step * index;
-    const openValue = toNumber(item.open);
-    const closeValue = toNumber(item.close);
-    const highValue = toNumber(item.high);
-    const lowValue = toNumber(item.low);
-    const openY = mapPriceToY(openValue, priceDomain);
-    const closeY = mapPriceToY(closeValue, priceDomain);
-    const highY = mapPriceToY(highValue, priceDomain);
-    const lowY = mapPriceToY(lowValue, priceDomain);
-    const rising = closeValue >= openValue;
+    const openY = mapPriceToY(prices.open, priceDomain);
+    const closeY = mapPriceToY(prices.close, priceDomain);
+    const highY = mapPriceToY(prices.high, priceDomain);
+    const lowY = mapPriceToY(prices.low, priceDomain);
+    const rising = prices.close >= prices.open;
 
     return {
       open_time: item.open_time,
       x,
-      bodyX: x - resolveCandleBodyWidth(items.length) / 2,
+      bodyX: x - resolveCandleBodyWidth(validItems.length) / 2,
       openY,
       closeY,
       highY,
@@ -207,21 +210,24 @@ function buildChartCandles(items: MarketCandle[], priceDomain: { min: number; ma
 
 /* 计算主图展示所需的价格范围。 */
 function resolvePriceDomain(items: MarketCandle[], markers: ChartMarkerGroups): { min: number; max: number } {
-  const prices: number[] = [];
+  const prices: Array<number | null> = [];
 
   for (const item of items) {
-    prices.push(toNumber(item.high), toNumber(item.low), toNumber(item.open), toNumber(item.close));
+    const candleValues = resolveCandleValues(item);
+    if (candleValues) {
+      prices.push(candleValues.high, candleValues.low, candleValues.open, candleValues.close);
+    }
   }
   for (const group of [markers.entries, markers.stops, markers.signals]) {
     for (const item of group) {
       const price = toNumber(item.price);
-      if (Number.isFinite(price)) {
+      if (price !== null) {
         prices.push(price);
       }
     }
   }
 
-  const finitePrices = prices.filter((value) => Number.isFinite(value));
+  const finitePrices = prices.filter((price): price is number => price !== null);
   const min = finitePrices.length ? Math.min(...finitePrices) : 0;
   const max = finitePrices.length ? Math.max(...finitePrices) : 1;
   if (max === min) {
@@ -256,7 +262,7 @@ function resolveHorizontalLineY(
   }
   const latest = items[items.length - 1];
   const price = toNumber(latest.price);
-  if (!Number.isFinite(price)) {
+  if (price === null) {
     return null;
   }
   return mapPriceToY(price, priceDomain);
@@ -272,17 +278,18 @@ function buildSignalPoints(
     return [];
   }
 
-  return items.map((item, index) => {
+  return items.flatMap((item, index) => {
     const price = toNumber(item.price);
-    const fallbackCandle = candles[Math.min(index, candles.length - 1)];
-    const x = fallbackCandle.x;
-    const y = Number.isFinite(price) ? mapPriceToY(price, priceDomain) : fallbackCandle.closeY;
+    if (price === null) {
+      return [];
+    }
+    const signalCandle = resolveSignalCandle(item, candles);
 
-    return {
-      key: `${String(item.time ?? fallbackCandle.open_time)}-${index}`,
-      x,
-      y,
-    };
+    return [{
+      key: `${String(item.time ?? signalCandle.open_time)}-${index}`,
+      x: signalCandle.x,
+      y: mapPriceToY(price, priceDomain),
+    }];
   });
 }
 
@@ -295,10 +302,77 @@ function resolveCandleBodyWidth(count: number): number {
   return Math.max(6, Math.min(18, usableWidth / count * 0.56));
 }
 
-/* 把输入统一成可用数值。 */
-function toNumber(value: unknown): number {
-  const parsed = Number(String(value ?? ""));
-  return Number.isFinite(parsed) ? parsed : 0;
+/* 解析 K 线的价格字段，坏数据直接跳过。 */
+function resolveCandleValues(item: MarketCandle): { open: number; close: number; high: number; low: number } | null {
+  const open = toNumber(item.open);
+  const close = toNumber(item.close);
+  const high = toNumber(item.high);
+  const low = toNumber(item.low);
+  if (open === null || close === null || high === null || low === null) {
+    return null;
+  }
+  return { open, close, high, low };
+}
+
+/* 优先按时间把信号点落到对应 K 线上。 */
+function resolveSignalCandle(item: Record<string, unknown>, candles: ChartCandle[]): ChartCandle {
+  const markerTime = toTimestamp(item.time);
+  if (markerTime === null) {
+    return candles[candles.length - 1];
+  }
+
+  const matchedCandle = candles.find((candidate) => candidate.open_time === markerTime);
+  if (matchedCandle) {
+    return matchedCandle;
+  }
+
+  return candles.reduce((closest, candidate) => {
+    const closestDistance = Math.abs(closest.open_time - markerTime);
+    const candidateDistance = Math.abs(candidate.open_time - markerTime);
+    return candidateDistance < closestDistance ? candidate : closest;
+  }, candles[candles.length - 1]);
+}
+
+/* 获取最近一根有效 K 线的收盘价文本。 */
+function resolveLatestCloseText(items: MarketCandle[]): string {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const price = toNumber(items[index].close);
+    if (price !== null) {
+      return String(price);
+    }
+  }
+
+  return "n/a";
+}
+
+/* 把输入统一成可用数值，坏数据返回空值。 */
+function toNumber(value: unknown): number | null {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return null;
+  }
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+/* 把时间字段统一成时间戳。 */
+function toTimestamp(value: unknown): number | null {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return null;
+  }
+  const numericValue = Number(text);
+  if (Number.isFinite(numericValue)) {
+    return numericValue;
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
 }
 
 /* 把可选文本统一成稳定展示值。 */

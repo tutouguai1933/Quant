@@ -75,6 +75,16 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("signal", content)
         self.assertIn("当前价格", content)
         self.assertIn("当前周期", content)
+        self.assertIn('style={{ width: "100%"', content)
+
+    def test_trading_chart_panel_matches_signal_by_time_and_ignores_bad_prices(self) -> None:
+        content = (WEB_COMPONENTS / "trading-chart-panel.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("item.time", content)
+        self.assertIn("find(", content)
+        self.assertIn("number | null", content)
+        self.assertIn("return null", content)
+        self.assertIn(".filter((price): price is number => price !== null)", content)
 
     def test_market_api_handles_non_array_items(self) -> None:
         content = (WEB_LIB / "api.ts").read_text(encoding="utf-8")
