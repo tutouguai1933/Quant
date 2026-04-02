@@ -91,6 +91,18 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("同步来源", orders_content)
         self.assertIn("同步来源", positions_content)
 
+    def test_strategies_page_focuses_on_execution_not_chart_explanation(self) -> None:
+        content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("执行器状态", content)
+        self.assertIn("执行器控制", content)
+        self.assertIn("最近执行结果", content)
+        self.assertIn("推荐策略", content)
+        self.assertIn("执行决策", content)
+        self.assertIn("这里不再重复看图", content)
+        self.assertNotIn("图表图层摘要", content)
+        self.assertNotIn("止损参考", content)
+
 
 if __name__ == "__main__":
     unittest.main()

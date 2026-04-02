@@ -83,6 +83,12 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
             <p>连接状态：{workspace.executor_runtime.connection_status}</p>
           </section>
 
+          <section className="panel">
+            <p className="eyebrow">执行决策</p>
+            <h3>这里不再重复看图，只负责决定能不能执行</h3>
+            <p>图表判断留在单币页，策略页只保留执行器状态、最近信号和动作控制。</p>
+          </section>
+
           <MetricGrid
             items={[
               { label: "研究状态", value: workspace.research.status, detail: workspace.research.detail },
