@@ -268,15 +268,15 @@ class QlibRunnerTests(unittest.TestCase):
             runner = QlibRunner(config=config)
             runner.train(
                 dataset={
-                    "BTCUSDT": _sample_timing_candles(step_hours=4),
-                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4),
+                    "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
+                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=120),
                 }
             )
 
             result = runner.infer(
                 dataset={
-                    "BTCUSDT": _sample_timing_candles(step_hours=4),
-                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4),
+                    "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
+                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=120),
                 }
             )
 

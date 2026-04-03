@@ -33,6 +33,8 @@ class QlibBacktestTests(unittest.TestCase):
                 "sharpe",
                 "win_rate",
                 "turnover",
+                "sample_count",
+                "max_loss_streak",
             },
         )
 
@@ -48,6 +50,22 @@ class QlibBacktestTests(unittest.TestCase):
         )
 
         self.assertEqual(report["metrics"]["turnover"], "0.2500")
+        self.assertEqual(report["metrics"]["sample_count"], "4")
+        self.assertEqual(report["metrics"]["max_loss_streak"], "0")
+
+    def test_backtest_reports_max_loss_streak(self) -> None:
+        report = run_backtest(
+            rows=[
+                {"future_return_pct": "-0.8000", "label": "sell"},
+                {"future_return_pct": "-0.6000", "label": "sell"},
+                {"future_return_pct": "1.1000", "label": "buy"},
+                {"future_return_pct": "-0.3000", "label": "sell"},
+            ],
+            holding_window="1-3d",
+        )
+
+        self.assertEqual(report["metrics"]["sample_count"], "4")
+        self.assertEqual(report["metrics"]["max_loss_streak"], "2")
 
 
 def _sample_ranked_rows() -> list[dict[str, object]]:

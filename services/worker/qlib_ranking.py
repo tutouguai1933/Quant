@@ -64,7 +64,7 @@ def _evaluate_dry_run_gate(metrics: dict[str, object]) -> dict[str, object]:
         failures.append("win_rate_too_low")
     if turnover > Decimal("0.6"):
         failures.append("turnover_too_high")
-    if sample_count is not None and sample_count < 20:
+    if sample_count is None or sample_count < 20:
         failures.append("sample_count_too_low")
     if max_loss_streak is not None and max_loss_streak > 3:
         failures.append("loss_streak_too_long")
@@ -78,8 +78,16 @@ def _normalize_rule_gate(value: object) -> dict[str, object]:
     """把规则门结果统一成稳定结构。"""
 
     gate = dict(value or {}) if isinstance(value, dict) else {}
-    status = str(gate.get("status", "")).strip() or "passed"
-    reasons = [str(item).strip() for item in list(gate.get("reasons") or []) if str(item).strip()]
+    raw_reasons = gate.get("reasons")
+    if isinstance(raw_reasons, str):
+        reasons = [raw_reasons.strip()] if raw_reasons.strip() else []
+    else:
+        reasons = [str(item).strip() for item in list(raw_reasons or []) if str(item).strip()]
+    status = str(gate.get("status", "")).strip()
+    if not status and reasons:
+        status = "failed"
+    if not status:
+        status = "passed"
     if status != "passed":
         return {"status": "failed", "reasons": reasons or ["rule_gate_blocked"]}
     return {"status": "passed", "reasons": []}

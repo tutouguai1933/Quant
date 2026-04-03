@@ -20,6 +20,8 @@ def run_backtest(*, rows: list[dict[str, object]], holding_window: str) -> dict[
         "sharpe": _format_float(_sharpe_ratio(returns)),
         "win_rate": _format_float(_win_rate(returns)),
         "turnover": _format_float(_turnover_ratio(rows)),
+        "sample_count": str(len(rows)),
+        "max_loss_streak": str(_max_loss_streak(returns)),
     }
     return {"holding_window": holding_window, "metrics": metrics}
 
@@ -75,6 +77,20 @@ def _turnover_ratio(rows: list[dict[str, object]]) -> float:
             turnover_count += 1
         previous_direction = current_direction
     return turnover_count / len(rows)
+
+
+def _max_loss_streak(returns: list[float]) -> int:
+    """计算最长连续亏损段。"""
+
+    longest = 0
+    current = 0
+    for item in returns:
+        if item < 0:
+            current += 1
+            longest = max(longest, current)
+            continue
+        current = 0
+    return longest
 
 
 def _to_float(value: object) -> float:

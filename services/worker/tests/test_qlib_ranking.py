@@ -131,6 +131,57 @@ class QlibRankingTests(unittest.TestCase):
         self.assertIn("loss_streak_too_long", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
+    def test_rank_candidates_blocks_dry_run_when_sample_count_is_missing(self) -> None:
+        metrics = _passing_metrics()
+        metrics.pop("sample_count", None)
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": metrics},
+                }
+            ]
+        )
+
+        self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
+        self.assertIn("sample_count_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
+    def test_rank_candidates_blocks_dry_run_when_rule_gate_status_is_missing_but_reason_exists(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": {**_passing_metrics(), "sample_count": "24"}},
+                    "rule_gate": {"reasons": ["trend_broken"]},
+                }
+            ]
+        )
+
+        self.assertEqual(result["items"][0]["rule_gate"]["status"], "failed")
+        self.assertIn("trend_broken", result["items"][0]["rule_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
+    def test_rank_candidates_keeps_rule_gate_reason_as_single_string_item(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": {**_passing_metrics(), "sample_count": "24"}},
+                    "rule_gate": {"status": "failed", "reasons": "trend_broken"},
+                }
+            ]
+        )
+
+        self.assertEqual(result["items"][0]["rule_gate"]["reasons"], ["trend_broken"])
+        self.assertIn("trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
+
 
 def _passing_metrics() -> dict[str, str]:
     return {
@@ -139,6 +190,8 @@ def _passing_metrics() -> dict[str, str]:
         "sharpe": "1.10",
         "win_rate": "0.58",
         "turnover": "0.24",
+        "sample_count": "24",
+        "max_loss_streak": "1",
     }
 
 
