@@ -23,22 +23,22 @@ class QlibDatasetTests(unittest.TestCase):
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
             candles_1h=_sample_candles(96),
-            candles_4h=_sample_candles(48, step_hours=4),
+            candles_4h=_sample_candles(72, step_hours=4),
         )
 
         self.assertIsInstance(bundle, DatasetBundle)
         self.assertEqual(bundle.symbol, "BTCUSDT")
         self.assertEqual(bundle.timeframe, "4h")
-        self.assertEqual(len(bundle.training_rows), 28)
-        self.assertEqual(len(bundle.validation_rows), 9)
-        self.assertEqual(len(bundle.testing_rows), 10)
+        self.assertEqual(len(bundle.training_rows), 32)
+        self.assertEqual(len(bundle.validation_rows), 11)
+        self.assertEqual(len(bundle.testing_rows), 11)
         self.assertLess(bundle.training_rows[-1]["generated_at"], bundle.validation_rows[0]["generated_at"])
         self.assertLess(bundle.validation_rows[-1]["generated_at"], bundle.testing_rows[0]["generated_at"])
 
     def test_build_dataset_bundle_falls_back_to_1h_when_4h_is_empty(self) -> None:
         bundle = build_dataset_bundle(
             symbol="ethusdt",
-            candles_1h=_sample_candles(24),
+            candles_1h=_sample_candles(96),
             candles_4h=[],
         )
 
@@ -51,12 +51,12 @@ class QlibDatasetTests(unittest.TestCase):
     def test_build_dataset_bundle_falls_back_to_1h_when_4h_cannot_split(self) -> None:
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
-            candles_1h=_sample_candles(24),
+            candles_1h=_sample_candles(96),
             candles_4h=_sample_candles(2, step_hours=4),
         )
 
         self.assertEqual(bundle.timeframe, "1h")
-        self.assertEqual(len(bundle.training_rows), 13)
+        self.assertEqual(len(bundle.training_rows), 14)
         self.assertEqual(len(bundle.validation_rows), 5)
         self.assertEqual(len(bundle.testing_rows), 5)
 
@@ -84,10 +84,10 @@ class QlibDatasetTests(unittest.TestCase):
             {"symbol": "ETHUSDT", "generated_at": 4, "close_return_pct": "0.0000", "range_pct": "0.0000", "body_pct": "0.0000", "volume_ratio": "1.0000", "trend_gap_pct": "0.0000"},
         ]
         label_rows = [
-            {"symbol": "ETHUSDT", "generated_at": 1, "future_return_pct": "0.1000", "direction": "up", "is_trainable": True},
-            {"symbol": "ETHUSDT", "generated_at": 2, "future_return_pct": "0.1000", "direction": "up", "is_trainable": True},
-            {"symbol": "ETHUSDT", "generated_at": 3, "future_return_pct": "0.1000", "direction": "up", "is_trainable": True},
-            {"symbol": "ETHUSDT", "generated_at": 4, "future_return_pct": "0.1000", "direction": "up", "is_trainable": True},
+            {"symbol": "ETHUSDT", "generated_at": 1, "future_return_pct": "0.1000", "label": "buy", "holding_window": "1-3d", "is_trainable": True},
+            {"symbol": "ETHUSDT", "generated_at": 2, "future_return_pct": "0.1000", "label": "buy", "holding_window": "1-3d", "is_trainable": True},
+            {"symbol": "ETHUSDT", "generated_at": 3, "future_return_pct": "0.1000", "label": "buy", "holding_window": "1-3d", "is_trainable": True},
+            {"symbol": "ETHUSDT", "generated_at": 4, "future_return_pct": "0.1000", "label": "buy", "holding_window": "1-3d", "is_trainable": True},
         ]
         with mock.patch("services.worker.qlib_dataset.build_feature_rows", return_value=feature_rows) as mocked_features:
             with mock.patch("services.worker.qlib_dataset.build_label_rows", return_value=label_rows) as mocked_labels:
