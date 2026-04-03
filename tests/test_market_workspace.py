@@ -85,6 +85,7 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("研究候选", page_content)
         self.assertIn("是否允许进入 dry-run", page_content)
         self.assertIn("下一步动作", page_content)
+        self.assertIn("返回信号页继续研究", page_content)
 
     def test_symbol_page_uses_client_trading_workspace_and_not_static_svg_main_chart(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")

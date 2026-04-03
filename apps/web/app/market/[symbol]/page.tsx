@@ -65,6 +65,23 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
         focusSymbol={normalizedSymbol}
         nextStep={chartData.strategy_context.next_step || "下一步动作：先看是否允许进入 dry-run，再决定要不要进入策略中心。"}
       />
+      <section className="panel">
+        <p className="eyebrow">下一步动作</p>
+        <h3>先决定继续研究还是进入执行</h3>
+        <p>
+          {candidate?.allowed_to_dry_run
+            ? "这个币当前已经允许进入 dry-run，可以继续去策略中心确认是否派发。"
+            : "这个币当前还不适合直接进入执行，先回信号页继续研究。"}
+        </p>
+        <div className="action-grid">
+          <a className="button-link secondary-link" href={`/strategies?symbol=${encodeURIComponent(normalizedSymbol)}`}>
+            进入策略中心
+          </a>
+          <a className="button-link secondary-link" href="/signals">
+            返回信号页继续研究
+          </a>
+        </div>
+      </section>
     </AppShell>
   );
 }

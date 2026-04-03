@@ -338,7 +338,7 @@ git commit -m "docs: record qlib validation workflow"
 - Test: `tests/test_frontend_refactor.py`
 - Test: `tests/test_market_workspace.py`
 
-- [ ] **Step 1: 写失败测试，固定页面上会看到统一候选和下一步动作**
+- [x] **Step 1: 写失败测试，固定页面上会看到统一候选和下一步动作**
 
 ```python
 def test_research_candidate_board_shows_next_action_copy(self) -> None:
@@ -348,28 +348,28 @@ def test_research_candidate_board_shows_next_action_copy(self) -> None:
     self.assertIn("允许进入 dry-run", content)
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `./.venv/bin/python -m unittest tests.test_frontend_refactor tests.test_market_workspace -v`  
 Expected: FAIL，提示前端文案或字段还没接上。
 
-- [ ] **Step 3: 写最小实现**
+- [x] **Step 3: 写最小实现**
 
 ```tsx
 <p>下一步动作：{item.allowed_to_dry_run ? "进入 dry-run" : "继续观察"}</p>
 ```
 
-- [ ] **Step 4: 再跑测试确认通过**
+- [x] **Step 4: 再跑测试确认通过**
 
 Run: `./.venv/bin/python -m unittest tests.test_frontend_refactor tests.test_market_workspace -v`  
 Expected: PASS
 
-- [ ] **Step 5: 构建验证**
+- [x] **Step 5: 构建验证**
 
 Run: `cd apps/web && pnpm build`  
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/lib/api.ts apps/web/components/research-candidate-board.tsx apps/web/app/signals/page.tsx apps/web/app/strategies/page.tsx apps/web/app/market/[symbol]/page.tsx tests/test_frontend_refactor.py tests/test_market_workspace.py

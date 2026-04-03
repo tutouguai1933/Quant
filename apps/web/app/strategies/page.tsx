@@ -103,6 +103,28 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
         </section>
       ) : (
         <>
+          {workspace.research_recommendation ? (
+            <section className="panel">
+              <p className="eyebrow">当前推荐执行候选</p>
+              <h3>{workspace.research_recommendation.symbol}</h3>
+              <p>
+                研究门：
+                {" "}
+                {workspace.research_recommendation.dry_run_gate.status}
+                {"，下一步动作："}
+                {workspace.research_recommendation.next_action || "先进入 dry-run 观察。"}
+              </p>
+              <div className="action-grid">
+                <a className="button-link secondary-link" href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
+                  去这个币的图表页
+                </a>
+                <a className="button-link secondary-link" href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
+                  围绕这个币继续执行
+                </a>
+              </div>
+            </section>
+          ) : null}
+
           <MetricGrid
             items={[
               { label: "策略数量", value: String(workspace.overview.strategy_count), detail: "当前阶段固定只做两套首批波段策略" },

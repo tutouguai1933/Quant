@@ -8,7 +8,7 @@ import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { StatusBadge } from "../../components/status-badge";
 import { readFeedback } from "../../lib/feedback";
-import { getLatestResearch, getLatestResearchFallback, getResearchCandidates, getResearchCandidatesFallback, getSignalsPageFallback, listSignals } from "../../lib/api";
+import { getResearchReport, getResearchReportFallback, getSignalsPageFallback, listSignals } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
 
@@ -21,8 +21,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   const feedback = readFeedback(params);
   const session = await getControlSessionState();
   let items = getSignalsPageFallback().items;
-  let latestResearch = getLatestResearchFallback().item;
-  let candidateSnapshot = getResearchCandidatesFallback();
+  let researchReport = getResearchReportFallback().item;
 
   try {
     const response = await listSignals();
@@ -32,26 +31,18 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   }
 
   try {
-    const response = await getLatestResearch();
+    const response = await getResearchReport();
     if (!response.error) {
-      latestResearch = response.data.item;
+      researchReport = response.data.item;
     }
   } catch {
     // API 不可用时仍然保留研究兜底数据。
   }
 
-  try {
-    const response = await getResearchCandidates();
-    if (!response.error) {
-      candidateSnapshot = response.data;
-    }
-  } catch {
-    // API 不可用时仍然保留候选兜底数据。
-  }
-
-  const latestTraining = asRecord(latestResearch.latest_training);
-  const latestInference = asRecord(latestResearch.latest_inference);
-  const latestInferenceSummary = asRecord(latestInference["summary"]);
+  const latestTraining = asRecord(researchReport.latest_training);
+  const latestInference = asRecord(researchReport.latest_inference);
+  const trainingExperiment = asRecord(researchReport.experiments.training);
+  const inferenceExperiment = asRecord(researchReport.experiments.inference);
 
   return (
     <AppShell
@@ -85,18 +76,29 @@ export default async function SignalsPage({ searchParams }: PageProps) {
       <section className="panel">
         <p className="eyebrow">最近研究结果</p>
         <h3>研究训练 / 研究推理</h3>
-        <p>当前研究后端：{formatText(latestResearch.backend, "n/a")}，研究状态：{formatText(latestResearch.status, "n/a")}。</p>
-        <p>最新训练模型：{formatText(latestTraining["model_version"], "n/a")}，最近推理信号数：{formatText(latestInferenceSummary["signal_count"], "0")}。</p>
+        <p>当前研究后端：{formatText(researchReport.backend, "n/a")}，研究状态：{formatText(researchReport.status, "n/a")}。</p>
+        <p>最新训练模型：{formatText(latestTraining["model_version"], "n/a")}，最近推理信号数：{String(researchReport.overview.signal_count)}。</p>
         <div className="action-grid">
           <ActionForm action="run_research_training" label="研究训练" returnTo="/signals" />
           <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
         </div>
       </section>
 
+      <section className="panel">
+        <p className="eyebrow">统一研究报告</p>
+        <h3>最近实验摘要</h3>
+        <p>候选总数：{String(researchReport.overview.candidate_count)}，可进入 dry-run：{String(researchReport.overview.ready_count)}。</p>
+        <p>训练状态：{formatText(trainingExperiment["status"], "unavailable")}，推理状态：{formatText(inferenceExperiment["status"], "unavailable")}。</p>
+        <p>模型版本：{formatText(researchReport.overview.model_version, "n/a")}，生成时间：{formatText(researchReport.overview.generated_at, "n/a")}。</p>
+      </section>
+
       <ResearchCandidateBoard
         title="候选排行榜"
-        summary={candidateSnapshot.summary}
-        items={candidateSnapshot.items}
+        summary={{
+          candidate_count: researchReport.overview.candidate_count,
+          ready_count: researchReport.overview.ready_count,
+        }}
+        items={researchReport.candidates}
         nextStep="下一步动作：优先看可进入 dry-run 的候选，再去策略中心确认是否继续派发。"
       />
 

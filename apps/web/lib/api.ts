@@ -66,6 +66,7 @@ export type StrategyWorkspaceModel = {
     connection_status: string;
   };
   research: WorkspaceResearchOverview;
+  research_recommendation: ResearchRecommendation | null;
   whitelist: string[];
   strategies: StrategyWorkspaceCard[];
   recent_signals: Array<Record<string, unknown>>;
@@ -265,6 +266,34 @@ export type ResearchCandidateSnapshot = {
   candidates: ResearchCandidateItem[];
 };
 
+export type ResearchRecommendation = {
+  symbol: string;
+  score: string;
+  allowed_to_dry_run: boolean;
+  strategy_template: string;
+  dry_run_gate: { status: string; reasons: string[] };
+  next_action: string;
+};
+
+export type ResearchReportItem = {
+  status: string;
+  backend: string;
+  overview: {
+    model_version: string;
+    generated_at: string;
+    candidate_count: number;
+    ready_count: number;
+    signal_count: number;
+  };
+  latest_training: Record<string, unknown>;
+  latest_inference: Record<string, unknown>;
+  candidates: ResearchCandidateItem[];
+  experiments: {
+    training: Record<string, unknown>;
+    inference: Record<string, unknown>;
+  };
+};
+
 export type MarketChartData = {
   items: MarketCandle[];
   overlays: ChartIndicatorSummary;
@@ -421,6 +450,7 @@ export async function getStrategyWorkspace(
       overview: normalizeStrategyWorkspaceOverview(data.overview),
       executor_runtime: normalizeExecutorRuntime(data.executor_runtime),
       research: normalizeWorkspaceResearchOverview(data.research),
+      research_recommendation: normalizeResearchRecommendation(data.research_recommendation),
       whitelist: normalizeStringArray(data.whitelist, []),
       strategies: normalizeStrategyCards(data.strategies),
       recent_signals: normalizeObjectArray(data.recent_signals),
@@ -469,6 +499,19 @@ export async function getResearchCandidate(symbol: string): Promise<ApiEnvelope<
     ...response,
     data: {
       item: normalizeResearchCandidateItem(data.item),
+    },
+  };
+}
+
+export async function getResearchReport(): Promise<ApiEnvelope<{ item: ResearchReportItem }>> {
+  const response = await fetchJson<{ item: Record<string, unknown> }>("/signals/research/report");
+  if (response.error) {
+    return response as ApiEnvelope<{ item: ResearchReportItem }>;
+  }
+  return {
+    ...response,
+    data: {
+      item: normalizeResearchReportItem(response.data.item),
     },
   };
 }
@@ -841,6 +884,26 @@ function normalizeStrategyWorkspaceOverview(
   };
 }
 
+function normalizeResearchRecommendation(item: unknown): ResearchRecommendation | null {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const symbol = String(row.symbol ?? "").trim().toUpperCase();
+  if (!symbol) {
+    return null;
+  }
+  const gateRow: Record<string, unknown> = isPlainObject(row.dry_run_gate) ? row.dry_run_gate : {};
+  return {
+    symbol,
+    score: String(row.score ?? ""),
+    allowed_to_dry_run: Boolean(row.allowed_to_dry_run),
+    strategy_template: String(row.strategy_template ?? ""),
+    dry_run_gate: {
+      status: String(gateRow.status ?? "unavailable"),
+      reasons: normalizeStringArray(gateRow.reasons, []),
+    },
+    next_action: String(row.next_action ?? ""),
+  };
+}
+
 function normalizeWorkspaceAccountState(item: unknown): WorkspaceAccountState {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const summaryRow: Record<string, unknown> = isPlainObject(row.summary) ? row.summary : {};
@@ -1048,6 +1111,30 @@ function normalizeResearchCandidateSummary(value: unknown): ResearchCandidateSna
   };
 }
 
+function normalizeResearchReportItem(item: unknown): ResearchReportItem {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overviewRow: Record<string, unknown> = isPlainObject(row.overview) ? row.overview : {};
+  const experimentsRow: Record<string, unknown> = isPlainObject(row.experiments) ? row.experiments : {};
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    overview: {
+      model_version: String(overviewRow.model_version ?? ""),
+      generated_at: String(overviewRow.generated_at ?? ""),
+      candidate_count: Number(overviewRow.candidate_count ?? 0),
+      ready_count: Number(overviewRow.ready_count ?? 0),
+      signal_count: Number(overviewRow.signal_count ?? 0),
+    },
+    latest_training: isPlainObject(row.latest_training) ? row.latest_training : {},
+    latest_inference: isPlainObject(row.latest_inference) ? row.latest_inference : {},
+    candidates: normalizeResearchCandidateArray(row.candidates),
+    experiments: {
+      training: isPlainObject(experimentsRow.training) ? experimentsRow.training : {},
+      inference: isPlainObject(experimentsRow.inference) ? experimentsRow.inference : {},
+    },
+  };
+}
+
 function normalizeResearchSymbolMap(value: unknown): Record<string, ResearchSymbolSummary> {
   if (!isPlainObject(value)) {
     return {};
@@ -1125,6 +1212,7 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
       model_version: "",
       signal_count: 0,
     },
+    research_recommendation: null,
     whitelist: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
     strategies: [
       {
@@ -1239,6 +1327,29 @@ export function getResearchCandidatesFallback(): { items: ResearchCandidateItem[
   return {
     items: snapshot.candidates,
     summary: snapshot.summary,
+  };
+}
+
+export function getResearchReportFallback(): { item: ResearchReportItem } {
+  return {
+    item: normalizeResearchReportItem({
+      status: "unavailable",
+      backend: "qlib-fallback",
+      overview: {
+        model_version: "",
+        generated_at: "",
+        candidate_count: 0,
+        ready_count: 0,
+        signal_count: 0,
+      },
+      latest_training: {},
+      latest_inference: {},
+      candidates: [],
+      experiments: {
+        training: { status: "unavailable" },
+        inference: { status: "unavailable" },
+      },
+    }),
   };
 }
 
