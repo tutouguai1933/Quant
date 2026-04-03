@@ -261,6 +261,22 @@ cd apps/web
 pnpm start --hostname 127.0.0.1 --port 9012
 ```
 
+## 搜索记录
+
+- `2026-04-04`
+  - 研究对象：`shadcn/ui` 官方开源仓库
+  - 参考来源：`https://github.com/shadcn-ui/ui`
+  - 结论：
+    - 官网精致感主要来自“主题变量 + 页面壳层 + 功能块 + 示例组合”，不是只靠基础组件
+    - 最值得直接参考的路径包括：
+      - `apps/v4/app/(app)/(root)/page.tsx`
+      - `apps/v4/app/(app)/layout.tsx`
+      - `apps/v4/components/page-header.tsx`
+      - `apps/v4/registry/new-york-v4/blocks/dashboard-01/page.tsx`
+      - `apps/v4/registry/new-york-v4/examples/data-table-demo.tsx`
+      - `apps/v4/registry/new-york-v4/examples/chart-bar-demo.tsx`
+    - 后续如果继续优化 Quant 前端，应优先复用官方“完整页面和功能块思路”，而不是只让 AI 单独拼基础组件
+
 ### Freqtrade Spot Dry-Run / Live Scaffold
 
 ```bash
