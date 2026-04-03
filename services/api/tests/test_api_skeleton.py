@@ -33,6 +33,7 @@ from services.api.app.routes.signals import (  # noqa: E402
     get_signal,
     get_research_candidate,
     get_research_candidates,
+    get_research_report,
     ingest_signal,
     list_signals,
     get_latest_research,
@@ -230,6 +231,19 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("items", candidates["data"])
         self.assertIn("summary", candidates["data"])
         self.assertIn("item", candidate["data"])
+
+    def test_research_report_route_returns_consistent_response_shape(self) -> None:
+        token = self._login_token()
+        run_research_training(token=token)
+        run_research_inference(token=token)
+
+        report = get_research_report()
+
+        self.assertEqual(set(report.keys()), {"data", "error", "meta"})
+        self.assertIsNone(report["error"])
+        self.assertIn("item", report["data"])
+        self.assertIn("overview", report["data"]["item"])
+        self.assertIn("experiments", report["data"]["item"])
 
     def test_strategy_run_route_rejects_missing_symbol(self) -> None:
         response = run_strategy({"strategy_id": "trend_breakout"})

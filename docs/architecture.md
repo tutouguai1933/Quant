@@ -194,6 +194,15 @@
 - 触发研究训练和研究推理
 - 读取最近一次研究结果
 - 把研究结果转换成控制平面可消费结构
+- 输出统一研究报告，收口训练、推理、候选和实验摘要
+
+### `services/api/app/services/research_factory_service.py`
+
+负责：
+
+- 把研究结果整理成统一候选快照
+- 给控制平面输出统一研究报告
+- 给单币页和策略页输出可直接消费的候选摘要
 
 ### `services/api/app/services/research_cockpit_service.py`
 

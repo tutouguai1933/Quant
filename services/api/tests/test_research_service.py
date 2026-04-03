@@ -72,6 +72,33 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(item["symbol"], "BTCUSDT")
         self.assertIn("allowed_to_dry_run", item)
 
+    def test_research_service_returns_unified_report(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        report = self.service.get_factory_report()
+
+        self.assertEqual(report["status"], "ready")
+        self.assertIn("overview", report)
+        self.assertIn("latest_training", report)
+        self.assertIn("latest_inference", report)
+        self.assertIn("candidates", report)
+        self.assertIn("experiments", report)
+        self.assertEqual(report["overview"]["candidate_count"], len(report["candidates"]))
+        self.assertEqual(report["experiments"]["training"]["status"], "completed")
+        self.assertEqual(report["experiments"]["inference"]["status"], "completed")
+
+    def test_signals_route_returns_unified_research_report(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        response = signals_route.get_research_report()
+
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["data"]["item"]["status"], "ready")
+        self.assertIn("overview", response["data"]["item"])
+        self.assertIn("experiments", response["data"]["item"])
+
     def test_signals_routes_trigger_training_and_inference(self) -> None:
         training_response = signals_route.run_research_training(token=self.token)
         inference_response = signals_route.run_research_inference(token=self.token)

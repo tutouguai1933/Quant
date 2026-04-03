@@ -99,6 +99,19 @@ def get_research_candidate(symbol: str) -> dict:
     )
 
 
+@router.get("/research/report")
+def get_research_report() -> dict:
+    item = research_service.get_factory_report()
+    return _success(
+        {"item": item},
+        {
+            "source": "control-plane-api",
+            "action": "research-report",
+            "status": item.get("status", "unavailable"),
+        },
+    )
+
+
 @router.post("/research/train")
 def run_research_training(token: str = "", authorization: str = Header("")) -> dict:
     try:

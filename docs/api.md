@@ -70,6 +70,7 @@
 ### 研究层
 
 - `GET /api/v1/signals/research/latest`
+- `GET /api/v1/signals/research/report`
 - `GET /api/v1/signals/research/candidates`
 - `GET /api/v1/signals/research/candidates/{symbol}`
 - `POST /api/v1/signals/research/train`
@@ -172,6 +173,23 @@
 - 最近一次训练结果
 - 最近一次推理结果
 - 各个币种最近一次研究摘要
+
+### `GET /api/v1/signals/research/report`
+
+这是当前研究层统一研究报告入口。  
+会返回：
+
+- 总览
+- 最近一次训练结果
+- 最近一次推理结果
+- 当前候选列表
+- 最近实验摘要
+
+适合用于：
+
+- 后续页面统一读取研究结果
+- 联调时一次性确认训练、推理和候选是否对齐
+- 多 session 接手时快速看清当前研究状态
 
 ### `GET /api/v1/signals/research/candidates`
 

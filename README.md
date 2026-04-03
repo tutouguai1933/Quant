@@ -416,6 +416,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - 依赖本地 socket 的个别 API 测试在当前沙箱里可能被系统权限拦住
 - `Qlib` 这条线本轮已经通过 worker 测试、研究服务测试、前端测试和真实页面验收
 - 研究训练和研究推理现在需要管理员登录后再触发
+- 研究层现在已有统一研究报告接口，后续页面和联调优先读这一个汇总出口
 
 ## 当前待办
 
@@ -430,6 +431,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] Task 7：让市场页、图表页、策略页的动线更顺
 - [x] Task 8：本地和服务器统一遵循端口注册表
 - [x] Task 9：与 `Qlib` 进行对接和调试
+- [x] Qlib 统一研究报告出口
 
 - [x] 目录骨架和基础文档
 - [x] 统一契约和数据库模型

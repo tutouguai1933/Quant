@@ -99,6 +99,13 @@ class ResearchService:
 
         return ResearchFactoryService(result_provider=self.get_latest_result).get_symbol_snapshot(symbol)
 
+    def get_factory_report(self) -> dict[str, object]:
+        """返回统一研究报告。"""
+
+        from services.api.app.services.research_factory_service import ResearchFactoryService
+
+        return ResearchFactoryService(result_provider=self.get_latest_result).build_report()
+
     def _prepare_dataset(self) -> dict[str, list[dict[str, object]]]:
         """准备最小研究输入。"""
 
