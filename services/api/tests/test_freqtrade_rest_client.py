@@ -599,6 +599,51 @@ class FreqtradeRestClientTests(unittest.TestCase):
         self.assertEqual(ping["status"], "pong")
         build_opener.assert_called_once()
 
+    def test_client_retries_once_when_cached_token_becomes_invalid(self) -> None:
+        state: dict[str, object] = {"balances": [{"asset": "USDT", "total": "10", "available": "10", "locked": "0"}]}
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        original_do_get = server.RequestHandlerClass.do_GET
+        seen_bad_token: list[str] = []
+
+        def patched_do_get(self) -> None:  # type: ignore[no-redef]
+            path = urlsplit(self.path).path
+            if path == "/api/v1/balance":
+                auth = self.headers.get("Authorization", "")
+                if auth == "Bearer stale-token":
+                    seen_bad_token.append(auth)
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    payload = json.dumps({"detail": "Could not validate credentials"}).encode("utf-8")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+            original_do_get(self)
+
+        server.RequestHandlerClass.do_GET = patched_do_get
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            client._access_token = "stale-token"
+            balances = client._get_balances()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+            server.RequestHandlerClass.do_GET = original_do_get
+
+        self.assertEqual(len(seen_bad_token), 1)
+        self.assertEqual(balances[0]["asset"], "USDT")
+        self.assertEqual(client._access_token, "token-1")
+
 
 if __name__ == "__main__":
     unittest.main()

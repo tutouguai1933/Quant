@@ -624,6 +624,7 @@ class FreqtradeRestClient:
         path: str,
         auth: bool,
         payload: dict[str, object] | None = None,
+        retry_on_unauthorized: bool = True,
     ) -> dict[str, object]:
         """执行一次 JSON 请求并处理错误。"""
 
@@ -648,6 +649,15 @@ class FreqtradeRestClient:
                 return loaded if isinstance(loaded, dict) else {"data": loaded}
         except error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace").strip()
+            if auth and exc.code == 401 and retry_on_unauthorized:
+                self._access_token = None
+                return self._request_json(
+                    method,
+                    path,
+                    auth=auth,
+                    payload=payload,
+                    retry_on_unauthorized=False,
+                )
             detail = error_body or exc.reason or "unknown error"
             raise FreqtradeRestError(f"Freqtrade REST {method} {path} 返回 {exc.code}: {detail}") from exc
         except error.URLError as exc:
