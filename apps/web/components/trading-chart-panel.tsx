@@ -3,11 +3,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import type { ChartIndicatorSummary, ChartMarkerGroups, MarketCandle } from "../lib/api";
 import { ProChartScript } from "./pro-chart-script";
 import { ProKlineChart } from "./pro-kline-chart";
 import { TimeframeTabs } from "./timeframe-tabs";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 
 type TradingChartPanelProps = {
@@ -71,26 +74,27 @@ export function TradingChartPanel({
   }, []);
 
   return (
-    <section className="panel trading-chart-panel">
+    <Card className="overflow-hidden bg-card/90">
       <ProChartScript onReady={() => setRuntimeReady(true)} />
-
-      <div className="trading-chart-head">
-        <div>
-          <p className="eyebrow">交易主区</p>
-          <h3>{symbol.toUpperCase()}</h3>
-          <p>图表是主角，研究层只做辅助判断。</p>
+      <CardHeader className="space-y-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-2">
+            <p className="eyebrow">交易主区</p>
+            <CardTitle className="text-2xl">{symbol.toUpperCase()}</CardTitle>
+            <p className="text-sm leading-6 text-muted-foreground">图表是主角，研究层只做辅助判断。</p>
+          </div>
+          <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+            <ChartStat label="当前周期" value={interval} />
+            <ChartStat label="当前价格" value={currentPrice} />
+            <ChartStat label="最近图表点" value={latestSignal} />
+            <ChartStat label="入场" value={formatLatestMarkerPrice(markers.entries)} />
+            <ChartStat label="止损" value={formatLatestMarkerPrice(markers.stops)} />
+          </div>
         </div>
+      </CardHeader>
 
-        <div className="chart-status-row">
-          <span>当前周期：{interval}</span>
-          <span>当前价格：{currentPrice}</span>
-          <span>最近图表点：{latestSignal}</span>
-          <span>入场：{formatLatestMarkerPrice(markers.entries)}</span>
-          <span>止损：{formatLatestMarkerPrice(markers.stops)}</span>
-        </div>
-      </div>
-
-      <div className="trading-chart-grid">
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-[120px_minmax(0,1fr)_120px] lg:items-start">
         <TimeframeTabs
           symbol={symbol}
           activeInterval={interval}
@@ -100,7 +104,7 @@ export function TradingChartPanel({
           align="left"
         />
 
-        <div className="trading-chart-stage">
+        <div className="min-w-0 rounded-2xl border border-border/60 bg-background/70 p-3">
           {runtimeReady && normalizedItems.length ? (
             <ProKlineChart
               symbol={symbol}
@@ -123,16 +127,30 @@ export function TradingChartPanel({
           pendingInterval={pendingInterval}
           align="right"
         />
-      </div>
+        </div>
 
-      <section className="panel" style={{ marginTop: 18 }}>
-        <p className="eyebrow">图表下一步</p>
-        <h3>看完图以后直接进入执行判断</h3>
-        <p>最近图表点：{latestSignal}</p>
-        <p>如果这根图和你的判断一致，下一步就去策略中心确认执行动作。</p>
-        <a href={`/strategies?symbol=${encodeURIComponent(symbol.toUpperCase())}`}>进入策略中心</a>
-      </section>
-    </section>
+        <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+          <p className="eyebrow">图表下一步</p>
+          <h3 className="text-lg font-semibold">看完图以后直接进入执行判断</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">最近图表点：{latestSignal}</p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">如果这根图和你的判断一致，下一步就去策略中心确认执行动作。</p>
+          <div className="mt-4">
+            <Button asChild variant="outline">
+              <Link href={`/strategies?symbol=${encodeURIComponent(symbol.toUpperCase())}`}>进入策略中心</Link>
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChartStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
+    </div>
   );
 }
 
@@ -184,7 +202,7 @@ function renderFallbackChart(symbol: string, interval: string, items: MarketCand
           width={String(CHART_WIDTH)}
           height={String(CHART_HEIGHT)}
           rx="18"
-          fill="rgba(255, 255, 255, 0.72)"
+          fill="rgba(8, 18, 25, 0.96)"
         />
         <line
           x1={String(CHART_PADDING)}
@@ -249,7 +267,7 @@ function renderFallbackChart(symbol: string, interval: string, items: MarketCand
             r="4"
             className="chart-signal-dot"
             fill="#195f58"
-            stroke="#ffffff"
+            stroke="rgba(7, 17, 24, 0.96)"
             strokeWidth="2"
           />
         ))}

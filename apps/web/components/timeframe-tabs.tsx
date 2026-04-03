@@ -2,6 +2,8 @@
 
 "use client";
 
+import { cn } from "../lib/utils";
+
 type TimeframeTabsProps = {
   symbol: string;
   activeInterval: string;
@@ -23,12 +25,9 @@ export function TimeframeTabs({
   const intervals = supportedIntervals.length ? supportedIntervals : ["1m", "5m", "15m", "1h", "4h", "1d"];
 
   return (
-    <section
-      className={align === "right" ? "timeframe-rail timeframe-rail-right" : "timeframe-rail"}
-      aria-label={`${symbol} 周期切换`}
-    >
+    <div className={cn("rounded-2xl border border-border/60 bg-card/70 p-3", align === "right" ? "lg:order-last" : "")}>
       <p className="eyebrow">{align === "right" ? "高周期" : "快周期"}</p>
-      <div className="timeframe-stack">
+      <div className="grid gap-2">
         {intervals.map((interval) => {
           const isActive = interval === activeInterval;
           const isPending = pendingInterval === interval;
@@ -37,11 +36,15 @@ export function TimeframeTabs({
             <button
               key={interval}
               type="button"
-              className={isActive ? "timeframe-pill timeframe-pill-active" : "timeframe-pill"}
+              className={cn(
+                "flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm transition-colors",
+                isActive
+                  ? "border-primary/40 bg-primary/12 text-foreground"
+                  : "border-border/60 bg-background/70 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
               onClick={() => onSelect(interval)}
               disabled={isPending}
               aria-pressed={isActive}
-              style={{ textAlign: align === "right" ? "right" : "left" }}
             >
               <strong>{interval}</strong>
               <span>{isActive ? "当前" : isPending ? "切换中" : "切换"}</span>
@@ -49,7 +52,7 @@ export function TimeframeTabs({
           );
         })}
       </div>
-      <p className="timeframe-caption">{symbol}</p>
-    </section>
+      <p className="mt-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">{symbol}</p>
+    </div>
   );
 }

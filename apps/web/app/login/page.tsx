@@ -4,6 +4,9 @@ import { AppShell } from "../../components/app-shell";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import { readFeedback } from "../../lib/feedback";
 import { getLoginPageModel } from "../../lib/api";
 import { getControlSessionState, normalizeAppPath } from "../../lib/session";
@@ -56,39 +59,72 @@ export default async function LoginPage({ searchParams }: PageProps) {
         ]}
       />
 
-      <section className="content-grid">
-        <section className="panel">
-          <p className="eyebrow">登录反馈</p>
-          <h3>完成管理员认证</h3>
-          <form action="/login/submit" method="post" className="stack-form">
-            <input type="hidden" name="next" value={nextPath} />
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+        <Card className="bg-card/90">
+          <CardHeader>
+            <p className="eyebrow">登录反馈</p>
+            <CardTitle>完成管理员认证</CardTitle>
+            <CardDescription>登录后直接回到下一步最关键的页面，不在这里停留做额外设置。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form action="/login/submit" method="post" className="grid gap-4">
+              <input type="hidden" name="next" value={nextPath} />
 
-            <label htmlFor="username">管理员账号</label>
-            <input id="username" name="username" type="text" defaultValue={model.defaultUsername} />
+              <div className="grid gap-2">
+                <label htmlFor="username" className="text-sm font-medium text-foreground">管理员账号</label>
+                <Input id="username" name="username" type="text" defaultValue={model.defaultUsername} />
+              </div>
 
-            <label htmlFor="password">密码</label>
-            <input id="password" name="password" type="password" placeholder="1933" />
+              <div className="grid gap-2">
+                <label htmlFor="password" className="text-sm font-medium text-foreground">密码</label>
+                <Input id="password" name="password" type="password" placeholder="1933" />
+              </div>
 
-            <button type="submit">登录并继续</button>
-          </form>
-        </section>
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
+                <p className="text-sm leading-6 text-muted-foreground">
+                  当前登录只做单管理员入口，目的是快速进入策略、风险和任务控制区。
+                </p>
+                <Button type="submit" className="w-full">登录并继续</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
 
-        <section className="panel">
-          <p className="eyebrow">继续前往</p>
-          <h3>受保护页面</h3>
-          <p>登录完成后，你最可能继续进入下面这些页面：</p>
-          <ul className="link-list">
-            {model.protectedPages.map((page) => (
-              <li key={page}>{page}</li>
-            ))}
-          </ul>
-          <p>当前约束：</p>
-          <ul className="link-list">
-            {model.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </section>
+        <Card className="bg-card/90">
+          <CardHeader>
+            <p className="eyebrow">继续前往</p>
+            <CardTitle>受保护页面</CardTitle>
+            <CardDescription>右侧只保留登录后的目标页和当前约束，避免登录页继续纵向堆信息。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="rounded-2xl border border-border/70 bg-background/60 p-4">
+              <p className="text-sm font-semibold text-foreground">登录后优先跳转</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{nextPath}</p>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground">受保护页面</p>
+              <div className="grid gap-2">
+                {model.protectedPages.map((page) => (
+                  <div key={page} className="rounded-xl border border-border/60 bg-background/40 px-3 py-2 text-sm text-muted-foreground">
+                    {page}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground">当前约束</p>
+              <div className="grid gap-2">
+                {model.notes.map((note) => (
+                  <div key={note} className="rounded-xl border border-border/60 bg-background/40 px-3 py-2 text-sm leading-6 text-muted-foreground">
+                    {note}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </section>
     </AppShell>
   );

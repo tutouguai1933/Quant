@@ -142,6 +142,14 @@
 - 信号页现在可以直接触发研究训练和研究推理
 - 登录后的信号页和驾驶舱主按钮现在默认直接运行 `Qlib` 信号流水线
 - 同时保留“演示信号流水线”，方便重复验证 `dry-run` 成功链路
+- WebUI 现在已经切到“专业交易终端 + 决策优先”的双栏布局
+- 前端现在统一走 `shadcn/ui v4` 风格的基础组件层，不再混用松散样式
+- 首页、信号页、策略页、余额页、订单页、持仓页、登录页都已经完成第一轮终端化重构
+- 前端验证现在固定包含：
+  - 仓库级测试
+  - `pnpm build`
+  - Playwright 布局 / 网络 / 控制台 / axe 审计
+  - Lighthouse 的 `accessibility / best-practices`
 - 订单页和持仓页现在会显示同步来源
 - 当前已经完成一轮真实页面验收：
   - 登录后策略页会显示 `已解锁`
@@ -230,6 +238,14 @@ infra/deploy                阿里云统一部署骨架
   最小研究特征
 - `services/worker/qlib_labels.py`
   最小研究标签
+- `apps/web/components/ui`
+  前端统一基础组件层
+- `apps/web/components/app-shell.tsx`
+  终端化页面壳层和主导航
+- `apps/web/components/research-candidate-board.tsx`
+  候选、回测摘要和失败原因面板
+- `apps/web/components/trading-chart-panel.tsx`
+  单币主图区和图层展示
 
 ## 本地运行
 

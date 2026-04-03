@@ -4,6 +4,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getBalancesPageModel, listBalances } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
@@ -71,22 +72,60 @@ export default async function BalancesPage() {
         ]}
       />
 
-      <DataTable
-        columns={["Asset", "Available", "Locked", "Status", "Sellable", "Hint"]}
-        rows={items.map((item) => ({
-          id: item.id,
-          cells: [
-            item.asset,
-            item.available,
-            item.locked,
-            item.tradeStatus,
-            item.sellableQuantity,
-            item.tradeHint,
-          ],
-        }))}
-        emptyTitle="还没有余额数据"
-        emptyDetail="先确认 Binance 账户接口已经接通，再回到这里查看真实账户余额。"
-      />
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <DataTable
+          columns={["Asset", "Available", "Locked", "Status", "Sellable", "Hint"]}
+          rows={items.map((item) => ({
+            id: item.id,
+            cells: [
+              item.asset,
+              item.available,
+              item.locked,
+              item.tradeStatus,
+              item.sellableQuantity,
+              item.tradeHint,
+            ],
+          }))}
+          emptyTitle="还没有余额数据"
+          emptyDetail="先确认 Binance 账户接口已经接通，再回到这里查看真实账户余额。"
+        />
+
+        <div className="space-y-6">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <p className="eyebrow">同步来源</p>
+              <CardTitle>先确认这页读的是哪一层状态</CardTitle>
+              <CardDescription>余额、订单和持仓都指向同一真实来源时，页面状态才算对齐。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              <p>source：<span className="text-foreground">{model.source}</span></p>
+              <p>truth source：<span className="text-foreground">{model.truthSource}</span></p>
+              <p>当前焦点资产：<span className="text-foreground">{firstFocusItem?.asset ?? "n/a"}</span></p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <p className="eyebrow">账户判断</p>
+              <CardTitle>先分清可交易和零头</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoTile title="可交易资产" detail={tradableItems[0] ? `${tradableItems[0].asset} 当前仍可继续处理。` : "当前没有新的可交易资产。"} />
+              <InfoTile title="交易所零头" detail={dustItems[0] ? `${dustItems[0].asset} 当前更像零头，不要误当成系统卡仓。` : "当前没有检测到交易所零头。"} />
+              <InfoTile title="下一步动作" detail="先看 Sellable 和 Hint，再决定是继续交易还是仅做零头记录。" />
+            </CardContent>
+          </Card>
+        </div>
+      </section>
     </AppShell>
+  );
+}
+
+function InfoTile({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+      <p className="text-sm font-semibold text-foreground">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+    </div>
   );
 }

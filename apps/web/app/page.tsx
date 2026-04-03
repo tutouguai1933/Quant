@@ -1,14 +1,17 @@
 /* 这个文件负责渲染首页驾驶舱，并给出成功链路和异常链路指引。 */
 
+import { ArrowRight, Radar, ShieldAlert, Zap } from "lucide-react";
+
 import { AppShell } from "../components/app-shell";
 import { FeedbackBanner } from "../components/feedback-banner";
 import { MetricGrid } from "../components/metric-grid";
 import { PageHero } from "../components/page-hero";
 import { StatusBadge } from "../components/status-badge";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { readFeedback } from "../lib/feedback";
 import { listOrders, listPositions, listRiskEvents, listSignals, listStrategies, listTasks } from "../lib/api";
 import { getControlSessionState } from "../lib/session";
-
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -35,7 +38,7 @@ export default async function HomePage({ searchParams }: PageProps) {
   return (
     <AppShell
       title="驾驶舱"
-      subtitle="先看当前最佳判断，再决定是否进入图表、策略和执行，不先把你丢进一堆列表里。"
+      subtitle="先看当前最佳判断，再决定是否进入图表、策略和执行。首页只保留最短的决策链。"
       currentPath="/"
       isAuthenticated={isAuthenticated}
     >
@@ -44,12 +47,18 @@ export default async function HomePage({ searchParams }: PageProps) {
       <PageHero
         badge="决策优先"
         title="先决定该跟哪个候选，再进入图表、策略和执行。"
-        description="首页现在只做一件事：把当前最重要的判断、动作和异常入口压缩到一屏里。"
+        description="现在首页作为系统总览，不再堆很多说明卡，而是先告诉你研究有没有出结果、执行器是否可用、异常入口在哪里。"
         aside={
-          <div className="hero-stack">
-            <div className="info-chip">市场：Crypto</div>
-            <div className="info-chip">研究：Qlib</div>
-            <div className="info-chip">执行：Freqtrade</div>
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <span className="text-sm font-medium text-foreground">市场：crypto</span>
+              <span className="text-sm text-muted-foreground">研究：Qlib</span>
+              <span className="text-sm text-muted-foreground">执行：Freqtrade</span>
+            </div>
+            <div className="grid gap-2">
+              <ActionLink href="/signals" label="查看统一研究报告" detail="先确认当前最佳候选和筛选通过率。" />
+              <ActionLink href="/market" label="去市场页筛选目标" detail="从市场总览进入单币图表页。" />
+            </div>
           </div>
         }
       />
@@ -79,115 +88,169 @@ export default async function HomePage({ searchParams }: PageProps) {
         ]}
       />
 
-      <section className="terminal-layout">
-        <div className="terminal-side">
-          <article className="panel terminal-panel">
-            <p className="eyebrow">推荐下一步</p>
-            <h3>先跑研究，再决定是否进入执行</h3>
-            <p>先把研究结果拉出来，再去图表页和策略页确认是否继续推进。首页只保留最短动作链。</p>
-            <div className="terminal-action-stack">
-              <form action="/actions" method="post" className="action-card">
-                <input type="hidden" name="action" value="run_pipeline" />
-                <input type="hidden" name="returnTo" value="/" />
-                <button type="submit">运行 Qlib 信号流水线</button>
-                <p>先生成最新研究候选。</p>
-              </form>
-              <form action="/actions" method="post" className="action-card">
-                <input type="hidden" name="action" value="run_mock_pipeline" />
-                <input type="hidden" name="returnTo" value="/" />
-                <button type="submit">运行演示信号流水线</button>
-                <p>快速重复验证稳定链路。</p>
-              </form>
-              <a className="action-card button-link" href="/signals">
-                <strong>查看统一研究报告</strong>
-                <p>先确认当前最佳候选和筛选通过率。</p>
-              </a>
-            </div>
-          </article>
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.9fr)]">
+        <div className="space-y-6">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <Zap className="size-4 text-primary" />
+                <p className="eyebrow">成功链路</p>
+              </div>
+              <CardTitle>推荐下一步</CardTitle>
+              <CardDescription>先把研究结果拉出来，再去图表页和策略页确认是否继续推进。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-3">
+              <ActionFormCard action="run_pipeline" label="运行 Qlib 信号流水线" detail="先生成最新研究候选。" returnTo="/" />
+              <ActionFormCard action="run_mock_pipeline" label="运行演示信号流水线" detail="快速重复验证稳定链路。" returnTo="/" />
+              <ActionLink href="/signals" label="查看统一研究报告" detail="先确认当前最佳候选和筛选通过率。" />
+            </CardContent>
+          </Card>
 
-          <article className="panel terminal-panel">
-            <p className="eyebrow">异常链路</p>
-            <h3>把失败入口保留在左侧</h3>
-            <p>如果你要验证异常链路，直接从这里制造失败任务或查看风险事件，不需要翻到页面底部。</p>
-            <div className="terminal-action-stack">
-              <form action="/actions" method="post" className="action-card action-card-danger">
-                <input type="hidden" name="action" value="trigger_reconcile_failure" />
-                <input type="hidden" name="returnTo" value="/" />
-                <button type="submit">制造失败任务</button>
-                <p>确认任务失败能否被清楚看见。</p>
-              </form>
-              <a className="action-card button-link" href={isAuthenticated ? "/risk" : "/login?next=%2Frisk"}>
-                <strong>查看风险事件</strong>
-                <p>{latestRisk ? `最近规则：${latestRisk.ruleName}` : "当前没有新风险事件。"} </p>
-              </a>
-            </div>
-          </article>
+          <Card className="bg-card/90">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <Radar className="size-4 text-primary" />
+                <p className="eyebrow">执行入口</p>
+              </div>
+              <CardTitle>研究确认后，再进入策略控制</CardTitle>
+              <CardDescription>如果已经确认候选，可以继续启动策略并派发最新信号；如果还没确认，先去市场页和单币页看图表细节。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-3">
+              <ActionFormCard action="start_strategy" label="启动策略" detail="让执行器进入可派发状态。" returnTo="/" strategyId="1" />
+              <ActionFormCard action="dispatch_latest_signal" label="派发最新信号" detail="把研究结果送进执行链。" returnTo="/" strategyId="1" />
+              <ActionLink href="/market" label="先去市场页看候选" detail="按单币顺序继续判断。" />
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="terminal-main">
-          <article className="panel terminal-panel terminal-panel-strong">
-            <p className="eyebrow">当前决策板</p>
-            <h3>你现在最应该先确认的 4 个状态</h3>
-            <ul className="terminal-status-list">
-              <li>
-                <div>
-                  <strong>研究信号</strong>
-                  <p>{latestSignal ? `当前最新候选：${latestSignal.symbol}` : "还没有研究信号。"} </p>
-                </div>
-                <StatusBadge value={latestSignal?.status ?? "waiting"} />
-              </li>
-              <li>
-                <div>
-                  <strong>执行器状态</strong>
-                  <p>{strategies[0] ? "策略页已可直接接着执行。" : "登录后查看执行器状态。"} </p>
-                </div>
-                <StatusBadge value={strategies[0]?.status ?? "login required"} />
-              </li>
-              <li>
-                <div>
-                  <strong>订单反馈</strong>
-                  <p>{orders[0] ? "执行链已有返回。" : "当前还没有新订单反馈。"} </p>
-                </div>
-                <StatusBadge value={orders[0]?.status ?? "waiting"} />
-              </li>
-              <li>
-                <div>
-                  <strong>持仓状态</strong>
-                  <p>{positions[0] ? "持仓页已有状态可读。" : "当前没有新持仓状态。"} </p>
-                </div>
-                <StatusBadge value={positions[0]?.side ?? "waiting"} />
-              </li>
-            </ul>
-          </article>
+        <div className="space-y-6">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <p className="eyebrow">当前决策板</p>
+              <CardTitle>你现在最应该先确认的 4 个状态</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DecisionRow
+                title="研究信号"
+                detail={latestSignal ? `当前最新候选：${latestSignal.symbol}` : "还没有研究信号。"}
+                status={latestSignal?.status ?? "waiting"}
+              />
+              <DecisionRow
+                title="执行器状态"
+                detail={strategies[0] ? "策略页已可直接接着执行。" : "登录后查看执行器状态。"}
+                status={strategies[0]?.status ?? "login required"}
+              />
+              <DecisionRow
+                title="订单反馈"
+                detail={orders[0] ? "执行链已有返回。" : "当前还没有新订单反馈。"}
+                status={orders[0]?.status ?? "waiting"}
+              />
+              <DecisionRow
+                title="持仓状态"
+                detail={positions[0] ? "持仓页已有状态可读。" : "当前没有新持仓状态。"}
+                status={positions[0]?.side ?? "waiting"}
+              />
+            </CardContent>
+          </Card>
 
-          <article className="panel terminal-panel">
-            <p className="eyebrow">执行入口</p>
-            <h3>研究确认后，再进入策略控制</h3>
-            <p>如果已经确认候选，可以继续启动策略并派发最新信号；如果还没确认，先去市场页和单币页看图表细节。</p>
-            <div className="terminal-inline-actions">
-              <form action="/actions" method="post" className="action-card">
-                <input type="hidden" name="action" value="start_strategy" />
-                <input type="hidden" name="strategyId" value="1" />
-                <input type="hidden" name="returnTo" value="/" />
-                <button type="submit">启动策略</button>
-                <p>让执行器进入可派发状态。</p>
-              </form>
-              <form action="/actions" method="post" className="action-card">
-                <input type="hidden" name="action" value="dispatch_latest_signal" />
-                <input type="hidden" name="strategyId" value="1" />
-                <input type="hidden" name="returnTo" value="/" />
-                <button type="submit">派发最新信号</button>
-                <p>把研究结果送进执行链。</p>
-              </form>
-              <a className="action-card button-link" href="/market">
-                <strong>先去市场页看候选</strong>
-                <p>按单币顺序继续判断。</p>
-              </a>
-            </div>
-          </article>
+          <Card className="bg-card/90">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <ShieldAlert className="size-4 text-[color:var(--warning)]" />
+                <p className="eyebrow">异常链路</p>
+              </div>
+              <CardTitle>失败入口保留在右侧</CardTitle>
+              <CardDescription>如果你要验证异常链路，直接从这里制造失败任务或查看风险事件，不需要翻到页面底部。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <ActionFormCard
+                action="trigger_reconcile_failure"
+                label="制造失败任务"
+                detail="确认任务失败能否被清楚看见。"
+                returnTo="/"
+                danger
+              />
+              <ActionLink
+                href={isAuthenticated ? "/risk" : "/login?next=%2Frisk"}
+                label="查看风险事件"
+                detail={latestRisk ? `最近规则：${latestRisk.ruleName}` : "当前没有新风险事件。"}
+              />
+              <ActionLink
+                href={isAuthenticated ? "/tasks" : "/login?next=%2Ftasks"}
+                label="查看最近任务"
+                detail={latestTask ? `最近任务：${latestTask.taskType}` : "当前没有新任务。"}
+              />
+            </CardContent>
+          </Card>
         </div>
       </section>
     </AppShell>
+  );
+}
+
+function DecisionRow({ title, detail, status }: { title: string; detail: string; status: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-2xl border border-border/70 bg-background/40 px-4 py-4">
+      <div className="space-y-1">
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+      </div>
+      <StatusBadge value={status} />
+    </div>
+  );
+}
+
+function ActionLink({ href, label, detail }: { href: string; label: string; detail: string }) {
+  return (
+    <Card className="bg-[color:var(--panel-strong)]/80">
+      <CardContent className="space-y-4 p-4">
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-foreground">{label}</p>
+          <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+        </div>
+        <Button asChild variant="secondary" size="sm">
+          <a href={href}>
+            继续
+            <ArrowRight />
+          </a>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActionFormCard({
+  action,
+  label,
+  detail,
+  returnTo,
+  strategyId = "",
+  danger = false,
+}: {
+  action: string;
+  label: string;
+  detail: string;
+  returnTo: string;
+  strategyId?: string;
+  danger?: boolean;
+}) {
+  return (
+    <Card className={danger ? "border-rose-500/30 bg-rose-500/10" : "bg-[color:var(--panel-strong)]/80"}>
+      <CardContent className="p-4">
+        <form action="/actions" method="post" className="space-y-4">
+          <input type="hidden" name="action" value={action} />
+          {strategyId ? <input type="hidden" name="strategyId" value={strategyId} /> : null}
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">{label}</p>
+            <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+          </div>
+          <Button type="submit" variant={danger ? "danger" : "default"} size="sm">
+            {label}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -12,6 +12,8 @@ out/
 coverage/
 .deploy/
 .DS_Store
+.next.bak-*/
+apps/web/test-results/
 .env.quant.local
 infra/deploy/.env
 infra/deploy/api.env

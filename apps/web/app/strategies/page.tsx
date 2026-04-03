@@ -7,6 +7,8 @@ import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { StatusBadge } from "../../components/status-badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { readFeedback } from "../../lib/feedback";
 import {
   getResearchCandidate,
@@ -18,7 +20,6 @@ import {
   type WorkspaceAccountState,
 } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
-
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -82,32 +83,42 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
       />
 
       {focusSymbol ? (
-        <section className="panel">
-          <p className="eyebrow">当前跟进对象</p>
-          <h3>{focusSymbol}</h3>
-          <p>你是带着这个币种从市场页或图表页进入策略中心的，先围绕它确认判断，再决定要不要继续派发。</p>
-          <a className="button-link secondary-link" href={`/market/${encodeURIComponent(focusSymbol)}`}>
-            返回这个币种的图表页
-          </a>
-        </section>
+        <Card>
+          <CardHeader>
+            <p className="eyebrow">当前跟进对象</p>
+            <CardTitle>{focusSymbol}</CardTitle>
+            <CardDescription>你是带着这个币种从市场页或图表页进入策略中心的，先围绕它确认判断，再决定要不要继续派发。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline">
+              <a href={`/market/${encodeURIComponent(focusSymbol)}`}>返回这个币种的图表页</a>
+            </Button>
+          </CardContent>
+        </Card>
       ) : null}
 
       {!isAuthenticated ? (
-        <section className="panel">
-          <p className="eyebrow">动作反馈</p>
-          <h3>当前页面需要登录</h3>
-          <p>登录后才能看到真实策略状态、当前判断和最近执行结果，也才能继续启动、暂停、停止和派发。</p>
-          <a className="button-link primary-link" href="/login?next=%2Fstrategies">
-            先去登录
-          </a>
-        </section>
+        <Card>
+          <CardHeader>
+            <p className="eyebrow">动作反馈</p>
+            <CardTitle>当前页面需要登录</CardTitle>
+            <CardDescription>登录后才能看到真实策略状态、当前判断和最近执行结果，也才能继续启动、暂停、停止和派发。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="terminal">
+              <a href="/login?next=%2Fstrategies">先去登录</a>
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <>
-          <section className="panel">
-            <p className="eyebrow">双栏布局</p>
-            <h3>左边看判断，右边看执行</h3>
-            <p>这页把判断和执行分开，避免一整屏连续往下扫。</p>
-          </section>
+          <Card>
+            <CardHeader>
+              <p className="eyebrow">双栏布局</p>
+              <CardTitle>左边看判断，右边看执行</CardTitle>
+              <CardDescription>这页把判断和执行分开，避免一整屏连续往下扫。</CardDescription>
+            </CardHeader>
+          </Card>
 
           <MetricGrid
             items={[
@@ -118,35 +129,28 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
             ]}
           />
 
-          <section
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0, 1.4fr) minmax(320px, 0.9fr)",
-              gap: "clamp(16px, 2vw, 24px)",
-              alignItems: "start",
-            }}
-          >
-            <section style={{ display: "grid", gap: "clamp(16px, 1.5vw, 20px)" }}>
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)] xl:items-start">
+            <section className="grid gap-5">
               {workspace.research_recommendation ? (
-                <section className="panel">
-                  <p className="eyebrow">当前推荐执行候选</p>
-                  <h3>{workspace.research_recommendation.symbol}</h3>
-                  <p>
-                    研究门：
-                    {" "}
-                    {workspace.research_recommendation.dry_run_gate.status}
-                    {"，下一步动作："}
-                    {workspace.research_recommendation.next_action || "先进入 dry-run 观察。"}
-                  </p>
-                  <div className="action-grid">
-                    <a className="button-link secondary-link" href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
-                      去这个币的图表页
-                    </a>
-                    <a className="button-link secondary-link" href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
-                      围绕这个币继续执行
-                    </a>
-                  </div>
-                </section>
+                <Card>
+                  <CardHeader>
+                    <p className="eyebrow">当前推荐执行候选</p>
+                    <CardTitle>{workspace.research_recommendation.symbol}</CardTitle>
+                    <CardDescription>
+                      研究门：{workspace.research_recommendation.dry_run_gate.status}
+                      {"，下一步动作："}
+                      {workspace.research_recommendation.next_action || "先进入 dry-run 观察。"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="action-grid">
+                    <Button asChild variant="outline">
+                      <a href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>去这个币的图表页</a>
+                    </Button>
+                    <Button asChild variant="terminal">
+                      <a href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>围绕这个币继续执行</a>
+                    </Button>
+                  </CardContent>
+                </Card>
               ) : null}
 
               <ResearchCandidateBoard
@@ -165,131 +169,118 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 ]}
               />
 
-              <section className="panel">
-                <p className="eyebrow">下一步动作</p>
-                <h3>把判断收口到可以执行的动作</h3>
-                <p>先确认研究候选是否允许进入 dry-run，再决定要不要围绕这个币继续派发。</p>
-                <div className="action-grid">
-                  <a className="button-link secondary-link" href={focusSymbol ? `/market/${encodeURIComponent(focusSymbol)}` : "/signals"}>
-                    去图表页确认
-                  </a>
-                  <a className="button-link secondary-link" href={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}>
-                    围绕这个币继续执行
-                  </a>
-                  <a className="button-link secondary-link" href="/signals">
-                    回到信号页复核
-                  </a>
-                </div>
-              </section>
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">下一步动作</p>
+                  <CardTitle>把判断收口到可以执行的动作</CardTitle>
+                  <CardDescription>先确认研究候选是否允许进入 dry-run，再决定要不要围绕这个币继续派发。</CardDescription>
+                </CardHeader>
+                <CardContent className="action-grid">
+                  <Button asChild variant="outline">
+                    <a href={focusSymbol ? `/market/${encodeURIComponent(focusSymbol)}` : "/signals"}>去图表页确认</a>
+                  </Button>
+                  <Button asChild variant="terminal">
+                    <a href={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}>围绕这个币继续执行</a>
+                  </Button>
+                  <Button asChild variant="secondary">
+                    <a href="/signals">回到信号页复核</a>
+                  </Button>
+                </CardContent>
+              </Card>
 
-              <section className="panel">
-                <p className="eyebrow">策略判断</p>
-                <h3>两套首批波段策略</h3>
-                <p>只保留当前判断和执行建议，不再把页面往纵向拉长。</p>
-
-                <div className="strategy-grid">
+              <Card className="bg-card/90">
+                <CardHeader>
+                  <p className="eyebrow">策略判断</p>
+                  <CardTitle>两套首批波段策略</CardTitle>
+                  <CardDescription>只保留当前判断和执行建议，不再把页面往纵向拉长。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 xl:grid-cols-2">
                   {workspace.strategies.map((item) => (
                     <StrategyCard key={item.key} item={item} />
                   ))}
-                </div>
-              </section>
+                </CardContent>
+              </Card>
             </section>
 
-            <aside style={{ display: "grid", gap: "clamp(16px, 1.5vw, 20px)" }}>
-              <section className="panel">
-                <p className="eyebrow">执行器状态</p>
-                <h3>先确认当前连的是谁</h3>
-                <p>
-                  当前执行器：
-                  {" "}
-                  {workspace.executor_runtime.executor}
-                  {" / "}
-                  {workspace.executor_runtime.backend}
-                  {" / "}
-                  {workspace.executor_runtime.mode}
-                </p>
-                <p>连接状态：{workspace.executor_runtime.connection_status}</p>
-              </section>
+            <aside className="grid gap-5">
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">执行器状态</p>
+                  <CardTitle>先确认当前连的是谁</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>
+                    当前执行器：
+                    {" "}
+                    {workspace.executor_runtime.executor}
+                    {" / "}
+                    {workspace.executor_runtime.backend}
+                    {" / "}
+                    {workspace.executor_runtime.mode}
+                  </p>
+                  <p>连接状态：{workspace.executor_runtime.connection_status}</p>
+                </CardContent>
+              </Card>
 
-              <section className="panel">
-                <p className="eyebrow">账户收口</p>
-                <h3>执行之后，回到同一套真实来源上看结果</h3>
-                <p>
-                  source:
-                  {" "}
-                  {workspace.account_state.source}
-                  {" / "}
-                  truth source:
-                  {" "}
-                  {workspace.account_state.truth_source}
-                </p>
-                <p>
-                  余额：
-                  {" "}
-                  {workspace.account_state.summary.balance_count}
-                  {"，可交易："}
-                  {workspace.account_state.summary.tradable_balance_count}
-                  {"，零头："}
-                  {workspace.account_state.summary.dust_count}
-                </p>
-                <p>
-                  订单：
-                  {" "}
-                  {workspace.account_state.summary.order_count}
-                  {"，持仓："}
-                  {workspace.account_state.summary.position_count}
-                </p>
-                <p>
-                  最近余额：
-                  {" "}
-                  {formatLatestBalance(workspace.account_state.latest_balance)}
-                  {"，最近订单："}
-                  {formatLatestOrder(workspace.account_state.latest_order)}
-                  {"，最近持仓："}
-                  {formatLatestPosition(workspace.account_state.latest_position)}
-                </p>
-                <div className="action-grid">
-                  <a className="button-link secondary-link" href="/balances">
-                    去余额页
-                  </a>
-                  <a className="button-link secondary-link" href="/orders">
-                    去订单页
-                  </a>
-                  <a className="button-link secondary-link" href="/positions">
-                    去持仓页
-                  </a>
-                </div>
-              </section>
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">账户收口</p>
+                  <CardTitle>执行之后，回到同一套真实来源上看结果</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>source: {workspace.account_state.source} / truth source: {workspace.account_state.truth_source}</p>
+                  <p>余额：{workspace.account_state.summary.balance_count}，可交易：{workspace.account_state.summary.tradable_balance_count}，零头：{workspace.account_state.summary.dust_count}</p>
+                  <p>订单：{workspace.account_state.summary.order_count}，持仓：{workspace.account_state.summary.position_count}</p>
+                  <p>
+                    最近余额：{formatLatestBalance(workspace.account_state.latest_balance)}
+                    {"，最近订单："}
+                    {formatLatestOrder(workspace.account_state.latest_order)}
+                    {"，最近持仓："}
+                    {formatLatestPosition(workspace.account_state.latest_position)}
+                  </p>
+                  <div className="action-grid">
+                    <Button asChild variant="outline">
+                      <a href="/balances">去余额页</a>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <a href="/orders">去订单页</a>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <a href="/positions">去持仓页</a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
-              <section className="panel">
-                <p className="eyebrow">执行动作</p>
-                <h3>这些动作控制的是整台执行器</h3>
-                <p>推荐顺序：先启动，再派发。当前阶段固定控制整台 Freqtrade 执行器。</p>
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">执行动作</p>
+                  <CardTitle>这些动作控制的是整台执行器</CardTitle>
+                  <CardDescription>推荐顺序：先启动，再派发。当前阶段固定控制整台 Freqtrade 执行器。</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="action-grid">
+                    <ActionForm action="start_strategy" label="启动策略" focusSymbol={focusSymbol} />
+                    <ActionForm action="pause_strategy" label="暂停策略" focusSymbol={focusSymbol} />
+                    <ActionForm action="stop_strategy" label="停止策略" focusSymbol={focusSymbol} />
+                    <ActionForm action="dispatch_latest_signal" label="派发最新信号" focusSymbol={focusSymbol} />
+                  </div>
+                </CardContent>
+              </Card>
 
-                <div className="action-grid">
-                  <ActionForm action="start_strategy" label="启动策略" focusSymbol={focusSymbol} />
-                  <ActionForm action="pause_strategy" label="暂停策略" focusSymbol={focusSymbol} />
-                  <ActionForm action="stop_strategy" label="停止策略" focusSymbol={focusSymbol} />
-                  <ActionForm action="dispatch_latest_signal" label="派发最新信号" focusSymbol={focusSymbol} />
-                </div>
-              </section>
-
-              <section className="panel">
-                <p className="eyebrow">白名单摘要</p>
-                <h3>当前只在固定币种池里做 dry-run</h3>
-                <p>{workspace.whitelist.join(" / ")}</p>
-              </section>
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">白名单摘要</p>
+                  <CardTitle>当前只在固定币种池里做 dry-run</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm leading-6 text-muted-foreground">{workspace.whitelist.join(" / ")}</p>
+                </CardContent>
+              </Card>
             </aside>
           </section>
 
-          <section
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: "clamp(16px, 2vw, 24px)",
-              alignItems: "start",
-            }}
-          >
+          <section className="grid gap-5 lg:grid-cols-2 lg:items-start">
             <DataTable
               columns={["Strategy", "Symbol", "Status", "Generated"]}
               rows={workspace.recent_signals.map((item, index) => ({
@@ -340,8 +331,10 @@ function ActionForm({ action, label, focusSymbol }: ActionFormProps) {
       <input type="hidden" name="action" value={action} />
       <input type="hidden" name="strategyId" value="1" />
       <input type="hidden" name="returnTo" value={returnTo} />
-      <button type="submit">{label}</button>
-      <p>{focusSymbol ? `当前关注：${focusSymbol}。` : ""}把控制动作统一走控制平面，当前阶段固定控制整台执行器。</p>
+      <Button type="submit" variant={action === "dispatch_latest_signal" ? "terminal" : "outline"}>
+        {label}
+      </Button>
+      <p>{focusSymbol ? `当前跟进对象：${focusSymbol}。` : ""}把控制动作统一走控制平面，当前阶段固定控制整台执行器。</p>
     </form>
   );
 }
@@ -363,16 +356,8 @@ function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
         <p>{item.description}</p>
       </div>
       <div className="stack-xs">
-        <p>
-          运行状态：
-          {" "}
-          <StatusBadge value={item.runtime_status} />
-        </p>
-        <p>
-          当前判断：
-          {" "}
-          <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} />
-        </p>
+        <p>运行状态： <StatusBadge value={item.runtime_status} /></p>
+        <p>当前判断： <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} /></p>
         <p>研究分数：{formatResearchScore(item.research_summary.score)}</p>
         <p>模型版本：{item.research_summary.model_version || "暂无训练产物"}</p>
         <p>研究解释：{item.research_summary.explanation || "暂无研究解释"}</p>

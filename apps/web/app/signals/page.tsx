@@ -1,5 +1,7 @@
 /* 这个文件负责渲染信号页，并提供最小信号流水线入口。 */
 
+import { FlaskConical, ScanSearch, Sparkles } from "lucide-react";
+
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -7,10 +9,12 @@ import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { StatusBadge } from "../../components/status-badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { readFeedback } from "../../lib/feedback";
 import { getResearchReport, getResearchReportFallback, getSignalsPageFallback, listSignals } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
-
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -58,7 +62,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
         title="先看候选，再看报告，不把研究信息一路往下堆。"
         description="信号页现在只做两件事：左边给你候选和动作，右边给你统一研究报告和最近实验。"
         aside={
-          <div className="terminal-action-stack">
+          <div className="grid gap-2">
             <ActionForm action="run_pipeline" label="运行 Qlib 信号流水线" returnTo="/signals" />
             <ActionForm action="run_mock_pipeline" label="运行演示信号流水线" returnTo="/signals" />
           </div>
@@ -73,8 +77,8 @@ export default async function SignalsPage({ searchParams }: PageProps) {
         ]}
       />
 
-      <section className="terminal-layout">
-        <div className="terminal-side">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+        <div className="space-y-6">
           <ResearchCandidateBoard
             title="候选排行榜"
             summary={{
@@ -89,69 +93,79 @@ export default async function SignalsPage({ searchParams }: PageProps) {
             nextStep="下一步动作：优先看允许进入 dry-run 的候选，再进入策略中心确认是否继续派发。"
           />
 
-          <section className="panel terminal-panel">
-            <p className="eyebrow">研究动作</p>
-            <h3>先训练，再推理</h3>
-            <p>研究动作全部留在左侧，避免和统一研究报告抢主视线。</p>
-            <div className="terminal-action-stack">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <FlaskConical className="size-4 text-primary" />
+                <p className="eyebrow">研究动作</p>
+              </div>
+              <CardTitle>先训练，再推理</CardTitle>
+              <CardDescription>研究动作全部留在左侧，避免和统一研究报告抢主视线。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
               <ActionForm action="run_research_training" label="研究训练" returnTo="/signals" />
               <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
-            </div>
-          </section>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="terminal-main">
-          <section className="panel terminal-panel terminal-panel-strong">
-            <p className="eyebrow">最近研究结果</p>
-            <h3>最近实验摘要</h3>
-            <p>当前可进入 dry-run：{String(researchReport.overview.ready_count)}，被拦下：{String(researchReport.overview.blocked_count)}。</p>
-            <div className="terminal-summary-grid">
-              <div>
-                <strong>研究状态</strong>
-                <p>{formatText(researchReport.status, "n/a")} / {formatText(researchReport.backend, "n/a")}</p>
+        <div className="space-y-6">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <Sparkles className="size-4 text-primary" />
+                <p className="eyebrow">统一研究报告</p>
               </div>
-              <div>
-                <strong>筛选通过率</strong>
-                <p>{researchReport.overview.pass_rate_pct}%</p>
+              <CardTitle>最近研究结果</CardTitle>
+              <CardDescription>
+                当前可进入 dry-run：{String(researchReport.overview.ready_count)}，被拦下：{String(researchReport.overview.blocked_count)}。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoBlock label="研究状态" value={`${formatText(researchReport.status, "n/a")} / ${formatText(researchReport.backend, "n/a")}`} />
+                <InfoBlock label="筛选通过率" value={`${researchReport.overview.pass_rate_pct}%`} />
+                <InfoBlock label="当前最佳候选" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
+                <InfoBlock label="最近推理信号数" value={String(researchReport.overview.signal_count)} />
               </div>
-              <div>
-                <strong>当前最佳候选</strong>
-                <p>{formatText(researchReport.overview.top_candidate_symbol, "n/a")}</p>
-              </div>
-              <div>
-                <strong>最近推理信号数</strong>
-                <p>{String(researchReport.overview.signal_count)}</p>
-              </div>
-            </div>
-            <div className="terminal-report-grid">
-              <div className="terminal-report-card">
-                <p className="eyebrow">训练摘要</p>
-                <h4>研究训练</h4>
-                <p>状态：{formatText(trainingExperiment["status"], "unavailable")}</p>
-                <p>模型版本：{formatText(latestTraining["model_version"], "n/a")}</p>
-              </div>
-              <div className="terminal-report-card">
-                <p className="eyebrow">推理摘要</p>
-                <h4>研究推理</h4>
-                <p>状态：{formatText(inferenceExperiment["status"], "unavailable")}</p>
-                <p>生成时间：{formatText(researchReport.overview.generated_at, "n/a")}</p>
-              </div>
-            </div>
-          </section>
 
-          <section className="panel terminal-panel">
-            <p className="eyebrow">最新信号</p>
-            <h3>标准化 signal 列表</h3>
-            <DataTable
-              columns={["Symbol", "Source", "Generated", "Status"]}
-              rows={items.map((item) => ({
-                id: item.id,
-                cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
-              }))}
-              emptyTitle="还没有 signal"
-              emptyDetail="先运行信号流水线，再回到这里确认是否已经产生最新信号。"
-            />
-          </section>
+              <Tabs defaultValue="experiments">
+                <TabsList>
+                  <TabsTrigger value="experiments">最近实验摘要</TabsTrigger>
+                  <TabsTrigger value="signals">最新信号</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="experiments" className="mt-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ExperimentCard
+                      label="训练摘要"
+                      title="研究训练"
+                      status={formatText(trainingExperiment["status"], "unavailable")}
+                      meta={`模型版本：${formatText(latestTraining["model_version"], "n/a")}`}
+                    />
+                    <ExperimentCard
+                      label="推理摘要"
+                      title="研究推理"
+                      status={formatText(inferenceExperiment["status"], "unavailable")}
+                      meta={`生成时间：${formatText(researchReport.overview.generated_at, "n/a")}`}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="signals" className="mt-4">
+                  <DataTable
+                    columns={["Symbol", "Source", "Generated", "Status"]}
+                    rows={items.map((item) => ({
+                      id: item.id,
+                      cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
+                    }))}
+                    emptyTitle="还没有 signal"
+                    emptyDetail="先运行信号流水线，再回到这里确认是否已经产生最新信号。"
+                  />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
         </div>
       </section>
     </AppShell>
@@ -166,12 +180,51 @@ type ActionFormProps = {
 
 function ActionForm({ action, label, returnTo }: ActionFormProps) {
   return (
-    <form action="/actions" method="post" className="action-card">
-      <input type="hidden" name="action" value={action} />
-      <input type="hidden" name="returnTo" value={returnTo} />
-      <button type="submit">{label}</button>
-      <p>通过控制平面提交研究动作，不直接碰后端实现。</p>
-    </form>
+    <Card className="bg-[color:var(--panel-strong)]/80">
+      <CardContent className="p-4">
+        <form action="/actions" method="post" className="space-y-4">
+          <input type="hidden" name="action" value={action} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">{label}</p>
+            <p className="text-sm leading-6 text-muted-foreground">通过控制平面提交研究动作，不直接碰后端实现。</p>
+          </div>
+          <Button type="submit" size="sm">
+            {label}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExperimentCard({
+  label,
+  title,
+  status,
+  meta,
+}: {
+  label: string;
+  title: string;
+  status: string;
+  meta: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/80 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <h4 className="mt-3 text-base font-semibold text-foreground">{title}</h4>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">状态：{status}</p>
+      <p className="text-sm leading-6 text-muted-foreground">{meta}</p>
+    </div>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/80 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-3 text-base font-semibold text-foreground">{value}</p>
+    </div>
   );
 }
 
