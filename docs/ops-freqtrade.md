@@ -275,7 +275,11 @@ docker compose up -d
   - 会结合最小成交额、交易步长、手续费和最新价格
   - 如果这笔单后面大概率卖不出去，就会在买入前直接拦住
 - 服务器上的 live 单笔上限和执行器默认 stake 现在都已经切到 `6 USDT`
-- 当前卡住的仍然是那笔历史上已经开的 `1 USDT` 小仓位，不是新的 `6 USDT` 配置
+- 这次已经按真实账户完成一次清仓修复：
+  - 真实卖单订单号：`14140484509`
+  - 实际卖出：`23 DOGE`
+  - `Freqtrade live` 的打开中记录已删除，`/api/v1/status` 和 `/api/v1/trades` 都已回空
+  - Binance 账户里还剩 `0.976 DOGE`，这是 `DOGEUSDT` 的数量步长限制留下的零头
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位
