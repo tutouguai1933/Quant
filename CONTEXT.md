@@ -64,6 +64,12 @@
     - worker 主链路现在统一通过 `qlib_dataset.build_dataset_bundle` 做时间切分，不再在 runner 里手写切分逻辑
     - 推理候选现在会真实消费 `qlib_rule_gate.evaluate_rule_gate`，规则门会和回测门一起决定是否允许进入 `dry-run`
     - 为兼容旧测试和旧调用，runner 仍接受单周期旧输入，但内部会先推断周期再转成统一数据集包
+  - 下一阶段开发顺序已明确并落进新计划：
+    - 先收紧研究筛选门
+    - 再做实验对比和统一排行榜
+    - 再把研究结果更深地接进执行决策
+    - 最后固定 `dry-run -> 小额 live -> 复盘` 验证工作流
+  - 对应计划文件已新增：`docs/superpowers/plans/2026-04-03-qlib-screening-and-validation-implementation.md`
   - 针对整轮 `Task 1-9` 的整体 review，已修正两处关键问题：
     - 研究运行目录为空时，不再误报 `ready`
     - 统一研究报告里的 `signal_count` 现在会对 `signals` 列表做回退，不再和推理结果自相矛盾

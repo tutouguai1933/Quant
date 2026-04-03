@@ -168,6 +168,10 @@
 - [x] 把 Binance 账户里剩余的 `0.976 DOGE` 收口为交易所零头处理路径
 - [x] Qlib 最小训练与推理闭环
 - [x] 策略页接入研究分数与解释
+- [ ] Qlib 研究筛选门收紧
+- [ ] Qlib 实验对比与统一排行榜
+- [ ] Qlib 结果更深接入执行决策
+- [ ] 固定 `dry-run -> 小额 live -> 复盘` 验证工作流
 - [ ] 补 Lean / vn.py 扩展目录与接口位
 - [ ] 补 OpenClaw 非交易任务入口
 
@@ -177,6 +181,7 @@
 - [2026-04-02-freqtrade-real-integration-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-freqtrade-real-integration-implementation.md)
 - [2026-04-02-qlib-minimal-research-layer-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-minimal-research-layer-implementation.md)
 - [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
+- [2026-04-03-qlib-screening-and-validation-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-03-qlib-screening-and-validation-implementation.md)
 
 ## 当前文档入口
 
