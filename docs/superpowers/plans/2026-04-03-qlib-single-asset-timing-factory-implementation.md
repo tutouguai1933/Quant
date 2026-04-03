@@ -353,7 +353,7 @@ git commit -m "feat: add qlib validation and backtest report"
 - Modify: `services/worker/qlib_runner.py`
 - Test: `services/worker/tests/test_qlib_ranking.py`
 
-- [ ] **Step 1: 写失败测试，固定候选排行和准入判断**
+- [x] **Step 1: 写失败测试，固定候选排行和准入判断**
 
 ```python
 def test_rank_candidates_marks_dry_run_ready_only_when_metrics_pass() -> None:
@@ -372,12 +372,12 @@ def test_rank_candidates_marks_dry_run_ready_only_when_metrics_pass() -> None:
     assert result["items"][0]["allowed_to_dry_run"] is True
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `.venv/bin/python -m unittest services.worker.tests.test_qlib_ranking -v`  
 Expected: FAIL
 
-- [ ] **Step 3: 写最小实现**
+- [x] **Step 3: 写最小实现**
 
 ```python
 def rank_candidates(items: list[dict[str, object]]) -> dict[str, object]:
@@ -386,12 +386,12 @@ def rank_candidates(items: list[dict[str, object]]) -> dict[str, object]:
     return {"items": normalized}
 ```
 
-- [ ] **Step 4: 再跑测试确认通过**
+- [x] **Step 4: 再跑测试确认通过**
 
 Run: `.venv/bin/python -m unittest services.worker.tests.test_qlib_ranking -v`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/worker/qlib_ranking.py services/worker/qlib_runner.py services/worker/tests/test_qlib_ranking.py
@@ -624,4 +624,3 @@ git commit -m "docs: record qlib timing factory workflow"
   - 类别不平衡与特征筛选留在研究主线里
   - 回测和评估是固定出口
 - 当前计划没有引入新依赖，也没有把 `Qlib` 变成执行器。
-

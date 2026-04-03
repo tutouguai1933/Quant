@@ -159,6 +159,10 @@ class QlibRunnerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "completed")
         self.assertTrue(result["signals"])
+        self.assertIn("candidates", result)
+        self.assertTrue(result["candidates"]["items"])
+        self.assertEqual(len(result["candidates"]["items"]), 2)
+        self.assertEqual(result["candidates"]["summary"]["candidate_count"], 2)
         self.assertEqual(
             set(result["signals"][0].keys()),
             {
@@ -174,6 +178,33 @@ class QlibRunnerTests(unittest.TestCase):
                 "generated_at",
             },
         )
+
+    def test_inference_builds_candidate_level_dry_run_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            runner.train(
+                dataset={
+                    "BTCUSDT": _sample_timing_candles(step_hours=4),
+                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4),
+                }
+            )
+
+            result = runner.infer(
+                dataset={
+                    "BTCUSDT": _sample_timing_candles(step_hours=4),
+                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4),
+                }
+            )
+
+        candidates = {item["symbol"]: item for item in result["candidates"]["items"]}
+        self.assertTrue(candidates["BTCUSDT"]["allowed_to_dry_run"])
+        self.assertFalse(candidates["DOGEUSDT"]["allowed_to_dry_run"])
 
     def test_training_skips_dirty_candles_without_label_misalignment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -254,6 +285,33 @@ def _sample_timing_candles(*, step_hours: int, count: int = 80) -> list[dict[str
         high_price = max(open_price, close_price) + 1.5
         low_price = min(open_price, close_price) - 1.2
         volume = 1200 + index * 12
+        candles.append(
+            {
+                "open_time": base_open_time + index * step_ms,
+                "open": f"{open_price:.2f}",
+                "high": f"{high_price:.2f}",
+                "low": f"{low_price:.2f}",
+                "close": f"{close_price:.2f}",
+                "volume": f"{volume:.2f}",
+                "close_time": base_close_time + index * step_ms,
+            }
+        )
+        price = close_price
+    return candles
+
+
+def _sample_negative_timing_candles(*, step_hours: int, count: int = 80) -> list[dict[str, object]]:
+    candles: list[dict[str, object]] = []
+    base_open_time = 1712016000000
+    base_close_time = 1712019599999
+    step_ms = step_hours * 60 * 60 * 1000
+    price = 100.0
+    for index in range(count):
+        open_price = price
+        close_price = price - (0.7 + (index % 4) * 0.25)
+        high_price = max(open_price, close_price) + 1.2
+        low_price = min(open_price, close_price) - 1.4
+        volume = 900 + index * 6
         candles.append(
             {
                 "open_time": base_open_time + index * step_ms,

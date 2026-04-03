@@ -13,14 +13,13 @@ def run_backtest(*, rows: list[dict[str, object]], holding_window: str) -> dict[
     """运行一次最小回测并返回统一指标。"""
 
     returns = [_to_float(item.get("future_return_pct")) for item in rows]
-    active_count = sum(1 for item in rows if str(item.get("label", "")).strip() != "watch")
 
     metrics = {
         "total_return_pct": _format_float(sum(returns)),
         "max_drawdown_pct": _format_float(_max_drawdown_pct(returns)),
         "sharpe": _format_float(_sharpe_ratio(returns)),
         "win_rate": _format_float(_win_rate(returns)),
-        "turnover": _format_float(active_count / len(rows) if rows else 0.0),
+        "turnover": _format_float(_turnover_ratio(rows)),
     }
     return {"holding_window": holding_window, "metrics": metrics}
 
@@ -59,6 +58,23 @@ def _win_rate(returns: list[float]) -> float:
     if not returns:
         return 0.0
     return sum(1 for item in returns if item > 0) / len(returns)
+
+
+def _turnover_ratio(rows: list[dict[str, object]]) -> float:
+    """按动作段数量计算最小换手。"""
+
+    if not rows:
+        return 0.0
+
+    turnover_count = 0
+    previous_direction = "watch"
+    for row in rows:
+        raw_direction = str(row.get("label", "")).strip() or "watch"
+        current_direction = raw_direction if raw_direction in {"buy", "sell"} else "watch"
+        if current_direction != "watch" and previous_direction == "watch":
+            turnover_count += 1
+        previous_direction = current_direction
+    return turnover_count / len(rows)
 
 
 def _to_float(value: object) -> float:

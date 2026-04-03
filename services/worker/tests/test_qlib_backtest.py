@@ -36,6 +36,19 @@ class QlibBacktestTests(unittest.TestCase):
             },
         )
 
+    def test_backtest_turnover_stays_low_when_direction_is_stable(self) -> None:
+        report = run_backtest(
+            rows=[
+                {"future_return_pct": "1.8000", "label": "buy"},
+                {"future_return_pct": "1.2000", "label": "buy"},
+                {"future_return_pct": "0.9000", "label": "buy"},
+                {"future_return_pct": "1.1000", "label": "buy"},
+            ],
+            holding_window="1-3d",
+        )
+
+        self.assertEqual(report["metrics"]["turnover"], "0.2500")
+
 
 def _sample_ranked_rows() -> list[dict[str, object]]:
     return [

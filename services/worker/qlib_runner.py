@@ -17,6 +17,7 @@ from services.worker.qlib_backtest import run_backtest
 from services.worker.qlib_config import QlibRuntimeConfig
 from services.worker.qlib_features import FEATURE_COLUMNS, build_feature_rows
 from services.worker.qlib_labels import LABEL_COLUMNS, build_label_rows
+from services.worker.qlib_ranking import rank_candidates
 
 
 @dataclass(slots=True)
@@ -89,6 +90,7 @@ class QlibRunner:
             raise RuntimeError("研究层还没有可用训练结果，不能直接推理")
 
         signals: list[dict[str, object]] = []
+        candidates: list[dict[str, object]] = []
         for symbol, candles in dataset.items():
             features = build_feature_rows(symbol, candles)
             if not features:
@@ -112,6 +114,14 @@ class QlibRunner:
                     "generated_at": _utc_now().isoformat(),
                 }
             )
+            candidates.append(
+                {
+                    "symbol": symbol,
+                    "strategy_template": "trend_breakout_timing",
+                    "score": _format_float(score),
+                    "backtest": self._build_candidate_backtest(symbol=symbol, candles=candles),
+                }
+            )
 
         result = {
             "run_id": self._new_run_id("infer"),
@@ -127,6 +137,7 @@ class QlibRunner:
                 "flat_count": sum(1 for item in signals if item["signal"] == "flat"),
                 "short_count": sum(1 for item in signals if item["signal"] == "short"),
             },
+            "candidates": rank_candidates(candidates),
             "warnings": self._build_warnings(),
         }
         self._write_run_record("inference", result["run_id"], result, self._config.paths.latest_inference_path)
@@ -139,21 +150,7 @@ class QlibRunner:
         validation_rows: list[dict[str, object]] = []
         backtest_rows: list[dict[str, object]] = []
         for symbol, candles in dataset.items():
-            feature_rows = build_feature_rows(symbol, candles)
-            label_rows = build_label_rows(symbol, candles)
-            label_rows_by_time = {
-                int(label_row["generated_at"]): label_row
-                for label_row in label_rows
-                if label_row.get("generated_at") is not None
-            }
-            merged_rows: list[dict[str, object]] = []
-            for feature_row in feature_rows:
-                label_row = label_rows_by_time.get(int(feature_row["generated_at"]))
-                if label_row is None:
-                    continue
-                if not label_row["is_trainable"]:
-                    continue
-                merged_rows.append({**feature_row, **label_row})
+            merged_rows = self._build_symbol_rows(symbol, candles)
             symbol_training_rows, symbol_validation_rows, symbol_backtest_rows = self._split_rows(merged_rows)
             training_rows.extend(symbol_training_rows)
             validation_rows.extend(symbol_validation_rows)
@@ -167,6 +164,33 @@ class QlibRunner:
             feature_columns=FEATURE_COLUMNS,
             label_columns=LABEL_COLUMNS,
         )
+
+    def _build_symbol_rows(self, symbol: str, candles: list[dict[str, object]]) -> list[dict[str, object]]:
+        """把单个标的整理成可训练样本。"""
+
+        feature_rows = build_feature_rows(symbol, candles)
+        label_rows = build_label_rows(symbol, candles)
+        label_rows_by_time = {
+            int(label_row["generated_at"]): label_row
+            for label_row in label_rows
+            if label_row.get("generated_at") is not None
+        }
+        merged_rows: list[dict[str, object]] = []
+        for feature_row in feature_rows:
+            label_row = label_rows_by_time.get(int(feature_row["generated_at"]))
+            if label_row is None:
+                continue
+            if not label_row["is_trainable"]:
+                continue
+            merged_rows.append({**feature_row, **label_row})
+        return merged_rows
+
+    def _build_candidate_backtest(self, *, symbol: str, candles: list[dict[str, object]]) -> dict[str, object]:
+        """为单个候选生成独立回测摘要。"""
+
+        merged_rows = self._build_symbol_rows(symbol, candles)
+        _, _, backtest_rows = self._split_rows(merged_rows)
+        return run_backtest(rows=backtest_rows, holding_window="1-3d")
 
     def _split_rows(
         self,
