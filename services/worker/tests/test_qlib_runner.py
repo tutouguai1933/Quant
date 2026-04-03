@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -11,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from services.worker.qlib_config import QlibConfigurationError, load_qlib_config  # noqa: E402
+from services.worker.qlib_dataset import DatasetBundle  # noqa: E402
 from services.worker.qlib_features import FEATURE_COLUMNS, build_feature_rows  # noqa: E402
 from services.worker.qlib_labels import LABEL_COLUMNS, build_label_rows  # noqa: E402
 from services.worker.qlib_runner import QlibRunner  # noqa: E402
@@ -125,6 +127,43 @@ class QlibFeatureTests(unittest.TestCase):
 
 
 class QlibRunnerTests(unittest.TestCase):
+    def test_training_uses_dataset_bundle_for_multi_timeframe_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            candles_1h = _sample_timing_candles(step_hours=1, count=96)
+            candles_4h = _sample_timing_candles(step_hours=4, count=80)
+            bundle = DatasetBundle(
+                symbol="BTCUSDT",
+                timeframe="4h",
+                training_rows=[_sample_training_row(1), _sample_training_row(2), _sample_training_row(3)],
+                validation_rows=[_sample_training_row(4)],
+                testing_rows=[_sample_training_row(5), _sample_training_row(6)],
+            )
+
+            with mock.patch("services.worker.qlib_runner.build_dataset_bundle", return_value=bundle) as mocked_bundle:
+                result = runner.train(
+                    dataset={
+                        "BTCUSDT": {
+                            "candles_1h": candles_1h,
+                            "candles_4h": candles_4h,
+                        }
+                    }
+                )
+
+        mocked_bundle.assert_called_once_with(
+            symbol="BTCUSDT",
+            candles_1h=candles_1h,
+            candles_4h=candles_4h,
+        )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["sample_count"], 3)
+
     def test_training_returns_run_record(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)
@@ -205,6 +244,37 @@ class QlibRunnerTests(unittest.TestCase):
         candidates = {item["symbol"]: item for item in result["candidates"]["items"]}
         self.assertTrue(candidates["BTCUSDT"]["allowed_to_dry_run"])
         self.assertFalse(candidates["DOGEUSDT"]["allowed_to_dry_run"])
+
+    def test_inference_applies_rule_gate_before_candidate_can_enter_dry_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            candles_1h = _sample_timing_candles(step_hours=1, count=96)
+            candles_4h = _sample_timing_candles(step_hours=4, count=80)
+            dataset = {
+                "BTCUSDT": {
+                    "candles_1h": candles_1h,
+                    "candles_4h": candles_4h,
+                }
+            }
+            runner.train(dataset=dataset)
+
+            with mock.patch(
+                "services.worker.qlib_runner.evaluate_rule_gate",
+                return_value={"allowed": False, "reason": "trend_broken"},
+            ) as mocked_gate:
+                result = runner.infer(dataset=dataset)
+
+        mocked_gate.assert_called()
+        candidate = result["candidates"]["items"][0]
+        self.assertFalse(candidate["allowed_to_dry_run"])
+        self.assertEqual(candidate["rule_gate"]["status"], "failed")
+        self.assertEqual(candidate["rule_gate"]["reasons"], ["trend_broken"])
 
     def test_training_skips_dirty_candles_without_label_misalignment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -458,6 +528,27 @@ def _sample_window_competing_hit_candles() -> list[dict[str, object]]:
         98.3,
     ]
     return _build_window_candles(closes)
+
+
+def _sample_training_row(index: int) -> dict[str, object]:
+    return {
+        "symbol": "BTCUSDT",
+        "generated_at": index,
+        "close_return_pct": f"{0.2 * index:.4f}",
+        "range_pct": "1.0000",
+        "body_pct": "0.5000",
+        "volume_ratio": "1.2000",
+        "trend_gap_pct": "1.6000",
+        "ema20_gap_pct": "1.4000",
+        "ema55_gap_pct": "2.2000",
+        "atr_pct": "2.4000",
+        "rsi14": "61.0000",
+        "breakout_strength": "0.8000",
+        "future_return_pct": "1.5000",
+        "label": "buy",
+        "holding_window": "1-3d",
+        "is_trainable": True,
+    }
 
 
 def _build_window_candles(closes: list[float]) -> list[dict[str, object]]:

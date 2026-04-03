@@ -27,13 +27,16 @@ def _normalize_candidate(item: dict[str, object], *, index: int) -> dict[str, ob
 
     backtest = dict(item.get("backtest") or {})
     metrics = dict(backtest.get("metrics") or {})
-    dry_run_gate = _evaluate_dry_run_gate(metrics)
+    rule_gate = _normalize_rule_gate(item.get("rule_gate"))
+    model_gate = _evaluate_dry_run_gate(metrics)
+    dry_run_gate = _merge_gates(rule_gate=rule_gate, model_gate=model_gate)
     return {
         "rank": index,
         "symbol": str(item.get("symbol", "")).strip().upper(),
         "strategy_template": str(item.get("strategy_template", "")).strip() or "trend_breakout_timing",
         "score": _format_decimal(_to_decimal(item.get("score"))),
         "backtest": {"metrics": metrics},
+        "rule_gate": rule_gate,
         "dry_run_gate": dry_run_gate,
         "allowed_to_dry_run": dry_run_gate["status"] == "passed",
     }
@@ -63,6 +66,26 @@ def _evaluate_dry_run_gate(metrics: dict[str, object]) -> dict[str, object]:
     if failures:
         return {"status": "failed", "reasons": failures}
     return {"status": "passed", "reasons": []}
+
+
+def _normalize_rule_gate(value: object) -> dict[str, object]:
+    """把规则门结果统一成稳定结构。"""
+
+    gate = dict(value or {}) if isinstance(value, dict) else {}
+    status = str(gate.get("status", "")).strip() or "passed"
+    reasons = [str(item).strip() for item in list(gate.get("reasons") or []) if str(item).strip()]
+    if status != "passed":
+        return {"status": "failed", "reasons": reasons or ["rule_gate_blocked"]}
+    return {"status": "passed", "reasons": []}
+
+
+def _merge_gates(*, rule_gate: dict[str, object], model_gate: dict[str, object]) -> dict[str, object]:
+    """把规则门和模型门合并成最终 dry-run 准入门。"""
+
+    if rule_gate.get("status") == "passed" and model_gate.get("status") == "passed":
+        return {"status": "passed", "reasons": []}
+    reasons = [*list(rule_gate.get("reasons") or []), *list(model_gate.get("reasons") or [])]
+    return {"status": "failed", "reasons": reasons}
 
 
 def _to_decimal(value: object) -> Decimal:

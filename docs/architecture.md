@@ -185,6 +185,8 @@
 
 - 执行最小训练
 - 执行最小推理
+- 统一消费 `qlib_dataset` 的训练/验证/测试切分结果
+- 在候选输出前真实执行 `qlib_rule_gate` 规则门
 - 写入最近一次训练和推理结果
 
 ### `services/api/app/services/research_service.py`

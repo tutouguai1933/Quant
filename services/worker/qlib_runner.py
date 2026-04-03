@@ -15,9 +15,11 @@ from uuid import uuid4
 
 from services.worker.qlib_backtest import run_backtest
 from services.worker.qlib_config import QlibRuntimeConfig
-from services.worker.qlib_features import FEATURE_COLUMNS, build_feature_rows
-from services.worker.qlib_labels import LABEL_COLUMNS, build_label_rows
+from services.worker.qlib_dataset import DatasetBundle, build_dataset_bundle
+from services.worker.qlib_features import FEATURE_COLUMNS
+from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
+from services.worker.qlib_rule_gate import evaluate_rule_gate
 
 
 @dataclass(slots=True)
@@ -37,7 +39,7 @@ class QlibRunner:
     def __init__(self, *, config: QlibRuntimeConfig) -> None:
         self._config = config
 
-    def train(self, dataset: dict[str, list[dict[str, object]]]) -> dict[str, object]:
+    def train(self, dataset: dict[str, object]) -> dict[str, object]:
         """执行一次最小训练。"""
 
         self._config.ensure_ready()
@@ -80,7 +82,7 @@ class QlibRunner:
         self._write_run_record("training", run_id, result, self._config.paths.latest_training_path)
         return result
 
-    def infer(self, dataset: dict[str, list[dict[str, object]]]) -> dict[str, object]:
+    def infer(self, dataset: dict[str, object]) -> dict[str, object]:
         """执行一次最小推理。"""
 
         self._config.ensure_ready()
@@ -91,15 +93,16 @@ class QlibRunner:
 
         signals: list[dict[str, object]] = []
         candidates: list[dict[str, object]] = []
-        for symbol, candles in dataset.items():
-            features = build_feature_rows(symbol, candles)
-            if not features:
+        for symbol, market_payload in dataset.items():
+            bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
+            latest = self._pick_latest_row(bundle)
+            if latest is None:
                 continue
-            latest = features[-1]
             score = self._score_signal(latest, dict(training_payload.get("metrics") or {}))
             confidence = max(score, 1 - score)
             signal = _classify_signal(score)
             target_weight = _target_weight(signal, score)
+            rule_gate = self._build_rule_gate(latest)
             signals.append(
                 {
                     "symbol": symbol,
@@ -119,7 +122,8 @@ class QlibRunner:
                     "symbol": symbol,
                     "strategy_template": "trend_breakout_timing",
                     "score": _format_float(score),
-                    "backtest": self._build_candidate_backtest(symbol=symbol, candles=candles),
+                    "backtest": self._build_candidate_backtest(rows=bundle.testing_rows),
+                    "rule_gate": rule_gate,
                 }
             )
 
@@ -143,18 +147,17 @@ class QlibRunner:
         self._write_run_record("inference", result["run_id"], result, self._config.paths.latest_inference_path)
         return result
 
-    def _build_training_bundle(self, dataset: dict[str, list[dict[str, object]]]) -> TrainingBundle:
+    def _build_training_bundle(self, dataset: dict[str, object]) -> TrainingBundle:
         """把输入数据整理成训练样本。"""
 
         training_rows: list[dict[str, object]] = []
         validation_rows: list[dict[str, object]] = []
         backtest_rows: list[dict[str, object]] = []
-        for symbol, candles in dataset.items():
-            merged_rows = self._build_symbol_rows(symbol, candles)
-            symbol_training_rows, symbol_validation_rows, symbol_backtest_rows = self._split_rows(merged_rows)
-            training_rows.extend(symbol_training_rows)
-            validation_rows.extend(symbol_validation_rows)
-            backtest_rows.extend(symbol_backtest_rows)
+        for symbol, market_payload in dataset.items():
+            bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
+            training_rows.extend(bundle.training_rows)
+            validation_rows.extend(bundle.validation_rows)
+            backtest_rows.extend(bundle.testing_rows)
         if not training_rows:
             raise RuntimeError("研究层没有拿到可训练样本")
         if not validation_rows or not backtest_rows:
@@ -167,52 +170,77 @@ class QlibRunner:
             label_columns=LABEL_COLUMNS,
         )
 
-    def _build_symbol_rows(self, symbol: str, candles: list[dict[str, object]]) -> list[dict[str, object]]:
-        """把单个标的整理成可训练样本。"""
-
-        feature_rows = build_feature_rows(symbol, candles)
-        label_rows = build_label_rows(symbol, candles)
-        label_rows_by_time = {
-            int(label_row["generated_at"]): label_row
-            for label_row in label_rows
-            if label_row.get("generated_at") is not None
-        }
-        merged_rows: list[dict[str, object]] = []
-        for feature_row in feature_rows:
-            label_row = label_rows_by_time.get(int(feature_row["generated_at"]))
-            if label_row is None:
-                continue
-            if not label_row["is_trainable"]:
-                continue
-            merged_rows.append({**feature_row, **label_row})
-        return merged_rows
-
-    def _build_candidate_backtest(self, *, symbol: str, candles: list[dict[str, object]]) -> dict[str, object]:
+    def _build_candidate_backtest(self, *, rows: list[dict[str, object]]) -> dict[str, object]:
         """为单个候选生成独立回测摘要。"""
 
-        merged_rows = self._build_symbol_rows(symbol, candles)
-        _, _, backtest_rows = self._split_rows(merged_rows)
-        return run_backtest(rows=backtest_rows, holding_window="1-3d")
+        return run_backtest(rows=rows, holding_window="1-3d")
 
-    def _split_rows(
+    def _build_symbol_dataset_bundle(self, *, symbol: str, market_payload: object) -> DatasetBundle:
+        """把单个币种的输入统一转换成数据集包。"""
+
+        candles_1h, candles_4h = self._extract_timeframe_candles(market_payload)
+        try:
+            return build_dataset_bundle(
+                symbol=symbol,
+                candles_1h=candles_1h,
+                candles_4h=candles_4h,
+            )
+        except RuntimeError as exc:
+            if "样本不足以切成训练/验证/测试三段" not in str(exc):
+                raise
+            raise RuntimeError("研究层样本不足，无法生成完整验证和回测结果") from exc
+
+    def _pick_latest_row(self, bundle: DatasetBundle) -> dict[str, object] | None:
+        """优先从测试段挑最新样本，没有则回退到验证和训练。"""
+
+        if bundle.testing_rows:
+            return bundle.testing_rows[-1]
+        if bundle.validation_rows:
+            return bundle.validation_rows[-1]
+        if bundle.training_rows:
+            return bundle.training_rows[-1]
+        return None
+
+    def _build_rule_gate(self, feature_row: dict[str, object]) -> dict[str, object]:
+        """把规则门结果统一成候选结构。"""
+
+        decision = evaluate_rule_gate(feature_row)
+        if bool(decision.get("allowed")):
+            return {"status": "passed", "reasons": []}
+        reason = str(decision.get("reason", "")).strip() or "rule_gate_blocked"
+        return {"status": "failed", "reasons": [reason]}
+
+    def _extract_timeframe_candles(
         self,
-        rows: list[dict[str, object]],
-    ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
-        """把样本按时间切成训练、验证和回测三段。"""
+        market_payload: object,
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+        """兼容旧输入和多周期输入。"""
 
-        if len(rows) < 3:
-            return rows, [], []
+        if isinstance(market_payload, dict):
+            candles_1h = list(market_payload.get("candles_1h") or [])
+            candles_4h = list(market_payload.get("candles_4h") or [])
+            if candles_1h or candles_4h:
+                return candles_1h, candles_4h
 
-        ordered_rows = sorted(rows, key=lambda item: int(item["generated_at"]))
-        train_end = max(1, int(len(ordered_rows) * 0.6))
-        valid_end = max(train_end + 1, int(len(ordered_rows) * 0.8))
-        if valid_end >= len(ordered_rows):
-            valid_end = len(ordered_rows) - 1
-        return (
-            ordered_rows[:train_end],
-            ordered_rows[train_end:valid_end],
-            ordered_rows[valid_end:],
-        )
+        candles = list(market_payload) if isinstance(market_payload, list) else []
+        if not candles:
+            return [], []
+        if self._infer_timeframe(candles) == "4h":
+            return [], candles
+        return candles, []
+
+    @staticmethod
+    def _infer_timeframe(candles: list[dict[str, object]]) -> str:
+        """根据 K 线时间间隔推断周期。"""
+
+        if len(candles) < 2:
+            return "1h"
+        first = int(candles[0].get("open_time") or 0)
+        second = int(candles[1].get("open_time") or 0)
+        step_ms = max(0, second - first)
+        if step_ms >= 4 * 60 * 60 * 1000:
+            return "4h"
+        return "1h"
 
     def _fit_model(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """拟合最小启发式模型。"""

@@ -102,6 +102,14 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(report["experiments"]["training"]["status"], "completed")
         self.assertEqual(report["experiments"]["inference"]["status"], "completed")
 
+    def test_research_service_prepares_both_1h_and_4h_samples_for_runner(self) -> None:
+        self.service.run_training()
+
+        self.assertIn(("BTCUSDT", "1h", 120), self.service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "4h", 120), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "1h", 120), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "4h", 120), self.service._market_reader.calls)
+
     def test_research_report_uses_signal_list_when_summary_missing(self) -> None:
         self._write_json(
             self.runtime_root / "latest_training.json",
@@ -252,6 +260,9 @@ class ResearchServiceTests(unittest.TestCase):
 
 
 class _FakeMarketReader:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+
     def get_symbol_chart(
         self,
         symbol: str,
@@ -259,19 +270,21 @@ class _FakeMarketReader:
         limit: int = 120,
         allowed_symbols: tuple[str, ...] | None = None,
     ) -> dict[str, object]:
+        self.calls.append((symbol, interval, limit))
         base_price = 100 if symbol == "BTCUSDT" else 50
         items = []
+        step_ms = 4 * 3600000 if interval == "4h" else 3600000
         for index in range(120):
             close = base_price + index * 0.8
             items.append(
                 {
-                    "open_time": 1712016000000 + (index * 3600000),
+                    "open_time": 1712016000000 + (index * step_ms),
                     "open": str(close - 1),
                     "high": str(close + 2),
                     "low": str(close - 2),
                     "close": str(close),
                     "volume": str(1000 + (index * 100)),
-                    "close_time": 1712019599999 + (index * 3600000),
+                    "close_time": 1712019599999 + (index * step_ms),
                 }
             )
         return {"items": items, "overlays": {}, "markers": {"signals": [], "entries": [], "stops": []}}

@@ -119,21 +119,31 @@ class ResearchService:
 
         return ResearchFactoryService(result_provider=self.get_latest_result).build_report()
 
-    def _prepare_dataset(self) -> dict[str, list[dict[str, object]]]:
+    def _prepare_dataset(self) -> dict[str, dict[str, list[dict[str, object]]]]:
         """准备最小研究输入。"""
 
-        dataset: dict[str, list[dict[str, object]]] = {}
+        dataset: dict[str, dict[str, list[dict[str, object]]]] = {}
         whitelist = list(self._whitelist_provider())
         for symbol in whitelist:
-            chart = self._market_reader.get_symbol_chart(
+            chart_1h = self._market_reader.get_symbol_chart(
                 symbol=symbol,
                 interval="1h",
                 limit=120,
                 allowed_symbols=tuple(whitelist),
             )
-            items = list(chart.get("items", []))
-            if items:
-                dataset[symbol] = items
+            chart_4h = self._market_reader.get_symbol_chart(
+                symbol=symbol,
+                interval="4h",
+                limit=120,
+                allowed_symbols=tuple(whitelist),
+            )
+            candles_1h = list(chart_1h.get("items", []))
+            candles_4h = list(chart_4h.get("items", []))
+            if candles_1h or candles_4h:
+                dataset[symbol] = {
+                    "candles_1h": candles_1h,
+                    "candles_4h": candles_4h,
+                }
         if not dataset:
             raise QlibConfigurationError("研究层没有拿到可用市场样本")
         return dataset

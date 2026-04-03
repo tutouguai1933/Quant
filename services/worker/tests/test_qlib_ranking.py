@@ -71,6 +71,24 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
+    def test_rank_candidates_blocks_dry_run_when_rule_gate_fails(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": _passing_metrics()},
+                    "rule_gate": {"status": "failed", "reasons": ["trend_broken"]},
+                }
+            ]
+        )
+
+        self.assertEqual(result["items"][0]["rule_gate"]["status"], "failed")
+        self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
+        self.assertIn("trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
 
 def _passing_metrics() -> dict[str, str]:
     return {
