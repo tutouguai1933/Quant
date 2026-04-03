@@ -70,6 +70,8 @@
 ### 研究层
 
 - `GET /api/v1/signals/research/latest`
+- `GET /api/v1/signals/research/candidates`
+- `GET /api/v1/signals/research/candidates/{symbol}`
 - `POST /api/v1/signals/research/train`
 - `POST /api/v1/signals/research/infer`
 
@@ -171,12 +173,32 @@
 - 最近一次推理结果
 - 各个币种最近一次研究摘要
 
+### `GET /api/v1/signals/research/candidates`
+
+这是当前研究工厂的统一候选列表入口。  
+会返回：
+
+- 当前候选列表
+- 当前候选总数
+- 当前允许进入 `dry-run` 的候选数量
+
+### `GET /api/v1/signals/research/candidates/{symbol}`
+
+这是当前单币研究候选的统一读取入口。  
+会返回：
+
+- 该币种最近一次候选摘要
+- 当前分数
+- 当前回测摘要
+- 当前是否允许进入 `dry-run`
+
 ### `POST /api/v1/signals/research/train`
 
 这是当前最小训练入口。  
 当前会：
 
 - 读取白名单市场样本
+- 使用足够覆盖 `1-3d` 标签的 `1h` K 线样本
 - 生成最小特征和标签
 - 输出模型版本和训练记录
 - 现在需要管理员令牌

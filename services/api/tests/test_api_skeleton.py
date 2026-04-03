@@ -31,6 +31,8 @@ from services.api.app.routes.health import get_health, get_healthz  # noqa: E402
 from services.api.app.routes.risk_events import get_risk_event, list_risk_events  # noqa: E402
 from services.api.app.routes.signals import (  # noqa: E402
     get_signal,
+    get_research_candidate,
+    get_research_candidates,
     ingest_signal,
     list_signals,
     get_latest_research,
@@ -212,6 +214,22 @@ class ApiSkeletonTests(unittest.TestCase):
 
         for response in (latest, training, inference):
             self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+
+    def test_research_candidate_routes_return_consistent_response_shape(self) -> None:
+        token = self._login_token()
+        run_research_training(token=token)
+        run_research_inference(token=token)
+
+        candidates = get_research_candidates()
+        candidate = get_research_candidate("BTCUSDT")
+
+        self.assertEqual(set(candidates.keys()), {"data", "error", "meta"})
+        self.assertEqual(set(candidate.keys()), {"data", "error", "meta"})
+        self.assertIsNone(candidates["error"])
+        self.assertIsNone(candidate["error"])
+        self.assertIn("items", candidates["data"])
+        self.assertIn("summary", candidates["data"])
+        self.assertIn("item", candidate["data"])
 
     def test_strategy_run_route_rejects_missing_symbol(self) -> None:
         response = run_strategy({"strategy_id": "trend_breakout"})

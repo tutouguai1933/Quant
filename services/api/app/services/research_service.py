@@ -85,6 +85,20 @@ class ResearchService:
         symbols = dict(latest.get("symbols") or {})
         return symbols.get(symbol.strip().upper())
 
+    def get_factory_snapshot(self) -> dict[str, object]:
+        """返回研究工厂候选总览。"""
+
+        from services.api.app.services.research_factory_service import ResearchFactoryService
+
+        return ResearchFactoryService(result_provider=self.get_latest_result).build_snapshot()
+
+    def get_factory_symbol(self, symbol: str) -> dict[str, object] | None:
+        """返回单个币种的研究候选摘要。"""
+
+        from services.api.app.services.research_factory_service import ResearchFactoryService
+
+        return ResearchFactoryService(result_provider=self.get_latest_result).get_symbol_snapshot(symbol)
+
     def _prepare_dataset(self) -> dict[str, list[dict[str, object]]]:
         """准备最小研究输入。"""
 
@@ -94,7 +108,7 @@ class ResearchService:
             chart = self._market_reader.get_symbol_chart(
                 symbol=symbol,
                 interval="1h",
-                limit=24,
+                limit=120,
                 allowed_symbols=tuple(whitelist),
             )
             items = list(chart.get("items", []))

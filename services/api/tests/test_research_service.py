@@ -50,6 +50,28 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("latest_inference", latest)
         self.assertTrue(latest["symbols"])
 
+    def test_research_service_returns_ranked_candidates(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        snapshot = self.service.get_factory_snapshot()
+
+        self.assertEqual(snapshot["status"], "ready")
+        self.assertIn("candidates", snapshot)
+        self.assertIn("summary", snapshot)
+        self.assertTrue(snapshot["candidates"])
+        self.assertEqual(snapshot["summary"]["candidate_count"], len(snapshot["candidates"]))
+
+    def test_research_service_returns_symbol_candidate_summary(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        item = self.service.get_factory_symbol("BTCUSDT")
+
+        self.assertIsNotNone(item)
+        self.assertEqual(item["symbol"], "BTCUSDT")
+        self.assertIn("allowed_to_dry_run", item)
+
     def test_signals_routes_trigger_training_and_inference(self) -> None:
         training_response = signals_route.run_research_training(token=self.token)
         inference_response = signals_route.run_research_inference(token=self.token)
@@ -78,8 +100,8 @@ class _FakeMarketReader:
     ) -> dict[str, object]:
         base_price = 100 if symbol == "BTCUSDT" else 50
         items = []
-        for index in range(6):
-            close = base_price + index * 2
+        for index in range(120):
+            close = base_price + index * 0.8
             items.append(
                 {
                     "open_time": 1712016000000 + (index * 3600000),

@@ -73,6 +73,32 @@ def get_latest_research() -> dict:
     return _success({"item": item}, {"source": "control-plane-api", "action": "research-latest"})
 
 
+@router.get("/research/candidates")
+def get_research_candidates() -> dict:
+    snapshot = research_service.get_factory_snapshot()
+    return _success(
+        {"items": snapshot.get("candidates", []), "summary": snapshot.get("summary", {})},
+        {
+            "source": "control-plane-api",
+            "action": "research-candidates",
+            "status": snapshot.get("status", "unavailable"),
+        },
+    )
+
+
+@router.get("/research/candidates/{symbol}")
+def get_research_candidate(symbol: str) -> dict:
+    item = research_service.get_factory_symbol(symbol)
+    return _success(
+        {"item": item},
+        {
+            "source": "control-plane-api",
+            "action": "research-candidate",
+            "symbol": symbol.strip().upper(),
+        },
+    )
+
+
 @router.post("/research/train")
 def run_research_training(token: str = "", authorization: str = Header("")) -> dict:
     try:
