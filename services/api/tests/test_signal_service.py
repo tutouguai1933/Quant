@@ -87,10 +87,9 @@ class SignalServiceTests(unittest.TestCase):
         signal_service_module.research_service = _FakeResearchService()
         try:
             self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(1)
         finally:
             signal_service_module.research_service = original_research_service
-
-        claimed = self.service.claim_latest_dispatchable_signal(1)
 
         self.assertIsNotNone(claimed)
         self.assertEqual(claimed["source"], "qlib")
@@ -101,10 +100,9 @@ class SignalServiceTests(unittest.TestCase):
         signal_service_module.research_service = _FakeResearchService()
         try:
             self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(2)
         finally:
             signal_service_module.research_service = original_research_service
-
-        claimed = self.service.claim_latest_dispatchable_signal(2)
 
         self.assertIsNone(claimed)
 
@@ -134,6 +132,18 @@ class SignalServiceTests(unittest.TestCase):
         self.assertIsNotNone(claimed)
         self.assertEqual(claimed["signal_id"], created["signal_id"])
 
+    def test_qlib_signal_without_dry_run_gate_is_not_dispatchable(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _FakeResearchServiceWithoutGate()
+        try:
+            self.service.run_pipeline("qlib")
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        claimed = self.service.claim_latest_dispatchable_signal(1)
+
+        self.assertIsNone(claimed)
+
 
 class _FakeResearchService:
     def run_training(self) -> dict[str, object]:
@@ -153,6 +163,16 @@ class _FakeResearchService:
                 }
             ],
         }
+
+    def get_factory_symbol(self, symbol: str) -> dict[str, object] | None:
+        if symbol == "BTCUSDT":
+            return {"symbol": "BTCUSDT", "allowed_to_dry_run": True}
+        return None
+
+
+class _FakeResearchServiceWithoutGate(_FakeResearchService):
+    def get_factory_symbol(self, symbol: str) -> dict[str, object] | None:
+        return None
 
 
 class _FailingResearchService:

@@ -58,6 +58,7 @@ class SignalService:
 
     def __init__(self) -> None:
         self._signals: dict[int, SignalContract] = {}
+        self._signal_metadata: dict[int, dict[str, object]] = {}
         self._next_signal_id = 1
         self._last_run: TrainingRunSummary | None = None
         self._dispatch_lock = threading.Lock()
@@ -66,12 +67,12 @@ class SignalService:
     def list_signals(self, limit: int = 100) -> list[dict[str, object]]:
         self._ensure_seed_data()
         ordered_signals = sorted(self._signals.values(), key=lambda item: item.signal_id or 0, reverse=True)
-        return [signal.to_dict() for signal in ordered_signals[:limit]]
+        return [self._serialize_signal(signal) for signal in ordered_signals[:limit]]
 
     def get_signal(self, signal_id: int) -> dict[str, object] | None:
         self._ensure_seed_data()
         signal = self._signals.get(signal_id)
-        return None if signal is None else signal.to_dict()
+        return None if signal is None else self._serialize_signal(signal)
 
     def update_signal_status(self, signal_id: int, status: str) -> dict[str, object] | None:
         with self._dispatch_lock:
@@ -79,7 +80,7 @@ class SignalService:
             if signal is None:
                 return None
             signal.status = status
-            return signal.to_dict()
+            return self._serialize_signal(signal)
 
     def claim_latest_dispatchable_signal(self, strategy_id: int) -> dict[str, object] | None:
         """原子地认领一条可派发信号，避免并发重复派发。"""
@@ -94,10 +95,12 @@ class SignalService:
                     continue
                 if signal.status not in dispatchable_statuses:
                     continue
+                if not self._is_dispatchable_signal(signal):
+                    continue
                 if signal_id in self._dispatch_claims:
                     continue
                 self._dispatch_claims.add(signal_id)
-                return signal.to_dict()
+                return self._serialize_signal(signal)
 
             if strategy_id != 1:
                 return None
@@ -110,10 +113,12 @@ class SignalService:
                     continue
                 if signal.status not in dispatchable_statuses:
                     continue
+                if not self._is_dispatchable_signal(signal):
+                    continue
                 if signal_id in self._dispatch_claims:
                     continue
                 self._dispatch_claims.add(signal_id)
-                return signal.to_dict()
+                return self._serialize_signal(signal)
         return None
 
     def release_dispatch_claim(self, signal_id: int) -> None:
@@ -135,7 +140,8 @@ class SignalService:
             strategy_id=payload.get("strategy_id"),
         )
         self._signals[signal.signal_id] = signal
-        return signal.to_dict()
+        self._signal_metadata[signal.signal_id] = dict(payload.get("payload") or {})
+        return self._serialize_signal(signal)
 
     def run_pipeline(self, source: str = SignalSource.MOCK.value) -> dict[str, object]:
         requested_source = SignalSource(source)
@@ -186,12 +192,19 @@ class SignalService:
             raise SignalPipelineUnavailableError(str(exc)) from exc
 
         signal_count = 0
+        candidate_items = list((inference.get("candidates") or {}).get("items", []))
+        candidate_by_symbol = {
+            str(item.get("symbol", "")).strip().upper(): dict(item)
+            for item in candidate_items
+            if str(item.get("symbol", "")).strip()
+        }
         for item in list(inference.get("signals", [])):
             signal_id = self._allocate_signal_id()
+            normalized_symbol = str(item.get("symbol", "")).strip().upper()
             self._signals[signal_id] = SignalContract(
                 signal_id=signal_id,
                 strategy_id=None,
-                symbol=str(item.get("symbol", "")),
+                symbol=normalized_symbol,
                 side=str(item.get("side", "flat")),
                 score=str(item.get("score", "0")),
                 confidence=str(item.get("confidence", "0")),
@@ -199,6 +212,12 @@ class SignalService:
                 generated_at=self._parse_timestamp(str(item.get("generated_at", datetime.now(timezone.utc).isoformat()))),
                 source=SignalSource.QLIB,
             )
+            candidate = candidate_by_symbol.get(normalized_symbol, {})
+            self._signal_metadata[signal_id] = {
+                "candidate": candidate,
+                "dry_run_gate": dict(candidate.get("dry_run_gate") or {}),
+                "allowed_to_dry_run": bool(candidate.get("allowed_to_dry_run")),
+            }
             signal_count += 1
 
         return TrainingRunSummary(
@@ -270,12 +289,30 @@ class SignalService:
         self._next_signal_id += 1
         return signal_id
 
+    def _serialize_signal(self, signal: SignalContract) -> dict[str, object]:
+        """把信号和内部元数据一起返回。"""
+
+        payload = signal.to_dict()
+        payload["payload"] = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
+        return payload
+
     @staticmethod
     def _parse_timestamp(value: str) -> datetime:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None or parsed.utcoffset() is None:
             raise ValueError("generated_at must be timezone-aware")
         return parsed
+
+    def _is_dispatchable_signal(self, signal: SignalContract) -> bool:
+        """判断当前信号是否允许进入派发。"""
+
+        if signal.source != SignalSource.QLIB:
+            return True
+        metadata = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
+        gate = dict(metadata.get("dry_run_gate") or {})
+        if gate:
+            return str(gate.get("status", "")).strip() == "passed"
+        return bool(metadata.get("allowed_to_dry_run"))
 
 
 signal_service = SignalService()
