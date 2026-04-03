@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -62,6 +63,19 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertTrue(snapshot["candidates"])
         self.assertEqual(snapshot["summary"]["candidate_count"], len(snapshot["candidates"]))
 
+    def test_research_service_empty_runtime_stays_unavailable(self) -> None:
+        latest = self.service.get_latest_result()
+        report = self.service.get_factory_report()
+        snapshot = self.service.get_factory_snapshot()
+
+        self.assertEqual(latest["status"], "unavailable")
+        self.assertEqual(report["status"], "unavailable")
+        self.assertEqual(snapshot["status"], "unavailable")
+        self.assertEqual(snapshot["candidates"], [])
+        self.assertEqual(snapshot["summary"]["candidate_count"], 0)
+        self.assertEqual(report["experiments"]["training"]["status"], "unavailable")
+        self.assertEqual(report["experiments"]["inference"]["status"], "unavailable")
+
     def test_research_service_returns_symbol_candidate_summary(self) -> None:
         self.service.run_training()
         self.service.run_inference()
@@ -87,6 +101,122 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(report["overview"]["candidate_count"], len(report["candidates"]))
         self.assertEqual(report["experiments"]["training"]["status"], "completed")
         self.assertEqual(report["experiments"]["inference"]["status"], "completed")
+
+    def test_research_report_uses_signal_list_when_summary_missing(self) -> None:
+        self._write_json(
+            self.runtime_root / "latest_training.json",
+            {
+                "run_id": "train-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T10:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "artifact_path": "/tmp/model.json",
+            },
+        )
+        self._write_json(
+            self.runtime_root / "latest_inference.json",
+            {
+                "run_id": "infer-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T11:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "signals": [
+                    {"symbol": "BTCUSDT", "signal": "long", "score": "0.7300"},
+                    {"symbol": "ETHUSDT", "signal": "flat", "score": "0.5100"},
+                ],
+                "candidates": {"items": [], "summary": {"candidate_count": 0, "ready_count": 0}},
+            },
+        )
+
+        report = self.service.get_factory_report()
+
+        self.assertEqual(report["status"], "ready")
+        self.assertEqual(report["overview"]["signal_count"], 2)
+        self.assertEqual(report["experiments"]["inference"]["signal_count"], 2)
+
+    def test_research_snapshot_hides_stale_candidates_when_status_is_unavailable(self) -> None:
+        self._write_json(
+            self.runtime_root / "latest_inference.json",
+            {
+                "run_id": "infer-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T11:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "signals": [{"symbol": "BTCUSDT", "signal": "long", "score": "0.7300"}],
+                "candidates": {
+                    "items": [
+                        {
+                            "symbol": "BTCUSDT",
+                            "score": "0.7300",
+                            "allowed_to_dry_run": True,
+                        }
+                    ],
+                    "summary": {"candidate_count": 1, "ready_count": 1},
+                },
+            },
+        )
+
+        snapshot = self.service.get_factory_snapshot()
+        report = self.service.get_factory_report()
+
+        self.assertEqual(snapshot["status"], "unavailable")
+        self.assertEqual(snapshot["candidates"], [])
+        self.assertEqual(snapshot["summary"]["candidate_count"], 0)
+        self.assertEqual(report["candidates"], [])
+        self.assertEqual(report["overview"]["candidate_count"], 0)
+
+    def test_research_snapshot_repairs_candidate_summary_drift(self) -> None:
+        self._write_json(
+            self.runtime_root / "latest_training.json",
+            {
+                "run_id": "train-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T10:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "artifact_path": "/tmp/model.json",
+            },
+        )
+        self._write_json(
+            self.runtime_root / "latest_inference.json",
+            {
+                "run_id": "infer-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T11:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "signals": [{"symbol": "BTCUSDT", "signal": "long", "score": "0.7300"}],
+                "candidates": {
+                    "items": [
+                        {
+                            "rank": 1,
+                            "symbol": "BTCUSDT",
+                            "strategy_template": "trend_breakout_timing",
+                            "score": "0.7300",
+                            "backtest": {"metrics": {}},
+                            "dry_run_gate": {"status": "passed", "reasons": []},
+                            "allowed_to_dry_run": True,
+                        },
+                        {
+                            "rank": 2,
+                            "symbol": "ETHUSDT",
+                            "strategy_template": "trend_pullback_timing",
+                            "score": "0.6100",
+                            "backtest": {"metrics": {}},
+                            "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                            "allowed_to_dry_run": False,
+                        },
+                    ],
+                    "summary": {"candidate_count": 1, "ready_count": 0},
+                },
+            },
+        )
+
+        snapshot = self.service.get_factory_snapshot()
+        report = self.service.get_factory_report()
+
+        self.assertEqual(snapshot["summary"]["candidate_count"], 2)
+        self.assertEqual(snapshot["summary"]["ready_count"], 1)
+        self.assertEqual(report["overview"]["candidate_count"], 2)
+        self.assertEqual(report["overview"]["ready_count"], 1)
 
     def test_signals_route_returns_unified_research_report(self) -> None:
         self.service.run_training()
@@ -115,6 +245,10 @@ class ResearchServiceTests(unittest.TestCase):
 
         self.assertEqual(training_response["error"]["code"], "unauthorized")
         self.assertEqual(inference_response["error"]["code"], "unauthorized")
+
+    @staticmethod
+    def _write_json(path: Path, payload: dict[str, object]) -> None:
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 class _FakeMarketReader:

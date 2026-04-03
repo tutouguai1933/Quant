@@ -130,6 +130,14 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("模型版本：", strategy_card_section)
         self.assertIn("研究分数：", strategy_card_section)
 
+    def test_research_candidate_fallback_does_not_claim_ready(self) -> None:
+        content = (REPO_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(encoding="utf-8")
+
+        fallback_section = content.split("export function getResearchCandidatesFallback()", 1)[1].split("export function getPositionsPageModel()", 1)[0]
+        self.assertIn("candidate_count: 0", fallback_section)
+        self.assertIn("ready_count: 0", fallback_section)
+        self.assertIn("candidates: []", fallback_section)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -230,6 +230,25 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertGreater(result["sample_count"], 0)
 
+    def test_training_rejects_dataset_without_validation_and_backtest_split(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+
+            with self.assertRaises(RuntimeError) as ctx:
+                runner.train(
+                    dataset={
+                        "BTCUSDT": _sample_timing_candles(step_hours=4)[:20],
+                    }
+                )
+
+        self.assertIn("完整验证和回测结果", str(ctx.exception))
+
 
 def _sample_candles() -> list[dict[str, object]]:
     return [

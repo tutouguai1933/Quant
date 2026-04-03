@@ -245,6 +245,15 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("overview", report["data"]["item"])
         self.assertIn("experiments", report["data"]["item"])
 
+    def test_research_report_route_stays_unavailable_without_results(self) -> None:
+        report = get_research_report()
+
+        self.assertEqual(set(report.keys()), {"data", "error", "meta"})
+        self.assertIsNone(report["error"])
+        self.assertEqual(report["data"]["item"]["status"], "unavailable")
+        self.assertEqual(report["data"]["item"]["experiments"]["training"]["status"], "unavailable")
+        self.assertEqual(report["data"]["item"]["experiments"]["inference"]["status"], "unavailable")
+
     def test_strategy_run_route_rejects_missing_symbol(self) -> None:
         response = run_strategy({"strategy_id": "trend_breakout"})
 

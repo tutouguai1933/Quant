@@ -157,6 +157,8 @@ class QlibRunner:
             backtest_rows.extend(symbol_backtest_rows)
         if not training_rows:
             raise RuntimeError("研究层没有拿到可训练样本")
+        if not validation_rows or not backtest_rows:
+            raise RuntimeError("研究层样本不足，无法生成完整验证和回测结果")
         return TrainingBundle(
             training_rows=training_rows,
             validation_rows=validation_rows,

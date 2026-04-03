@@ -49,6 +49,19 @@ class ResearchService:
                 "latest_inference": None,
                 "symbols": {},
             }
+        if not training_payload or not inference_payload:
+            return {
+                "status": "unavailable",
+                "backend": config.backend,
+                "qlib_available": config.qlib_available,
+                "detail": self._build_missing_result_detail(
+                    has_training=bool(training_payload),
+                    has_inference=bool(inference_payload),
+                ),
+                "latest_training": training_payload,
+                "latest_inference": inference_payload,
+                "symbols": {},
+            }
         symbols = {
             str(item.get("symbol", "")): item
             for item in list((inference_payload or {}).get("signals", []))
@@ -149,6 +162,16 @@ class ResearchService:
             "latest_inference": None,
             "symbols": {},
         }
+
+    @staticmethod
+    def _build_missing_result_detail(*, has_training: bool, has_inference: bool) -> str:
+        """构造研究结果缺失时的状态说明。"""
+
+        if has_training and not has_inference:
+            return "研究层已有训练结果，但还没有推理结果"
+        if has_inference and not has_training:
+            return "研究层已有推理结果，但训练结果缺失"
+        return "研究层还没有可用训练和推理结果"
 
 
 research_service = ResearchService()

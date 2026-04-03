@@ -47,6 +47,7 @@ mkdir -p /tmp/quant-qlib-runtime
 
 - 目录不存在时，训练和推理会直接报明确错误
 - 目录存在后，系统会自己补齐 `dataset / artifacts / runs` 子目录
+- 目录刚建好但还没有训练/推理结果时，统一研究报告会明确返回 `unavailable`
 - 如果是多 session 并行开发，建议额外设置：
 
 ```bash

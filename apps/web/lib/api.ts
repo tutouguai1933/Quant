@@ -1231,45 +1231,10 @@ export function getResearchCandidatesFallback(): { items: ResearchCandidateItem[
     model_version: "",
     generated_at: "",
     summary: {
-      candidate_count: 2,
-      ready_count: 1,
+      candidate_count: 0,
+      ready_count: 0,
     },
-    candidates: [
-      {
-        rank: 1,
-        symbol: "BTCUSDT",
-        strategy_template: "trend_breakout_timing",
-        score: "0.7820",
-        backtest: {
-          metrics: {
-            total_return_pct: "12.4000",
-            max_drawdown_pct: "-5.1000",
-            sharpe: "1.2800",
-            win_rate: "0.5800",
-            turnover: "0.2100",
-          },
-        },
-        dry_run_gate: { status: "passed", reasons: [] },
-        allowed_to_dry_run: true,
-      },
-      {
-        rank: 2,
-        symbol: "DOGEUSDT",
-        strategy_template: "trend_pullback_timing",
-        score: "0.4630",
-        backtest: {
-          metrics: {
-            total_return_pct: "-2.3000",
-            max_drawdown_pct: "-18.6000",
-            sharpe: "0.2200",
-            win_rate: "0.4300",
-            turnover: "0.7200",
-          },
-        },
-        dry_run_gate: { status: "failed", reasons: ["drawdown_too_large", "turnover_too_high"] },
-        allowed_to_dry_run: false,
-      },
-    ],
+    candidates: [],
   };
   return {
     items: snapshot.candidates,
