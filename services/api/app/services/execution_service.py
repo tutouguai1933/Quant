@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from decimal import InvalidOperation
+from decimal import ROUND_CEILING
 
 from services.api.app.adapters.binance.market_client import BinanceMarketClient
 from services.api.app.adapters.freqtrade.client import freqtrade_client
@@ -136,6 +137,12 @@ class ExecutionService:
                 raise PermissionError(
                     f"{symbol} 的最小下单额是 {min_notional} USDT，当前 Freqtrade stake_amount={stake_amount} USDT"
                 )
+            safe_exit_stake = self._get_safe_exit_stake(symbol=symbol, min_notional=min_notional)
+            if stake_amount < safe_exit_stake:
+                raise PermissionError(
+                    f"{symbol} 当前至少需要 {safe_exit_stake} USDT，才能在扣除手续费并按交易步长取整后仍满足最小卖出额；"
+                    f"当前 Freqtrade stake_amount={stake_amount} USDT"
+                )
             action["stake_amount"] = f"{stake_amount:.10f}"
 
     def _get_min_notional(self, symbol: str) -> Decimal:
@@ -156,6 +163,52 @@ class ExecutionService:
                     if value not in (None, ""):
                         return self._read_decimal(value, field_name=f"{symbol}.minNotional")
         raise PermissionError(f"无法读取 {symbol} 的最小下单额规则")
+
+    def _get_safe_exit_stake(self, symbol: str, min_notional: Decimal) -> Decimal:
+        """估算一笔 live 买入至少要多大，后续才不会因为最小卖出额失败。"""
+
+        exchange_info = self._market_client.get_exchange_info((symbol,))
+        step_size = self._get_lot_step_size(exchange_info=exchange_info, symbol=symbol)
+        last_price = self._get_last_price(symbol)
+        fee_ratio = Decimal("0.001")
+
+        minimum_sell_quantity = self._round_up_to_step(min_notional / last_price, step_size)
+        required_buy_quantity = self._round_up_to_step(minimum_sell_quantity / (Decimal("1") - fee_ratio), step_size)
+        safe_stake = required_buy_quantity * last_price
+        return safe_stake.quantize(Decimal("0.0000000001"))
+
+    def _get_lot_step_size(self, exchange_info: dict[str, object], symbol: str) -> Decimal:
+        """读取交易对的最小数量步长。"""
+
+        for item in list(exchange_info.get("symbols", [])):
+            if str(item.get("symbol", "")).upper() != symbol:
+                continue
+            for raw_filter in list(item.get("filters", [])):
+                filter_type = str(raw_filter.get("filterType", "")).upper()
+                if filter_type != "LOT_SIZE":
+                    continue
+                value = raw_filter.get("stepSize")
+                if value not in (None, ""):
+                    return self._read_decimal(value, field_name=f"{symbol}.stepSize")
+        raise PermissionError(f"无法读取 {symbol} 的交易步长规则")
+
+    def _get_last_price(self, symbol: str) -> Decimal:
+        """读取最新成交价，用于估算最小可卖出金额。"""
+
+        for item in list(self._market_client.get_tickers()):
+            if str(item.get("symbol", "")).upper() != symbol:
+                continue
+            price = item.get("lastPrice") or item.get("last_price") or item.get("price")
+            if price not in (None, ""):
+                return self._read_decimal(price, field_name=f"{symbol}.lastPrice")
+        raise PermissionError(f"无法读取 {symbol} 的最新价格")
+
+    @staticmethod
+    def _round_up_to_step(value: Decimal, step: Decimal) -> Decimal:
+        """按交易步长向上取整。"""
+
+        units = (value / step).to_integral_value(rounding=ROUND_CEILING)
+        return units * step
 
     @staticmethod
     def _compact_symbol(symbol: str) -> str:

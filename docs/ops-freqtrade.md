@@ -267,6 +267,14 @@ docker compose up -d
   - 但当前 `Freqtrade live` 的 `/api/v1/status` 和 `/api/v1/trades` 都为空
   - 所以 `forceexit` 无法直接平这笔仓位
 - 控制平面现在会明确返回“账户里仍有现货余额，但当前 Freqtrade 没有打开交易记录，无法直接平仓”
+- 今天又成功发起了一笔新的真实 `DOGE/USDT` 买单：
+  - 新订单号是 `14140438880`
+  - 这笔新单已被当前 `Freqtrade live` 正确记录
+  - 真实卖出失败的根因不是接口，而是最小卖出额
+- 当前已经补上 live 买前检查：
+  - 会结合最小成交额、交易步长、手续费和最新价格
+  - 如果这笔单后面大概率卖不出去，就会在买入前直接拦住
+- 对 `DOGE` 来说，`1 USDT` 当前不够安全，继续强行 live 只会重复出现“买得进、卖不掉”
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位
