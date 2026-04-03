@@ -44,6 +44,10 @@ def _build_experiment_entry(payload: dict[str, object]) -> dict[str, object]:
         "status": str(payload.get("status", "unavailable")),
         "generated_at": str(payload.get("generated_at", "")),
         "model_version": str(payload.get("model_version", "")),
+        "signal_count": max(
+            len(list(payload.get("signals") or [])),
+            _parse_int(dict(payload.get("summary") or {}).get("signal_count")),
+        ),
     }
 
 

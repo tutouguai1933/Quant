@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+from services.worker.qlib_experiment_report import build_experiment_report
+
 
 class ResearchFactoryService:
     """把研究结果转换成统一候选快照。"""
@@ -49,38 +51,26 @@ class ResearchFactoryService:
         snapshot = self.build_snapshot()
         training = dict(latest.get("latest_training") or {})
         inference = dict(latest.get("latest_inference") or {})
-        summary = dict(snapshot.get("summary") or {})
-        signals = list(inference.get("signals") or [])
-        signal_count = self._resolve_signal_count(inference=inference, signals=signals)
+        report = build_experiment_report(
+            latest_training=training,
+            latest_inference=inference,
+            candidates={"items": list(snapshot.get("candidates") or [])},
+        )
+        overview = dict(report.get("overview") or {})
         return {
             "status": str(snapshot.get("status", "unavailable")),
             "backend": str(snapshot.get("backend", "qlib-fallback")),
             "overview": {
                 "model_version": str(snapshot.get("model_version", "")),
                 "generated_at": str(snapshot.get("generated_at", "")),
-                "candidate_count": int(summary.get("candidate_count", 0) or 0),
-                "ready_count": int(summary.get("ready_count", 0) or 0),
-                "signal_count": signal_count,
+                "candidate_count": int(overview.get("candidate_count", 0) or 0),
+                "ready_count": int(overview.get("ready_count", 0) or 0),
+                "signal_count": int(overview.get("signal_count", 0) or 0),
             },
-            "latest_training": training,
-            "latest_inference": inference,
-            "candidates": list(snapshot.get("candidates") or []),
-            "experiments": {
-                "training": {
-                    "run_id": str(training.get("run_id", "")),
-                    "status": str(training.get("status", "unavailable")),
-                    "generated_at": str(training.get("generated_at", "")),
-                    "model_version": str(training.get("model_version", "")),
-                    "artifact_path": str(training.get("artifact_path", "")),
-                },
-                "inference": {
-                    "run_id": str(inference.get("run_id", "")),
-                    "status": str(inference.get("status", "unavailable")),
-                    "generated_at": str(inference.get("generated_at", "")),
-                    "model_version": str(inference.get("model_version", "")),
-                    "signal_count": signal_count,
-                },
-            },
+            "latest_training": dict(report.get("latest_training") or {}),
+            "latest_inference": dict(report.get("latest_inference") or {}),
+            "candidates": list(report.get("candidates") or []),
+            "experiments": dict(report.get("experiments") or {}),
         }
 
     def get_symbol_snapshot(self, symbol: str) -> dict[str, object] | None:
@@ -91,15 +81,6 @@ class ResearchFactoryService:
             if str(item.get("symbol", "")).strip().upper() == normalized_symbol:
                 return item
         return None
-
-    @staticmethod
-    def _resolve_signal_count(*, inference: dict[str, object], signals: list[object]) -> int:
-        """统一推理信号数量，避免 summary 和 signals 漂移。"""
-
-        summary = dict(inference.get("summary") or {})
-        raw_count = summary.get("signal_count")
-        parsed_count = int(raw_count or 0) if raw_count is not None else 0
-        return max(parsed_count, len(signals))
 
     @staticmethod
     def _resolve_candidate_counts(*, candidates: list[dict[str, object]], summary: dict[str, object]) -> tuple[int, int]:

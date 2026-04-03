@@ -90,7 +90,7 @@
 - Modify: `services/worker/qlib_ranking.py`
 - Test: `services/worker/tests/test_qlib_ranking.py`
 
-- [ ] **Step 1: 写失败测试，固定更严格的筛选门**
+- [x] **Step 1: 写失败测试，固定更严格的筛选门**
 
 ```python
 def test_rank_candidates_fails_when_consecutive_loss_streak_is_too_long() -> None:
@@ -117,12 +117,12 @@ def test_rank_candidates_fails_when_consecutive_loss_streak_is_too_long() -> Non
     assert "loss_streak_too_long" in result["items"][0]["dry_run_gate"]["reasons"]
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `./.venv/bin/python -m unittest services.worker.tests.test_qlib_ranking -v`  
 Expected: FAIL，提示还没有 `max_loss_streak` 的筛选逻辑。
 
-- [ ] **Step 3: 写最小实现**
+- [x] **Step 3: 写最小实现**
 
 ```python
 if max_loss_streak > Decimal("3"):
@@ -131,12 +131,12 @@ if sample_count < Decimal("20"):
     failures.append("sample_count_too_low")
 ```
 
-- [ ] **Step 4: 再跑测试确认通过**
+- [x] **Step 4: 再跑测试确认通过**
 
 Run: `./.venv/bin/python -m unittest services.worker.tests.test_qlib_ranking -v`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/worker/qlib_ranking.py services/worker/tests/test_qlib_ranking.py
@@ -151,7 +151,7 @@ git commit -m "feat: tighten qlib research gate"
 - Test: `services/worker/tests/test_qlib_experiment_report.py`
 - Test: `services/worker/tests/test_qlib_runner.py`
 
-- [ ] **Step 1: 写失败测试，固定实验对比摘要结构**
+- [x] **Step 1: 写失败测试，固定实验对比摘要结构**
 
 ```python
 def test_build_experiment_report_returns_latest_training_and_candidate_summary() -> None:
@@ -166,12 +166,12 @@ def test_build_experiment_report_returns_latest_training_and_candidate_summary()
     assert report["latest_training"]["model_version"] == "m1"
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `./.venv/bin/python -m unittest services.worker.tests.test_qlib_experiment_report -v`  
 Expected: FAIL，提示模块或函数不存在。
 
-- [ ] **Step 3: 写最小实现**
+- [x] **Step 3: 写最小实现**
 
 ```python
 def build_experiment_report(*, latest_training, latest_inference, candidates):
@@ -188,12 +188,12 @@ def build_experiment_report(*, latest_training, latest_inference, candidates):
     }
 ```
 
-- [ ] **Step 4: 再跑测试确认通过**
+- [x] **Step 4: 再跑测试确认通过**
 
 Run: `./.venv/bin/python -m unittest services.worker.tests.test_qlib_experiment_report services.worker.tests.test_qlib_runner -v`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/worker/qlib_experiment_report.py services/worker/qlib_runner.py services/worker/tests/test_qlib_experiment_report.py services/worker/tests/test_qlib_runner.py
@@ -209,7 +209,7 @@ git commit -m "feat: add qlib experiment comparison report"
 - Test: `services/api/tests/test_research_service.py`
 - Test: `services/api/tests/test_api_skeleton.py`
 
-- [ ] **Step 1: 写失败测试，固定研究对比接口输出**
+- [x] **Step 1: 写失败测试，固定研究对比接口输出**
 
 ```python
 def test_research_report_route_returns_experiment_overview() -> None:
@@ -220,12 +220,12 @@ def test_research_report_route_returns_experiment_overview() -> None:
     assert "latest_inference" in response["data"]["item"]
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `./.venv/bin/python -m unittest services.api.tests.test_research_service services.api.tests.test_api_skeleton -v`  
 Expected: FAIL，提示 API 还没有对比摘要字段或结构不一致。
 
-- [ ] **Step 3: 写最小实现**
+- [x] **Step 3: 写最小实现**
 
 ```python
 report = build_experiment_report(
@@ -235,12 +235,12 @@ report = build_experiment_report(
 )
 ```
 
-- [ ] **Step 4: 再跑测试确认通过**
+- [x] **Step 4: 再跑测试确认通过**
 
 Run: `./.venv/bin/python -m unittest services.api.tests.test_research_service services.api.tests.test_api_skeleton -v`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/api/app/services/research_factory_service.py services/api/app/services/research_service.py services/api/app/routes/signals.py services/api/tests/test_research_service.py services/api/tests/test_api_skeleton.py
@@ -255,7 +255,7 @@ git commit -m "feat: expose qlib experiment comparison api"
 - Test: `services/api/tests/test_signal_service.py`
 - Test: `services/api/tests/test_strategy_workspace_service.py`
 
-- [ ] **Step 1: 写失败测试，固定“只有当前推荐候选才允许优先进入执行页”**
+- [x] **Step 1: 写失败测试，固定“只有当前推荐候选才允许优先进入执行页”**
 
 ```python
 def test_strategy_workspace_prefers_ready_research_candidate() -> None:
@@ -265,24 +265,24 @@ def test_strategy_workspace_prefers_ready_research_candidate() -> None:
     assert item["research_recommendation"]["allowed_to_dry_run"] is True
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `./.venv/bin/python -m unittest services.api.tests.test_signal_service services.api.tests.test_strategy_workspace_service -v`  
 Expected: FAIL，提示策略工作台还没有推荐候选字段。
 
-- [ ] **Step 3: 写最小实现**
+- [x] **Step 3: 写最小实现**
 
 ```python
 ready_items = [item for item in candidates if item.get("allowed_to_dry_run")]
 recommendation = ready_items[0] if ready_items else None
 ```
 
-- [ ] **Step 4: 再跑测试确认通过**
+- [x] **Step 4: 再跑测试确认通过**
 
 Run: `./.venv/bin/python -m unittest services.api.tests.test_signal_service services.api.tests.test_strategy_workspace_service -v`  
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/api/app/services/signal_service.py services/api/app/services/strategy_workspace_service.py services/api/tests/test_signal_service.py services/api/tests/test_strategy_workspace_service.py

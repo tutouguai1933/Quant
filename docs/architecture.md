@@ -187,6 +187,7 @@
 - 执行最小推理
 - 统一消费 `qlib_dataset` 的训练/验证/测试切分结果
 - 在候选输出前真实执行 `qlib_rule_gate` 规则门
+- 输出统一实验对比摘要
 - 写入最近一次训练和推理结果
 
 ### `services/api/app/services/research_service.py`
@@ -203,8 +204,23 @@
 负责：
 
 - 把研究结果整理成统一候选快照
-- 给控制平面输出统一研究报告
+- 复用 worker 的统一实验摘要，给控制平面输出统一研究报告
 - 给单币页和策略页输出可直接消费的候选摘要
+
+### `services/api/app/services/strategy_workspace_service.py`
+
+负责：
+
+- 聚合策略页总览、策略卡片、账户状态和最近信号
+- 输出当前研究推荐候选，告诉页面“下一步更适合先看哪个币”
+
+### `services/api/app/services/signal_service.py`
+
+负责：
+
+- 保存和读取信号
+- 控制信号能否进入派发
+- 对通用 `Qlib` 研究信号按“当前推荐候选优先”做认领排序
 
 ### `services/api/app/services/research_cockpit_service.py`
 

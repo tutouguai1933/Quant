@@ -59,6 +59,7 @@ class StrategyWorkspaceService:
             },
             "executor_runtime": self._execution_sync.get_runtime_snapshot(),
             "research": self._build_research_overview(latest_research),
+            "research_recommendation": self._build_research_recommendation(),
             "whitelist": whitelist,
             "strategies": strategy_cards,
             "recent_signals": recent_signals,
@@ -189,6 +190,17 @@ class StrategyWorkspaceService:
             "model_version": str(latest_training.get("model_version", "")),
             "signal_count": int(inference_summary.get("signal_count", 0) or 0),
         }
+
+    def _build_research_recommendation(self) -> dict[str, object] | None:
+        """返回当前最值得继续进入执行页的研究候选。"""
+
+        getter = getattr(self._research_reader, "get_research_recommendation", None)
+        if getter is None:
+            return None
+        recommendation = getter()
+        if recommendation is None:
+            return None
+        return dict(recommendation)
 
     def _build_research_summary(
         self,

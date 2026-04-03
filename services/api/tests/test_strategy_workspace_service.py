@@ -123,6 +123,23 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(workspace["account_state"]["latest_order"]["symbol"], "DOGEUSDT")
         self.assertEqual(workspace["account_state"]["latest_position"]["symbol"], "DOGE")
 
+    def test_workspace_prefers_ready_research_candidate(self) -> None:
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):
+            service = StrategyWorkspaceService(
+                catalog_service=_FakeCatalogService(),
+                signal_store=_FakeSignalStore(),
+                execution_sync=_FakeExecutionSync(),
+                market_reader=_FakeMarketReader(),
+                research_reader=_FakeResearchService(),
+                account_sync=_FakeAccountSyncService(),
+            )
+
+            workspace = service.get_workspace()
+
+        self.assertEqual(workspace["research_recommendation"]["symbol"], "BTCUSDT")
+        self.assertEqual(workspace["research_recommendation"]["allowed_to_dry_run"], True)
+        self.assertEqual(workspace["research_recommendation"]["next_action"], "enter_dry_run")
+
 
 class _FakeCatalogService:
     def get_whitelist(self) -> list[str]:
@@ -289,7 +306,21 @@ class _FakeResearchService:
             "status": "ready",
             "detail": "ok",
             "latest_training": {"model_version": "qlib-minimal-20260402093000"},
-            "latest_inference": {"summary": {"signal_count": 2}},
+            "latest_inference": {
+                "summary": {"signal_count": 2},
+                "candidates": {
+                    "items": [
+                        {
+                            "rank": 1,
+                            "symbol": "BTCUSDT",
+                            "score": "0.7100",
+                            "allowed_to_dry_run": True,
+                            "dry_run_gate": {"status": "passed", "reasons": []},
+                            "strategy_template": "trend_breakout_timing",
+                        }
+                    ]
+                },
+            },
             "symbols": {
                 "BTCUSDT": {
                     "symbol": "BTCUSDT",
@@ -304,6 +335,16 @@ class _FakeResearchService:
 
     def get_symbol_research(self, symbol: str) -> dict[str, object] | None:
         return dict(self.get_latest_result()["symbols"]).get(symbol)
+
+    def get_research_recommendation(self) -> dict[str, object] | None:
+        return {
+            "symbol": "BTCUSDT",
+            "score": "0.7100",
+            "allowed_to_dry_run": True,
+            "strategy_template": "trend_breakout_timing",
+            "dry_run_gate": {"status": "passed", "reasons": []},
+            "next_action": "enter_dry_run",
+        }
 
 
 class _SnapshotOnlyResearchService:

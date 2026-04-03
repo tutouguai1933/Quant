@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -101,6 +102,30 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(report["overview"]["candidate_count"], len(report["candidates"]))
         self.assertEqual(report["experiments"]["training"]["status"], "completed")
         self.assertEqual(report["experiments"]["inference"]["status"], "completed")
+
+    def test_research_service_report_uses_worker_experiment_builder(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        with patch(
+            "services.api.app.services.research_factory_service.build_experiment_report",
+            return_value={
+                "overview": {"candidate_count": 7, "ready_count": 3, "signal_count": 5},
+                "latest_training": {"model_version": "patched-model"},
+                "latest_inference": {"run_id": "infer-patched"},
+                "candidates": [{"symbol": "BTCUSDT", "allowed_to_dry_run": True}],
+                "experiments": {
+                    "training": {"status": "completed", "model_version": "patched-model"},
+                    "inference": {"status": "completed", "model_version": "patched-model"},
+                },
+            },
+        ) as report_builder:
+            report = self.service.get_factory_report()
+
+        report_builder.assert_called_once()
+        self.assertEqual(report["overview"]["candidate_count"], 7)
+        self.assertEqual(report["latest_training"]["model_version"], "patched-model")
+        self.assertEqual(report["candidates"][0]["symbol"], "BTCUSDT")
 
     def test_research_service_prepares_both_1h_and_4h_samples_for_runner(self) -> None:
         self.service.run_training()

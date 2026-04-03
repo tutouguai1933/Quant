@@ -119,6 +119,26 @@ class ResearchService:
 
         return ResearchFactoryService(result_provider=self.get_latest_result).build_report()
 
+    def get_research_recommendation(self) -> dict[str, object] | None:
+        """返回当前最值得继续进入执行链的研究候选。"""
+
+        from services.api.app.services.research_factory_service import ResearchFactoryService
+
+        snapshot = ResearchFactoryService(result_provider=self.get_latest_result).build_snapshot()
+        candidates = list(snapshot.get("candidates") or [])
+        ready_items = [item for item in candidates if bool(item.get("allowed_to_dry_run"))]
+        if not ready_items:
+            return None
+        recommendation = sorted(ready_items, key=_candidate_sort_key)[0]
+        return {
+            "symbol": str(recommendation.get("symbol", "")),
+            "score": str(recommendation.get("score", "")),
+            "allowed_to_dry_run": True,
+            "strategy_template": str(recommendation.get("strategy_template", "")),
+            "dry_run_gate": dict(recommendation.get("dry_run_gate") or {}),
+            "next_action": "enter_dry_run",
+        }
+
     def _prepare_dataset(self) -> dict[str, dict[str, list[dict[str, object]]]]:
         """准备最小研究输入。"""
 
@@ -185,3 +205,14 @@ class ResearchService:
 
 
 research_service = ResearchService()
+
+
+def _candidate_sort_key(item: dict[str, object]) -> tuple[int, str]:
+    """把推荐候选按 rank 和 symbol 做稳定排序。"""
+
+    rank = item.get("rank")
+    try:
+        parsed_rank = int(rank)
+    except (TypeError, ValueError):
+        parsed_rank = 999999
+    return parsed_rank, str(item.get("symbol", ""))

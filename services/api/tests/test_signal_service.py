@@ -162,6 +162,19 @@ class SignalServiceTests(unittest.TestCase):
 
         self.assertIsNone(claimed)
 
+    def test_executor_strategy_prefers_ready_research_recommendation(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _MultiCandidateResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(1)
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["symbol"], "BTCUSDT")
+        self.assertEqual(claimed["payload"]["recommended_for_execution"], True)
+
 
 class _PassingResearchService:
     def run_training(self) -> dict[str, object]:
@@ -206,6 +219,47 @@ class _BlockedResearchService(_PassingResearchService):
 class _FailingResearchService:
     def run_training(self) -> dict[str, object]:
         raise RuntimeError("qlib unavailable")
+
+
+class _MultiCandidateResearchService(_PassingResearchService):
+    def run_inference(self) -> dict[str, object]:
+        return {
+            "backend": "qlib-fallback",
+            "signals": [
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "long",
+                    "score": "0.8100",
+                    "confidence": "0.8200",
+                    "target_weight": "0.2000",
+                    "generated_at": "2026-04-02T01:00:00+00:00",
+                },
+                {
+                    "symbol": "ETHUSDT",
+                    "side": "long",
+                    "score": "0.7900",
+                    "confidence": "0.8100",
+                    "target_weight": "0.2000",
+                    "generated_at": "2026-04-02T02:00:00+00:00",
+                },
+            ],
+            "candidates": {
+                "items": [
+                    {
+                        "rank": 1,
+                        "symbol": "BTCUSDT",
+                        "allowed_to_dry_run": True,
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                    },
+                    {
+                        "rank": 2,
+                        "symbol": "ETHUSDT",
+                        "allowed_to_dry_run": True,
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                    },
+                ]
+            },
+        }
 
 
 if __name__ == "__main__":

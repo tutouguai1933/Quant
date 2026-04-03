@@ -105,6 +105,7 @@ class SignalService:
             if strategy_id != 1:
                 return None
 
+            generic_candidates: list[SignalContract] = []
             for signal in ordered_signals:
                 signal_id = signal.signal_id or 0
                 if signal.strategy_id is not None:
@@ -117,8 +118,12 @@ class SignalService:
                     continue
                 if signal_id in self._dispatch_claims:
                     continue
-                self._dispatch_claims.add(signal_id)
-                return self._serialize_signal(signal)
+                generic_candidates.append(signal)
+            if generic_candidates:
+                chosen = sorted(generic_candidates, key=self._dispatch_sort_key)[0]
+                chosen_id = chosen.signal_id or 0
+                self._dispatch_claims.add(chosen_id)
+                return self._serialize_signal(chosen)
         return None
 
     def release_dispatch_claim(self, signal_id: int) -> None:
@@ -193,6 +198,7 @@ class SignalService:
 
         signal_count = 0
         candidate_items = list((inference.get("candidates") or {}).get("items", []))
+        recommended_symbol = self._resolve_recommended_symbol(candidate_items)
         candidate_by_symbol = {
             str(item.get("symbol", "")).strip().upper(): dict(item)
             for item in candidate_items
@@ -217,6 +223,7 @@ class SignalService:
                 "candidate": candidate,
                 "dry_run_gate": dict(candidate.get("dry_run_gate") or {}),
                 "allowed_to_dry_run": bool(candidate.get("allowed_to_dry_run")),
+                "recommended_for_execution": normalized_symbol == recommended_symbol,
             }
             signal_count += 1
 
@@ -313,6 +320,37 @@ class SignalService:
         if gate:
             return str(gate.get("status", "")).strip() == "passed"
         return bool(metadata.get("allowed_to_dry_run"))
+
+    def _dispatch_sort_key(self, signal: SignalContract) -> tuple[int, int, int]:
+        """给通用研究信号排序，优先推荐候选，其次看候选 rank。"""
+
+        metadata = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
+        candidate = dict(metadata.get("candidate") or {})
+        recommended = 0 if bool(metadata.get("recommended_for_execution")) else 1
+        rank = self._parse_rank(candidate.get("rank"))
+        return recommended, rank, -(signal.signal_id or 0)
+
+    @staticmethod
+    def _resolve_recommended_symbol(candidate_items: list[dict[str, object]]) -> str:
+        """从研究候选里挑出当前优先进入执行链的币种。"""
+
+        ready_items = [item for item in candidate_items if bool(item.get("allowed_to_dry_run"))]
+        if not ready_items:
+            return ""
+        chosen = sorted(
+            ready_items,
+            key=lambda item: (SignalService._parse_rank(item.get("rank")), str(item.get("symbol", ""))),
+        )[0]
+        return str(chosen.get("symbol", "")).strip().upper()
+
+    @staticmethod
+    def _parse_rank(value: object) -> int:
+        """把候选 rank 转成可排序的整数。"""
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 999999
 
 
 signal_service = SignalService()
