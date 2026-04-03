@@ -129,6 +129,8 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("进入策略中心", content)
         self.assertIn('encodeURIComponent(symbol.toUpperCase())', content)
         self.assertIn('style={{ width: "100%"', content)
+        self.assertIn("本地主图", content)
+        self.assertIn("交互增强", content)
 
     def test_trading_chart_panel_matches_signal_by_time_and_ignores_bad_prices(self) -> None:
         content = (WEB_COMPONENTS / "trading-chart-panel.tsx").read_text(encoding="utf-8")

@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 
-const PATHS = ["/signals", "/market/BTCUSDT"];
+const PATHS = ["/signals", "/market/BTCUSDT", "/market/ETHUSDT"];
 
 test.use({
   launchOptions: { executablePath: "/snap/bin/chromium" },

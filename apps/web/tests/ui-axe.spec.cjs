@@ -1,7 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const AxeBuilder = require("@axe-core/playwright").default;
 
-const PATHS = ["/", "/signals", "/market/BTCUSDT", "/strategies", "/login", "/balances", "/orders", "/positions"];
+const PATHS = ["/", "/signals", "/market/BTCUSDT", "/market/ETHUSDT", "/strategies", "/login", "/balances", "/orders", "/positions"];
 
 test.use({
   launchOptions: { executablePath: "/snap/bin/chromium" },
