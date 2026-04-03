@@ -119,6 +119,7 @@ export function MarketSymbolWorkspace({ symbol, initialData }: MarketSymbolWorks
             <p>真实 dry-run 条件：{freqtradeReadiness.ready_for_real_freqtrade ? "ready" : "not_ready"}</p>
           </article>
         </section>
+
       </div>
 
       <ResearchSidecard cockpit={chartData.research_cockpit} nextStep={chartData.strategy_context.next_step} />

@@ -5,9 +5,10 @@ import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { StatusBadge } from "../../components/status-badge";
 import { readFeedback } from "../../lib/feedback";
-import { getLatestResearch, getLatestResearchFallback, getSignalsPageFallback, listSignals } from "../../lib/api";
+import { getLatestResearch, getLatestResearchFallback, getResearchCandidates, getResearchCandidatesFallback, getSignalsPageFallback, listSignals } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
 
@@ -21,6 +22,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   const session = await getControlSessionState();
   let items = getSignalsPageFallback().items;
   let latestResearch = getLatestResearchFallback().item;
+  let candidateSnapshot = getResearchCandidatesFallback();
 
   try {
     const response = await listSignals();
@@ -36,6 +38,15 @@ export default async function SignalsPage({ searchParams }: PageProps) {
     }
   } catch {
     // API 不可用时仍然保留研究兜底数据。
+  }
+
+  try {
+    const response = await getResearchCandidates();
+    if (!response.error) {
+      candidateSnapshot = response.data;
+    }
+  } catch {
+    // API 不可用时仍然保留候选兜底数据。
   }
 
   const latestTraining = asRecord(latestResearch.latest_training);
@@ -81,6 +92,13 @@ export default async function SignalsPage({ searchParams }: PageProps) {
           <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
         </div>
       </section>
+
+      <ResearchCandidateBoard
+        title="候选排行榜"
+        summary={candidateSnapshot.summary}
+        items={candidateSnapshot.items}
+        nextStep="下一步动作：优先看可进入 dry-run 的候选，再去策略中心确认是否继续派发。"
+      />
 
       <section className="panel">
         <p className="eyebrow">动作反馈</p>

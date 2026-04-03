@@ -243,6 +243,28 @@ export type LatestResearchResponse = {
   item: LatestResearchItem;
 };
 
+export type ResearchCandidateItem = {
+  rank: number;
+  symbol: string;
+  strategy_template: string;
+  score: string;
+  backtest: { metrics: Record<string, string> };
+  dry_run_gate: { status: string; reasons: string[] };
+  allowed_to_dry_run: boolean;
+};
+
+export type ResearchCandidateSnapshot = {
+  status: string;
+  backend: string;
+  model_version: string;
+  generated_at: string;
+  summary: {
+    candidate_count: number;
+    ready_count: number;
+  };
+  candidates: ResearchCandidateItem[];
+};
+
 export type MarketChartData = {
   items: MarketCandle[];
   overlays: ChartIndicatorSummary;
@@ -418,6 +440,35 @@ export async function getLatestResearch(): Promise<ApiEnvelope<LatestResearchRes
     ...response,
     data: {
       item: normalizeLatestResearchItem(response.data.item),
+    },
+  };
+}
+
+export async function getResearchCandidates(): Promise<ApiEnvelope<{ items: ResearchCandidateItem[]; summary: ResearchCandidateSnapshot["summary"] }>> {
+  const response = await fetchJson<Record<string, unknown>>("/signals/research/candidates");
+  if (response.error) {
+    return response as ApiEnvelope<{ items: ResearchCandidateItem[]; summary: ResearchCandidateSnapshot["summary"] }>;
+  }
+  const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
+  return {
+    ...response,
+    data: {
+      items: normalizeResearchCandidateArray(data.items),
+      summary: normalizeResearchCandidateSummary(data.summary),
+    },
+  };
+}
+
+export async function getResearchCandidate(symbol: string): Promise<ApiEnvelope<{ item: ResearchCandidateItem | null }>> {
+  const response = await fetchJson<Record<string, unknown>>(`/signals/research/candidates/${encodeURIComponent(symbol)}`);
+  if (response.error) {
+    return response as ApiEnvelope<{ item: ResearchCandidateItem | null }>;
+  }
+  const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
+  return {
+    ...response,
+    data: {
+      item: normalizeResearchCandidateItem(data.item),
     },
   };
 }
@@ -957,6 +1008,46 @@ function normalizeLatestResearchItem(item: unknown): LatestResearchItem {
   };
 }
 
+function normalizeResearchCandidateArray(value: unknown): ResearchCandidateItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => normalizeResearchCandidateItem(item)).filter((item): item is ResearchCandidateItem => item !== null);
+}
+
+function normalizeResearchCandidateItem(item: unknown): ResearchCandidateItem | null {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const symbol = String(row.symbol ?? "").trim().toUpperCase();
+  if (!symbol) {
+    return null;
+  }
+  const backtestRow: Record<string, unknown> = isPlainObject(row.backtest) ? row.backtest : {};
+  const metricsRow: Record<string, unknown> = isPlainObject(backtestRow.metrics) ? backtestRow.metrics : {};
+  const gateRow: Record<string, unknown> = isPlainObject(row.dry_run_gate) ? row.dry_run_gate : {};
+  return {
+    rank: Number(row.rank ?? 0),
+    symbol,
+    strategy_template: String(row.strategy_template ?? ""),
+    score: String(row.score ?? ""),
+    backtest: {
+      metrics: Object.fromEntries(Object.entries(metricsRow).map(([key, value]) => [key, String(value ?? "")])),
+    },
+    dry_run_gate: {
+      status: String(gateRow.status ?? "unavailable"),
+      reasons: normalizeStringArray(gateRow.reasons, []),
+    },
+    allowed_to_dry_run: Boolean(row.allowed_to_dry_run),
+  };
+}
+
+function normalizeResearchCandidateSummary(value: unknown): ResearchCandidateSnapshot["summary"] {
+  const row: Record<string, unknown> = isPlainObject(value) ? value : {};
+  return {
+    candidate_count: Number(row.candidate_count ?? 0),
+    ready_count: Number(row.ready_count ?? 0),
+  };
+}
+
 function normalizeResearchSymbolMap(value: unknown): Record<string, ResearchSymbolSummary> {
   if (!isPlainObject(value)) {
     return {};
@@ -1130,6 +1221,59 @@ export function getLatestResearchFallback(): LatestResearchResponse {
       latest_inference: null,
       symbols: {},
     }),
+  };
+}
+
+export function getResearchCandidatesFallback(): { items: ResearchCandidateItem[]; summary: ResearchCandidateSnapshot["summary"] } {
+  const snapshot: ResearchCandidateSnapshot = {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    model_version: "",
+    generated_at: "",
+    summary: {
+      candidate_count: 2,
+      ready_count: 1,
+    },
+    candidates: [
+      {
+        rank: 1,
+        symbol: "BTCUSDT",
+        strategy_template: "trend_breakout_timing",
+        score: "0.7820",
+        backtest: {
+          metrics: {
+            total_return_pct: "12.4000",
+            max_drawdown_pct: "-5.1000",
+            sharpe: "1.2800",
+            win_rate: "0.5800",
+            turnover: "0.2100",
+          },
+        },
+        dry_run_gate: { status: "passed", reasons: [] },
+        allowed_to_dry_run: true,
+      },
+      {
+        rank: 2,
+        symbol: "DOGEUSDT",
+        strategy_template: "trend_pullback_timing",
+        score: "0.4630",
+        backtest: {
+          metrics: {
+            total_return_pct: "-2.3000",
+            max_drawdown_pct: "-18.6000",
+            sharpe: "0.2200",
+            win_rate: "0.4300",
+            turnover: "0.7200",
+          },
+        },
+        dry_run_gate: { status: "failed", reasons: ["drawdown_too_large", "turnover_too_high"] },
+        allowed_to_dry_run: false,
+      },
+    ],
+  };
+  return {
+    items: snapshot.candidates,
+    summary: snapshot.summary,
   };
 }
 

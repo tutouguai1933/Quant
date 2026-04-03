@@ -17,6 +17,7 @@ class FrontendRefactorTests(unittest.TestCase):
             WEB_COMPONENTS / "metric-grid.tsx",
             WEB_COMPONENTS / "feedback-banner.tsx",
             WEB_COMPONENTS / "data-table.tsx",
+            WEB_COMPONENTS / "research-candidate-board.tsx",
         ]
         for file_path in expected_files:
             self.assertTrue(file_path.exists(), f"missing file: {file_path}")
@@ -36,9 +37,9 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
-            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "推荐策略", "执行决策", "执行建议", "执行器控制", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本"],
+            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "推荐策略", "执行决策", "执行建议", "执行器控制", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "研究候选", "是否允许进入 dry-run", "下一步动作"],
             WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "任务反馈", "触发训练"],
-            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果"],
+            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作"],
         }
         for file_path, patterns in expectations.items():
             content = file_path.read_text(encoding="utf-8")

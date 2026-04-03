@@ -3,7 +3,8 @@
 import { AppShell } from "../../../components/app-shell";
 import { MarketSymbolWorkspace } from "../../../components/market-symbol-workspace";
 import { PageHero } from "../../../components/page-hero";
-import { getMarketChart, type MarketChartData, type ResearchCockpitSummary } from "../../../lib/api";
+import { ResearchCandidateBoard } from "../../../components/research-candidate-board";
+import { getMarketChart, getResearchCandidate, getResearchCandidatesFallback, type MarketChartData, type ResearchCockpitSummary } from "../../../lib/api";
 import { getControlSessionState } from "../../../lib/session";
 
 
@@ -20,6 +21,7 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
   const query = (await searchParams) ?? {};
   const interval = readQueryText(query.interval);
   let chartData = getEmptyMarketChartData();
+  let candidate = getResearchCandidatesFallback().items.find((item) => item.symbol === normalizedSymbol) ?? null;
 
   try {
     const response = await getMarketChart(symbol, interval);
@@ -28,6 +30,15 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
     }
   } catch {
     // API 暂时不可用时保留骨架页面。
+  }
+
+  try {
+    const response = await getResearchCandidate(normalizedSymbol);
+    if (!response.error) {
+      candidate = response.data.item;
+    }
+  } catch {
+    // API 暂时不可用时保留候选兜底数据。
   }
 
   return (
@@ -44,6 +55,16 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
       />
       {/* MarketSymbolWorkspace 统一承载 TimeframeTabs / TradingChartPanel / ResearchSidecard / MultiTimeframeSummary，替代旧的 trading-layout 直出结构。 */}
       <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} />
+      <ResearchCandidateBoard
+        title="研究候选"
+        summary={{
+          candidate_count: candidate ? 1 : 0,
+          ready_count: candidate?.allowed_to_dry_run ? 1 : 0,
+        }}
+        items={candidate ? [candidate] : []}
+        focusSymbol={normalizedSymbol}
+        nextStep={chartData.strategy_context.next_step || "下一步动作：先看是否允许进入 dry-run，再决定要不要进入策略中心。"}
+      />
     </AppShell>
   );
 }

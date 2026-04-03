@@ -5,9 +5,13 @@ import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { StatusBadge } from "../../components/status-badge";
 import { readFeedback } from "../../lib/feedback";
 import {
+  getResearchCandidate,
+  getResearchCandidates,
+  getResearchCandidatesFallback,
   getStrategyWorkspace,
   getStrategyWorkspaceFallback,
   type StrategyWorkspaceCard,
@@ -27,6 +31,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   const { token, isAuthenticated } = session;
   const feedback = readFeedback(params);
   let workspace = getStrategyWorkspaceFallback();
+  let candidateSnapshot = getResearchCandidatesFallback();
 
   if (token) {
     try {
@@ -37,6 +42,28 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
     } catch {
       // API 不可用时仍然保留占位数据。
     }
+  }
+
+  try {
+    if (focusSymbol) {
+      const response = await getResearchCandidate(focusSymbol);
+      if (!response.error && response.data.item) {
+        candidateSnapshot = {
+          items: [response.data.item],
+          summary: {
+            candidate_count: 1,
+            ready_count: response.data.item.allowed_to_dry_run ? 1 : 0,
+          },
+        };
+      }
+    } else {
+      const response = await getResearchCandidates();
+      if (!response.error) {
+        candidateSnapshot = response.data;
+      }
+    }
+  } catch {
+    // API 不可用时仍然保留候选兜底数据。
   }
 
   return (
@@ -155,6 +182,14 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
             <h3>这里不再重复看图，只负责决定能不能执行</h3>
             <p>图表判断留在单币页，策略页只保留执行器状态、研究摘要、最近信号和动作控制。</p>
           </section>
+
+          <ResearchCandidateBoard
+            title="研究候选"
+            summary={candidateSnapshot.summary}
+            items={candidateSnapshot.items}
+            focusSymbol={focusSymbol}
+            nextStep={focusSymbol ? `下一步动作：先围绕 ${focusSymbol} 确认是否允许进入 dry-run，再决定是否派发。` : "下一步动作：优先看是否允许进入 dry-run，再决定要不要派发。"}
+          />
 
           <MetricGrid
             items={[
