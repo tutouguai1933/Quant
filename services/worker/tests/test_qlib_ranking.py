@@ -89,6 +89,48 @@ class QlibRankingTests(unittest.TestCase):
         self.assertIn("trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
+    def test_rank_candidates_blocks_dry_run_when_sample_count_is_too_low(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "score": "0.7200",
+                    "backtest": {
+                        "metrics": {
+                            **_passing_metrics(),
+                            "sample_count": "12",
+                        }
+                    },
+                }
+            ]
+        )
+
+        self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
+        self.assertIn("sample_count_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
+    def test_rank_candidates_blocks_dry_run_when_loss_streak_is_too_long(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "SOLUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.8400",
+                    "backtest": {
+                        "metrics": {
+                            **_passing_metrics(),
+                            "max_loss_streak": "4",
+                        }
+                    },
+                }
+            ]
+        )
+
+        self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
+        self.assertIn("loss_streak_too_long", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
 
 def _passing_metrics() -> dict[str, str]:
     return {

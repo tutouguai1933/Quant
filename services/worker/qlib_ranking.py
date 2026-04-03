@@ -50,6 +50,8 @@ def _evaluate_dry_run_gate(metrics: dict[str, object]) -> dict[str, object]:
     sharpe = _to_decimal(metrics.get("sharpe"))
     win_rate = _to_decimal(metrics.get("win_rate"))
     turnover = _to_decimal(metrics.get("turnover"))
+    sample_count = _to_int_or_none(metrics.get("sample_count"))
+    max_loss_streak = _to_int_or_none(metrics.get("max_loss_streak"))
 
     failures: list[str] = []
     if total_return_pct <= Decimal("0"):
@@ -62,6 +64,10 @@ def _evaluate_dry_run_gate(metrics: dict[str, object]) -> dict[str, object]:
         failures.append("win_rate_too_low")
     if turnover > Decimal("0.6"):
         failures.append("turnover_too_high")
+    if sample_count is not None and sample_count < 20:
+        failures.append("sample_count_too_low")
+    if max_loss_streak is not None and max_loss_streak > 3:
+        failures.append("loss_streak_too_long")
 
     if failures:
         return {"status": "failed", "reasons": failures}
@@ -95,6 +101,17 @@ def _to_decimal(value: object) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
+
+
+def _to_int_or_none(value: object) -> int | None:
+    """把输入转成整数，失败时返回 None。"""
+
+    if value is None:
+        return None
+    try:
+        return int(Decimal(str(value)))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
 
 
 def _format_decimal(value: Decimal) -> str:
