@@ -109,7 +109,7 @@
 - 仓库里现在已经有 `WSL + Docker + Binance Spot + live` 的最小骨架：
   - `infra/freqtrade/user_data/config.live.base.json`
   - 默认只允许 `DOGE/USDT`
-  - `stake_amount=1`
+  - `stake_amount=6`
   - `max_open_trades=1`
 - Qlib 研究层现在已经从“最小 mock 信号来源”升级成“可训练、可推理、可解释的最小研究层”
 - Qlib 研究结果现在已经会以“软门控”方式参与策略判断，不再只是展示
@@ -162,6 +162,7 @@
 - 这笔新单已经被当前 `Freqtrade live` 正确记录，没有和昨天那笔旧单混在一起
 - 这次真实卖出失败的根因已经定位：`1 USDT` 对 `DOGE` 来说会在扣除手续费并按步长取整后低于最小卖出额
 - live 安全门现在已经补上“最小可卖出金额”检查，后续会在买入前就拦住这类小仓位
+- 服务器上的 live 单笔上限和执行器默认 stake 现在都已经切到 `6 USDT`
 - 真实 `Qlib` 依赖和完整实验平台还没接入
 
 ## 项目结构
@@ -254,7 +255,7 @@ docker compose up -d
 
 - 默认 `QUANT_FREQTRADE_PUBLIC_CONFIG=config.base.json`，走 `dry-run`
 - 如果后面要切 live，可把 `.env` 里的 `QUANT_FREQTRADE_PUBLIC_CONFIG` 改成 `config.live.base.json`
-- 当前 live 骨架默认只放 `DOGE/USDT`，且 `stake_amount=1`
+- 当前 live 骨架默认只放 `DOGE/USDT`，且 `stake_amount=6`
 
 ### 默认地址
 

@@ -3,7 +3,7 @@
   "dry_run": false,
   "max_open_trades": 1,
   "stake_currency": "USDT",
-  "stake_amount": 1,
+  "stake_amount": 6,
   "tradable_balance_ratio": 0.99,
   "timeframe": "1h",
   "cancel_open_orders_on_exit": true,

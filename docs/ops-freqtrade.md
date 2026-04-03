@@ -83,7 +83,7 @@ live 安全门最小配置：
 export QUANT_RUNTIME_MODE=live
 export QUANT_ALLOW_LIVE_EXECUTION=true
 export QUANT_LIVE_ALLOWED_SYMBOLS='DOGEUSDT'
-export QUANT_LIVE_MAX_STAKE_USDT='1'
+export QUANT_LIVE_MAX_STAKE_USDT='6'
 export QUANT_LIVE_MAX_OPEN_TRADES='1'
 ```
 
@@ -127,7 +127,7 @@ docker compose up -d
 - 如果要切 live：
   - `.env` 里把 `QUANT_FREQTRADE_PUBLIC_CONFIG` 切到 `config.live.base.json`
   - 当前 live 骨架默认只允许 `DOGE/USDT`
-  - 默认 `stake_amount=1`
+  - 默认 `stake_amount=6`
   - 默认 `max_open_trades=1`
 
 ## 服务器端口管理
@@ -274,7 +274,8 @@ docker compose up -d
 - 当前已经补上 live 买前检查：
   - 会结合最小成交额、交易步长、手续费和最新价格
   - 如果这笔单后面大概率卖不出去，就会在买入前直接拦住
-- 对 `DOGE` 来说，`1 USDT` 当前不够安全，继续强行 live 只会重复出现“买得进、卖不掉”
+- 服务器上的 live 单笔上限和执行器默认 stake 现在都已经切到 `6 USDT`
+- 当前卡住的仍然是那笔历史上已经开的 `1 USDT` 小仓位，不是新的 `6 USDT` 配置
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位
