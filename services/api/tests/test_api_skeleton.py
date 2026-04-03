@@ -178,6 +178,7 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("strategies", response["data"])
         self.assertIn("recent_signals", response["data"])
         self.assertIn("recent_orders", response["data"])
+        self.assertIn("account_state", response["data"])
         self.assertIn("executor_runtime", response["data"])
         self.assertEqual(response["meta"]["source"], "strategy-workspace")
 

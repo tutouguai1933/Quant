@@ -82,6 +82,58 @@ class SignalServiceTests(unittest.TestCase):
         self.assertEqual(items[0]["strategy_id"], None)
         self.assertEqual(items[0]["source"], "qlib")
 
+    def test_executor_strategy_can_claim_latest_qlib_signal(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _FakeResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        claimed = self.service.claim_latest_dispatchable_signal(1)
+
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["source"], "qlib")
+        self.assertEqual(claimed["strategy_id"], None)
+
+    def test_non_executor_strategy_does_not_claim_strategy_agnostic_qlib_signal(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _FakeResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        claimed = self.service.claim_latest_dispatchable_signal(2)
+
+        self.assertIsNone(claimed)
+
+    def test_executor_strategy_prefers_strategy_bound_signal_over_generic_research_signal(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _FakeResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        created = self.service.ingest_signal(
+            {
+                "symbol": "BTC/USDT",
+                "side": "long",
+                "score": "0.800000",
+                "confidence": "0.820000",
+                "target_weight": "0.250000",
+                "generated_at": "2026-04-03T07:00:00+00:00",
+                "source": "mock",
+                "strategy_id": 1,
+            }
+        )
+
+        claimed = self.service.claim_latest_dispatchable_signal(1)
+
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed["signal_id"], created["signal_id"])
+
 
 class _FakeResearchService:
     def run_training(self) -> dict[str, object]:

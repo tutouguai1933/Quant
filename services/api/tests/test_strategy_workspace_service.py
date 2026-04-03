@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -14,15 +16,25 @@ from services.api.app.services.strategy_workspace_service import StrategyWorkspa
 
 class StrategyWorkspaceServiceTests(unittest.TestCase):
     def test_workspace_contains_catalog_cards_whitelist_and_history_lists(self) -> None:
-        service = StrategyWorkspaceService(
-            catalog_service=_FakeCatalogService(),
-            signal_store=_FakeSignalStore(),
-            execution_sync=_FakeExecutionSync(),
-            market_reader=_FakeMarketReader(),
-            research_reader=_FakeResearchService(),
-        )
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+            },
+            clear=False,
+        ):
+            service = StrategyWorkspaceService(
+                catalog_service=_FakeCatalogService(),
+                signal_store=_FakeSignalStore(),
+                execution_sync=_FakeExecutionSync(),
+                market_reader=_FakeMarketReader(),
+                research_reader=_FakeResearchService(),
+                account_sync=_FakeAccountSyncService(),
+            )
 
-        workspace = service.get_workspace(signal_limit=5, order_limit=5)
+            workspace = service.get_workspace(signal_limit=5, order_limit=5)
 
         self.assertEqual(workspace["overview"]["strategy_count"], 2)
         self.assertEqual(workspace["overview"]["whitelist_count"], 2)
@@ -32,17 +44,22 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(workspace["recent_signals"][0]["strategy_id"], 1)
         self.assertEqual(workspace["recent_orders"][0]["status"], "filled")
         self.assertEqual(workspace["research"]["status"], "ready")
+        self.assertEqual(workspace["account_state"]["source"], "binance-account-sync")
+        self.assertEqual(workspace["account_state"]["truth_source"], "binance")
+        self.assertEqual(workspace["account_state"]["summary"]["dust_count"], 1)
 
     def test_workspace_cards_include_runtime_status_signal_and_evaluation(self) -> None:
-        service = StrategyWorkspaceService(
-            catalog_service=_FakeCatalogService(),
-            signal_store=_FakeSignalStore(),
-            execution_sync=_FakeExecutionSync(),
-            market_reader=_FakeMarketReader(),
-            research_reader=_FakeResearchService(),
-        )
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):
+            service = StrategyWorkspaceService(
+                catalog_service=_FakeCatalogService(),
+                signal_store=_FakeSignalStore(),
+                execution_sync=_FakeExecutionSync(),
+                market_reader=_FakeMarketReader(),
+                research_reader=_FakeResearchService(),
+                account_sync=_FakeAccountSyncService(),
+            )
 
-        workspace = service.get_workspace()
+            workspace = service.get_workspace()
         breakout_card = workspace["strategies"][0]
         pullback_card = workspace["strategies"][1]
 
@@ -63,21 +80,48 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         )
 
     def test_workspace_uses_single_research_snapshot_for_summary_and_gate(self) -> None:
-        service = StrategyWorkspaceService(
-            catalog_service=_FakeCatalogService(),
-            signal_store=_FakeSignalStore(),
-            execution_sync=_FakeExecutionSync(),
-            market_reader=_FakeMarketReader(),
-            research_reader=_SnapshotOnlyResearchService(),
-        )
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):
+            service = StrategyWorkspaceService(
+                catalog_service=_FakeCatalogService(),
+                signal_store=_FakeSignalStore(),
+                execution_sync=_FakeExecutionSync(),
+                market_reader=_FakeMarketReader(),
+                research_reader=_SnapshotOnlyResearchService(),
+                account_sync=_FakeAccountSyncService(),
+            )
 
-        workspace = service.get_workspace()
+            workspace = service.get_workspace()
         breakout_card = workspace["strategies"][0]
 
         self.assertEqual(breakout_card["research_summary"]["explanation"], "暂无研究结果")
         self.assertEqual(breakout_card["current_evaluation"]["research_gate"]["status"], "unavailable")
         self.assertEqual(breakout_card["research_cockpit"]["research_bias"], "unavailable")
         self.assertEqual(breakout_card["research_cockpit"]["research_explanation"], "该币种暂无研究结论")
+
+    def test_workspace_surfaces_account_snapshot_for_phase_b_follow_up_chain(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "QUANT_RUNTIME_MODE": "live",
+                "BINANCE_API_KEY": "k",
+                "BINANCE_API_SECRET": "s",
+            },
+            clear=False,
+        ):
+            service = StrategyWorkspaceService(
+                catalog_service=_FakeCatalogService(),
+                signal_store=_FakeSignalStore(),
+                execution_sync=_FakeExecutionSync(),
+                market_reader=_FakeMarketReader(),
+                research_reader=_FakeResearchService(),
+                account_sync=_FakeAccountSyncService(),
+            )
+
+            workspace = service.get_workspace()
+
+        self.assertEqual(workspace["account_state"]["latest_balance"]["asset"], "DOGE")
+        self.assertEqual(workspace["account_state"]["latest_order"]["symbol"], "DOGEUSDT")
+        self.assertEqual(workspace["account_state"]["latest_position"]["symbol"], "DOGE")
 
 
 class _FakeCatalogService:
@@ -150,6 +194,17 @@ class _FakeExecutionSync:
             }
         ][:limit]
 
+    def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+        return [
+            {
+                "id": "position-1",
+                "symbol": "BTCUSDT",
+                "side": "long",
+                "quantity": "0.0100000000",
+                "unrealizedPnl": "0.0000000000",
+            }
+        ][:limit]
+
 
 class _FakeMarketReader:
     def get_symbol_chart(
@@ -178,6 +233,54 @@ class _FakeMarketReader:
             "overlays": {"sample_size": len(items)},
             "markers": {"signals": [], "entries": [], "stops": []},
         }
+
+
+class _FakeAccountSyncService:
+    def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
+        return [
+            {
+                "id": "balance-doge",
+                "asset": "DOGE",
+                "available": "0.97600000",
+                "locked": "0.00000000",
+                "tradeStatus": "dust",
+                "tradeHint": "这部分余额低于当前可卖门槛，属于交易所零头资产",
+                "sellableQuantity": "0",
+                "dustQuantity": "0.976",
+            },
+            {
+                "id": "balance-usdt",
+                "asset": "USDT",
+                "available": "20.00771436",
+                "locked": "0.00000000",
+                "tradeStatus": "tradable",
+                "tradeHint": "这是基础计价资产，可以直接用于下单",
+                "sellableQuantity": "20.00771436",
+                "dustQuantity": "0",
+            },
+        ][:limit]
+
+    def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+        return [
+            {
+                "id": "order-doge-1",
+                "symbol": "DOGEUSDT",
+                "side": "sell",
+                "orderType": "MARKET",
+                "status": "filled",
+            }
+        ][:limit]
+
+    def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+        return [
+            {
+                "id": "position-doge",
+                "symbol": "DOGE",
+                "side": "long",
+                "quantity": "0.97600000",
+                "unrealizedPnl": "0.00000000",
+            }
+        ][:limit]
 
 
 class _FakeResearchService:

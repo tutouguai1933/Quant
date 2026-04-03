@@ -36,9 +36,9 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
-            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "推荐策略", "执行决策", "执行建议", "执行器控制", "整台 Freqtrade 执行器"],
+            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "推荐策略", "执行决策", "执行建议", "执行器控制", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本"],
             WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "任务反馈", "触发训练"],
-            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果"],
+            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果"],
         }
         for file_path, patterns in expectations.items():
             content = file_path.read_text(encoding="utf-8")
@@ -66,8 +66,10 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertNotIn("formData.get(\"token\")", actions_content)
         self.assertIn("normalizeAppPath", actions_content)
         self.assertIn("getAdminSession", actions_content)
+        self.assertIn("/signals/pipeline/run?source=qlib", actions_content)
         self.assertIn("normalizeAppPath", login_submit_content)
         self.assertIn("/auth/model", api_content)
+        self.assertIn("truthSource", api_content)
 
     def test_login_page_uses_real_session_state(self) -> None:
         content = (WEB_APP / "login" / "page.tsx").read_text(encoding="utf-8")
@@ -85,6 +87,8 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("真实账户余额", content)
         self.assertIn("交易所零头", content)
         self.assertIn("可交易资产", content)
+        self.assertIn("source:", content)
+        self.assertIn("truth source:", content)
         self.assertIn("Sellable", content)
 
     def test_orders_and_positions_pages_show_sync_source_copy(self) -> None:
@@ -106,6 +110,10 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("执行决策", content)
         self.assertIn("当前跟进对象", content)
         self.assertIn("这里不再重复看图", content)
+        self.assertIn("账户收口", content)
+        self.assertIn("余额页", content)
+        self.assertIn("订单页", content)
+        self.assertIn("持仓页", content)
         self.assertNotIn("图表图层摘要", content)
         self.assertNotIn("止损参考", content)
 
@@ -116,9 +124,10 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertNotIn("研究倾向：", strategy_card_section)
         self.assertNotIn("判断信心：", strategy_card_section)
         self.assertNotIn("主判断：", strategy_card_section)
-        self.assertNotIn("研究解释：", strategy_card_section)
-        self.assertNotIn("模型版本：", strategy_card_section)
         self.assertNotIn("研究门控：", strategy_card_section)
+        self.assertIn("研究解释：", strategy_card_section)
+        self.assertIn("模型版本：", strategy_card_section)
+        self.assertIn("研究分数：", strategy_card_section)
 
 
 if __name__ == "__main__":

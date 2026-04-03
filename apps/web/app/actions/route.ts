@@ -86,11 +86,18 @@ export async function POST(request: Request) {
 function resolveActionConfig(action: string, strategyId: string): ActionConfig | null {
   const map: Record<string, ActionConfig> = {
     run_pipeline: {
+      path: "/signals/pipeline/run?source=qlib",
+      method: "POST",
+      requiresToken: true,
+      successTitle: "动作反馈",
+      successMessage: "Qlib 信号流水线已运行，页面已刷新为最新结果。",
+    },
+    run_mock_pipeline: {
       path: "/signals/pipeline/run?source=mock",
       method: "POST",
       requiresToken: false,
       successTitle: "动作反馈",
-      successMessage: "信号流水线已运行，页面已刷新为最新结果。",
+      successMessage: "演示信号流水线已运行，页面已刷新为最新结果。",
     },
     start_strategy: {
       path: `/strategies/${strategyId}/start`,

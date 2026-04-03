@@ -98,6 +98,22 @@ class SignalService:
                     continue
                 self._dispatch_claims.add(signal_id)
                 return signal.to_dict()
+
+            if strategy_id != 1:
+                return None
+
+            for signal in ordered_signals:
+                signal_id = signal.signal_id or 0
+                if signal.strategy_id is not None:
+                    continue
+                if str(signal.side) == SignalSide.FLAT.value:
+                    continue
+                if signal.status not in dispatchable_statuses:
+                    continue
+                if signal_id in self._dispatch_claims:
+                    continue
+                self._dispatch_claims.add(signal_id)
+                return signal.to_dict()
         return None
 
     def release_dispatch_claim(self, signal_id: int) -> None:

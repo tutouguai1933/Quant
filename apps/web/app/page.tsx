@@ -85,15 +85,22 @@ export default async function HomePage({ searchParams }: PageProps) {
           <h3>先跑成功链路，再观察异常链路</h3>
           <p>如果你已经登录，就先运行信号流水线、启动策略、派发最新信号。之后再切到风险和任务页观察异常路径。</p>
 
-          <div className="action-grid">
-            <form action="/actions" method="post" className="action-card">
-              <input type="hidden" name="action" value="run_pipeline" />
-              <input type="hidden" name="returnTo" value="/" />
-              <button type="submit">运行信号流水线</button>
-              <p>先生成最新 signal，让后面的执行链路有输入。</p>
-            </form>
+	          <div className="action-grid">
+	            <form action="/actions" method="post" className="action-card">
+	              <input type="hidden" name="action" value="run_pipeline" />
+	              <input type="hidden" name="returnTo" value="/" />
+	              <button type="submit">运行 Qlib 信号流水线</button>
+	              <p>先生成最新研究信号，让后面的执行链路有输入。</p>
+	            </form>
 
-            <form action="/actions" method="post" className="action-card">
+	            <form action="/actions" method="post" className="action-card">
+	              <input type="hidden" name="action" value="run_mock_pipeline" />
+	              <input type="hidden" name="returnTo" value="/" />
+	              <button type="submit">运行演示信号流水线</button>
+	              <p>如果要重复验证 dry-run 成功链路，就用这条稳定的演示输入。</p>
+	            </form>
+
+	            <form action="/actions" method="post" className="action-card">
               <input type="hidden" name="action" value="start_strategy" />
               <input type="hidden" name="strategyId" value="1" />
               <input type="hidden" name="returnTo" value="/" />

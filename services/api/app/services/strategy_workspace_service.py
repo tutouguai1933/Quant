@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
+from services.api.app.core.settings import Settings
+from services.api.app.services.account_sync_service import account_sync_service
 from services.api.app.services.market_service import MarketService
 from services.api.app.services.research_cockpit_service import build_market_research_brief
 from services.api.app.services.research_service import ResearchService, research_service
@@ -27,12 +29,14 @@ class StrategyWorkspaceService:
         execution_sync: SyncService | None = None,
         market_reader: MarketService | None = None,
         research_reader: ResearchService | None = None,
+        account_sync: object | None = None,
     ) -> None:
         self._catalog_service = catalog_service or strategy_catalog_service
         self._signal_store = signal_store or signal_service
         self._execution_sync = execution_sync or sync_service
         self._market_reader = market_reader or MarketService()
         self._research_reader = research_reader or research_service
+        self._account_sync = account_sync or account_sync_service
 
     def get_workspace(self, signal_limit: int = 5, order_limit: int = 5) -> dict[str, object]:
         """返回策略中心页面的一次完整聚合视图。"""
@@ -40,7 +44,8 @@ class StrategyWorkspaceService:
         whitelist = self._catalog_service.get_whitelist()
         catalog = self._catalog_service.list_strategies()
         recent_signals = self._signal_store.list_signals(limit=signal_limit)
-        recent_orders = self._execution_sync.list_orders(limit=order_limit)
+        account_state = self._build_account_state(order_limit=order_limit)
+        recent_orders = list(account_state["orders"]) if account_state["source"] == "binance-account-sync" else self._execution_sync.list_orders(limit=order_limit)
         latest_research = self._research_reader.get_latest_result()
         strategy_cards = self._build_strategy_cards(catalog, whitelist, latest_research)
 
@@ -58,7 +63,59 @@ class StrategyWorkspaceService:
             "strategies": strategy_cards,
             "recent_signals": recent_signals,
             "recent_orders": recent_orders,
+            "account_state": account_state,
         }
+
+    def _build_account_state(self, order_limit: int = 5) -> dict[str, object]:
+        """把账户真实状态整理成策略中心可以直接展示的摘要。"""
+
+        runtime_mode = Settings.from_env().runtime_mode
+        if runtime_mode == "live":
+            balances = self._call_account_sync("list_balances", limit=order_limit)
+            orders = self._call_account_sync("list_orders", limit=order_limit)
+            positions = self._call_account_sync("list_positions", limit=order_limit)
+            source = "binance-account-sync"
+            truth_source = "binance"
+        else:
+            balances = []
+            orders = self._execution_sync.list_orders(limit=order_limit)
+            positions = self._execution_sync.list_positions(limit=order_limit)
+            source = "freqtrade-sync"
+            truth_source = "freqtrade"
+
+        latest_balance = balances[0] if balances else None
+        latest_order = orders[0] if orders else None
+        latest_position = positions[0] if positions else None
+        summary = {
+            "balance_count": len(balances),
+            "tradable_balance_count": sum(1 for item in balances if str(item.get("tradeStatus", "")).lower() == "tradable"),
+            "dust_count": sum(1 for item in balances if str(item.get("tradeStatus", "")).lower() == "dust"),
+            "order_count": len(orders),
+            "position_count": len(positions),
+        }
+
+        return {
+            "source": source,
+            "truth_source": truth_source,
+            "summary": summary,
+            "balances": balances,
+            "orders": orders,
+            "positions": positions,
+            "latest_balance": latest_balance,
+            "latest_order": latest_order,
+            "latest_position": latest_position,
+        }
+
+    def _call_account_sync(self, method_name: str, **kwargs) -> list[dict[str, object]]:
+        """安全调用账户同步对象，避免页面因为接口缺失直接报错。"""
+
+        method = getattr(self._account_sync, method_name, None)
+        if method is None:
+            return []
+        items = method(**kwargs)
+        if items is None:
+            return []
+        return list(items)
 
     def _build_strategy_cards(
         self,

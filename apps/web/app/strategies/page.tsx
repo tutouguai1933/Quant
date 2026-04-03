@@ -7,7 +7,12 @@ import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
 import { readFeedback } from "../../lib/feedback";
-import { getStrategyWorkspace, getStrategyWorkspaceFallback, type StrategyWorkspaceCard } from "../../lib/api";
+import {
+  getStrategyWorkspace,
+  getStrategyWorkspaceFallback,
+  type StrategyWorkspaceCard,
+  type WorkspaceAccountState,
+} from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
 
@@ -96,9 +101,59 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
           </section>
 
           <section className="panel">
+            <p className="eyebrow">账户收口</p>
+            <h3>执行之后，回到同一套真实来源上看结果</h3>
+            <p>
+              source:
+              {" "}
+              {workspace.account_state.source}
+              {" / "}
+              truth source:
+              {" "}
+              {workspace.account_state.truth_source}
+            </p>
+            <p>
+              余额：
+              {" "}
+              {workspace.account_state.summary.balance_count}
+              {"，可交易："}
+              {workspace.account_state.summary.tradable_balance_count}
+              {"，零头："}
+              {workspace.account_state.summary.dust_count}
+            </p>
+            <p>
+              订单：
+              {" "}
+              {workspace.account_state.summary.order_count}
+              {"，持仓："}
+              {workspace.account_state.summary.position_count}
+            </p>
+            <p>
+              最近余额：
+              {" "}
+              {formatLatestBalance(workspace.account_state.latest_balance)}
+              {"，最近订单："}
+              {formatLatestOrder(workspace.account_state.latest_order)}
+              {"，最近持仓："}
+              {formatLatestPosition(workspace.account_state.latest_position)}
+            </p>
+            <div className="action-grid">
+              <a className="button-link secondary-link" href="/balances">
+                去余额页
+              </a>
+              <a className="button-link secondary-link" href="/orders">
+                去订单页
+              </a>
+              <a className="button-link secondary-link" href="/positions">
+                去持仓页
+              </a>
+            </div>
+          </section>
+
+          <section className="panel">
             <p className="eyebrow">执行决策</p>
             <h3>这里不再重复看图，只负责决定能不能执行</h3>
-            <p>图表判断留在单币页，策略页只保留执行器状态、最近信号和动作控制。</p>
+            <p>图表判断留在单币页，策略页只保留执行器状态、研究摘要、最近信号和动作控制。</p>
           </section>
 
           <MetricGrid
@@ -222,6 +277,9 @@ function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
           {" "}
           <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} />
         </p>
+        <p>研究分数：{formatResearchScore(item.research_summary.score)}</p>
+        <p>模型版本：{item.research_summary.model_version || "暂无训练产物"}</p>
+        <p>研究解释：{item.research_summary.explanation || "暂无研究解释"}</p>
         <p>推荐策略：{formatPreferredStrategy(item.research_cockpit.recommended_strategy)}</p>
         <p>执行建议：{executionHint}</p>
         <p>观察币种：{item.symbols.join(" / ")}</p>
@@ -243,6 +301,11 @@ function formatLatestSignal(item: Record<string, unknown> | null): string {
     return "暂无持久化信号";
   }
   return `${String(item.symbol ?? "")} / ${String(item.status ?? "")}`;
+}
+
+function formatResearchScore(value: string): string {
+  const text = String(value ?? "").trim();
+  return text.length > 0 ? text : "暂无研究分数";
 }
 
 function formatExecutionHint(item: Record<string, unknown>): string {
@@ -267,4 +330,25 @@ function formatPreferredStrategy(value: StrategyWorkspaceCard["research_cockpit"
     return "趋势回调";
   }
   return "继续观察";
+}
+
+function formatLatestBalance(item: WorkspaceAccountState["latest_balance"]): string {
+  if (!item) {
+    return "暂无余额";
+  }
+  return `${String(item.asset ?? "")} / ${String(item.tradeStatus ?? "")}`;
+}
+
+function formatLatestOrder(item: WorkspaceAccountState["latest_order"]): string {
+  if (!item) {
+    return "暂无订单";
+  }
+  return `${String(item.symbol ?? "")} / ${String(item.status ?? "")}`;
+}
+
+function formatLatestPosition(item: WorkspaceAccountState["latest_position"]): string {
+  if (!item) {
+    return "暂无持仓";
+  }
+  return `${String(item.symbol ?? "")} / ${String(item.side ?? "")}`;
 }

@@ -70,9 +70,12 @@ export type StrategyWorkspaceModel = {
   strategies: StrategyWorkspaceCard[];
   recent_signals: Array<Record<string, unknown>>;
   recent_orders: Array<Record<string, unknown>>;
+  account_state: WorkspaceAccountState;
 };
 
 type BalancesPageModel = {
+  source: string;
+  truthSource: string;
   items: Array<{
     id: string;
     asset: string;
@@ -83,6 +86,50 @@ type BalancesPageModel = {
     sellableQuantity: string;
     dustQuantity: string;
   }>;
+};
+
+type WorkspaceAccountBalance = {
+  id: string;
+  asset: string;
+  available: string;
+  locked: string;
+  tradeStatus: string;
+  tradeHint: string;
+  sellableQuantity: string;
+  dustQuantity: string;
+};
+
+type WorkspaceAccountOrder = {
+  id: string;
+  symbol: string;
+  side: string;
+  orderType: string;
+  status: string;
+};
+
+type WorkspaceAccountPosition = {
+  id: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+};
+
+export type WorkspaceAccountState = {
+  source: string;
+  truth_source: string;
+  summary: {
+    balance_count: number;
+    tradable_balance_count: number;
+    dust_count: number;
+    order_count: number;
+    position_count: number;
+  };
+  balances: WorkspaceAccountBalance[];
+  orders: WorkspaceAccountOrder[];
+  positions: WorkspaceAccountPosition[];
+  latest_balance: WorkspaceAccountBalance | null;
+  latest_order: WorkspaceAccountOrder | null;
+  latest_position: WorkspaceAccountPosition | null;
 };
 
 type PositionsPageModel = {
@@ -356,6 +403,7 @@ export async function getStrategyWorkspace(
       strategies: normalizeStrategyCards(data.strategies),
       recent_signals: normalizeObjectArray(data.recent_signals),
       recent_orders: normalizeObjectArray(data.recent_orders),
+      account_state: normalizeWorkspaceAccountState(data.account_state),
     },
   };
 }
@@ -375,15 +423,17 @@ export async function getLatestResearch(): Promise<ApiEnvelope<LatestResearchRes
 }
 
 export async function listBalances(): Promise<
-  ApiEnvelope<{ items: BalancesPageModel["items"] }>
+  ApiEnvelope<BalancesPageModel>
 > {
   const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/balances");
   if (response.error) {
-    return response as ApiEnvelope<{ items: BalancesPageModel["items"] }>;
+    return response as ApiEnvelope<BalancesPageModel>;
   }
   return {
     ...response,
     data: {
+      source: String(response.meta.source ?? "unknown"),
+      truthSource: String(response.meta.truth_source ?? "unknown"),
       items: response.data.items.map((item) => ({
         id: String(item.id ?? item.asset ?? ""),
         asset: String(item.asset ?? ""),
@@ -740,6 +790,99 @@ function normalizeStrategyWorkspaceOverview(
   };
 }
 
+function normalizeWorkspaceAccountState(item: unknown): WorkspaceAccountState {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const summaryRow: Record<string, unknown> = isPlainObject(row.summary) ? row.summary : {};
+  return {
+    source: String(row.source ?? "unknown"),
+    truth_source: String(row.truth_source ?? row.truthSource ?? "unknown"),
+    summary: {
+      balance_count: Number(summaryRow.balance_count ?? 0),
+      tradable_balance_count: Number(summaryRow.tradable_balance_count ?? 0),
+      dust_count: Number(summaryRow.dust_count ?? 0),
+      order_count: Number(summaryRow.order_count ?? 0),
+      position_count: Number(summaryRow.position_count ?? 0),
+    },
+    balances: normalizeWorkspaceAccountBalances(row.balances),
+    orders: normalizeWorkspaceAccountOrders(row.orders),
+    positions: normalizeWorkspaceAccountPositions(row.positions),
+    latest_balance: normalizeWorkspaceAccountBalance(row.latest_balance),
+    latest_order: normalizeWorkspaceAccountOrder(row.latest_order),
+    latest_position: normalizeWorkspaceAccountPosition(row.latest_position),
+  };
+}
+
+function normalizeWorkspaceAccountBalances(value: unknown): WorkspaceAccountBalance[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => normalizeWorkspaceAccountBalance(item)).filter((item): item is WorkspaceAccountBalance => item !== null);
+}
+
+function normalizeWorkspaceAccountOrders(value: unknown): WorkspaceAccountOrder[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => normalizeWorkspaceAccountOrder(item)).filter((item): item is WorkspaceAccountOrder => item !== null);
+}
+
+function normalizeWorkspaceAccountPositions(value: unknown): WorkspaceAccountPosition[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => normalizeWorkspaceAccountPosition(item)).filter((item): item is WorkspaceAccountPosition => item !== null);
+}
+
+function normalizeWorkspaceAccountBalance(item: unknown): WorkspaceAccountBalance | null {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const asset = String(row.asset ?? "");
+  const id = String(row.id ?? row.asset ?? "").trim();
+  if (!asset && !id) {
+    return null;
+  }
+  return {
+    id,
+    asset,
+    available: String(row.available ?? ""),
+    locked: String(row.locked ?? ""),
+    tradeStatus: String(row.tradeStatus ?? row.trade_status ?? "unknown"),
+    tradeHint: String(row.tradeHint ?? row.trade_hint ?? ""),
+    sellableQuantity: String(row.sellableQuantity ?? row.sellable_quantity ?? "0"),
+    dustQuantity: String(row.dustQuantity ?? row.dust_quantity ?? "0"),
+  };
+}
+
+function normalizeWorkspaceAccountOrder(item: unknown): WorkspaceAccountOrder | null {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const id = String(row.id ?? "").trim();
+  const symbol = String(row.symbol ?? "").trim();
+  if (!id && !symbol) {
+    return null;
+  }
+  return {
+    id,
+    symbol,
+    side: String(row.side ?? ""),
+    orderType: String(row.orderType ?? row.order_type ?? ""),
+    status: String(row.status ?? ""),
+  };
+}
+
+function normalizeWorkspaceAccountPosition(item: unknown): WorkspaceAccountPosition | null {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const id = String(row.id ?? "").trim();
+  const symbol = String(row.symbol ?? "").trim();
+  if (!id && !symbol) {
+    return null;
+  }
+  return {
+    id,
+    symbol,
+    side: String(row.side ?? ""),
+    quantity: String(row.quantity ?? ""),
+  };
+}
+
 function normalizeStrategyCards(value: unknown): StrategyWorkspaceCard[] {
   if (!Array.isArray(value)) {
     return [];
@@ -956,6 +1099,23 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
     ],
     recent_signals: [],
     recent_orders: [],
+    account_state: {
+      source: "freqtrade-sync",
+      truth_source: "freqtrade",
+      summary: {
+        balance_count: 0,
+        tradable_balance_count: 0,
+        dust_count: 0,
+        order_count: 0,
+        position_count: 0,
+      },
+      balances: [],
+      orders: [],
+      positions: [],
+      latest_balance: null,
+      latest_order: null,
+      latest_position: null,
+    },
   };
 }
 
@@ -991,6 +1151,8 @@ export function getPositionsPageModel(): PositionsPageModel {
 
 export function getBalancesPageModel(): BalancesPageModel {
   return {
+    source: "api-skeleton",
+    truthSource: "binance",
     items: [
       {
         id: "balance-usdt",

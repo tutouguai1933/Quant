@@ -56,18 +56,17 @@ export default async function SignalsPage({ searchParams }: PageProps) {
         title="最新信号"
         description="这里先回答两个问题：有没有信号？最新信号能不能进入下一步？如果没有，就直接从这里运行信号流水线。"
         aside={
-          <form action="/actions" method="post" className="hero-form">
-            <input type="hidden" name="action" value="run_pipeline" />
-            <input type="hidden" name="returnTo" value="/signals" />
-            <button type="submit">运行信号流水线</button>
-          </form>
+          <div className="action-grid">
+            <ActionForm action="run_pipeline" label="运行 Qlib 信号流水线" returnTo="/signals" />
+            <ActionForm action="run_mock_pipeline" label="运行演示信号流水线" returnTo="/signals" />
+          </div>
         }
       />
 
       <MetricGrid
         items={[
           { label: "信号总数", value: String(items.length), detail: "当前页只展示标准化 signal" },
-          { label: "最新来源", value: items[0]?.source ?? "n/a", detail: "用于快速判断输出来自 mock 还是其他生产者" },
+          { label: "最新来源", value: items[0]?.source ?? "n/a", detail: "用于快速判断输出来自 Qlib、mock 还是其他生产者" },
           { label: "最新状态", value: items[0]?.status ?? "waiting", detail: "决定是否需要继续到策略和任务页" },
         ]}
       />
@@ -86,7 +85,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
       <section className="panel">
         <p className="eyebrow">动作反馈</p>
         <h3>从信号页进入执行链路</h3>
-        <p>推荐先运行信号流水线，再切到 Strategies 页启动策略并派发最新信号。</p>
+        <p>推荐先运行 Qlib 信号流水线看研究结果；如果要重复验证执行链路，就运行演示信号流水线，再切到 Strategies 页启动策略并派发最新信号。</p>
         <p>最近研究结果会同步回到这里，方便继续看研究训练和研究推理的最新状态。</p>
       </section>
 
