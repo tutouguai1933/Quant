@@ -80,6 +80,36 @@ class FakeMarketLikeAccountClient:
         ]
 
 
+class FakeBalanceMarketClient:
+    def get_exchange_info(self, symbols: tuple[str, ...] | None = None) -> dict[str, object]:
+        requested = {item for item in (symbols or ())}
+        rows = [
+            {
+                "symbol": "BTCUSDT",
+                "filters": [
+                    {"filterType": "LOT_SIZE", "stepSize": "0.00001000"},
+                    {"filterType": "NOTIONAL", "minNotional": "5.00000000"},
+                ],
+            },
+            {
+                "symbol": "DOGEUSDT",
+                "filters": [
+                    {"filterType": "LOT_SIZE", "stepSize": "1.00000000"},
+                    {"filterType": "NOTIONAL", "minNotional": "1.00000000"},
+                ],
+            },
+        ]
+        if requested:
+            rows = [item for item in rows if item["symbol"] in requested]
+        return {"symbols": rows}
+
+    def get_tickers(self) -> list[dict[str, object]]:
+        return [
+            {"symbol": "BTCUSDT", "lastPrice": "86000.00000000"},
+            {"symbol": "DOGEUSDT", "lastPrice": "0.09056000"},
+        ]
+
+
 class ExplodingAccountSyncService:
     def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
         raise AssertionError("demo mode should not use account sync balances")
@@ -308,9 +338,30 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(positions_result[0]["quantity"], "0.0100000000")
         self.assertEqual(positions_result[0]["unrealizedPnl"], "5.0000000000")
 
+    def test_account_sync_service_marks_dust_balances_for_non_sellable_residuals(self) -> None:
+        class DustBalanceClient:
+            def get_balances(self) -> list[dict[str, object]]:
+                return [
+                    {"asset": "DOGE", "free": "0.97600000", "locked": "0.00000000"},
+                    {"asset": "BTC", "free": "0.50000000", "locked": "0.00000000"},
+                    {"asset": "USDT", "free": "20.00000000", "locked": "0.00000000"},
+                ]
+
+        service = AccountSyncService(DustBalanceClient(), market_client=FakeBalanceMarketClient())
+
+        balances_result = service.list_balances(limit=10)
+
+        self.assertEqual(balances_result[0]["asset"], "DOGE")
+        self.assertEqual(balances_result[0]["tradeStatus"], "dust")
+        self.assertIn("零头", balances_result[0]["tradeHint"])
+        self.assertEqual(balances_result[0]["sellableQuantity"], "0")
+        self.assertEqual(balances_result[0]["dustQuantity"], "0.976")
+        self.assertEqual(balances_result[1]["tradeStatus"], "tradable")
+        self.assertEqual(balances_result[2]["tradeStatus"], "tradable")
+
     def test_dry_run_mode_uses_binance_only_for_balances(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):
-            service = AccountSyncService(FakeBinanceAccountClient())
+            service = AccountSyncService(FakeBinanceAccountClient(), market_client=FakeBalanceMarketClient())
             with patch.object(balances, "account_sync_service", service), patch.object(
                 orders, "sync_service", FakeSyncService()
             ), patch.object(
@@ -324,6 +375,7 @@ class AccountSyncServiceTests(unittest.TestCase):
 
         self.assertEqual(balance_response["meta"]["source"], "binance-account-sync")
         self.assertEqual(balance_response["data"]["items"][0]["available"], "12.5000000000")
+        self.assertEqual(balance_response["data"]["items"][0]["tradeStatus"], "tradable")
         self.assertEqual(order_response["meta"]["source"], "freqtrade-sync")
         self.assertEqual(order_response["data"]["items"][0]["id"], "ft-1")
         self.assertEqual(order_response["data"]["items"][0]["symbol"], "BTCUSDT")

@@ -73,7 +73,16 @@ export type StrategyWorkspaceModel = {
 };
 
 type BalancesPageModel = {
-  items: Array<{ id: string; asset: string; available: string; locked: string }>;
+  items: Array<{
+    id: string;
+    asset: string;
+    available: string;
+    locked: string;
+    tradeStatus: string;
+    tradeHint: string;
+    sellableQuantity: string;
+    dustQuantity: string;
+  }>;
 };
 
 type PositionsPageModel = {
@@ -380,6 +389,10 @@ export async function listBalances(): Promise<
         asset: String(item.asset ?? ""),
         available: String(item.available ?? ""),
         locked: String(item.locked ?? ""),
+        tradeStatus: String(item.tradeStatus ?? "unknown"),
+        tradeHint: String(item.tradeHint ?? ""),
+        sellableQuantity: String(item.sellableQuantity ?? "0"),
+        dustQuantity: String(item.dustQuantity ?? "0"),
       })),
     },
   };
@@ -984,6 +997,10 @@ export function getBalancesPageModel(): BalancesPageModel {
         asset: "USDT",
         available: "10000.0000000000",
         locked: "0.0000000000",
+        tradeStatus: "tradable",
+        tradeHint: "这是基础计价资产，可以直接用于下单",
+        sellableQuantity: "10000",
+        dustQuantity: "0",
       },
     ],
   };

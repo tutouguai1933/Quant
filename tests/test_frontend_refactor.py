@@ -83,6 +83,9 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("listBalances", content)
         self.assertIn("余额", content)
         self.assertIn("真实账户余额", content)
+        self.assertIn("交易所零头", content)
+        self.assertIn("可交易资产", content)
+        self.assertIn("Sellable", content)
 
     def test_orders_and_positions_pages_show_sync_source_copy(self) -> None:
         orders_content = (WEB_APP / "orders" / "page.tsx").read_text(encoding="utf-8")
