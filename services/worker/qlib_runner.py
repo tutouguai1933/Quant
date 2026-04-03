@@ -13,6 +13,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 
+from services.worker.qlib_backtest import run_backtest
 from services.worker.qlib_config import QlibRuntimeConfig
 from services.worker.qlib_features import FEATURE_COLUMNS, build_feature_rows
 from services.worker.qlib_labels import LABEL_COLUMNS, build_label_rows
@@ -23,6 +24,8 @@ class TrainingBundle:
     """训练阶段的中间结果。"""
 
     training_rows: list[dict[str, object]]
+    validation_rows: list[dict[str, object]]
+    backtest_rows: list[dict[str, object]]
     feature_columns: tuple[str, ...]
     label_columns: tuple[str, ...]
 
@@ -40,6 +43,8 @@ class QlibRunner:
         self._ensure_runtime_directories()
         bundle = self._build_training_bundle(dataset)
         metrics = self._fit_model(bundle.training_rows)
+        validation = self._build_validation_summary(bundle.validation_rows)
+        backtest = run_backtest(rows=bundle.backtest_rows, holding_window="1-3d")
         run_id = self._new_run_id("train")
         generated_at = _utc_now()
         model_version = f"qlib-minimal-{generated_at.strftime('%Y%m%d%H%M%S%f')}"
@@ -49,6 +54,8 @@ class QlibRunner:
             "feature_columns": list(bundle.feature_columns),
             "label_columns": list(bundle.label_columns),
             "metrics": metrics,
+            "validation": validation,
+            "backtest": backtest,
         }
         artifact_path = self._config.paths.artifacts_dir / f"{model_version}.json"
         self._write_json(artifact_path, model_payload)
@@ -64,6 +71,8 @@ class QlibRunner:
             "feature_columns": list(bundle.feature_columns),
             "label_columns": list(bundle.label_columns),
             "metrics": metrics,
+            "validation": validation,
+            "backtest": backtest,
             "warnings": self._build_warnings(),
             "artifact_path": str(artifact_path),
         }
@@ -126,7 +135,9 @@ class QlibRunner:
     def _build_training_bundle(self, dataset: dict[str, list[dict[str, object]]]) -> TrainingBundle:
         """把输入数据整理成训练样本。"""
 
-        rows: list[dict[str, object]] = []
+        training_rows: list[dict[str, object]] = []
+        validation_rows: list[dict[str, object]] = []
+        backtest_rows: list[dict[str, object]] = []
         for symbol, candles in dataset.items():
             feature_rows = build_feature_rows(symbol, candles)
             label_rows = build_label_rows(symbol, candles)
@@ -135,19 +146,46 @@ class QlibRunner:
                 for label_row in label_rows
                 if label_row.get("generated_at") is not None
             }
+            merged_rows: list[dict[str, object]] = []
             for feature_row in feature_rows:
                 label_row = label_rows_by_time.get(int(feature_row["generated_at"]))
                 if label_row is None:
                     continue
                 if not label_row["is_trainable"]:
                     continue
-                rows.append({**feature_row, **label_row})
-        if not rows:
+                merged_rows.append({**feature_row, **label_row})
+            symbol_training_rows, symbol_validation_rows, symbol_backtest_rows = self._split_rows(merged_rows)
+            training_rows.extend(symbol_training_rows)
+            validation_rows.extend(symbol_validation_rows)
+            backtest_rows.extend(symbol_backtest_rows)
+        if not training_rows:
             raise RuntimeError("研究层没有拿到可训练样本")
         return TrainingBundle(
-            training_rows=rows,
+            training_rows=training_rows,
+            validation_rows=validation_rows,
+            backtest_rows=backtest_rows,
             feature_columns=FEATURE_COLUMNS,
             label_columns=LABEL_COLUMNS,
+        )
+
+    def _split_rows(
+        self,
+        rows: list[dict[str, object]],
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+        """把样本按时间切成训练、验证和回测三段。"""
+
+        if len(rows) < 3:
+            return rows, [], []
+
+        ordered_rows = sorted(rows, key=lambda item: int(item["generated_at"]))
+        train_end = max(1, int(len(ordered_rows) * 0.6))
+        valid_end = max(train_end + 1, int(len(ordered_rows) * 0.8))
+        if valid_end >= len(ordered_rows):
+            valid_end = len(ordered_rows) - 1
+        return (
+            ordered_rows[:train_end],
+            ordered_rows[train_end:valid_end],
+            ordered_rows[valid_end:],
         )
 
     def _fit_model(self, rows: list[dict[str, object]]) -> dict[str, object]:
@@ -165,6 +203,17 @@ class QlibRunner:
             "feature_averages": {key: _format_float(value) for key, value in averages.items()},
             "positive_rate": _format_float(positive_rate),
             "avg_future_return_pct": _format_float(sum(future_returns) / len(future_returns)),
+        }
+
+    def _build_validation_summary(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        """构造最小验证摘要。"""
+
+        future_returns = [_to_float(item.get("future_return_pct")) for item in rows]
+        positive_rate = sum(1 for value in future_returns if value > 0) / len(future_returns) if future_returns else 0.0
+        return {
+            "sample_count": len(rows),
+            "positive_rate": _format_float(positive_rate),
+            "avg_future_return_pct": _format_float(sum(future_returns) / len(future_returns)) if future_returns else _format_float(0.0),
         }
 
     def _score_signal(self, feature_row: dict[str, object], metrics: dict[str, object]) -> float:

@@ -1,0 +1,50 @@
+"""Qlib 最小回测测试。
+
+这个文件只验证回测报告会稳定输出核心指标。
+"""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from services.worker.qlib_backtest import run_backtest  # noqa: E402
+
+
+class QlibBacktestTests(unittest.TestCase):
+    def test_backtest_report_contains_core_metrics(self) -> None:
+        report = run_backtest(
+            rows=_sample_ranked_rows(),
+            holding_window="1-3d",
+        )
+
+        self.assertEqual(report["holding_window"], "1-3d")
+        self.assertEqual(
+            set(report["metrics"].keys()),
+            {
+                "total_return_pct",
+                "max_drawdown_pct",
+                "sharpe",
+                "win_rate",
+                "turnover",
+            },
+        )
+
+
+def _sample_ranked_rows() -> list[dict[str, object]]:
+    return [
+        {"future_return_pct": "2.0000", "label": "buy"},
+        {"future_return_pct": "-1.2000", "label": "sell"},
+        {"future_return_pct": "0.4000", "label": "watch"},
+        {"future_return_pct": "1.1000", "label": "buy"},
+    ]
+
+
+if __name__ == "__main__":
+    unittest.main()

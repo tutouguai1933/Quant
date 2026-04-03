@@ -141,6 +141,8 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertIn("run_id", result)
         self.assertIn("model_version", result)
         self.assertGreater(result["sample_count"], 0)
+        self.assertIn("validation", result)
+        self.assertIn("backtest", result)
 
     def test_inference_returns_standardized_signal_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
