@@ -261,7 +261,12 @@ docker compose up -d
 - 已经做过一次真实 `/tasks/sync` 验证，返回成功，并带回真实余额、订单和持仓
 - live 同步现在只会在 Binance 账户同步里确认到“刚刚派发的那一笔订单”时，才把 signal 标成 `synced`
 - 如果首次同步失败，后续重试成功也会把 signal 状态补齐
-- 真实平仓验收这次被公网 IP 变更阻塞：当前机器出口 IP 已变成 `151.242.36.38`，如果 Binance API 开了 IP 白名单，需要先把这个 IP 补进去
+- 当前阿里云上的真实余额同步已经恢复，签名账户链路可用
+- 当前服务器上还留着一笔 `DOGE` 未托管现货仓位：
+  - Binance 账户里能看到真实 `DOGE`
+  - 但当前 `Freqtrade live` 的 `/api/v1/status` 和 `/api/v1/trades` 都为空
+  - 所以 `forceexit` 无法直接平这笔仓位
+- 控制平面现在会明确返回“账户里仍有现货余额，但当前 Freqtrade 没有打开交易记录，无法直接平仓”
 - 当前订单页看到的状态可能是 `closed`，这是 Freqtrade 当前版本在 dry-run 下返回的真实状态
 - 如果你的 Freqtrade 版本对 `forceenter / forceexit` 的参数要求不同，需要按实际版本再做微调
 - 如果 bot 里已经有同币种历史 dry-run 交易，当前 `flat` 会按当前币种或当前 `trade_id` 收敛，不会全平全部仓位

@@ -424,6 +424,42 @@ class FreqtradeRestClientTests(unittest.TestCase):
 
         self.assertIn("BTC/USDT", str(ctx.exception))
 
+    def test_client_raises_orphan_balance_error_when_binance_has_spot_asset_but_freqtrade_has_no_trade(self) -> None:
+        state: dict[str, object] = {
+            "positions": [],
+            "trades": [],
+            "balances": [{"asset": "DOGE", "available": "11.98800000", "locked": "0.00000000"}],
+        }
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = FreqtradeRestClient(
+                FreqtradeRestConfig(
+                    base_url=base_url,
+                    username="bot",
+                    password="secret",
+                    timeout_seconds=2.0,
+                )
+            )
+            with self.assertRaises(RuntimeError) as ctx:
+                client.submit_execution_action(
+                    {
+                        "symbol": "DOGEUSDT",
+                        "side": "flat",
+                        "quantity": "11.9880000000",
+                        "source_signal_id": 5,
+                        "strategy_id": 1,
+                    }
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertIn("DOGE/USDT", str(ctx.exception))
+        self.assertIn("现货余额", str(ctx.exception))
+
     def test_client_falls_back_to_runtime_strategy_when_list_endpoint_unavailable(self) -> None:
         state: dict[str, object] = {
             "balances": [{"asset": "USDT", "total": "100.0", "available": "90.0", "locked": "10.0"}],

@@ -429,8 +429,37 @@ class FreqtradeRestClient:
 
         trades = self._list_open_trades(symbol)
         if not trades:
+            orphan_balance = self._find_nonzero_spot_balance(symbol)
+            if orphan_balance is not None:
+                raise FreqtradeRestError(
+                    f"Binance 账户里仍有 {symbol} 现货余额 {orphan_balance}，"
+                    "但当前 Freqtrade 没有打开交易记录，无法直接平仓"
+                )
             raise FreqtradeRestError(f"Freqtrade 当前没有可平的 {symbol} 持仓")
         return trades
+
+    def _find_nonzero_spot_balance(self, symbol: str) -> str | None:
+        """查找指定交易对基础币是否仍有非零现货余额。"""
+
+        base_asset = _normalize_symbol(symbol).split("/", 1)[0]
+        for item in self._get_balances():
+            asset = str(item.get("asset") or item.get("currency") or "").strip().upper()
+            if asset != base_asset:
+                continue
+            candidates = (
+                item.get("available"),
+                item.get("free"),
+                item.get("total"),
+                item.get("balance"),
+            )
+            for value in candidates:
+                try:
+                    parsed = Decimal(str(value))
+                except (ArithmeticError, ValueError, TypeError):
+                    continue
+                if parsed > 0:
+                    return _to_decimal_string(parsed)
+        return None
 
     def _build_order_feedback(
         self,
