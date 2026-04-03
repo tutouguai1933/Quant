@@ -31,7 +31,7 @@ class FreqtradeDeploymentDocsTests(unittest.TestCase):
 
         self.assertIn('"trading_mode": "spot"', content)
         self.assertIn('"dry_run": true', content)
-        self.assertIn('"listen_port": 8080', content)
+        self.assertIn('"listen_port": 9013', content)
         self.assertIn('"entry_pricing"', content)
         self.assertIn('"exit_pricing"', content)
         self.assertIn('"enable_ws": false', content)

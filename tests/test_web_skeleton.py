@@ -52,7 +52,7 @@ class WebSkeletonTests(unittest.TestCase):
 
     def test_api_client_targets_control_plane(self) -> None:
         content = (WEB_LIB / "api.ts").read_text(encoding="utf-8")
-        self.assertIn("http://127.0.0.1:8000/api/v1", content)
+        self.assertIn("http://127.0.0.1:9011/api/v1", content)
         self.assertIn("fetch(buildApiUrl(path)", content)
         self.assertIn("ApiEnvelope", content)
         self.assertIn("cache: \"no-store\"", content)

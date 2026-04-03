@@ -55,7 +55,7 @@ export QUANT_RUNTIME_MODE=dry-run
 export QUANT_BINANCE_MARKET_BASE_URL='https://api.binance.com'
 export QUANT_BINANCE_ACCOUNT_BASE_URL='https://api.binance.com'
 export QUANT_BINANCE_TIMEOUT_SECONDS='10'
-export QUANT_FREQTRADE_API_URL='http://127.0.0.1:8080'
+export QUANT_FREQTRADE_API_URL='http://127.0.0.1:9013'
 export QUANT_FREQTRADE_API_USERNAME='Freqtrader'
 export QUANT_FREQTRADE_API_PASSWORD='YourPassword'
 ```
@@ -63,7 +63,7 @@ export QUANT_FREQTRADE_API_PASSWORD='YourPassword'
 也兼容短变量名：
 
 ```bash
-export QUANT_FREQTRADE_URL='http://127.0.0.1:8080'
+export QUANT_FREQTRADE_URL='http://127.0.0.1:9013'
 export QUANT_FREQTRADE_USERNAME='Freqtrader'
 export QUANT_FREQTRADE_PASSWORD='YourPassword'
 ```
@@ -108,14 +108,14 @@ docker compose up -d
 
 预期结果：
 
-- 本机 `127.0.0.1:8080` 会起来一台 Freqtrade REST API
+- 本机 `127.0.0.1:9013` 会起来一台 Freqtrade REST API
 - 控制平面补齐 `QUANT_FREQTRADE_API_URL / USERNAME / PASSWORD` 后，会从 `memory` 切到 `rest`
 
 说明：
 
 - 当前骨架固定为 `Spot`
 - Docker 继续使用 `host` 网络
-- 但 Freqtrade REST 自己只监听 `127.0.0.1:8080`
+- 但 Freqtrade REST 自己只监听 `127.0.0.1:9013`
 - 第一批交易对白名单固定为：
   - `BTC/USDT`
   - `ETH/USDT`
@@ -152,6 +152,8 @@ docker compose up -d
 - `9013`: Freqtrade REST
 - `9014`: Qlib
 - `9015`: OpenClaw
+
+本地联调时也沿用同一套口径，不再单独使用旧的 `3000 / 8000 / 8080`。
 
 ## 服务器统一部署
 

@@ -237,6 +237,7 @@ infra/deploy                阿里云统一部署骨架
 - WebUI 命令仍在 `apps/web` 下单独执行
 - 日常开发以 `WSL` 为主，真实联调和最终部署以阿里云服务器为主
 - 如果服务器位于中国大陆，公开行情和签名账户接口要分开检查
+- 本地运行也统一遵循 `/home/djy/.port-registry.yaml`
 
 ### API
 
@@ -248,14 +249,14 @@ mkdir -p /tmp/quant-qlib-runtime
 set -a
 source /home/djy/Quant/.env.quant.local
 set +a
-uvicorn services.api.app.main:app --host 127.0.0.1 --port 8000
+uvicorn services.api.app.main:app --host 127.0.0.1 --port 9011
 ```
 
 ### WebUI
 
 ```bash
 cd apps/web
-pnpm start --hostname 127.0.0.1 --port 3000
+pnpm start --hostname 127.0.0.1 --port 9012
 ```
 
 ### Freqtrade Spot Dry-Run / Live Scaffold
@@ -272,14 +273,28 @@ docker compose up -d
 - 默认 `QUANT_FREQTRADE_PUBLIC_CONFIG=config.base.json`，走 `dry-run`
 - 如果后面要切 live，可把 `.env` 里的 `QUANT_FREQTRADE_PUBLIC_CONFIG` 改成 `config.live.base.json`
 - 当前 live 骨架默认只放 `DOGE/USDT`，且 `stake_amount=6`
+- 本地 Freqtrade REST 默认监听 `127.0.0.1:9013`
 
 ### 默认地址
 
-- API：`http://127.0.0.1:8000`
-- WebUI：`http://127.0.0.1:3000`
+- API：`http://127.0.0.1:9011`
+- WebUI：`http://127.0.0.1:9012`
+- Freqtrade REST：`http://127.0.0.1:9013`
 - 管理员账号：`admin / 1933`
 - 研究运行目录默认值：`/tmp/quant-qlib-runtime`
 - 多 session 并行时建议额外设置：`QUANT_QLIB_SESSION_ID=<你的 session 名>`
+
+### 本地端口约定
+
+本地运行和服务器运行保持同一套口径：
+
+- `9011`: API
+- `9012`: WebUI
+- `9013`: Freqtrade REST
+- `9014`: Qlib
+- `9015`: OpenClaw
+
+如果某个 session 需要单独联调，就新增 `Quant-Debug-N`，联调结束后删除。
 
 ## 云服务器部署方式
 
@@ -401,6 +416,18 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - 研究训练和研究推理现在需要管理员登录后再触发
 
 ## 当前待办
+
+### 当前任务清单
+
+- [x] Task 1：把本地运行和默认地址统一到 `9011-9015`
+- [ ] Task 2：把真实交易后的账户状态、订单状态、页面状态完全对齐
+- [ ] Task 3：处理 `0.976 DOGE` 这类交易所零头
+- [ ] Task 4：把 `Phase B` 最后一段体验链串完整
+- [x] Task 5：图表页补 `EMA20 / EMA55`
+- [x] Task 6：把最近图表点做得更直观
+- [x] Task 7：让市场页、图表页、策略页的动线更顺
+- [x] Task 8：本地和服务器统一遵循端口注册表
+- [ ] Task 9：与 `Qlib` 进行对接和调试
 
 - [x] 目录骨架和基础文档
 - [x] 统一契约和数据库模型

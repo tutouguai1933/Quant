@@ -10,8 +10,8 @@
 
 [CmdletBinding()]
 param(
-    [string]$ApiBaseUrl = "http://127.0.0.1:8000",
-    [string]$WebUiBaseUrl = "http://127.0.0.1:3000",
+    [string]$ApiBaseUrl = "http://127.0.0.1:9011",
+    [string]$WebUiBaseUrl = "http://127.0.0.1:9012",
     [string]$Username = "admin",
     [string]$Password = "1933",
     [int]$StrategyId = 1,

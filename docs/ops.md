@@ -18,6 +18,7 @@
 
 - 所有 Python 相关命令默认在 conda 环境 `quant` 中执行
 - 如果没有特别说明，后端服务、测试和脚本都先进入这个环境再运行
+- 本地运行也统一遵循 `/home/djy/.port-registry.yaml`
 
 ### API
 
@@ -27,20 +28,21 @@ conda activate quant
 set -a
 source /home/djy/Quant/.env.quant.local
 set +a
-uvicorn services.api.app.main:app --host 127.0.0.1 --port 8000
+uvicorn services.api.app.main:app --host 127.0.0.1 --port 9011
 ```
 
 ### WebUI
 
 ```bash
 cd apps/web
-pnpm start --hostname 127.0.0.1 --port 3000
+pnpm start --hostname 127.0.0.1 --port 9012
 ```
 
 ### 默认地址
 
-- API：`http://127.0.0.1:8000`
-- WebUI：`http://127.0.0.1:3000`
+- API：`http://127.0.0.1:9011`
+- WebUI：`http://127.0.0.1:9012`
+- Freqtrade REST：`http://127.0.0.1:9013`
 
 ## 当前账号
 
@@ -105,11 +107,11 @@ pnpm start --hostname 127.0.0.1 --port 3000
 
 ### 页面体验
 
-1. 打开 `http://127.0.0.1:3000/login`
+1. 打开 `http://127.0.0.1:9012/login`
 2. 用 `admin / 1933` 登录
-3. 打开 `http://127.0.0.1:3000/market`
+3. 打开 `http://127.0.0.1:9012/market`
 4. 打开任一单币图表页
-5. 打开 `http://127.0.0.1:3000/strategies`
+5. 打开 `http://127.0.0.1:9012/strategies`
 6. 先点“启动策略”
 7. 再点“派发最新信号”
 8. 查看 `orders`、`positions`、`tasks`、`risk`

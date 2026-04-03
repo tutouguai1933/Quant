@@ -7,7 +7,7 @@
 - 用 Docker 在 WSL 里跑一台真实的 Freqtrade
 - 交易模式固定为 `Spot`
 - 当前只做 `dry-run`
-- REST API 默认只监听本机 `127.0.0.1:8080`
+- REST API 默认只监听本机 `127.0.0.1:9013`
 - Docker 继续使用 `host` 网络，方便复用这台环境的本机代理
 - 第一批交易对白名单固定为：
   - `BTC/USDT`
@@ -51,5 +51,5 @@ docker compose up -d
 
 预期结果：
 
-- 本机 `127.0.0.1:8080` 会有一台 Freqtrade REST API
+- 本机 `127.0.0.1:9013` 会有一台 Freqtrade REST API
 - 控制平面补齐 REST 配置后，会从 `memory` 切到 `rest`

@@ -228,7 +228,7 @@ export type LoginPageModel = {
   protectedPages: string[];
 };
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
 const API_BASE_URL = (process.env.QUANT_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
 const WEB_PROXY_BASE_URL = "/api/control";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
