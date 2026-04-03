@@ -297,7 +297,7 @@ git commit -m "feat: use qlib recommendation in execution workspace"
 - Modify: `plan.md`
 - Modify: `CONTEXT.md`
 
-- [ ] **Step 1: 写文档约束，固定真实验证顺序**
+- [x] **Step 1: 写文档约束，固定真实验证顺序**
 
 ```markdown
 1. 研究训练
@@ -309,18 +309,18 @@ git commit -m "feat: use qlib recommendation in execution workspace"
 7. live 完成后回看余额、订单、持仓、任务、风险
 ```
 
-- [ ] **Step 2: 写最小进度记录**
+- [x] **Step 2: 写最小进度记录**
 
 ```markdown
 - 当前下一阶段：先做研究筛选门，再做实验对比，再做执行联动，最后固定真实验证流程
 ```
 
-- [ ] **Step 3: 手工自查文档一致性**
+- [x] **Step 3: 手工自查文档一致性**
 
 Run: `rg -n "研究筛选|实验对比|真实验证|dry-run|live" README.md plan.md docs/ops-qlib.md CONTEXT.md`  
 Expected: 能看到同一套顺序，不互相矛盾。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md plan.md CONTEXT.md docs/ops-qlib.md
