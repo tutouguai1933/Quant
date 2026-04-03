@@ -279,11 +279,11 @@ export function ProKlineChart({
 
       <div className="chart-summary-strip">
         <article className="chart-summary-chip">
-          <span>EMA 快</span>
+          <span>EMA20</span>
           <strong>{formatOverlayMetric(overlays.ema_fast)}</strong>
         </article>
         <article className="chart-summary-chip">
-          <span>EMA 慢</span>
+          <span>EMA55</span>
           <strong>{formatOverlayMetric(overlays.ema_slow)}</strong>
         </article>
         <article className="chart-summary-chip">
@@ -297,6 +297,10 @@ export function ProKlineChart({
         <article className="chart-summary-chip">
           <span>成交量均值</span>
           <strong>{formatOverlayMetric(overlays.volume_sma)}</strong>
+        </article>
+        <article className="chart-summary-chip">
+          <span>最近图表点</span>
+          <strong>{formatLatestMarkerSummary(markers)}</strong>
         </article>
       </div>
 
@@ -502,6 +506,25 @@ function formatOverlayMetric(item: ChartIndicatorSummary["ema_fast"]): string {
     return "n/a";
   }
   return item.value;
+}
+
+/* 返回最近一个图表标记的简要文案。 */
+function formatLatestMarkerSummary(markers: ChartMarkerGroups): string {
+  const latest = [...markers.signals, ...markers.entries, ...markers.stops]
+    .slice()
+    .sort((left, right) => {
+      const leftTime = toNumber(left.time) ?? 0;
+      const rightTime = toNumber(right.time) ?? 0;
+      return rightTime - leftTime;
+    })[0];
+
+  if (!latest) {
+    return "暂无";
+  }
+
+  const label = String(latest.label ?? latest.strategy_id ?? "signal").trim();
+  const price = formatMaybeNumber(latest.price, "");
+  return price ? `${label} @ ${price}` : label;
 }
 
 /* 将数值统一成图表可读形式。 */

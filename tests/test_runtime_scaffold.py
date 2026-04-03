@@ -51,7 +51,7 @@ class RuntimeScaffoldTests(unittest.TestCase):
         self.assertTrue(live_config.exists(), f"missing file: {live_config}")
         live_content = live_config.read_text(encoding="utf-8")
         self.assertIn('"dry_run": false', live_content)
-        self.assertIn('"stake_amount": 1', live_content)
+        self.assertIn('"stake_amount": 6', live_content)
         self.assertIn('"max_open_trades": 1', live_content)
         self.assertIn('"DOGE/USDT"', live_content)
         self.assertIn('"initial_state": "stopped"', live_content)

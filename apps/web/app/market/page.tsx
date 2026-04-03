@@ -31,7 +31,7 @@ export default async function MarketPage() {
       <PageHero
         badge="市场"
         title="市场筛选入口"
-        description="这里先做第一轮筛选：先找优先关注和高信心目标，再看多周期状态、研究倾向和判断信心。"
+        description="这里先做第一轮筛选：先找优先关注和高信心目标，再看多周期状态、研究倾向和判断信心，最后顺着图表入口进入策略中心。"
       />
 
       <MarketFilterBar />

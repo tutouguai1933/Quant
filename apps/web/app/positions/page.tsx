@@ -56,6 +56,7 @@ export default async function PositionsPage() {
           {" "}
           {model.truthSource}
         </p>
+        <p>如果这里已经空了，但余额页还剩少量币，先去余额页确认是交易所零头，还是仍有可交易余额，不要直接把它当成系统卡着持仓。</p>
       </section>
 
       <DataTable
@@ -65,7 +66,7 @@ export default async function PositionsPage() {
           cells: [item.symbol, <StatusBadge key={item.id} value={item.side} />, item.quantity, item.unrealizedPnl],
         }))}
         emptyTitle="还没有持仓"
-        emptyDetail="当订单已经成交后，再回到这里确认是否形成最新仓位。"
+        emptyDetail="当订单已经成交后，再回到这里确认是否形成最新仓位；如果这里只显示空列表，记得去余额页看看是否只剩交易所零头。"
       />
     </AppShell>
   );

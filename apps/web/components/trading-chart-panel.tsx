@@ -60,6 +60,7 @@ export function TradingChartPanel({
   const [runtimeReady, setRuntimeReady] = useState(false);
   const normalizedItems = items;
   const currentPrice = resolveLatestCloseText(items);
+  const latestSignal = formatLatestMarkerSummary(markers);
   const shortIntervals = pickIntervals(supportedIntervals, SHORT_INTERVALS);
   const longIntervals = pickIntervals(supportedIntervals, LONG_INTERVALS);
 
@@ -83,6 +84,7 @@ export function TradingChartPanel({
         <div className="chart-status-row">
           <span>当前周期：{interval}</span>
           <span>当前价格：{currentPrice}</span>
+          <span>最近图表点：{latestSignal}</span>
           <span>入场：{formatLatestMarkerPrice(markers.entries)}</span>
           <span>止损：{formatLatestMarkerPrice(markers.stops)}</span>
         </div>
@@ -122,6 +124,14 @@ export function TradingChartPanel({
           align="right"
         />
       </div>
+
+      <section className="panel" style={{ marginTop: 18 }}>
+        <p className="eyebrow">图表下一步</p>
+        <h3>看完图以后直接进入执行判断</h3>
+        <p>最近图表点：{latestSignal}</p>
+        <p>如果这根图和你的判断一致，下一步就去策略中心确认执行动作。</p>
+        <a href={`/strategies?symbol=${encodeURIComponent(symbol.toUpperCase())}`}>进入策略中心</a>
+      </section>
     </section>
   );
 }
@@ -247,9 +257,9 @@ function renderFallbackChart(symbol: string, interval: string, items: MarketCand
 
       <div className="metric-grid chart-metrics-grid">
         <article className="metric-card">
-          <p className="metric-label">signal</p>
-          <p className="metric-value">{String(signals.length)}</p>
-          <p className="metric-detail">主图上的信号点数量</p>
+          <p className="metric-label">最近图表点</p>
+          <p className="metric-value">{formatLatestMarkerSummary(markers)}</p>
+          <p className="metric-detail">主图里离现在最近的一次提示</p>
         </article>
         <article className="metric-card">
           <p className="metric-label">entry</p>
@@ -416,16 +426,40 @@ function formatLatestMarkerPrice(items: Array<Record<string, unknown>>): string 
   return formatPrice(price);
 }
 
+/* 返回最近一个图表标记的摘要，避免把 entry/stop 都误说成 signal。 */
+function formatLatestMarkerSummary(markers: ChartMarkerGroups): string {
+  const latest = [...markers.signals, ...markers.entries, ...markers.stops]
+    .slice()
+    .sort((left, right) => {
+      const leftTime = toNumber(left.time) ?? 0;
+      const rightTime = toNumber(right.time) ?? 0;
+      return rightTime - leftTime;
+    })[0];
+
+  if (!latest) {
+    return "暂无";
+  }
+
+  const label = String(latest.label ?? latest.strategy_id ?? "signal").trim();
+  const price = resolveSingleMarkerPrice(latest);
+  return price === null ? label : `${label} @ ${formatPrice(price)}`;
+}
+
 /* 解析最近一个价格。 */
 function resolveLatestMarkerPrice(items: Array<Record<string, unknown>>): number | null {
   const reversed = items.slice().reverse();
   for (const item of reversed) {
-    const price = toNumber(item.price);
+    const price = resolveSingleMarkerPrice(item);
     if (price !== null) {
       return price;
     }
   }
   return null;
+}
+
+/* 解析单个标记上的价格字段。 */
+function resolveSingleMarkerPrice(item: Record<string, unknown>): number | null {
+  return toNumber(item.price);
 }
 
 /* 获取最新收盘价。 */

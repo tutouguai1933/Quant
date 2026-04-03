@@ -21,17 +21,17 @@ def build_indicator_summary(
     return {
         "ema_fast": _build_metric_summary(
             values=[row["close"] for row in series],
-            period=12,
+            period=20,
             warnings=shared_warnings,
             last_candle_closed=last_candle_closed,
-            calculator=lambda values: _ema(values, 12),
+            calculator=lambda values: _ema(values, 20),
         ),
         "ema_slow": _build_metric_summary(
             values=[row["close"] for row in series],
-            period=26,
+            period=55,
             warnings=shared_warnings,
             last_candle_closed=last_candle_closed,
-            calculator=lambda values: _ema(values, 26),
+            calculator=lambda values: _ema(values, 55),
         ),
         "atr": _build_metric_summary(
             values=series,

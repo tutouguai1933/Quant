@@ -44,6 +44,8 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("推荐策略", workspace_content)
         self.assertIn("判断信心", workspace_content)
         self.assertIn("主判断", workspace_content)
+        self.assertIn("进入策略中心", workspace_content)
+        self.assertIn('/strategies?symbol=${encodeURIComponent(item.symbol)}', workspace_content)
 
     def test_market_page_uses_filter_bar_and_focus_board(self) -> None:
         page_content = (WEB_APP / "market" / "page.tsx").read_text(encoding="utf-8")
@@ -86,6 +88,9 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("timeScale", chart_content)
         self.assertIn("histogram", chart_content)
         self.assertNotIn("<svg", chart_content)
+        self.assertIn("EMA20", chart_content)
+        self.assertIn("EMA55", chart_content)
+        self.assertIn("最近图表点", chart_content)
 
     def test_navigation_contains_market_entry(self) -> None:
         shell_content = (WEB_COMPONENTS / "app-shell.tsx").read_text(encoding="utf-8")
@@ -110,6 +115,9 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("signal", content)
         self.assertIn("当前价格", content)
         self.assertIn("当前周期", content)
+        self.assertIn("最近图表点", content)
+        self.assertIn("进入策略中心", content)
+        self.assertIn('encodeURIComponent(symbol.toUpperCase())', content)
         self.assertIn('style={{ width: "100%"', content)
 
     def test_trading_chart_panel_matches_signal_by_time_and_ignores_bad_prices(self) -> None:

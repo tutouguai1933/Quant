@@ -17,6 +17,7 @@ type PageProps = {
 
 export default async function StrategiesPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
+  const focusSymbol = readQueryText(params.symbol).toUpperCase();
   const session = await getControlSessionState();
   const { token, isAuthenticated } = session;
   const feedback = readFeedback(params);
@@ -47,6 +48,17 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
         title="先看判断，再决定要不要派发"
         description="这个页面把两套首批波段策略、白名单、最近信号和最近执行结果放到一条清晰动线上。"
       />
+
+      {focusSymbol ? (
+        <section className="panel">
+          <p className="eyebrow">当前跟进对象</p>
+          <h3>{focusSymbol}</h3>
+          <p>你是带着这个币种从市场页或图表页进入策略中心的，先围绕它确认判断，再决定要不要继续派发。</p>
+          <a className="button-link secondary-link" href={`/market/${encodeURIComponent(focusSymbol)}`}>
+            返回这个币种的图表页
+          </a>
+        </section>
+      ) : null}
 
       {!isAuthenticated ? (
         <section className="panel">
@@ -121,10 +133,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
             <p>这些动作控制的是整台 Freqtrade 执行器，不是单张策略卡。推荐顺序：先启动，再派发。</p>
 
             <div className="action-grid">
-              <ActionForm action="start_strategy" label="启动策略" />
-              <ActionForm action="pause_strategy" label="暂停策略" />
-              <ActionForm action="stop_strategy" label="停止策略" />
-              <ActionForm action="dispatch_latest_signal" label="派发最新信号" />
+              <ActionForm action="start_strategy" label="启动策略" focusSymbol={focusSymbol} />
+              <ActionForm action="pause_strategy" label="暂停策略" focusSymbol={focusSymbol} />
+              <ActionForm action="stop_strategy" label="停止策略" focusSymbol={focusSymbol} />
+              <ActionForm action="dispatch_latest_signal" label="派发最新信号" focusSymbol={focusSymbol} />
             </div>
           </section>
 
@@ -166,18 +178,28 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
 type ActionFormProps = {
   action: string;
   label: string;
+  focusSymbol: string;
 };
 
-function ActionForm({ action, label }: ActionFormProps) {
+function ActionForm({ action, label, focusSymbol }: ActionFormProps) {
+  const returnTo = focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies";
+
   return (
     <form action="/actions" method="post" className="action-card">
       <input type="hidden" name="action" value={action} />
       <input type="hidden" name="strategyId" value="1" />
-      <input type="hidden" name="returnTo" value="/strategies" />
+      <input type="hidden" name="returnTo" value={returnTo} />
       <button type="submit">{label}</button>
-      <p>把控制动作统一走控制平面，当前阶段固定控制整台执行器。</p>
+      <p>{focusSymbol ? `当前关注：${focusSymbol}。` : ""}把控制动作统一走控制平面，当前阶段固定控制整台执行器。</p>
     </form>
   );
+}
+
+function readQueryText(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return String(value[0] ?? "").trim();
+  }
+  return String(value ?? "").trim();
 }
 
 function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {

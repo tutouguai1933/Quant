@@ -56,6 +56,7 @@ export default async function OrdersPage() {
           {" "}
           {model.truthSource}
         </p>
+        <p>如果这里已经没有新订单，但余额页还剩少量币，通常说明执行已经结束，只留下交易所零头。</p>
       </section>
 
       <DataTable
@@ -65,7 +66,7 @@ export default async function OrdersPage() {
           cells: [item.symbol, item.side, item.orderType, <StatusBadge key={item.id} value={item.status} />],
         }))}
         emptyTitle="还没有订单"
-        emptyDetail="先去策略页派发最新信号，再回到这里确认执行反馈。"
+        emptyDetail="先去策略页派发最新信号；如果这里已经清空，但余额页还有少量币，优先按余额页提示判断是不是交易所零头。"
       />
     </AppShell>
   );

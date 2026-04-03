@@ -50,9 +50,14 @@ function MarketSnapshotWorkspaceBody({ items }: { items: MarketSnapshot[] }) {
             formatPreferredStrategy(item.research_brief.recommended_strategy),
             formatConfidence(item.research_brief.confidence),
             formatPrimaryReason(item),
-            <a key={item.symbol} href={`/market/${encodeURIComponent(item.symbol)}`}>
-              看图表并继续判断
-            </a>,
+            <div key={item.symbol} style={{ display: "grid", gap: 8 }}>
+              <a href={`/market/${encodeURIComponent(item.symbol)}`}>
+                看图表并继续判断
+              </a>
+              <a href={`/strategies?symbol=${encodeURIComponent(item.symbol)}`}>
+                进入策略中心
+              </a>
+            </div>,
           ],
         }))}
         emptyTitle="暂无市场数据"

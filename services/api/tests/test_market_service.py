@@ -534,6 +534,8 @@ class MarketServiceTests(unittest.TestCase):
         self.assertIsNone(summary["ema_fast"]["value"])
         self.assertEqual(summary["ema_fast"]["sample_size"], 3)
         self.assertIn("insufficient_samples", " ".join(summary["ema_fast"]["warnings"]))
+        self.assertFalse(summary["ema_slow"]["ready"])
+        self.assertIn("insufficient_samples:3/55", summary["ema_slow"]["warnings"])
         self.assertTrue(summary["ema_fast"]["last_candle_closed"])
 
     def test_build_indicator_summary_marks_last_candle_open_when_close_time_is_future(self) -> None:
@@ -561,7 +563,9 @@ class MarketServiceTests(unittest.TestCase):
 
         self.assertEqual(summary["ema_fast"]["sample_size"], 0)
         self.assertFalse(summary["ema_fast"]["ready"])
-        self.assertIn("insufficient_samples:0/12", summary["ema_fast"]["warnings"])
+        self.assertIn("insufficient_samples:0/20", summary["ema_fast"]["warnings"])
+        self.assertFalse(summary["ema_slow"]["ready"])
+        self.assertIn("insufficient_samples:0/55", summary["ema_slow"]["warnings"])
         self.assertFalse(summary["ema_fast"]["last_candle_closed"])
 
     def test_build_indicator_summary_marks_all_bad_rows_clearly(self) -> None:
@@ -575,7 +579,9 @@ class MarketServiceTests(unittest.TestCase):
         self.assertEqual(summary["ema_fast"]["sample_size"], 0)
         self.assertFalse(summary["ema_fast"]["ready"])
         self.assertIn("invalid_candle_rows:2", summary["ema_fast"]["warnings"])
-        self.assertIn("insufficient_samples:0/12", summary["ema_fast"]["warnings"])
+        self.assertIn("insufficient_samples:0/20", summary["ema_fast"]["warnings"])
+        self.assertFalse(summary["ema_slow"]["ready"])
+        self.assertIn("insufficient_samples:0/55", summary["ema_slow"]["warnings"])
         self.assertFalse(summary["ema_fast"]["last_candle_closed"])
 
     def test_build_indicator_summary_propagates_bad_row_warning(self) -> None:
@@ -604,6 +610,8 @@ class MarketServiceTests(unittest.TestCase):
         self.assertIsInstance(summary["ema_fast"]["value"], str)
         self.assertEqual(summary["ema_fast"]["sample_size"], 30)
         self.assertFalse(summary["ema_fast"]["warnings"])
+        self.assertFalse(summary["ema_slow"]["ready"])
+        self.assertIn("insufficient_samples:30/55", summary["ema_slow"]["warnings"])
 
     def test_market_route_returns_success_envelope(self) -> None:
         fake_service = FakeMarketClient(
