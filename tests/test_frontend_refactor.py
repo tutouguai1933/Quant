@@ -37,7 +37,7 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
-            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "推荐策略", "执行决策", "执行建议", "执行器控制", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "研究候选", "是否允许进入 dry-run", "下一步动作", "当前推荐执行候选"],
+            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "双栏布局", "左边看判断", "右边看执行", "当前推荐执行候选", "研究候选", "下一步动作", "执行器状态", "账户收口", "执行动作", "白名单摘要", "最近执行结果", "research_cockpit", "推荐策略", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "是否允许进入 dry-run"],
             WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "任务反馈", "触发训练"],
             WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要", "筛选通过率", "当前最佳候选"],
         }
@@ -104,19 +104,22 @@ class FrontendRefactorTests(unittest.TestCase):
     def test_strategies_page_focuses_on_execution_not_chart_explanation(self) -> None:
         content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
 
+        self.assertIn("双栏布局", content)
+        self.assertIn("左边看判断", content)
+        self.assertIn("右边看执行", content)
         self.assertIn("执行器状态", content)
-        self.assertIn("执行器控制", content)
+        self.assertIn("执行动作", content)
         self.assertIn("最近执行结果", content)
         self.assertIn("推荐策略", content)
-        self.assertIn("执行决策", content)
         self.assertIn("当前跟进对象", content)
-        self.assertIn("这里不再重复看图", content)
         self.assertIn("账户收口", content)
         self.assertIn("余额页", content)
         self.assertIn("订单页", content)
         self.assertIn("持仓页", content)
         self.assertNotIn("图表图层摘要", content)
         self.assertNotIn("止损参考", content)
+        self.assertNotIn("执行决策", content)
+        self.assertNotIn("执行器控制", content)
 
     def test_strategy_card_drops_explanatory_research_fields(self) -> None:
         content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")

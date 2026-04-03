@@ -1,4 +1,4 @@
-/* 这个文件负责渲染策略中心页面，统一展示策略卡片、白名单、最近信号和执行结果。 */
+/* 这个文件负责渲染策略中心页面，统一展示策略判断和执行动作。 */
 
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
@@ -78,7 +78,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
       <PageHero
         badge="策略中心"
         title="先看判断，再决定要不要派发"
-        description="这个页面把两套首批波段策略、白名单、最近信号和最近执行结果放到一条清晰动线上。"
+        description="左侧先看推荐执行、研究候选和下一步动作，右侧只看执行器状态、账户收口和执行动作。"
       />
 
       {focusSymbol ? (
@@ -103,27 +103,11 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
         </section>
       ) : (
         <>
-          {workspace.research_recommendation ? (
-            <section className="panel">
-              <p className="eyebrow">当前推荐执行候选</p>
-              <h3>{workspace.research_recommendation.symbol}</h3>
-              <p>
-                研究门：
-                {" "}
-                {workspace.research_recommendation.dry_run_gate.status}
-                {"，下一步动作："}
-                {workspace.research_recommendation.next_action || "先进入 dry-run 观察。"}
-              </p>
-              <div className="action-grid">
-                <a className="button-link secondary-link" href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
-                  去这个币的图表页
-                </a>
-                <a className="button-link secondary-link" href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
-                  围绕这个币继续执行
-                </a>
-              </div>
-            </section>
-          ) : null}
+          <section className="panel">
+            <p className="eyebrow">双栏布局</p>
+            <h3>左边看判断，右边看执行</h3>
+            <p>这页把判断和执行分开，避免一整屏连续往下扫。</p>
+          </section>
 
           <MetricGrid
             items={[
@@ -134,153 +118,208 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
             ]}
           />
 
-          <section className="panel">
-            <p className="eyebrow">执行器状态</p>
-            <h3>先确认当前连的是谁</h3>
-            <p>
-              当前执行器：
-              {" "}
-              {workspace.executor_runtime.executor}
-              {" / "}
-              {workspace.executor_runtime.backend}
-              {" / "}
-              {workspace.executor_runtime.mode}
-            </p>
-            <p>连接状态：{workspace.executor_runtime.connection_status}</p>
+          <section
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1.4fr) minmax(320px, 0.9fr)",
+              gap: "clamp(16px, 2vw, 24px)",
+              alignItems: "start",
+            }}
+          >
+            <section style={{ display: "grid", gap: "clamp(16px, 1.5vw, 20px)" }}>
+              {workspace.research_recommendation ? (
+                <section className="panel">
+                  <p className="eyebrow">当前推荐执行候选</p>
+                  <h3>{workspace.research_recommendation.symbol}</h3>
+                  <p>
+                    研究门：
+                    {" "}
+                    {workspace.research_recommendation.dry_run_gate.status}
+                    {"，下一步动作："}
+                    {workspace.research_recommendation.next_action || "先进入 dry-run 观察。"}
+                  </p>
+                  <div className="action-grid">
+                    <a className="button-link secondary-link" href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
+                      去这个币的图表页
+                    </a>
+                    <a className="button-link secondary-link" href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>
+                      围绕这个币继续执行
+                    </a>
+                  </div>
+                </section>
+              ) : null}
+
+              <ResearchCandidateBoard
+                title="研究候选"
+                summary={candidateSnapshot.summary}
+                items={candidateSnapshot.items}
+                focusSymbol={focusSymbol}
+                nextStep={focusSymbol ? `下一步动作：先围绕 ${focusSymbol} 确认是否允许进入 dry-run，再决定是否派发。` : "下一步动作：优先看是否允许进入 dry-run，再决定要不要派发。"}
+              />
+
+              <MetricGrid
+                items={[
+                  { label: "研究状态", value: workspace.research.status, detail: workspace.research.detail },
+                  { label: "模型版本", value: workspace.research.model_version || "n/a", detail: "最近训练产物已经回到策略工作台" },
+                  { label: "研究信号", value: String(workspace.research.signal_count), detail: "最近推理结果中可用的信号数量" },
+                ]}
+              />
+
+              <section className="panel">
+                <p className="eyebrow">下一步动作</p>
+                <h3>把判断收口到可以执行的动作</h3>
+                <p>先确认研究候选是否允许进入 dry-run，再决定要不要围绕这个币继续派发。</p>
+                <div className="action-grid">
+                  <a className="button-link secondary-link" href={focusSymbol ? `/market/${encodeURIComponent(focusSymbol)}` : "/signals"}>
+                    去图表页确认
+                  </a>
+                  <a className="button-link secondary-link" href={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}>
+                    围绕这个币继续执行
+                  </a>
+                  <a className="button-link secondary-link" href="/signals">
+                    回到信号页复核
+                  </a>
+                </div>
+              </section>
+
+              <section className="panel">
+                <p className="eyebrow">策略判断</p>
+                <h3>两套首批波段策略</h3>
+                <p>只保留当前判断和执行建议，不再把页面往纵向拉长。</p>
+
+                <div className="strategy-grid">
+                  {workspace.strategies.map((item) => (
+                    <StrategyCard key={item.key} item={item} />
+                  ))}
+                </div>
+              </section>
+            </section>
+
+            <aside style={{ display: "grid", gap: "clamp(16px, 1.5vw, 20px)" }}>
+              <section className="panel">
+                <p className="eyebrow">执行器状态</p>
+                <h3>先确认当前连的是谁</h3>
+                <p>
+                  当前执行器：
+                  {" "}
+                  {workspace.executor_runtime.executor}
+                  {" / "}
+                  {workspace.executor_runtime.backend}
+                  {" / "}
+                  {workspace.executor_runtime.mode}
+                </p>
+                <p>连接状态：{workspace.executor_runtime.connection_status}</p>
+              </section>
+
+              <section className="panel">
+                <p className="eyebrow">账户收口</p>
+                <h3>执行之后，回到同一套真实来源上看结果</h3>
+                <p>
+                  source:
+                  {" "}
+                  {workspace.account_state.source}
+                  {" / "}
+                  truth source:
+                  {" "}
+                  {workspace.account_state.truth_source}
+                </p>
+                <p>
+                  余额：
+                  {" "}
+                  {workspace.account_state.summary.balance_count}
+                  {"，可交易："}
+                  {workspace.account_state.summary.tradable_balance_count}
+                  {"，零头："}
+                  {workspace.account_state.summary.dust_count}
+                </p>
+                <p>
+                  订单：
+                  {" "}
+                  {workspace.account_state.summary.order_count}
+                  {"，持仓："}
+                  {workspace.account_state.summary.position_count}
+                </p>
+                <p>
+                  最近余额：
+                  {" "}
+                  {formatLatestBalance(workspace.account_state.latest_balance)}
+                  {"，最近订单："}
+                  {formatLatestOrder(workspace.account_state.latest_order)}
+                  {"，最近持仓："}
+                  {formatLatestPosition(workspace.account_state.latest_position)}
+                </p>
+                <div className="action-grid">
+                  <a className="button-link secondary-link" href="/balances">
+                    去余额页
+                  </a>
+                  <a className="button-link secondary-link" href="/orders">
+                    去订单页
+                  </a>
+                  <a className="button-link secondary-link" href="/positions">
+                    去持仓页
+                  </a>
+                </div>
+              </section>
+
+              <section className="panel">
+                <p className="eyebrow">执行动作</p>
+                <h3>这些动作控制的是整台执行器</h3>
+                <p>推荐顺序：先启动，再派发。当前阶段固定控制整台 Freqtrade 执行器。</p>
+
+                <div className="action-grid">
+                  <ActionForm action="start_strategy" label="启动策略" focusSymbol={focusSymbol} />
+                  <ActionForm action="pause_strategy" label="暂停策略" focusSymbol={focusSymbol} />
+                  <ActionForm action="stop_strategy" label="停止策略" focusSymbol={focusSymbol} />
+                  <ActionForm action="dispatch_latest_signal" label="派发最新信号" focusSymbol={focusSymbol} />
+                </div>
+              </section>
+
+              <section className="panel">
+                <p className="eyebrow">白名单摘要</p>
+                <h3>当前只在固定币种池里做 dry-run</h3>
+                <p>{workspace.whitelist.join(" / ")}</p>
+              </section>
+            </aside>
           </section>
 
-          <section className="panel">
-            <p className="eyebrow">账户收口</p>
-            <h3>执行之后，回到同一套真实来源上看结果</h3>
-            <p>
-              source:
-              {" "}
-              {workspace.account_state.source}
-              {" / "}
-              truth source:
-              {" "}
-              {workspace.account_state.truth_source}
-            </p>
-            <p>
-              余额：
-              {" "}
-              {workspace.account_state.summary.balance_count}
-              {"，可交易："}
-              {workspace.account_state.summary.tradable_balance_count}
-              {"，零头："}
-              {workspace.account_state.summary.dust_count}
-            </p>
-            <p>
-              订单：
-              {" "}
-              {workspace.account_state.summary.order_count}
-              {"，持仓："}
-              {workspace.account_state.summary.position_count}
-            </p>
-            <p>
-              最近余额：
-              {" "}
-              {formatLatestBalance(workspace.account_state.latest_balance)}
-              {"，最近订单："}
-              {formatLatestOrder(workspace.account_state.latest_order)}
-              {"，最近持仓："}
-              {formatLatestPosition(workspace.account_state.latest_position)}
-            </p>
-            <div className="action-grid">
-              <a className="button-link secondary-link" href="/balances">
-                去余额页
-              </a>
-              <a className="button-link secondary-link" href="/orders">
-                去订单页
-              </a>
-              <a className="button-link secondary-link" href="/positions">
-                去持仓页
-              </a>
-            </div>
+          <section
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: "clamp(16px, 2vw, 24px)",
+              alignItems: "start",
+            }}
+          >
+            <DataTable
+              columns={["Strategy", "Symbol", "Status", "Generated"]}
+              rows={workspace.recent_signals.map((item, index) => ({
+                id: String(item.signal_id ?? index),
+                cells: [
+                  String(item.strategy_id ?? "n/a"),
+                  String(item.symbol ?? ""),
+                  <StatusBadge key={String(item.signal_id ?? index)} value={String(item.status ?? "")} />,
+                  String(item.generated_at ?? ""),
+                ],
+              }))}
+              emptyTitle="最近信号"
+              emptyDetail="还没有新的持久化 signal 时，可以先看上面的当前判断卡片。"
+            />
+
+            <DataTable
+              columns={["Symbol", "Side", "Type", "Status"]}
+              rows={workspace.recent_orders.map((item, index) => ({
+                id: String(item.id ?? index),
+                cells: [
+                  String(item.symbol ?? ""),
+                  String(item.side ?? ""),
+                  String(item.orderType ?? item.order_type ?? ""),
+                  <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "")} />,
+                ],
+              }))}
+              emptyTitle="最近执行结果"
+              emptyDetail="先启动策略并派发最新信号，再回到这里确认执行链路有没有真正走通。"
+            />
           </section>
-
-          <section className="panel">
-            <p className="eyebrow">执行决策</p>
-            <h3>这里不再重复看图，只负责决定能不能执行</h3>
-            <p>图表判断留在单币页，策略页只保留执行器状态、研究摘要、最近信号和动作控制。</p>
-          </section>
-
-          <ResearchCandidateBoard
-            title="研究候选"
-            summary={candidateSnapshot.summary}
-            items={candidateSnapshot.items}
-            focusSymbol={focusSymbol}
-            nextStep={focusSymbol ? `下一步动作：先围绕 ${focusSymbol} 确认是否允许进入 dry-run，再决定是否派发。` : "下一步动作：优先看是否允许进入 dry-run，再决定要不要派发。"}
-          />
-
-          <MetricGrid
-            items={[
-              { label: "研究状态", value: workspace.research.status, detail: workspace.research.detail },
-              { label: "模型版本", value: workspace.research.model_version || "n/a", detail: "最近训练产物已经回到策略工作台" },
-              { label: "研究信号", value: String(workspace.research.signal_count), detail: "最近推理结果中可用的信号数量" },
-            ]}
-          />
-
-          <section className="panel">
-            <p className="eyebrow">两套首批波段策略</p>
-            <h3>策略中心</h3>
-            <p>先看每套策略现在的判断，再决定是继续观察，还是把最新信号派发给执行器。</p>
-
-            <div className="strategy-grid">
-              {workspace.strategies.map((item) => (
-                <StrategyCard key={item.key} item={item} />
-              ))}
-            </div>
-          </section>
-
-          <section className="panel">
-            <p className="eyebrow">白名单摘要</p>
-            <h3>当前只在固定币种池里做 dry-run</h3>
-            <p>{workspace.whitelist.join(" / ")}</p>
-          </section>
-
-          <section className="panel">
-            <p className="eyebrow">动作反馈</p>
-            <h3>执行器控制</h3>
-            <p>这些动作控制的是整台 Freqtrade 执行器，不是单张策略卡。推荐顺序：先启动，再派发。</p>
-
-            <div className="action-grid">
-              <ActionForm action="start_strategy" label="启动策略" focusSymbol={focusSymbol} />
-              <ActionForm action="pause_strategy" label="暂停策略" focusSymbol={focusSymbol} />
-              <ActionForm action="stop_strategy" label="停止策略" focusSymbol={focusSymbol} />
-              <ActionForm action="dispatch_latest_signal" label="派发最新信号" focusSymbol={focusSymbol} />
-            </div>
-          </section>
-
-          <DataTable
-            columns={["Strategy", "Symbol", "Status", "Generated"]}
-            rows={workspace.recent_signals.map((item, index) => ({
-              id: String(item.signal_id ?? index),
-              cells: [
-                String(item.strategy_id ?? "n/a"),
-                String(item.symbol ?? ""),
-                <StatusBadge key={String(item.signal_id ?? index)} value={String(item.status ?? "")} />,
-                String(item.generated_at ?? ""),
-              ],
-            }))}
-            emptyTitle="最近信号"
-            emptyDetail="还没有新的持久化 signal 时，可以先看上面的当前判断卡片。"
-          />
-
-          <DataTable
-            columns={["Symbol", "Side", "Type", "Status"]}
-            rows={workspace.recent_orders.map((item, index) => ({
-              id: String(item.id ?? index),
-              cells: [
-                String(item.symbol ?? ""),
-                String(item.side ?? ""),
-                String(item.orderType ?? item.order_type ?? ""),
-                <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "")} />,
-              ],
-            }))}
-            emptyTitle="最近执行结果"
-            emptyDetail="先启动策略并派发最新信号，再回到这里确认执行链路有没有真正走通。"
-          />
         </>
       )}
     </AppShell>

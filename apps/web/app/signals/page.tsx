@@ -47,18 +47,18 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   return (
     <AppShell
       title="信号"
-      subtitle="先看信号是否生成，再决定是否继续进入策略控制与执行链路。"
+      subtitle="左侧先判断哪些候选值得跟进，右侧再看统一研究报告和实验结果。"
       currentPath="/signals"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
 
       <PageHero
-        badge="信号"
-        title="最新信号"
-        description="这里先回答两个问题：有没有信号？最新信号能不能进入下一步？如果没有，就直接从这里运行信号流水线。"
+        badge="研究终端"
+        title="先看候选，再看报告，不把研究信息一路往下堆。"
+        description="信号页现在只做两件事：左边给你候选和动作，右边给你统一研究报告和最近实验。"
         aside={
-          <div className="action-grid">
+          <div className="terminal-action-stack">
             <ActionForm action="run_pipeline" label="运行 Qlib 信号流水线" returnTo="/signals" />
             <ActionForm action="run_mock_pipeline" label="运行演示信号流水线" returnTo="/signals" />
           </div>
@@ -73,56 +73,87 @@ export default async function SignalsPage({ searchParams }: PageProps) {
         ]}
       />
 
-      <section className="panel">
-        <p className="eyebrow">最近研究结果</p>
-        <h3>研究训练 / 研究推理</h3>
-        <p>当前研究后端：{formatText(researchReport.backend, "n/a")}，研究状态：{formatText(researchReport.status, "n/a")}。</p>
-        <p>最新训练模型：{formatText(latestTraining["model_version"], "n/a")}，最近推理信号数：{String(researchReport.overview.signal_count)}。</p>
-        <div className="action-grid">
-          <ActionForm action="run_research_training" label="研究训练" returnTo="/signals" />
-          <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
+      <section className="terminal-layout">
+        <div className="terminal-side">
+          <ResearchCandidateBoard
+            title="候选排行榜"
+            summary={{
+              candidate_count: researchReport.overview.candidate_count,
+              ready_count: researchReport.overview.ready_count,
+              blocked_count: researchReport.overview.blocked_count,
+              pass_rate_pct: researchReport.overview.pass_rate_pct,
+              top_candidate_symbol: researchReport.overview.top_candidate_symbol,
+              top_candidate_score: researchReport.overview.top_candidate_score,
+            }}
+            items={researchReport.candidates}
+            nextStep="下一步动作：优先看允许进入 dry-run 的候选，再进入策略中心确认是否继续派发。"
+          />
+
+          <section className="panel terminal-panel">
+            <p className="eyebrow">研究动作</p>
+            <h3>先训练，再推理</h3>
+            <p>研究动作全部留在左侧，避免和统一研究报告抢主视线。</p>
+            <div className="terminal-action-stack">
+              <ActionForm action="run_research_training" label="研究训练" returnTo="/signals" />
+              <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
+            </div>
+          </section>
+        </div>
+
+        <div className="terminal-main">
+          <section className="panel terminal-panel terminal-panel-strong">
+            <p className="eyebrow">最近研究结果</p>
+            <h3>最近实验摘要</h3>
+            <p>当前可进入 dry-run：{String(researchReport.overview.ready_count)}，被拦下：{String(researchReport.overview.blocked_count)}。</p>
+            <div className="terminal-summary-grid">
+              <div>
+                <strong>研究状态</strong>
+                <p>{formatText(researchReport.status, "n/a")} / {formatText(researchReport.backend, "n/a")}</p>
+              </div>
+              <div>
+                <strong>筛选通过率</strong>
+                <p>{researchReport.overview.pass_rate_pct}%</p>
+              </div>
+              <div>
+                <strong>当前最佳候选</strong>
+                <p>{formatText(researchReport.overview.top_candidate_symbol, "n/a")}</p>
+              </div>
+              <div>
+                <strong>最近推理信号数</strong>
+                <p>{String(researchReport.overview.signal_count)}</p>
+              </div>
+            </div>
+            <div className="terminal-report-grid">
+              <div className="terminal-report-card">
+                <p className="eyebrow">训练摘要</p>
+                <h4>研究训练</h4>
+                <p>状态：{formatText(trainingExperiment["status"], "unavailable")}</p>
+                <p>模型版本：{formatText(latestTraining["model_version"], "n/a")}</p>
+              </div>
+              <div className="terminal-report-card">
+                <p className="eyebrow">推理摘要</p>
+                <h4>研究推理</h4>
+                <p>状态：{formatText(inferenceExperiment["status"], "unavailable")}</p>
+                <p>生成时间：{formatText(researchReport.overview.generated_at, "n/a")}</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel terminal-panel">
+            <p className="eyebrow">最新信号</p>
+            <h3>标准化 signal 列表</h3>
+            <DataTable
+              columns={["Symbol", "Source", "Generated", "Status"]}
+              rows={items.map((item) => ({
+                id: item.id,
+                cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
+              }))}
+              emptyTitle="还没有 signal"
+              emptyDetail="先运行信号流水线，再回到这里确认是否已经产生最新信号。"
+            />
+          </section>
         </div>
       </section>
-
-      <section className="panel">
-        <p className="eyebrow">统一研究报告</p>
-        <h3>最近实验摘要</h3>
-        <p>候选总数：{String(researchReport.overview.candidate_count)}，可进入 dry-run：{String(researchReport.overview.ready_count)}。</p>
-        <p>筛选通过率：{researchReport.overview.pass_rate_pct}% ，当前最佳候选：{formatText(researchReport.overview.top_candidate_symbol, "n/a")}。</p>
-        <p>训练状态：{formatText(trainingExperiment["status"], "unavailable")}，推理状态：{formatText(inferenceExperiment["status"], "unavailable")}。</p>
-        <p>模型版本：{formatText(researchReport.overview.model_version, "n/a")}，生成时间：{formatText(researchReport.overview.generated_at, "n/a")}。</p>
-      </section>
-
-      <ResearchCandidateBoard
-        title="候选排行榜"
-        summary={{
-          candidate_count: researchReport.overview.candidate_count,
-          ready_count: researchReport.overview.ready_count,
-          blocked_count: researchReport.overview.blocked_count,
-          pass_rate_pct: researchReport.overview.pass_rate_pct,
-          top_candidate_symbol: researchReport.overview.top_candidate_symbol,
-          top_candidate_score: researchReport.overview.top_candidate_score,
-        }}
-        items={researchReport.candidates}
-        nextStep="下一步动作：优先看可进入 dry-run 的候选，再去策略中心确认是否继续派发。"
-      />
-
-      <section className="panel">
-        <p className="eyebrow">动作反馈</p>
-        <h3>从信号页进入执行链路</h3>
-        <p>推荐先运行 Qlib 信号流水线看研究结果；如果要重复验证执行链路，就运行演示信号流水线，再切到 Strategies 页启动策略并派发最新信号。</p>
-        <p>最近研究结果会同步回到这里，方便继续看研究训练和研究推理的最新状态。</p>
-      </section>
-
-      <DataTable
-        columns={["Symbol", "Source", "Generated", "Status"]}
-        rows={items.map((item) => ({
-          id: item.id,
-          cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
-        }))}
-        emptyTitle="还没有 signal"
-        emptyDetail="先运行信号流水线，再回到这里确认是否已经产生最新信号。"
-      />
     </AppShell>
   );
 }

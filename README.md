@@ -451,6 +451,8 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] Task 9：与 `Qlib` 进行对接和调试
 - [x] Qlib 统一研究报告出口
 - [x] 固定 `dry-run -> 小额 live -> 复盘` 验证工作流
+- [x] 前端终端化设计基线（决策优先 + 双栏交易研究终端）
+- [x] 首页 / 信号页 / 策略页第一批终端化重构
 
 - [x] 目录骨架和基础文档
 - [x] 统一契约和数据库模型
@@ -483,6 +485,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] 把服务器上剩余的 `0.976 DOGE` 收口为交易所零头处理路径
 - [x] 完成 `Phase B` 剩余验收闭环
 - [ ] 接入 `OpenClaw` 非交易任务触发
+- [ ] 继续完成市场页、单币页和其余结果页的终端化收口
 
 ## 最小演示与验收
 
@@ -500,6 +503,8 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [2026-04-02-freqtrade-real-integration-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-freqtrade-real-integration-implementation.md)
 - [2026-04-02-qlib-minimal-research-layer-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-minimal-research-layer-implementation.md)
 - [2026-04-02-qlib-trading-view-flow-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-02-qlib-trading-view-flow-design.md)
+- [2026-04-04-decision-first-terminal-ui-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-04-decision-first-terminal-ui-design.md)
+- [2026-04-04-decision-first-terminal-ui-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-decision-first-terminal-ui-implementation.md)
 - [2026-04-02-qlib-trading-view-flow-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-trading-view-flow-implementation.md)
 - [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
 - [ops-freqtrade.md](/home/djy/Quant/docs/ops-freqtrade.md)

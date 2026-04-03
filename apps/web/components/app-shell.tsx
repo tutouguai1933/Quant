@@ -30,9 +30,9 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="brand-block">
-          <p className="eyebrow">Quant Control Plane</p>
-          <h1>单用户运维驾驶舱</h1>
-          <p>把信号、执行、风险和任务收敛到一条清晰的控制动线。</p>
+          <p className="eyebrow">Quant Terminal</p>
+          <h1>研究执行终端</h1>
+          <p>先看研究结论，再决定下一步动作，把判断、执行和结果放进同一条终端动线。</p>
         </div>
 
         <nav className="app-nav" aria-label="主导航">
@@ -55,14 +55,14 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
 
         <div className="sidebar-note">
           <p className="eyebrow">当前模式</p>
-          <p>{isAuthenticated ? "已登录，页面会直接复用这份会话状态。" : "未登录，先进入 Login 完成管理员认证。"}</p>
+          <p>{isAuthenticated ? "已登录，先看左侧决策区，再去执行区确认动作。" : "未登录，先进入 Login 解锁策略、风险和任务控制区。"}</p>
         </div>
       </aside>
 
       <div className="app-main">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">当前页面</p>
+          <div className="topbar-copy">
+            <p className="eyebrow">当前工作区</p>
             <h2>{title}</h2>
             <p>{subtitle}</p>
           </div>
