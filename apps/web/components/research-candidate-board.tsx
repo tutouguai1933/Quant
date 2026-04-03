@@ -11,6 +11,10 @@ type ResearchCandidateBoardProps = {
   summary: {
     candidate_count: number;
     ready_count: number;
+    blocked_count?: number;
+    pass_rate_pct?: string;
+    top_candidate_symbol?: string;
+    top_candidate_score?: string;
   };
   items: ResearchCandidateItem[];
   focusSymbol?: string;
@@ -42,6 +46,19 @@ export function ResearchCandidateBoard({
         {"，可进入 dry-run："}
         {summary.ready_count}
       </p>
+      <p>
+        筛选通过率：{summary.pass_rate_pct ?? "0.00"}%
+        {"，被拦下："}
+        {summary.blocked_count ?? Math.max(summary.candidate_count - summary.ready_count, 0)}
+      </p>
+      {summary.top_candidate_symbol ? (
+        <p>
+          当前最佳候选：{summary.top_candidate_symbol}
+          {"（分数 "}
+          {summary.top_candidate_score || "0.0000"}
+          {"）"}
+        </p>
+      ) : null}
 
       {primaryItem ? (
         <>
@@ -59,6 +76,10 @@ export function ResearchCandidateBoard({
                 <p>分数：{item.score}</p>
                 <p>是否允许进入 dry-run：{item.allowed_to_dry_run ? "是" : "否"}</p>
                 <p>研究门：{item.dry_run_gate.status}</p>
+                <p>回测收益：{readMetric(item, "total_return_pct", "n/a")}%</p>
+                <p>最大回撤：{readMetric(item, "max_drawdown_pct", "n/a")}%</p>
+                <p>Sharpe：{readMetric(item, "sharpe", "n/a")}</p>
+                <p>失败原因：{formatReasons(item.dry_run_gate.reasons)}</p>
               </article>
             ))}
           </div>
@@ -83,4 +104,16 @@ function formatNextStep(item: ResearchCandidateItem, fallback: string): string {
     return fallback || "进入策略中心确认执行，再决定是否派发。";
   }
   return fallback || "先继续观察或回到信号页重新运行研究。";
+}
+
+function readMetric(item: ResearchCandidateItem, key: string, fallback: string): string {
+  const value = item.backtest.metrics[key];
+  return String(value || "").trim() || fallback;
+}
+
+function formatReasons(reasons: string[]): string {
+  if (!reasons.length) {
+    return "无";
+  }
+  return reasons.join(" / ");
 }

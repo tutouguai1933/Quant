@@ -39,7 +39,7 @@ class FrontendRefactorTests(unittest.TestCase):
         expectations = {
             WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "两套首批波段策略", "白名单摘要", "最近执行结果", "执行器状态", "research_cockpit", "推荐策略", "执行决策", "执行建议", "执行器控制", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "研究候选", "是否允许进入 dry-run", "下一步动作", "当前推荐执行候选"],
             WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "任务反馈", "触发训练"],
-            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要"],
+            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要", "筛选通过率", "当前最佳候选"],
         }
         for file_path, patterns in expectations.items():
             content = file_path.read_text(encoding="utf-8")
@@ -143,6 +143,15 @@ class FrontendRefactorTests(unittest.TestCase):
 
         self.assertIn("getResearchReport", content)
         self.assertIn("research_recommendation", content)
+
+    def test_research_candidate_board_shows_screening_and_backtest_copy(self) -> None:
+        content = (WEB_COMPONENTS / "research-candidate-board.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("筛选通过率", content)
+        self.assertIn("失败原因", content)
+        self.assertIn("回测收益", content)
+        self.assertIn("最大回撤", content)
+        self.assertIn("Sharpe", content)
 
 
 if __name__ == "__main__":

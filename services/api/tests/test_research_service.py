@@ -100,6 +100,9 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("candidates", report)
         self.assertIn("experiments", report)
         self.assertEqual(report["overview"]["candidate_count"], len(report["candidates"]))
+        self.assertIn("blocked_count", report["overview"])
+        self.assertIn("pass_rate_pct", report["overview"])
+        self.assertIn("top_candidate_symbol", report["overview"])
         self.assertEqual(report["experiments"]["training"]["status"], "completed")
         self.assertEqual(report["experiments"]["inference"]["status"], "completed")
 

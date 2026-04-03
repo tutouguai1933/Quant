@@ -262,6 +262,10 @@ export type ResearchCandidateSnapshot = {
   summary: {
     candidate_count: number;
     ready_count: number;
+    blocked_count?: number;
+    pass_rate_pct?: string;
+    top_candidate_symbol?: string;
+    top_candidate_score?: string;
   };
   candidates: ResearchCandidateItem[];
 };
@@ -283,7 +287,11 @@ export type ResearchReportItem = {
     generated_at: string;
     candidate_count: number;
     ready_count: number;
+    blocked_count: number;
+    pass_rate_pct: string;
     signal_count: number;
+    top_candidate_symbol: string;
+    top_candidate_score: string;
   };
   latest_training: Record<string, unknown>;
   latest_inference: Record<string, unknown>;
@@ -1108,6 +1116,10 @@ function normalizeResearchCandidateSummary(value: unknown): ResearchCandidateSna
   return {
     candidate_count: Number(row.candidate_count ?? 0),
     ready_count: Number(row.ready_count ?? 0),
+    blocked_count: Number(row.blocked_count ?? 0),
+    pass_rate_pct: String(row.pass_rate_pct ?? "0.00"),
+    top_candidate_symbol: String(row.top_candidate_symbol ?? ""),
+    top_candidate_score: String(row.top_candidate_score ?? ""),
   };
 }
 
@@ -1123,7 +1135,11 @@ function normalizeResearchReportItem(item: unknown): ResearchReportItem {
       generated_at: String(overviewRow.generated_at ?? ""),
       candidate_count: Number(overviewRow.candidate_count ?? 0),
       ready_count: Number(overviewRow.ready_count ?? 0),
+      blocked_count: Number(overviewRow.blocked_count ?? 0),
+      pass_rate_pct: String(overviewRow.pass_rate_pct ?? "0.00"),
       signal_count: Number(overviewRow.signal_count ?? 0),
+      top_candidate_symbol: String(overviewRow.top_candidate_symbol ?? ""),
+      top_candidate_score: String(overviewRow.top_candidate_score ?? ""),
     },
     latest_training: isPlainObject(row.latest_training) ? row.latest_training : {},
     latest_inference: isPlainObject(row.latest_inference) ? row.latest_inference : {},
@@ -1340,7 +1356,11 @@ export function getResearchReportFallback(): { item: ResearchReportItem } {
         generated_at: "",
         candidate_count: 0,
         ready_count: 0,
+        blocked_count: 0,
+        pass_rate_pct: "0.00",
         signal_count: 0,
+        top_candidate_symbol: "",
+        top_candidate_score: "",
       },
       latest_training: {},
       latest_inference: {},

@@ -88,6 +88,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
         <p className="eyebrow">统一研究报告</p>
         <h3>最近实验摘要</h3>
         <p>候选总数：{String(researchReport.overview.candidate_count)}，可进入 dry-run：{String(researchReport.overview.ready_count)}。</p>
+        <p>筛选通过率：{researchReport.overview.pass_rate_pct}% ，当前最佳候选：{formatText(researchReport.overview.top_candidate_symbol, "n/a")}。</p>
         <p>训练状态：{formatText(trainingExperiment["status"], "unavailable")}，推理状态：{formatText(inferenceExperiment["status"], "unavailable")}。</p>
         <p>模型版本：{formatText(researchReport.overview.model_version, "n/a")}，生成时间：{formatText(researchReport.overview.generated_at, "n/a")}。</p>
       </section>
@@ -97,6 +98,10 @@ export default async function SignalsPage({ searchParams }: PageProps) {
         summary={{
           candidate_count: researchReport.overview.candidate_count,
           ready_count: researchReport.overview.ready_count,
+          blocked_count: researchReport.overview.blocked_count,
+          pass_rate_pct: researchReport.overview.pass_rate_pct,
+          top_candidate_symbol: researchReport.overview.top_candidate_symbol,
+          top_candidate_score: researchReport.overview.top_candidate_score,
         }}
         items={researchReport.candidates}
         nextStep="下一步动作：优先看可进入 dry-run 的候选，再去策略中心确认是否继续派发。"

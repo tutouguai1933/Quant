@@ -32,6 +32,48 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["latest_inference"]["signals"][0]["symbol"], "BTCUSDT")
         self.assertEqual(report["candidates"][0]["symbol"], "BTCUSDT")
 
+    def test_build_experiment_report_includes_screening_summary_and_backtest_snapshot(self) -> None:
+        report = build_experiment_report(
+            latest_training={
+                "model_version": "m2",
+                "backtest": {
+                    "metrics": {
+                        "total_return_pct": "12.40",
+                        "max_drawdown_pct": "-4.80",
+                        "sharpe": "1.22",
+                        "win_rate": "0.58",
+                        "turnover": "0.24",
+                        "max_loss_streak": "2",
+                    }
+                },
+            },
+            latest_inference={"signals": [{"symbol": "BTCUSDT"}]},
+            candidates={
+                "items": [
+                    {
+                        "symbol": "BTCUSDT",
+                        "score": "0.8123",
+                        "allowed_to_dry_run": True,
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                        "backtest": {"metrics": {"sharpe": "1.22"}},
+                    },
+                    {
+                        "symbol": "ETHUSDT",
+                        "score": "0.6010",
+                        "allowed_to_dry_run": False,
+                        "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                        "backtest": {"metrics": {"sharpe": "0.41"}},
+                    },
+                ]
+            },
+        )
+
+        self.assertEqual(report["overview"]["blocked_count"], 1)
+        self.assertEqual(report["overview"]["pass_rate_pct"], "50.00")
+        self.assertEqual(report["overview"]["top_candidate_symbol"], "BTCUSDT")
+        self.assertEqual(report["overview"]["top_candidate_score"], "0.8123")
+        self.assertEqual(report["experiments"]["training"]["backtest"]["sharpe"], "1.22")
+
 
 if __name__ == "__main__":
     unittest.main()
