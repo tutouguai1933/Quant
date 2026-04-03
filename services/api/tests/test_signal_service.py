@@ -71,7 +71,7 @@ class SignalServiceTests(unittest.TestCase):
 
     def test_qlib_pipeline_persists_strategy_agnostic_signals(self) -> None:
         original_research_service = signal_service_module.research_service
-        signal_service_module.research_service = _FakeResearchService()
+        signal_service_module.research_service = _PassingResearchService()
         try:
             run = self.service.run_pipeline("qlib")
         finally:
@@ -81,10 +81,11 @@ class SignalServiceTests(unittest.TestCase):
         items = self.service.list_signals(limit=10)
         self.assertEqual(items[0]["strategy_id"], None)
         self.assertEqual(items[0]["source"], "qlib")
+        self.assertEqual(items[0]["payload"]["dry_run_gate"]["status"], "passed")
 
     def test_executor_strategy_can_claim_latest_qlib_signal(self) -> None:
         original_research_service = signal_service_module.research_service
-        signal_service_module.research_service = _FakeResearchService()
+        signal_service_module.research_service = _PassingResearchService()
         try:
             self.service.run_pipeline("qlib")
             claimed = self.service.claim_latest_dispatchable_signal(1)
@@ -97,7 +98,7 @@ class SignalServiceTests(unittest.TestCase):
 
     def test_non_executor_strategy_does_not_claim_strategy_agnostic_qlib_signal(self) -> None:
         original_research_service = signal_service_module.research_service
-        signal_service_module.research_service = _FakeResearchService()
+        signal_service_module.research_service = _PassingResearchService()
         try:
             self.service.run_pipeline("qlib")
             claimed = self.service.claim_latest_dispatchable_signal(2)
@@ -108,7 +109,7 @@ class SignalServiceTests(unittest.TestCase):
 
     def test_executor_strategy_prefers_strategy_bound_signal_over_generic_research_signal(self) -> None:
         original_research_service = signal_service_module.research_service
-        signal_service_module.research_service = _FakeResearchService()
+        signal_service_module.research_service = _PassingResearchService()
         try:
             self.service.run_pipeline("qlib")
         finally:
@@ -133,19 +134,36 @@ class SignalServiceTests(unittest.TestCase):
         self.assertEqual(claimed["signal_id"], created["signal_id"])
 
     def test_qlib_signal_without_dry_run_gate_is_not_dispatchable(self) -> None:
-        original_research_service = signal_service_module.research_service
-        signal_service_module.research_service = _FakeResearchServiceWithoutGate()
-        try:
-            self.service.run_pipeline("qlib")
-        finally:
-            signal_service_module.research_service = original_research_service
+        self.service.ingest_signal(
+            {
+                "symbol": "BTCUSDT",
+                "side": "long",
+                "score": "0.780000",
+                "confidence": "0.810000",
+                "target_weight": "0.250000",
+                "generated_at": "2026-04-03T00:00:00+00:00",
+                "source": "qlib",
+                "strategy_id": 1,
+            }
+        )
 
         claimed = self.service.claim_latest_dispatchable_signal(1)
 
         self.assertIsNone(claimed)
 
+    def test_qlib_pipeline_blocks_failed_dry_run_candidate(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _BlockedResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(1)
+        finally:
+            signal_service_module.research_service = original_research_service
 
-class _FakeResearchService:
+        self.assertIsNone(claimed)
+
+
+class _PassingResearchService:
     def run_training(self) -> dict[str, object]:
         return {"model_version": "qlib-minimal-test", "status": "completed"}
 
@@ -162,17 +180,27 @@ class _FakeResearchService:
                     "generated_at": "2026-04-02T01:00:00+00:00",
                 }
             ],
+            "candidates": {
+                "items": [
+                    {
+                        "symbol": "BTCUSDT",
+                        "allowed_to_dry_run": True,
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                    }
+                ]
+            },
         }
 
-    def get_factory_symbol(self, symbol: str) -> dict[str, object] | None:
-        if symbol == "BTCUSDT":
-            return {"symbol": "BTCUSDT", "allowed_to_dry_run": True}
-        return None
 
-
-class _FakeResearchServiceWithoutGate(_FakeResearchService):
-    def get_factory_symbol(self, symbol: str) -> dict[str, object] | None:
-        return None
+class _BlockedResearchService(_PassingResearchService):
+    def run_inference(self) -> dict[str, object]:
+        payload = super().run_inference()
+        payload["candidates"]["items"][0]["allowed_to_dry_run"] = False
+        payload["candidates"]["items"][0]["dry_run_gate"] = {
+            "status": "failed",
+            "reasons": ["sharpe_too_low"],
+        }
+        return payload
 
 
 class _FailingResearchService:
