@@ -16,6 +16,7 @@ from uuid import uuid4
 from services.worker.qlib_backtest import run_backtest
 from services.worker.qlib_config import QlibRuntimeConfig
 from services.worker.qlib_dataset import DatasetBundle, build_dataset_bundle
+from services.worker.qlib_experiment_report import build_experiment_report
 from services.worker.qlib_features import FEATURE_COLUMNS
 from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
@@ -79,6 +80,11 @@ class QlibRunner:
             "warnings": self._build_warnings(),
             "artifact_path": str(artifact_path),
         }
+        result["experiment_report"] = build_experiment_report(
+            latest_training=result,
+            latest_inference=None,
+            candidates={"items": []},
+        )
         self._write_run_record("training", run_id, result, self._config.paths.latest_training_path)
         return result
 
@@ -144,6 +150,11 @@ class QlibRunner:
             "candidates": rank_candidates(candidates),
             "warnings": self._build_warnings(),
         }
+        result["experiment_report"] = build_experiment_report(
+            latest_training=training_payload,
+            latest_inference=result,
+            candidates=result["candidates"],
+        )
         self._write_run_record("inference", result["run_id"], result, self._config.paths.latest_inference_path)
         return result
 

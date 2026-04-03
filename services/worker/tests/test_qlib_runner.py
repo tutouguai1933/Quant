@@ -127,6 +127,28 @@ class QlibFeatureTests(unittest.TestCase):
 
 
 class QlibRunnerTests(unittest.TestCase):
+    def test_training_returns_experiment_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+
+            result = runner.train(
+                dataset={
+                    "BTCUSDT": _sample_timing_candles(step_hours=4),
+                    "ETHUSDT": _sample_timing_candles(step_hours=4),
+                }
+            )
+
+        self.assertIn("experiment_report", result)
+        self.assertIn("overview", result["experiment_report"])
+        self.assertEqual(result["experiment_report"]["overview"]["candidate_count"], 0)
+        self.assertEqual(result["experiment_report"]["latest_training"]["model_version"], result["model_version"])
+
     def test_training_uses_dataset_bundle_for_multi_timeframe_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)
@@ -217,6 +239,23 @@ class QlibRunnerTests(unittest.TestCase):
                 "generated_at",
             },
         )
+
+    def test_inference_returns_experiment_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+
+            result = runner.infer(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+
+        self.assertIn("experiment_report", result)
+        self.assertEqual(result["experiment_report"]["overview"]["signal_count"], len(result["signals"]))
+        self.assertEqual(result["experiment_report"]["overview"]["candidate_count"], len(result["candidates"]["items"]))
 
     def test_inference_builds_candidate_level_dry_run_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
