@@ -1,18 +1,17 @@
 /* 这个文件负责渲染单币页的交易终端外壳。 */
 
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { AppShell } from "../../../components/app-shell";
 import { MarketSymbolWorkspace } from "../../../components/market-symbol-workspace";
 import { PageHero } from "../../../components/page-hero";
-import { ResearchCandidateBoard } from "../../../components/research-candidate-board";
 import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
   getMarketChart,
   getResearchCandidate,
   getResearchCandidatesFallback,
   type MarketChartData,
+  type ResearchCandidateItem,
   type ResearchCockpitSummary,
 } from "../../../lib/api";
 import { getControlSessionState } from "../../../lib/session";
@@ -30,7 +29,8 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
   const query = (await searchParams) ?? {};
   const interval = readQueryText(query.interval);
   let chartData = getEmptyMarketChartData();
-  let candidate = getResearchCandidatesFallback().items.find((item) => item.symbol === normalizedSymbol) ?? null;
+  let candidate: ResearchCandidateItem | null =
+    getResearchCandidatesFallback().items.find((item) => item.symbol === normalizedSymbol) ?? null;
 
   try {
     const response = await getMarketChart(symbol, interval);
@@ -77,43 +77,7 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
       />
 
       <section className="space-y-6">
-        <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} />
-
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-          <ResearchCandidateBoard
-            title="研究候选"
-            summary={{
-              candidate_count: candidate ? 1 : 0,
-              ready_count: candidate?.allowed_to_dry_run ? 1 : 0,
-            }}
-            items={candidate ? [candidate] : []}
-            focusSymbol={normalizedSymbol}
-            nextStep={chartData.strategy_context.next_step || "下一步动作：先看是否允许进入 dry-run，再决定要不要进入策略中心。"}
-          />
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <p className="eyebrow">下一步动作</p>
-              <CardTitle>先决定继续研究还是进入执行</CardTitle>
-              <CardDescription>
-                {candidate?.allowed_to_dry_run
-                  ? "这个币当前已经允许进入 dry-run，可以继续去策略中心确认是否派发。"
-                  : "这个币当前还不适合直接进入执行，先回信号页继续研究。"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
-              <Button asChild>
-                <a href={`/strategies?symbol=${encodeURIComponent(normalizedSymbol)}`}>
-                  进入策略中心
-                  <ArrowRight />
-                </a>
-              </Button>
-              <Button asChild variant="secondary">
-                <a href="/signals">返回信号页继续研究</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} candidate={candidate} />
       </section>
     </AppShell>
   );

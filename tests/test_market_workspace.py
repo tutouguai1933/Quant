@@ -71,20 +71,23 @@ class MarketWorkspaceTests(unittest.TestCase):
         global_styles = (WEB_APP / "globals.css").read_text(encoding="utf-8")
 
         self.assertIn("MarketSymbolWorkspace", page_content)
+        self.assertIn("candidate={candidate}", page_content)
         self.assertIn("active_interval", page_content)
         self.assertIn("supported_intervals", page_content)
         self.assertIn("multi_timeframe_summary", workspace_content)
         self.assertIn("TradingChartPanel", workspace_content)
-        self.assertIn("ResearchCandidateBoard", page_content)
+        self.assertIn("CompactDecisionCard", workspace_content)
         self.assertIn(".terminal-layout", global_styles)
 
     def test_symbol_page_shows_research_gate_and_next_step(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
+        workspace_content = (WEB_COMPONENTS / "market-symbol-workspace.tsx").read_text(encoding="utf-8")
 
-        self.assertIn("ResearchCandidateBoard", page_content)
-        self.assertIn("研究候选", page_content)
-        self.assertIn("是否允许进入 dry-run", page_content)
-        self.assertIn("下一步动作", page_content)
+        self.assertIn("candidate={candidate}", page_content)
+        self.assertIn("执行摘要", workspace_content)
+        self.assertIn("研究分数", workspace_content)
+        self.assertIn("研究门", workspace_content)
+        self.assertIn("下一步动作", workspace_content)
         self.assertIn("返回信号页继续研究", page_content)
         self.assertIn('<section className="space-y-6">', page_content)
 
@@ -147,8 +150,9 @@ class MarketWorkspaceTests(unittest.TestCase):
         content = (WEB_COMPONENTS / "market-symbol-workspace.tsx").read_text(encoding="utf-8")
 
         self.assertIn('<section className="space-y-5">', content)
-        self.assertIn('lg:grid-cols-[minmax(0,1.2fr)_360px]', content)
+        self.assertIn('lg:grid-cols-[minmax(0,1.35fr)_340px]', content)
         self.assertIn("ResearchSidecard", content)
+        self.assertIn("CompactDecisionCard", content)
 
     def test_market_api_handles_non_array_items(self) -> None:
         content = (WEB_LIB / "api.ts").read_text(encoding="utf-8")
