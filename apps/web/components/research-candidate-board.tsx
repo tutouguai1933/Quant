@@ -2,9 +2,12 @@
 
 "use client";
 
+import { useMemo, useState } from "react";
+
 import type { ResearchCandidateItem } from "../lib/api";
 import { StatusBadge } from "./status-badge";
 import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { ScrollArea } from "./ui/scroll-area";
 import { Separator } from "./ui/separator";
@@ -35,7 +38,27 @@ export function ResearchCandidateBoard({
   nextStep = "",
 }: ResearchCandidateBoardProps) {
   const normalizedFocusSymbol = focusSymbol.trim().toUpperCase();
-  const visibleItems = normalizedFocusSymbol ? items.filter((item) => item.symbol === normalizedFocusSymbol) : items;
+  const [viewMode, setViewMode] = useState<"all" | "ready" | "continue" | "forced">("all");
+  const [gateMode, setGateMode] = useState<"all" | "rule" | "backtest" | "validation">("all");
+  const visibleItems = useMemo(() => {
+    const scopedItems = normalizedFocusSymbol ? items.filter((item) => item.symbol === normalizedFocusSymbol) : items;
+    return scopedItems.filter((item) => {
+      if (viewMode === "ready" && !item.allowed_to_dry_run) {
+        return false;
+      }
+      if (viewMode === "continue" && item.next_action !== "continue_research") {
+        return false;
+      }
+      if (viewMode === "forced" && !item.forced_for_validation) {
+        return false;
+      }
+
+      if (gateMode === "all") {
+        return true;
+      }
+      return classifyGateBucket(item) === gateMode;
+    });
+  }, [gateMode, items, normalizedFocusSymbol, viewMode]);
   const primaryItem = visibleItems[0] ?? items[0] ?? null;
 
   return (
@@ -61,6 +84,22 @@ export function ResearchCandidateBoard({
             label="被拦下"
             value={String(summary.blocked_count ?? Math.max(summary.candidate_count - summary.ready_count, 0))}
           />
+        </div>
+        <div className="grid gap-3 rounded-2xl border border-border/70 bg-background/40 p-3 lg:grid-cols-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">流程开关</p>
+            <FilterChip active={viewMode === "all"} onClick={() => setViewMode("all")}>全部</FilterChip>
+            <FilterChip active={viewMode === "ready"} onClick={() => setViewMode("ready")}>可进 dry-run</FilterChip>
+            <FilterChip active={viewMode === "continue"} onClick={() => setViewMode("continue")}>继续研究</FilterChip>
+            <FilterChip active={viewMode === "forced"} onClick={() => setViewMode("forced")}>强制验证</FilterChip>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">门控视图</p>
+            <FilterChip active={gateMode === "all"} onClick={() => setGateMode("all")}>全部门</FilterChip>
+            <FilterChip active={gateMode === "rule"} onClick={() => setGateMode("rule")}>规则门</FilterChip>
+            <FilterChip active={gateMode === "backtest"} onClick={() => setGateMode("backtest")}>回测门</FilterChip>
+            <FilterChip active={gateMode === "validation"} onClick={() => setGateMode("validation")}>验证门</FilterChip>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -97,6 +136,7 @@ export function ResearchCandidateBoard({
                     <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                       <p>分数：<span className="text-foreground">{item.score}</span></p>
                       <p>研究门：<span className="text-foreground">{item.dry_run_gate.status}</span></p>
+                      <p>复核状态：<span className="text-foreground">{formatReviewStatus(item.review_status)}</span></p>
                       <p>是否允许进入 dry-run：<span className="text-foreground">{item.allowed_to_dry_run ? "是" : "否"}</span></p>
                       <p>回测收益：<span className="text-foreground">{readMetric(item, "total_return_pct", "n/a")}%</span></p>
                       <p>最大回撤：<span className="text-foreground">{readMetric(item, "max_drawdown_pct", "n/a")}%</span></p>
@@ -105,6 +145,11 @@ export function ResearchCandidateBoard({
                     <div className="mt-3 rounded-xl border border-border/60 bg-muted/15 p-3 text-sm text-muted-foreground">
                       失败原因：<span className="text-foreground">{formatReasons(item.dry_run_gate.reasons)}</span>
                     </div>
+                    {item.forced_for_validation ? (
+                      <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+                        强制验证：当前候选被临时放行进入验证链，原因是 {item.forced_reason || "force_top_candidate_for_validation"}。
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </div>
@@ -126,6 +171,22 @@ export function ResearchCandidateBoard({
   );
 }
 
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <Button type="button" size="sm" variant={active ? "terminal" : "ghost"} onClick={onClick}>
+      {children}
+    </Button>
+  );
+}
+
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-border/70 bg-background/60 p-3">
@@ -136,6 +197,9 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 }
 
 function formatNextStep(item: ResearchCandidateItem, fallback: string): string {
+  if (item.forced_for_validation) {
+    return "当前候选被临时放行进入验证链，先走 dry-run，再决定是否继续 live。";
+  }
   if (item.allowed_to_dry_run) {
     return fallback || "进入策略中心确认执行，再决定是否派发。";
   }
@@ -152,4 +216,46 @@ function formatReasons(reasons: string[]): string {
     return "无";
   }
   return reasons.join(" / ");
+}
+
+function formatReviewStatus(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "未标记";
+  }
+  if (normalized === "forced_validation") {
+    return "强制验证";
+  }
+  if (normalized === "needs_research_iteration") {
+    return "继续研究";
+  }
+  if (normalized === "ready_for_dry_run") {
+    return "可进 dry-run";
+  }
+  return normalized.replaceAll("_", " ");
+}
+
+function classifyGateBucket(item: ResearchCandidateItem): "rule" | "backtest" | "validation" {
+  const reasons = [item.review_status, ...item.dry_run_gate.reasons, item.forced_reason]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    reasons.includes("validation") ||
+    reasons.includes("sample") ||
+    reasons.includes("consistency") ||
+    reasons.includes("drift")
+  ) {
+    return "validation";
+  }
+  if (
+    reasons.includes("drawdown") ||
+    reasons.includes("sharpe") ||
+    reasons.includes("turnover") ||
+    reasons.includes("backtest") ||
+    reasons.includes("return")
+  ) {
+    return "backtest";
+  }
+  return "rule";
 }

@@ -1,5 +1,6 @@
 /* 这个文件负责渲染首页驾驶舱，并给出成功链路和异常链路指引。 */
 
+import Link from "next/link";
 import { ArrowRight, Radar, ShieldAlert, Zap } from "lucide-react";
 
 import { AppShell } from "../components/app-shell";
@@ -23,13 +24,14 @@ export default async function HomePage({ searchParams }: PageProps) {
   const session = await getControlSessionState();
   const { token, isAuthenticated } = session;
   const feedback = readFeedback(params);
-
-  const signals = await safeLoad(() => listSignals(), []);
-  const orders = await safeLoad(() => listOrders(), []);
-  const positions = await safeLoad(() => listPositions(), []);
-  const strategies = isAuthenticated ? await safeLoad(() => listStrategies(token), []) : [];
-  const tasks = isAuthenticated ? await safeLoad(() => listTasks(token), []) : [];
-  const riskEvents = isAuthenticated ? await safeLoad(() => listRiskEvents(token), []) : [];
+  const [signals, orders, positions, strategies, tasks, riskEvents] = await Promise.all([
+    safeLoad(() => listSignals(), []),
+    safeLoad(() => listOrders(), []),
+    safeLoad(() => listPositions(), []),
+    isAuthenticated ? safeLoad(() => listStrategies(token), []) : Promise.resolve([]),
+    isAuthenticated ? safeLoad(() => listTasks(token), []) : Promise.resolve([]),
+    isAuthenticated ? safeLoad(() => listRiskEvents(token), []) : Promise.resolve([]),
+  ]);
 
   const latestSignal = signals[0];
   const latestTask = tasks[0];
@@ -209,10 +211,10 @@ function ActionLink({ href, label, detail }: { href: string; label: string; deta
           <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
         </div>
         <Button asChild variant="secondary" size="sm">
-          <a href={href}>
+          <Link href={href}>
             继续
             <ArrowRight />
-          </a>
+          </Link>
         </Button>
       </CardContent>
     </Card>

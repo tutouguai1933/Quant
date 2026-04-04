@@ -1,5 +1,7 @@
 /* 这个文件负责渲染任务页，并提供统一任务触发入口。 */
 
+import Link from "next/link";
+
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -53,9 +55,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
           <p className="eyebrow">任务反馈</p>
           <h3>任务页需要管理员登录</h3>
           <p>登录后才能触发训练、同步、归档和失败任务演示。</p>
-          <a className="button-link primary-link" href="/login?next=%2Ftasks">
+          <Link className="button-link primary-link" href="/login?next=%2Ftasks">
             前往登录
-          </a>
+          </Link>
         </section>
       ) : (
         <>

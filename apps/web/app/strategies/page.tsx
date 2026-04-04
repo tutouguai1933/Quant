@@ -1,5 +1,7 @@
 /* 这个文件负责渲染策略中心页面，统一展示策略判断和执行动作。 */
 
+import Link from "next/link";
+
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -33,38 +35,34 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   const feedback = readFeedback(params);
   let workspace = getStrategyWorkspaceFallback();
   let candidateSnapshot = getResearchCandidatesFallback();
+  const [workspaceResult, candidateResult] = await Promise.allSettled([
+    token ? getStrategyWorkspace(token) : Promise.resolve(null),
+    focusSymbol ? getResearchCandidate(focusSymbol) : getResearchCandidates(),
+  ]);
 
-  if (token) {
-    try {
-      const response = await getStrategyWorkspace(token);
-      if (!response.error) {
-        workspace = response.data;
-      }
-    } catch {
-      // API 不可用时仍然保留占位数据。
-    }
+  if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
+    workspace = workspaceResult.value.data;
   }
 
-  try {
-    if (focusSymbol) {
-      const response = await getResearchCandidate(focusSymbol);
-      if (!response.error && response.data.item) {
+  if (candidateResult.status === "fulfilled") {
+    const response = candidateResult.value;
+    if (!response.error) {
+      if (focusSymbol && "item" in response.data && response.data.item) {
         candidateSnapshot = {
           items: [response.data.item],
           summary: {
             candidate_count: 1,
             ready_count: response.data.item.allowed_to_dry_run ? 1 : 0,
+            blocked_count: response.data.item.allowed_to_dry_run ? 0 : 1,
+            pass_rate_pct: response.data.item.allowed_to_dry_run ? "100.00" : "0.00",
+            top_candidate_symbol: response.data.item.symbol,
+            top_candidate_score: response.data.item.score,
           },
         };
-      }
-    } else {
-      const response = await getResearchCandidates();
-      if (!response.error) {
+      } else if ("items" in response.data) {
         candidateSnapshot = response.data;
       }
     }
-  } catch {
-    // API 不可用时仍然保留候选兜底数据。
   }
 
   return (
@@ -91,7 +89,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
           </CardHeader>
           <CardContent>
             <Button asChild variant="outline">
-              <a href={`/market/${encodeURIComponent(focusSymbol)}`}>返回这个币种的图表页</a>
+              <Link href={`/market/${encodeURIComponent(focusSymbol)}`}>返回这个币种的图表页</Link>
             </Button>
           </CardContent>
         </Card>
@@ -106,7 +104,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
           </CardHeader>
           <CardContent>
             <Button asChild variant="terminal">
-              <a href="/login?next=%2Fstrategies">先去登录</a>
+              <Link href="/login?next=%2Fstrategies">先去登录</Link>
             </Button>
           </CardContent>
         </Card>
@@ -144,10 +142,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   </CardHeader>
                   <CardContent className="action-grid">
                     <Button asChild variant="outline">
-                      <a href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>去这个币的图表页</a>
+                      <Link href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>去这个币的图表页</Link>
                     </Button>
                     <Button asChild variant="terminal">
-                      <a href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>围绕这个币继续执行</a>
+                      <Link href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>围绕这个币继续执行</Link>
                     </Button>
                   </CardContent>
                 </Card>
@@ -177,13 +175,13 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="action-grid">
                   <Button asChild variant="outline">
-                    <a href={focusSymbol ? `/market/${encodeURIComponent(focusSymbol)}` : "/signals"}>去图表页确认</a>
+                    <Link href={focusSymbol ? `/market/${encodeURIComponent(focusSymbol)}` : "/signals"}>去图表页确认</Link>
                   </Button>
                   <Button asChild variant="terminal">
-                    <a href={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}>围绕这个币继续执行</a>
+                    <Link href={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}>围绕这个币继续执行</Link>
                   </Button>
                   <Button asChild variant="secondary">
-                    <a href="/signals">回到信号页复核</a>
+                    <Link href="/signals">回到信号页复核</Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -240,13 +238,13 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   </p>
                   <div className="action-grid">
                     <Button asChild variant="outline">
-                      <a href="/balances">去余额页</a>
+                      <Link href="/balances">去余额页</Link>
                     </Button>
                     <Button asChild variant="outline">
-                      <a href="/orders">去订单页</a>
+                      <Link href="/orders">去订单页</Link>
                     </Button>
                     <Button asChild variant="outline">
-                      <a href="/positions">去持仓页</a>
+                      <Link href="/positions">去持仓页</Link>
                     </Button>
                   </div>
                 </CardContent>
@@ -356,8 +354,14 @@ function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
         <p>{item.description}</p>
       </div>
       <div className="stack-xs">
-        <p>运行状态： <StatusBadge value={item.runtime_status} /></p>
-        <p>当前判断： <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} /></p>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>运行状态：</span>
+          <StatusBadge value={item.runtime_status} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>当前判断：</span>
+          <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} />
+        </div>
         <p>研究分数：{formatResearchScore(item.research_summary.score)}</p>
         <p>模型版本：{item.research_summary.model_version || "暂无训练产物"}</p>
         <p>研究解释：{item.research_summary.explanation || "暂无研究解释"}</p>

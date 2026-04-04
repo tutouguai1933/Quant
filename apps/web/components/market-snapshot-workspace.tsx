@@ -2,6 +2,7 @@
 
 "use client";
 
+import Link from "next/link";
 import { use } from "react";
 
 import { DataTable } from "./data-table";
@@ -51,12 +52,12 @@ function MarketSnapshotWorkspaceBody({ items }: { items: MarketSnapshot[] }) {
             formatConfidence(item.research_brief.confidence),
             formatPrimaryReason(item),
             <div key={item.symbol} style={{ display: "grid", gap: 8 }}>
-              <a href={`/market/${encodeURIComponent(item.symbol)}`}>
+              <Link href={`/market/${encodeURIComponent(item.symbol)}`}>
                 看图表并继续判断
-              </a>
-              <a href={`/strategies?symbol=${encodeURIComponent(item.symbol)}`}>
+              </Link>
+              <Link href={`/strategies?symbol=${encodeURIComponent(item.symbol)}`}>
                 进入策略中心
-              </a>
+              </Link>
             </div>,
           ],
         }))}

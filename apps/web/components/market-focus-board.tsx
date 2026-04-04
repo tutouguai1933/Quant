@@ -1,5 +1,6 @@
 /* 这个文件负责渲染市场页右侧的优先关注板。 */
 
+import Link from "next/link";
 import type { MarketSnapshot } from "../lib/api";
 
 
@@ -42,7 +43,7 @@ export function MarketFocusBoard({ items }: MarketFocusBoardProps) {
             <p className="metric-detail">
               {formatPreferredStrategy(item.research_brief.recommended_strategy)} / {formatTrendState(item.trend_state)}
             </p>
-            <a href={`/market/${encodeURIComponent(item.symbol)}`}>看单币页</a>
+            <Link href={`/market/${encodeURIComponent(item.symbol)}`}>看单币页</Link>
           </article>
         ))}
       </div>

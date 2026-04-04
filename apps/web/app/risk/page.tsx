@@ -1,5 +1,7 @@
 /* 这个文件负责渲染风险页。 */
 
+import Link from "next/link";
+
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -53,9 +55,9 @@ export default async function RiskPage({ searchParams }: PageProps) {
           <p className="eyebrow">动作反馈</p>
           <h3>风险页需要管理员登录</h3>
           <p>登录后才能查看真实风控事件和规则名称。</p>
-          <a className="button-link primary-link" href="/login?next=%2Frisk">
+          <Link className="button-link primary-link" href="/login?next=%2Frisk">
             前往登录
-          </a>
+          </Link>
         </section>
       ) : (
         <MetricGrid

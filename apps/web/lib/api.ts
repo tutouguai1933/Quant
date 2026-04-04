@@ -252,6 +252,10 @@ export type ResearchCandidateItem = {
   backtest: { metrics: Record<string, string> };
   dry_run_gate: { status: string; reasons: string[] };
   allowed_to_dry_run: boolean;
+  review_status: string;
+  next_action: string;
+  forced_for_validation: boolean;
+  forced_reason: string;
 };
 
 export type ResearchCandidateSnapshot = {
@@ -1108,6 +1112,10 @@ function normalizeResearchCandidateItem(item: unknown): ResearchCandidateItem | 
       reasons: normalizeStringArray(gateRow.reasons, []),
     },
     allowed_to_dry_run: Boolean(row.allowed_to_dry_run),
+    review_status: String(row.review_status ?? ""),
+    next_action: String(row.next_action ?? ""),
+    forced_for_validation: Boolean(row.forced_for_validation),
+    forced_reason: String(row.forced_reason ?? ""),
   };
 }
 

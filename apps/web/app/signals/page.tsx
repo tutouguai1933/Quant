@@ -27,20 +27,12 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   let items = getSignalsPageFallback().items;
   let researchReport = getResearchReportFallback().item;
 
-  try {
-    const response = await listSignals();
-    items = response.data.items;
-  } catch {
-    // API 不可用时仍然保留演示数据。
+  const [signalsResult, researchReportResult] = await Promise.allSettled([listSignals(), getResearchReport()]);
+  if (signalsResult.status === "fulfilled") {
+    items = signalsResult.value.data.items;
   }
-
-  try {
-    const response = await getResearchReport();
-    if (!response.error) {
-      researchReport = response.data.item;
-    }
-  } catch {
-    // API 不可用时仍然保留研究兜底数据。
+  if (researchReportResult.status === "fulfilled" && !researchReportResult.value.error) {
+    researchReport = researchReportResult.value.data.item;
   }
 
   const latestTraining = asRecord(researchReport.latest_training);

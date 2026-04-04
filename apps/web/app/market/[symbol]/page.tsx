@@ -1,5 +1,6 @@
 /* 这个文件负责渲染单币页的交易终端外壳。 */
 
+import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import { AppShell } from "../../../components/app-shell";
@@ -32,22 +33,15 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
   let candidate: ResearchCandidateItem | null =
     getResearchCandidatesFallback().items.find((item) => item.symbol === normalizedSymbol) ?? null;
 
-  try {
-    const response = await getMarketChart(symbol, interval);
-    if (!response.error) {
-      chartData = response.data;
-    }
-  } catch {
-    // API 暂时不可用时保留骨架页面。
+  const [chartResult, candidateResult] = await Promise.allSettled([
+    getMarketChart(symbol, interval),
+    getResearchCandidate(normalizedSymbol),
+  ]);
+  if (chartResult.status === "fulfilled" && !chartResult.value.error) {
+    chartData = chartResult.value.data;
   }
-
-  try {
-    const response = await getResearchCandidate(normalizedSymbol);
-    if (!response.error) {
-      candidate = response.data.item;
-    }
-  } catch {
-    // API 暂时不可用时保留候选兜底数据。
+  if (candidateResult.status === "fulfilled" && !candidateResult.value.error) {
+    candidate = candidateResult.value.data.item;
   }
 
   return (
@@ -64,13 +58,13 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
         aside={
           <div className="grid gap-2">
             <Button asChild variant="secondary" size="sm">
-              <a href="/market">
+              <Link href="/market">
                 <ArrowLeft />
                 返回市场页
-              </a>
+              </Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <a href="/signals">返回信号页继续研究</a>
+              <Link href="/signals">返回信号页继续研究</Link>
             </Button>
           </div>
         }
