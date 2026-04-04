@@ -46,6 +46,7 @@ class QlibRuntimeConfig:
     qlib_available: bool
     backtest_fee_bps: Decimal
     backtest_slippage_bps: Decimal
+    force_validation_top_candidate: bool
     paths: QlibRuntimePaths
 
     def ensure_ready(self) -> None:
@@ -77,6 +78,7 @@ def load_qlib_config(
         default=DEFAULT_BACKTEST_SLIPPAGE_BPS,
         env_name="QUANT_QLIB_BACKTEST_SLIPPAGE_BPS",
     )
+    force_validation_top_candidate = str(values.get("QUANT_QLIB_FORCE_TOP_CANDIDATE", "")).strip().lower() == "true"
 
     if require_explicit and not runtime_root_raw and not session_id:
         return _build_config(
@@ -85,6 +87,7 @@ def load_qlib_config(
             detail="未设置 QUANT_QLIB_RUNTIME_ROOT 或 QUANT_QLIB_SESSION_ID，研究层当前只能返回明确状态，不能直接执行训练。",
             backtest_fee_bps=backtest_fee_bps,
             backtest_slippage_bps=backtest_slippage_bps,
+            force_validation_top_candidate=force_validation_top_candidate,
         )
 
     if runtime_root_raw:
@@ -99,6 +102,7 @@ def load_qlib_config(
         detail=f"研究层目录已指向 {runtime_root}",
         backtest_fee_bps=backtest_fee_bps,
         backtest_slippage_bps=backtest_slippage_bps,
+        force_validation_top_candidate=force_validation_top_candidate,
     )
 
 
@@ -109,6 +113,7 @@ def _build_config(
     detail: str,
     backtest_fee_bps: Decimal,
     backtest_slippage_bps: Decimal,
+    force_validation_top_candidate: bool,
 ) -> QlibRuntimeConfig:
     """构造配置对象。"""
 
@@ -132,6 +137,7 @@ def _build_config(
         qlib_available=qlib_available,
         backtest_fee_bps=backtest_fee_bps,
         backtest_slippage_bps=backtest_slippage_bps,
+        force_validation_top_candidate=force_validation_top_candidate,
         paths=paths,
     )
 

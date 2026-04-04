@@ -138,6 +138,8 @@ class ResearchService:
             "symbol": str(recommendation.get("symbol", "")),
             "score": str(recommendation.get("score", "")),
             "allowed_to_dry_run": bool(recommendation.get("allowed_to_dry_run")),
+            "forced_for_validation": bool(recommendation.get("forced_for_validation")),
+            "forced_reason": str(recommendation.get("forced_reason", "")),
             "strategy_template": str(recommendation.get("strategy_template", "")),
             "dry_run_gate": dry_run_gate,
             "next_action": str(recommendation.get("next_action", "")) or str(report.get("overview", {}).get("recommended_action", "")),

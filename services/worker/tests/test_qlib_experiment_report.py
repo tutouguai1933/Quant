@@ -101,6 +101,32 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["experiments"]["training"]["backtest"]["net_return_pct"], "12.10")
         self.assertEqual(report["experiments"]["recent_runs"][0]["run_id"], "infer-1")
 
+    def test_build_experiment_report_marks_forced_validation_recommendation(self) -> None:
+        report = build_experiment_report(
+            latest_training={"model_version": "m3"},
+            latest_inference={"signals": [{"symbol": "ETHUSDT"}]},
+            candidates={
+                "items": [
+                    {
+                        "symbol": "ETHUSDT",
+                        "score": "0.8200",
+                        "allowed_to_dry_run": True,
+                        "forced_for_validation": True,
+                        "forced_reason": "force_top_candidate_for_validation",
+                        "review_status": "forced_validation",
+                        "next_action": "enter_dry_run",
+                        "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                    }
+                ]
+            },
+        )
+
+        self.assertTrue(report["overview"]["forced_validation"])
+        self.assertEqual(report["overview"]["forced_symbol"], "ETHUSDT")
+        self.assertEqual(report["overview"]["recommended_symbol"], "ETHUSDT")
+        self.assertEqual(report["overview"]["recommended_action"], "enter_dry_run")
+        self.assertEqual(report["leaderboard"][0]["review_status"], "forced_validation")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ import services.api.app.routes.risk_events as risk_events_route  # noqa: E402
 import services.api.app.routes.signals as signals_route  # noqa: E402
 import services.api.app.routes.strategies as strategies_route  # noqa: E402
 import services.api.app.routes.tasks as tasks_route  # noqa: E402
+import services.api.app.services.signal_service as signal_service_module  # noqa: E402
 import services.api.app.services.execution_service as execution_service_module  # noqa: E402
 import services.api.app.services.risk_service as risk_service_module  # noqa: E402
 import services.api.app.services.sync_service as sync_service_module  # noqa: E402
@@ -82,6 +83,78 @@ class RiskAndTaskTests(unittest.TestCase):
         self.assertEqual(response["data"]["risk_task"]["status"], "succeeded")
         self.assertEqual(response["data"]["sync_task"]["status"], "succeeded")
         self.assertEqual(get_signal(1)["data"]["item"]["status"], "synced")
+
+    def test_dispatch_latest_qlib_signal_uses_executor_strategy_context(self) -> None:
+        class FakeResearchService:
+            def run_training(self) -> dict[str, object]:
+                return {
+                    "status": "completed",
+                    "artifacts": {"latest_training": {"symbol_count": 4}},
+                }
+
+            def run_inference(self) -> dict[str, object]:
+                return {
+                    "backend": "qlib-real",
+                    "signals": [
+                        {
+                            "symbol": "ETHUSDT",
+                            "side": "long",
+                            "score": "0.730000",
+                            "confidence": "0.680000",
+                            "target_weight": "0.250000",
+                            "generated_at": "2026-04-04T10:00:00+00:00",
+                        }
+                    ],
+                    "candidates": {
+                        "items": [
+                            {
+                                "symbol": "ETHUSDT",
+                                "score": "0.730000",
+                                "review_status": "forced_validation",
+                                "next_action": "enter_dry_run",
+                                "allowed_to_dry_run": True,
+                                "forced_for_validation": True,
+                                "forced_reason": "force_top_candidate_for_validation",
+                                "dry_run_gate": {"status": "forced"},
+                                "execution_priority": 0,
+                            }
+                        ]
+                    },
+                }
+
+        token = self._login_token()
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = FakeResearchService()
+        try:
+            run_signal_pipeline("qlib")
+        finally:
+            signal_service_module.research_service = original_research_service
+        start_strategy(1, token=token)
+
+        fake_dispatch_result = {
+            "action": {"symbol": "ETHUSDT", "side": "long", "strategy_id": 1},
+            "order": {
+                "id": "ft-test-order-1",
+                "venueOrderId": "ft-test-order-1",
+                "symbol": "ETHUSDT",
+                "status": "filled",
+                "runtimeMode": "dry-run",
+                "strategyId": 1,
+            },
+            "runtime": {"mode": "dry-run", "backend": "memory", "connection_status": "connected"},
+        }
+        with patch.object(
+            strategies_route.execution_service,
+            "dispatch_signal",
+            return_value=fake_dispatch_result,
+        ) as dispatch_mock:
+            response = dispatch_latest_signal(1, token=token)
+
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["data"]["risk_task"]["status"], "succeeded")
+        dispatch_mock.assert_called_once_with(1, strategy_context_id=1)
+        self.assertEqual(response["data"]["item"]["action"]["strategy_id"], 1)
+        self.assertEqual(response["data"]["item"]["order"]["strategyId"], 1)
 
     def test_retry_task_keeps_retrying_history_visible(self) -> None:
         token = self._login_token()

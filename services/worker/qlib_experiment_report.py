@@ -38,6 +38,8 @@ def build_experiment_report(
         "top_candidate_score": str(top_candidate.get("score", "")),
         "recommended_symbol": str(recommended.get("symbol", "")),
         "recommended_action": str(recommended.get("next_action", "")),
+        "forced_validation": bool(recommended.get("forced_for_validation")),
+        "forced_symbol": str(recommended.get("symbol", "")) if bool(recommended.get("forced_for_validation")) else "",
     }
     return {
         "overview": overview,
@@ -109,6 +111,8 @@ def _build_leaderboard(items: list[dict[str, object]]) -> list[dict[str, object]
                 "strategy_template": str(item.get("strategy_template", "")),
                 "allowed_to_dry_run": bool(item.get("allowed_to_dry_run")),
                 "review_status": str(item.get("review_status", "")),
+                "forced_for_validation": bool(item.get("forced_for_validation")),
+                "forced_reason": str(item.get("forced_reason", "")),
                 "next_action": str(item.get("next_action", ""))
                 or ("enter_dry_run" if bool(item.get("allowed_to_dry_run")) else "continue_research"),
                 "execution_priority": _parse_int(item.get("execution_priority")),

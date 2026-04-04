@@ -12,6 +12,7 @@ def rank_candidates(
     items: list[dict[str, object]],
     *,
     validation: dict[str, object] | None = None,
+    force_validation_top_candidate: bool = False,
 ) -> dict[str, object]:
     """按分数输出统一候选排行。"""
 
@@ -20,6 +21,8 @@ def rank_candidates(
         _normalize_candidate(item, index=index, validation=validation)
         for index, item in enumerate(ranked, start=1)
     ]
+    if force_validation_top_candidate:
+        normalized = _apply_force_validation_override(normalized)
     return {
         "items": normalized,
         "summary": {
@@ -58,10 +61,28 @@ def _normalize_candidate(
         "consistency_gate": consistency_gate,
         "dry_run_gate": dry_run_gate,
         "allowed_to_dry_run": allowed_to_dry_run,
+        "forced_for_validation": False,
+        "forced_reason": "",
         "review_status": "ready_for_dry_run" if allowed_to_dry_run else "needs_research_iteration",
         "next_action": "enter_dry_run" if allowed_to_dry_run else "continue_research",
         "execution_priority": 0 if allowed_to_dry_run else 100 + index,
     }
+
+
+def _apply_force_validation_override(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    """当正常候选全被拦下时，临时放行最优的一个验证全流程。"""
+
+    if not items or any(bool(item.get("allowed_to_dry_run")) for item in items):
+        return items
+    overridden = [dict(item) for item in items]
+    top_item = overridden[0]
+    top_item["allowed_to_dry_run"] = True
+    top_item["forced_for_validation"] = True
+    top_item["forced_reason"] = "force_top_candidate_for_validation"
+    top_item["review_status"] = "forced_validation"
+    top_item["next_action"] = "enter_dry_run"
+    top_item["execution_priority"] = 0
+    return overridden
 
 
 def _evaluate_backtest_gate(metrics: dict[str, object]) -> dict[str, object]:

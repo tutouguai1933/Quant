@@ -73,6 +73,8 @@ class ResearchFactoryService:
                 "top_candidate_score": str(overview.get("top_candidate_score", "")),
                 "recommended_symbol": str(overview.get("recommended_symbol", "")),
                 "recommended_action": str(overview.get("recommended_action", "")),
+                "forced_validation": bool(overview.get("forced_validation")),
+                "forced_symbol": str(overview.get("forced_symbol", "")),
             },
             "latest_training": dict(report.get("latest_training") or {}),
             "latest_inference": dict(report.get("latest_inference") or {}),

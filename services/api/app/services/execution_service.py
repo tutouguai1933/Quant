@@ -19,7 +19,7 @@ class ExecutionService:
     def __init__(self, market_client: BinanceMarketClient | None = None) -> None:
         self._market_client = market_client or BinanceMarketClient()
 
-    def build_execution_action(self, signal_id: int) -> dict[str, object]:
+    def build_execution_action(self, signal_id: int, strategy_context_id: int | None = None) -> dict[str, object]:
         signal = signal_service.get_signal(signal_id)
         if signal is None:
             raise ValueError(f"signal {signal_id} not found")
@@ -34,12 +34,12 @@ class ExecutionService:
             side=side,
             quantity=quantity,
             source_signal_id=signal_id,
-            strategy_id=signal.get("strategy_id"),
+            strategy_id=signal.get("strategy_id") or strategy_context_id,
             account_id=1,
         )
         return action.to_dict()
 
-    def dispatch_signal(self, signal_id: int) -> dict[str, object]:
+    def dispatch_signal(self, signal_id: int, strategy_context_id: int | None = None) -> dict[str, object]:
         settings = Settings.from_env()
         runtime_mode = settings.runtime_mode
         runtime_snapshot = freqtrade_client.get_runtime_snapshot()
@@ -54,7 +54,7 @@ class ExecutionService:
             elif runtime_snapshot.get("mode") != "dry-run":
                 raise PermissionError("dry-run 模式下执行器没有切到 dry-run 运行模式")
 
-        action = self.build_execution_action(signal_id)
+        action = self.build_execution_action(signal_id, strategy_context_id=strategy_context_id)
         if runtime_mode == "live":
             self._guard_live_execution(action=action, settings=settings, runtime_snapshot=runtime_snapshot)
         order = freqtrade_client.submit_execution_action(action)

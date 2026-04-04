@@ -155,6 +155,7 @@ class QlibRunner:
         ranked_candidates = rank_candidates(
             candidates,
             validation=dict(training_payload.get("validation") or {}),
+            force_validation_top_candidate=self._config.force_validation_top_candidate,
         )
         dataset_snapshot_path, dataset_snapshot = self._write_dataset_snapshot(
             symbol_bundles=symbol_bundles,

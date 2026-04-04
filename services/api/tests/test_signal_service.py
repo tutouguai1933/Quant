@@ -200,6 +200,21 @@ class SignalServiceTests(unittest.TestCase):
         self.assertEqual(items[0]["payload"]["review_status"], "needs_research_iteration")
         self.assertEqual(items[0]["payload"]["recommended_for_execution"], False)
 
+    def test_qlib_pipeline_allows_forced_validation_candidate_to_enter_dispatch(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _ForcedValidationResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(1)
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        self.assertIsNotNone(claimed)
+        assert claimed is not None
+        self.assertEqual(claimed["symbol"], "ETHUSDT")
+        self.assertTrue(claimed["payload"]["forced_for_validation"])
+        self.assertEqual(claimed["payload"]["review_status"], "forced_validation")
+
 
 class _PassingResearchService:
     def run_training(self) -> dict[str, object]:
@@ -311,6 +326,38 @@ class _BlockedRecommendationResearchService(_PassingResearchService):
                         "review_status": "needs_research_iteration",
                         "next_action": "continue_research",
                         "execution_priority": 100,
+                    }
+                ]
+            },
+        }
+
+
+class _ForcedValidationResearchService(_PassingResearchService):
+    def run_inference(self) -> dict[str, object]:
+        return {
+            "backend": "qlib-fallback",
+            "signals": [
+                {
+                    "symbol": "ETHUSDT",
+                    "side": "long",
+                    "score": "0.8300",
+                    "confidence": "0.8400",
+                    "target_weight": "0.2000",
+                    "generated_at": "2026-04-02T01:00:00+00:00",
+                }
+            ],
+            "candidates": {
+                "items": [
+                    {
+                        "rank": 1,
+                        "symbol": "ETHUSDT",
+                        "allowed_to_dry_run": True,
+                        "forced_for_validation": True,
+                        "forced_reason": "force_top_candidate_for_validation",
+                        "review_status": "forced_validation",
+                        "next_action": "enter_dry_run",
+                        "execution_priority": 0,
+                        "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
                     }
                 ]
             },

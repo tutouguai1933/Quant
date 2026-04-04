@@ -213,7 +213,7 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
         target_type="signal",
         target_id=int(latest["signal_id"]),
         payload={"strategy_id": strategy_id},
-        runner=lambda: risk_service.evaluate_signal(int(latest["signal_id"])),
+        runner=lambda: risk_service.evaluate_signal(int(latest["signal_id"]), strategy_context_id=strategy_id),
     )
     decision = risk_task.get("result")
     if risk_task["status"] != "succeeded" or decision["status"] == "block":
@@ -232,7 +232,7 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
         }
 
     try:
-        result = execution_service.dispatch_signal(int(latest["signal_id"]))
+        result = execution_service.dispatch_signal(int(latest["signal_id"]), strategy_context_id=strategy_id)
     except Exception as exc:
         signal_service.release_dispatch_claim(int(latest["signal_id"]))
         return {

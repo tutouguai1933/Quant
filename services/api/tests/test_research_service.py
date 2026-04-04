@@ -310,6 +310,58 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertFalse(recommendation["allowed_to_dry_run"])
         self.assertEqual(recommendation["next_action"], "continue_research")
 
+    def test_research_recommendation_exposes_forced_validation_candidate(self) -> None:
+        self._write_json(
+            self.runtime_root / "latest_training.json",
+            {
+                "run_id": "train-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T10:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "artifact_path": "/tmp/model.json",
+            },
+        )
+        self._write_json(
+            self.runtime_root / "latest_inference.json",
+            {
+                "run_id": "infer-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T11:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "signals": [{"symbol": "ETHUSDT", "signal": "long", "score": "0.8300"}],
+                "candidates": {
+                    "items": [
+                        {
+                            "rank": 1,
+                            "symbol": "ETHUSDT",
+                            "strategy_template": "trend_breakout_timing",
+                            "score": "0.8300",
+                            "backtest": {"metrics": {}},
+                            "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                            "allowed_to_dry_run": True,
+                            "forced_for_validation": True,
+                            "forced_reason": "force_top_candidate_for_validation",
+                            "review_status": "forced_validation",
+                            "next_action": "enter_dry_run",
+                            "execution_priority": 0,
+                        }
+                    ],
+                    "summary": {"candidate_count": 1, "ready_count": 1},
+                },
+            },
+        )
+
+        recommendation = self.service.get_research_recommendation()
+        report = self.service.get_factory_report()
+
+        self.assertIsNotNone(recommendation)
+        assert recommendation is not None
+        self.assertTrue(recommendation["allowed_to_dry_run"])
+        self.assertTrue(recommendation["forced_for_validation"])
+        self.assertEqual(recommendation["review_status"], "forced_validation")
+        self.assertTrue(report["overview"]["forced_validation"])
+        self.assertEqual(report["overview"]["forced_symbol"], "ETHUSDT")
+
     def test_signals_route_returns_unified_research_report(self) -> None:
         self.service.run_training()
         self.service.run_inference()

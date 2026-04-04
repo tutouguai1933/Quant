@@ -274,6 +274,35 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(item["next_action"], "enter_dry_run")
         self.assertEqual(item["execution_priority"], 0)
 
+    def test_rank_candidates_force_validation_promotes_only_top_candidate_when_all_blocked(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "score": "0.8600",
+                    "backtest": {"metrics": _failing_metrics()},
+                },
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7200",
+                    "backtest": {"metrics": _failing_metrics()},
+                },
+            ],
+            force_validation_top_candidate=True,
+        )
+
+        self.assertEqual(result["summary"]["candidate_count"], 2)
+        self.assertEqual(result["summary"]["ready_count"], 1)
+        self.assertTrue(result["items"][0]["allowed_to_dry_run"])
+        self.assertEqual(result["items"][0]["review_status"], "forced_validation")
+        self.assertEqual(result["items"][0]["next_action"], "enter_dry_run")
+        self.assertTrue(result["items"][0]["forced_for_validation"])
+        self.assertEqual(result["items"][0]["forced_reason"], "force_top_candidate_for_validation")
+        self.assertFalse(result["items"][1]["allowed_to_dry_run"])
+        self.assertFalse(result["items"][1]["forced_for_validation"])
+
 
 def _passing_metrics() -> dict[str, str]:
     return {

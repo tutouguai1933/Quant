@@ -246,6 +246,8 @@ class SignalService:
                 "candidate": candidate,
                 "dry_run_gate": dict(candidate.get("dry_run_gate") or {}),
                 "allowed_to_dry_run": bool(candidate.get("allowed_to_dry_run")),
+                "forced_for_validation": bool(candidate.get("forced_for_validation")),
+                "forced_reason": str(candidate.get("forced_reason", "")),
                 "review_status": str(candidate.get("review_status", "")),
                 "next_action": str(candidate.get("next_action", "")),
                 "execution_priority": candidate.get("execution_priority"),
@@ -342,6 +344,8 @@ class SignalService:
         if signal.source != SignalSource.QLIB:
             return True
         metadata = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
+        if bool(metadata.get("forced_for_validation")):
+            return True
         gate = dict(metadata.get("dry_run_gate") or {})
         if gate:
             return str(gate.get("status", "")).strip() == "passed"

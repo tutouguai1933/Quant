@@ -47,19 +47,20 @@ class RiskService:
         self._events: dict[int, RiskEventRecord] = {}
         self._next_event_id = 1
 
-    def evaluate_signal(self, signal_id: int) -> dict[str, object]:
+    def evaluate_signal(self, signal_id: int, strategy_context_id: int | None = None) -> dict[str, object]:
         signal = signal_service.get_signal(signal_id)
         if signal is None:
             raise ValueError(f"signal {signal_id} not found")
 
         strategy_id = signal.get("strategy_id")
-        strategy = sync_service.get_strategy(int(strategy_id)) if strategy_id is not None else None
+        effective_strategy_id = strategy_id if strategy_id is not None else strategy_context_id
+        strategy = sync_service.get_strategy(int(effective_strategy_id)) if effective_strategy_id is not None else None
 
-        decision = self._apply_rules(signal, strategy)
+        decision = self._apply_rules(signal, strategy, effective_strategy_id)
         if decision["status"] in {"warn", "block"}:
             self._record_event(
                 signal_id=signal_id,
-                strategy_id=strategy_id,
+                strategy_id=effective_strategy_id,
                 rule_name=str(decision["rule_name"]),
                 level=str(decision["level"]),
                 decision=str(decision["status"]),
@@ -86,15 +87,41 @@ class RiskService:
         self.global_pause = paused
         return {"global_pause": self.global_pause}
 
-    def _apply_rules(self, signal: dict[str, object], strategy: dict[str, object] | None) -> dict[str, object]:
+    def _apply_rules(
+        self,
+        signal: dict[str, object],
+        strategy: dict[str, object] | None,
+        strategy_context_id: int | None,
+    ) -> dict[str, object]:
         if self.global_pause:
-            return self._decision("block", "global pause is enabled", "global_pause_guard", "critical", signal)
+            return self._decision(
+                "block",
+                "global pause is enabled",
+                "global_pause_guard",
+                "critical",
+                signal,
+                strategy_context_id,
+            )
 
         if strategy is None:
-            return self._decision("block", "strategy not found", "strategy_exists_guard", "high", signal)
+            return self._decision(
+                "block",
+                "strategy not found",
+                "strategy_exists_guard",
+                "high",
+                signal,
+                strategy_context_id,
+            )
 
         if strategy["status"] != "running":
-            return self._decision("block", "strategy is not running", "strategy_status_guard", "high", signal)
+            return self._decision(
+                "block",
+                "strategy is not running",
+                "strategy_status_guard",
+                "high",
+                signal,
+                strategy_context_id,
+            )
 
         target_weight = Decimal(str(signal["target_weight"])).copy_abs()
         if target_weight > self.max_symbol_exposure:
@@ -104,6 +131,7 @@ class RiskService:
                 "max_symbol_exposure_guard",
                 "high",
                 signal,
+                strategy_context_id,
             )
 
         current_risk = Decimal(len(sync_service.list_positions(limit=100))) * Decimal("0.25")
@@ -115,6 +143,7 @@ class RiskService:
                 "account_total_risk_guard",
                 "high",
                 signal,
+                strategy_context_id,
             )
         if projected_risk > self.warn_total_risk_threshold:
             return self._decision(
@@ -123,8 +152,9 @@ class RiskService:
                 "account_total_risk_warn",
                 "medium",
                 signal,
+                strategy_context_id,
             )
-        return self._decision("allow", "risk checks passed", "default_allow", "low", signal)
+        return self._decision("allow", "risk checks passed", "default_allow", "low", signal, strategy_context_id)
 
     def _decision(
         self,
@@ -133,6 +163,7 @@ class RiskService:
         rule_name: str,
         level: str,
         signal: dict[str, object],
+        strategy_context_id: int | None = None,
     ) -> dict[str, object]:
         contract = RiskDecisionContract(
             status=RiskDecisionStatus(status),
@@ -141,7 +172,7 @@ class RiskService:
             evaluated_at=signal_service._parse_timestamp(str(signal["received_at"])),
             level=RiskLevel(level),
             source_signal_id=signal.get("signal_id"),
-            strategy_id=signal.get("strategy_id"),
+            strategy_id=signal.get("strategy_id") or strategy_context_id,
         )
         return contract.to_dict()
 
