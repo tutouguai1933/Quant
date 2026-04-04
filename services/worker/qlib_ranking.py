@@ -8,28 +8,43 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 
-def rank_candidates(items: list[dict[str, object]]) -> dict[str, object]:
+def rank_candidates(
+    items: list[dict[str, object]],
+    *,
+    validation: dict[str, object] | None = None,
+) -> dict[str, object]:
     """按分数输出统一候选排行。"""
 
     ranked = sorted(items, key=lambda item: _to_decimal(item.get("score")), reverse=True)
-    normalized = [_normalize_candidate(item, index=index) for index, item in enumerate(ranked, start=1)]
+    normalized = [
+        _normalize_candidate(item, index=index, validation=validation)
+        for index, item in enumerate(ranked, start=1)
+    ]
     return {
         "items": normalized,
         "summary": {
             "candidate_count": len(normalized),
             "ready_count": sum(1 for item in normalized if item["allowed_to_dry_run"]),
+            "blocked_count": sum(1 for item in normalized if not item["allowed_to_dry_run"]),
         },
     }
 
 
-def _normalize_candidate(item: dict[str, object], *, index: int) -> dict[str, object]:
+def _normalize_candidate(
+    item: dict[str, object],
+    *,
+    index: int,
+    validation: dict[str, object] | None,
+) -> dict[str, object]:
     """把单个候选统一成稳定结构。"""
 
     backtest = dict(item.get("backtest") or {})
     metrics = dict(backtest.get("metrics") or {})
     rule_gate = _normalize_rule_gate(item.get("rule_gate"))
+    research_validation_gate = _evaluate_validation_gate(validation)
     model_gate = _evaluate_dry_run_gate(metrics)
-    dry_run_gate = _merge_gates(rule_gate=rule_gate, model_gate=model_gate)
+    dry_run_gate = _merge_gates(rule_gate, research_validation_gate, model_gate)
+    allowed_to_dry_run = dry_run_gate["status"] == "passed"
     return {
         "rank": index,
         "symbol": str(item.get("symbol", "")).strip().upper(),
@@ -37,8 +52,12 @@ def _normalize_candidate(item: dict[str, object], *, index: int) -> dict[str, ob
         "score": _format_decimal(_to_decimal(item.get("score"))),
         "backtest": {"metrics": metrics},
         "rule_gate": rule_gate,
+        "research_validation_gate": research_validation_gate,
         "dry_run_gate": dry_run_gate,
-        "allowed_to_dry_run": dry_run_gate["status"] == "passed",
+        "allowed_to_dry_run": allowed_to_dry_run,
+        "review_status": "ready_for_dry_run" if allowed_to_dry_run else "needs_research_iteration",
+        "next_action": "enter_dry_run" if allowed_to_dry_run else "continue_research",
+        "execution_priority": 0 if allowed_to_dry_run else 100 + index,
     }
 
 
@@ -74,6 +93,30 @@ def _evaluate_dry_run_gate(metrics: dict[str, object]) -> dict[str, object]:
     return {"status": "passed", "reasons": []}
 
 
+def _evaluate_validation_gate(validation: dict[str, object] | None) -> dict[str, object]:
+    """根据训练阶段验证摘要判断研究结果是否足够稳定。"""
+
+    payload = dict(validation or {})
+    if not payload:
+        return {"status": "passed", "reasons": []}
+
+    sample_count = _to_int_or_none(payload.get("sample_count"))
+    positive_rate = _to_decimal(payload.get("positive_rate"))
+    avg_future_return_pct = _to_decimal(payload.get("avg_future_return_pct"))
+
+    failures: list[str] = []
+    if sample_count is None or sample_count < 12:
+        failures.append("validation_sample_count_too_low")
+    if positive_rate < Decimal("0.45"):
+        failures.append("validation_positive_rate_too_low")
+    if avg_future_return_pct < Decimal("-0.1"):
+        failures.append("validation_future_return_not_positive")
+
+    if failures:
+        return {"status": "failed", "reasons": failures}
+    return {"status": "passed", "reasons": []}
+
+
 def _normalize_rule_gate(value: object) -> dict[str, object]:
     """把规则门结果统一成稳定结构。"""
 
@@ -93,12 +136,14 @@ def _normalize_rule_gate(value: object) -> dict[str, object]:
     return {"status": "passed", "reasons": []}
 
 
-def _merge_gates(*, rule_gate: dict[str, object], model_gate: dict[str, object]) -> dict[str, object]:
+def _merge_gates(*gates: dict[str, object]) -> dict[str, object]:
     """把规则门和模型门合并成最终 dry-run 准入门。"""
 
-    if rule_gate.get("status") == "passed" and model_gate.get("status") == "passed":
+    if all(gate.get("status") == "passed" for gate in gates):
         return {"status": "passed", "reasons": []}
-    reasons = [*list(rule_gate.get("reasons") or []), *list(model_gate.get("reasons") or [])]
+    reasons: list[str] = []
+    for gate in gates:
+        reasons.extend(list(gate.get("reasons") or []))
     return {"status": "failed", "reasons": reasons}
 
 

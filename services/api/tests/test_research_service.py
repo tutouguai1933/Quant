@@ -103,8 +103,12 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("blocked_count", report["overview"])
         self.assertIn("pass_rate_pct", report["overview"])
         self.assertIn("top_candidate_symbol", report["overview"])
+        self.assertIn("recommended_symbol", report["overview"])
+        self.assertIn("recommended_action", report["overview"])
         self.assertEqual(report["experiments"]["training"]["status"], "completed")
         self.assertEqual(report["experiments"]["inference"]["status"], "completed")
+        self.assertIn("leaderboard", report)
+        self.assertIn("screening", report)
 
     def test_research_service_report_uses_worker_experiment_builder(self) -> None:
         self.service.run_training()
@@ -117,6 +121,8 @@ class ResearchServiceTests(unittest.TestCase):
                 "latest_training": {"model_version": "patched-model"},
                 "latest_inference": {"run_id": "infer-patched"},
                 "candidates": [{"symbol": "BTCUSDT", "allowed_to_dry_run": True}],
+                "leaderboard": [{"symbol": "BTCUSDT", "next_action": "enter_dry_run"}],
+                "screening": {"blocked_reason_counts": {"drawdown_too_large": 1}},
                 "experiments": {
                     "training": {"status": "completed", "model_version": "patched-model"},
                     "inference": {"status": "completed", "model_version": "patched-model"},
@@ -129,6 +135,7 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(report["overview"]["candidate_count"], 7)
         self.assertEqual(report["latest_training"]["model_version"], "patched-model")
         self.assertEqual(report["candidates"][0]["symbol"], "BTCUSDT")
+        self.assertEqual(report["leaderboard"][0]["symbol"], "BTCUSDT")
 
     def test_research_service_prepares_both_1h_and_4h_samples_for_runner(self) -> None:
         self.service.run_training()
@@ -253,6 +260,53 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["summary"]["ready_count"], 1)
         self.assertEqual(report["overview"]["candidate_count"], 2)
         self.assertEqual(report["overview"]["ready_count"], 1)
+
+    def test_research_recommendation_falls_back_to_continue_research_when_no_ready_candidate(self) -> None:
+        self._write_json(
+            self.runtime_root / "latest_training.json",
+            {
+                "run_id": "train-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T10:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "artifact_path": "/tmp/model.json",
+            },
+        )
+        self._write_json(
+            self.runtime_root / "latest_inference.json",
+            {
+                "run_id": "infer-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T11:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "signals": [{"symbol": "BTCUSDT", "signal": "long", "score": "0.7300"}],
+                "candidates": {
+                    "items": [
+                        {
+                            "rank": 1,
+                            "symbol": "BTCUSDT",
+                            "strategy_template": "trend_breakout_timing",
+                            "score": "0.7300",
+                            "backtest": {"metrics": {}},
+                            "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                            "allowed_to_dry_run": False,
+                            "review_status": "needs_research_iteration",
+                            "next_action": "continue_research",
+                            "execution_priority": 100,
+                        }
+                    ],
+                    "summary": {"candidate_count": 1, "ready_count": 0},
+                },
+            },
+        )
+
+        recommendation = self.service.get_research_recommendation()
+
+        self.assertIsNotNone(recommendation)
+        assert recommendation is not None
+        self.assertEqual(recommendation["symbol"], "BTCUSDT")
+        self.assertFalse(recommendation["allowed_to_dry_run"])
+        self.assertEqual(recommendation["next_action"], "continue_research")
 
     def test_signals_route_returns_unified_research_report(self) -> None:
         self.service.run_training()

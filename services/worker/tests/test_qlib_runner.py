@@ -256,6 +256,8 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertIn("experiment_report", result)
         self.assertEqual(result["experiment_report"]["overview"]["signal_count"], len(result["signals"]))
         self.assertEqual(result["experiment_report"]["overview"]["candidate_count"], len(result["candidates"]["items"]))
+        self.assertIn("leaderboard", result["experiment_report"])
+        self.assertIn("screening", result["experiment_report"])
 
     def test_inference_builds_candidate_level_dry_run_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -268,17 +270,44 @@ class QlibRunnerTests(unittest.TestCase):
             runner = QlibRunner(config=config)
             runner.train(
                 dataset={
-                    "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
-                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=120),
+                    "BTCUSDT": _sample_timing_candles(step_hours=4, count=160),
+                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=160),
                 }
             )
-
-            result = runner.infer(
-                dataset={
-                    "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
-                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=120),
-                }
-            )
+            with mock.patch.object(
+                runner,
+                "_build_candidate_backtest",
+                side_effect=[
+                    {
+                        "metrics": {
+                            "total_return_pct": "14.20",
+                            "max_drawdown_pct": "-5.10",
+                            "sharpe": "1.10",
+                            "win_rate": "0.58",
+                            "turnover": "0.24",
+                            "sample_count": "26",
+                            "max_loss_streak": "1",
+                        }
+                    },
+                    {
+                        "metrics": {
+                            "total_return_pct": "-4.20",
+                            "max_drawdown_pct": "-18.10",
+                            "sharpe": "0.10",
+                            "win_rate": "0.41",
+                            "turnover": "0.74",
+                            "sample_count": "26",
+                            "max_loss_streak": "5",
+                        }
+                    },
+                ],
+            ):
+                result = runner.infer(
+                    dataset={
+                        "BTCUSDT": _sample_timing_candles(step_hours=4, count=160),
+                        "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=160),
+                    }
+                )
 
         candidates = {item["symbol"]: item for item in result["candidates"]["items"]}
         self.assertTrue(candidates["BTCUSDT"]["allowed_to_dry_run"])
@@ -314,6 +343,37 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertFalse(candidate["allowed_to_dry_run"])
         self.assertEqual(candidate["rule_gate"]["status"], "failed")
         self.assertEqual(candidate["rule_gate"]["reasons"], ["trend_broken"])
+
+    def test_inference_applies_training_validation_gate_before_candidate_can_enter_dry_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            dataset = {
+                "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
+                "ETHUSDT": _sample_negative_timing_candles(step_hours=4, count=120),
+            }
+            runner.train(dataset=dataset)
+            latest_training_path = runtime_root / "latest_training.json"
+            training_payload = runner._read_json(latest_training_path)
+            assert training_payload is not None
+            training_payload["validation"] = {
+                "sample_count": 10,
+                "positive_rate": "0.42",
+                "avg_future_return_pct": "-0.20",
+            }
+            latest_training_path.write_text(__import__("json").dumps(training_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            result = runner.infer(dataset=dataset)
+
+        candidate = result["candidates"]["items"][0]
+        self.assertEqual(candidate["research_validation_gate"]["status"], "failed")
+        self.assertEqual(candidate["next_action"], "continue_research")
+        self.assertFalse(candidate["allowed_to_dry_run"])
 
     def test_training_skips_dirty_candles_without_label_misalignment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

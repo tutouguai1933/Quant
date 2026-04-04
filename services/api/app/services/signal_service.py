@@ -223,6 +223,9 @@ class SignalService:
                 "candidate": candidate,
                 "dry_run_gate": dict(candidate.get("dry_run_gate") or {}),
                 "allowed_to_dry_run": bool(candidate.get("allowed_to_dry_run")),
+                "review_status": str(candidate.get("review_status", "")),
+                "next_action": str(candidate.get("next_action", "")),
+                "execution_priority": candidate.get("execution_priority"),
                 "recommended_for_execution": normalized_symbol == recommended_symbol,
             }
             signal_count += 1
@@ -327,19 +330,28 @@ class SignalService:
         metadata = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
         candidate = dict(metadata.get("candidate") or {})
         recommended = 0 if bool(metadata.get("recommended_for_execution")) else 1
+        execution_priority = self._parse_rank(metadata.get("execution_priority"))
         rank = self._parse_rank(candidate.get("rank"))
-        return recommended, rank, -(signal.signal_id or 0)
+        return recommended, execution_priority, rank, -(signal.signal_id or 0)
 
     @staticmethod
     def _resolve_recommended_symbol(candidate_items: list[dict[str, object]]) -> str:
         """从研究候选里挑出当前优先进入执行链的币种。"""
 
-        ready_items = [item for item in candidate_items if bool(item.get("allowed_to_dry_run"))]
+        ready_items = [
+            item
+            for item in candidate_items
+            if bool(item.get("allowed_to_dry_run")) and str(item.get("next_action", "") or "enter_dry_run") == "enter_dry_run"
+        ]
         if not ready_items:
             return ""
         chosen = sorted(
             ready_items,
-            key=lambda item: (SignalService._parse_rank(item.get("rank")), str(item.get("symbol", ""))),
+            key=lambda item: (
+                SignalService._parse_rank(item.get("execution_priority")),
+                SignalService._parse_rank(item.get("rank")),
+                str(item.get("symbol", "")),
+            ),
         )[0]
         return str(chosen.get("symbol", "")).strip().upper()
 

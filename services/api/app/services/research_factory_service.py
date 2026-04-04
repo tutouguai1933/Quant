@@ -70,10 +70,14 @@ class ResearchFactoryService:
                 "signal_count": int(overview.get("signal_count", 0) or 0),
                 "top_candidate_symbol": str(overview.get("top_candidate_symbol", "")),
                 "top_candidate_score": str(overview.get("top_candidate_score", "")),
+                "recommended_symbol": str(overview.get("recommended_symbol", "")),
+                "recommended_action": str(overview.get("recommended_action", "")),
             },
             "latest_training": dict(report.get("latest_training") or {}),
             "latest_inference": dict(report.get("latest_inference") or {}),
             "candidates": list(report.get("candidates") or []),
+            "leaderboard": list(report.get("leaderboard") or []),
+            "screening": dict(report.get("screening") or {}),
             "experiments": dict(report.get("experiments") or {}),
         }
 

@@ -133,6 +133,11 @@ class QlibRunner:
                 }
             )
 
+        ranked_candidates = rank_candidates(
+            candidates,
+            validation=dict(training_payload.get("validation") or {}),
+        )
+
         result = {
             "run_id": self._new_run_id("infer"),
             "status": "completed",
@@ -147,7 +152,7 @@ class QlibRunner:
                 "flat_count": sum(1 for item in signals if item["signal"] == "flat"),
                 "short_count": sum(1 for item in signals if item["signal"] == "short"),
             },
-            "candidates": rank_candidates(candidates),
+            "candidates": ranked_candidates,
             "warnings": self._build_warnings(),
         }
         result["experiment_report"] = build_experiment_report(

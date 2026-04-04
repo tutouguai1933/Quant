@@ -122,21 +122,25 @@ class ResearchService:
     def get_research_recommendation(self) -> dict[str, object] | None:
         """返回当前最值得继续进入执行链的研究候选。"""
 
-        from services.api.app.services.research_factory_service import ResearchFactoryService
-
-        snapshot = ResearchFactoryService(result_provider=self.get_latest_result).build_snapshot()
-        candidates = list(snapshot.get("candidates") or [])
-        ready_items = [item for item in candidates if bool(item.get("allowed_to_dry_run"))]
-        if not ready_items:
+        report = self.get_factory_report()
+        candidates = list(report.get("candidates") or [])
+        if not candidates:
             return None
-        recommendation = sorted(ready_items, key=_candidate_sort_key)[0]
+        ready_items = [item for item in candidates if bool(item.get("allowed_to_dry_run"))]
+        source_items = ready_items or candidates
+        recommendation = sorted(source_items, key=_candidate_sort_key)[0]
+        dry_run_gate = dict(recommendation.get("dry_run_gate") or {})
         return {
             "symbol": str(recommendation.get("symbol", "")),
             "score": str(recommendation.get("score", "")),
-            "allowed_to_dry_run": True,
+            "allowed_to_dry_run": bool(recommendation.get("allowed_to_dry_run")),
             "strategy_template": str(recommendation.get("strategy_template", "")),
-            "dry_run_gate": dict(recommendation.get("dry_run_gate") or {}),
-            "next_action": "enter_dry_run",
+            "dry_run_gate": dry_run_gate,
+            "next_action": str(recommendation.get("next_action", "")) or str(report.get("overview", {}).get("recommended_action", "")),
+            "review_status": str(recommendation.get("review_status", "")),
+            "execution_priority": int(recommendation.get("execution_priority", 999999) or 999999),
+            "failure_reasons": list(dry_run_gate.get("reasons") or []),
+            "recommended_for_execution": bool(recommendation.get("allowed_to_dry_run")),
         }
 
     def _prepare_dataset(self) -> dict[str, dict[str, list[dict[str, object]]]]:
@@ -210,9 +214,14 @@ research_service = ResearchService()
 def _candidate_sort_key(item: dict[str, object]) -> tuple[int, str]:
     """把推荐候选按 rank 和 symbol 做稳定排序。"""
 
+    execution_priority = item.get("execution_priority")
+    try:
+        parsed_priority = int(execution_priority)
+    except (TypeError, ValueError):
+        parsed_priority = 999999
     rank = item.get("rank")
     try:
         parsed_rank = int(rank)
     except (TypeError, ValueError):
         parsed_rank = 999999
-    return parsed_rank, str(item.get("symbol", ""))
+    return parsed_priority, parsed_rank, str(item.get("symbol", ""))

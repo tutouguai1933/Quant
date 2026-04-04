@@ -22,6 +22,11 @@ def build_experiment_report(
     ready_count = sum(1 for item in candidate_items if bool(item.get("allowed_to_dry_run")))
     blocked_count = max(len(candidate_items) - ready_count, 0)
     top_candidate = candidate_items[0] if candidate_items else {}
+    recommended = _resolve_recommendation(
+        candidate_items=candidate_items,
+        latest_training=latest_training_payload,
+        latest_inference=latest_inference_payload,
+    )
     overview = {
         "candidate_count": len(candidate_items),
         "ready_count": ready_count,
@@ -30,12 +35,16 @@ def build_experiment_report(
         "signal_count": max(len(list(latest_inference_payload.get("signals") or [])), _parse_int(inference_summary.get("signal_count"))),
         "top_candidate_symbol": str(top_candidate.get("symbol", "")),
         "top_candidate_score": str(top_candidate.get("score", "")),
+        "recommended_symbol": str(recommended.get("symbol", "")),
+        "recommended_action": str(recommended.get("next_action", "")),
     }
     return {
         "overview": overview,
         "latest_training": latest_training_payload,
         "latest_inference": latest_inference_payload,
         "candidates": candidate_items,
+        "leaderboard": _build_leaderboard(candidate_items),
+        "screening": _build_screening_summary(candidate_items),
         "experiments": {
             "training": _build_experiment_entry(latest_training_payload),
             "inference": _build_experiment_entry(latest_inference_payload),
@@ -81,6 +90,85 @@ def _parse_int(value: object) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _build_leaderboard(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    """把候选压成更适合页面和报告展示的排行榜。"""
+
+    leaderboard: list[dict[str, object]] = []
+    for item in items:
+        leaderboard.append(
+            {
+                "rank": _parse_int(item.get("rank")),
+                "symbol": str(item.get("symbol", "")),
+                "score": str(item.get("score", "")),
+                "strategy_template": str(item.get("strategy_template", "")),
+                "allowed_to_dry_run": bool(item.get("allowed_to_dry_run")),
+                "review_status": str(item.get("review_status", "")),
+                "next_action": str(item.get("next_action", ""))
+                or ("enter_dry_run" if bool(item.get("allowed_to_dry_run")) else "continue_research"),
+                "execution_priority": _parse_int(item.get("execution_priority")),
+                "failure_reasons": list(dict(item.get("dry_run_gate") or {}).get("reasons") or []),
+                "backtest": _build_backtest_snapshot(item.get("backtest")),
+            }
+        )
+    return leaderboard
+
+
+def _build_screening_summary(items: list[dict[str, object]]) -> dict[str, object]:
+    """汇总候选的失败原因和通过名单。"""
+
+    blocked_reason_counts: dict[str, int] = {}
+    ready_symbols: list[str] = []
+    blocked_symbols: list[str] = []
+    for item in items:
+        symbol = str(item.get("symbol", ""))
+        reasons = [str(reason) for reason in list(dict(item.get("dry_run_gate") or {}).get("reasons") or [])]
+        if bool(item.get("allowed_to_dry_run")):
+            ready_symbols.append(symbol)
+            continue
+        blocked_symbols.append(symbol)
+        for reason in reasons:
+            blocked_reason_counts[reason] = blocked_reason_counts.get(reason, 0) + 1
+    return {
+        "ready_symbols": ready_symbols,
+        "blocked_symbols": blocked_symbols,
+        "blocked_reason_counts": blocked_reason_counts,
+    }
+
+
+def _resolve_recommendation(
+    *,
+    candidate_items: list[dict[str, object]],
+    latest_training: dict[str, object],
+    latest_inference: dict[str, object],
+) -> dict[str, object]:
+    """统一给出当前研究流程的下一步。"""
+
+    ready_items = [item for item in candidate_items if bool(item.get("allowed_to_dry_run"))]
+    if ready_items:
+        chosen = dict(sorted(ready_items, key=_recommendation_sort_key)[0])
+        chosen.setdefault("next_action", "enter_dry_run")
+        return chosen
+    if candidate_items:
+        fallback = dict(sorted(candidate_items, key=_recommendation_sort_key)[0])
+        fallback.setdefault("next_action", "continue_research")
+        return fallback
+    if latest_training and not latest_inference:
+        return {"symbol": "", "next_action": "run_inference"}
+    if latest_training:
+        return {"symbol": "", "next_action": "continue_research"}
+    return {"symbol": "", "next_action": "run_training"}
+
+
+def _recommendation_sort_key(item: dict[str, object]) -> tuple[int, int, str]:
+    """按执行优先级、候选 rank 和 symbol 选推荐项。"""
+
+    return (
+        _parse_int(item.get("execution_priority")) or 0,
+        _parse_int(item.get("rank")) or 0,
+        str(item.get("symbol", "")),
+    )
 
 
 def _format_ratio(part: int, whole: int) -> str:

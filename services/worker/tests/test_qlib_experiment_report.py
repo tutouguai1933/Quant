@@ -73,6 +73,11 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["overview"]["top_candidate_symbol"], "BTCUSDT")
         self.assertEqual(report["overview"]["top_candidate_score"], "0.8123")
         self.assertEqual(report["experiments"]["training"]["backtest"]["sharpe"], "1.22")
+        self.assertEqual(report["overview"]["recommended_symbol"], "BTCUSDT")
+        self.assertEqual(report["overview"]["recommended_action"], "enter_dry_run")
+        self.assertEqual(report["leaderboard"][0]["symbol"], "BTCUSDT")
+        self.assertEqual(report["leaderboard"][1]["next_action"], "continue_research")
+        self.assertEqual(report["screening"]["blocked_reason_counts"]["drawdown_too_large"], 1)
 
 
 if __name__ == "__main__":

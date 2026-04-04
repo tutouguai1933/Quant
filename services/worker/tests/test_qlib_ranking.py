@@ -182,6 +182,52 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["rule_gate"]["reasons"], ["trend_broken"])
         self.assertIn("trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
 
+    def test_rank_candidates_blocks_dry_run_when_validation_summary_is_weak(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            validation={
+                "sample_count": 12,
+                "positive_rate": "0.41",
+                "avg_future_return_pct": "-0.30",
+            },
+        )
+
+        self.assertEqual(result["items"][0]["research_validation_gate"]["status"], "failed")
+        self.assertIn("validation_positive_rate_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertIn("validation_future_return_not_positive", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+        self.assertEqual(result["items"][0]["review_status"], "needs_research_iteration")
+        self.assertEqual(result["items"][0]["next_action"], "continue_research")
+
+    def test_rank_candidates_marks_ready_candidate_with_execution_priority(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "score": "0.8200",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            validation={
+                "sample_count": 16,
+                "positive_rate": "0.56",
+                "avg_future_return_pct": "1.10",
+            },
+        )
+
+        item = result["items"][0]
+        self.assertEqual(item["review_status"], "ready_for_dry_run")
+        self.assertEqual(item["next_action"], "enter_dry_run")
+        self.assertEqual(item["execution_priority"], 0)
+
 
 def _passing_metrics() -> dict[str, str]:
     return {
