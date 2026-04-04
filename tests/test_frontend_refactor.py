@@ -156,6 +156,13 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("最大回撤", content)
         self.assertIn("Sharpe", content)
 
+    def test_status_badge_compresses_long_internal_status_labels(self) -> None:
+        content = (WEB_COMPONENTS / "status-badge.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("supportive_but_not_triggering", content)
+        self.assertIn("支持但未触发", content)
+        self.assertIn("replaceAll(\"_\", \" \")", content)
+
 
 if __name__ == "__main__":
     unittest.main()

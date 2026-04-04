@@ -86,6 +86,7 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("是否允许进入 dry-run", page_content)
         self.assertIn("下一步动作", page_content)
         self.assertIn("返回信号页继续研究", page_content)
+        self.assertIn('<section className="space-y-6">', page_content)
 
     def test_symbol_page_uses_client_trading_workspace_and_not_static_svg_main_chart(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
@@ -131,6 +132,7 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn('style={{ width: "100%"', content)
         self.assertIn("本地主图", content)
         self.assertIn("交互增强", content)
+        self.assertIn("lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]", content)
 
     def test_trading_chart_panel_matches_signal_by_time_and_ignores_bad_prices(self) -> None:
         content = (WEB_COMPONENTS / "trading-chart-panel.tsx").read_text(encoding="utf-8")
@@ -140,6 +142,13 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("number | null", content)
         self.assertIn("return null", content)
         self.assertIn(".filter((price): price is number => price !== null)", content)
+
+    def test_symbol_workspace_keeps_chart_first_and_details_below(self) -> None:
+        content = (WEB_COMPONENTS / "market-symbol-workspace.tsx").read_text(encoding="utf-8")
+
+        self.assertIn('<section className="space-y-5">', content)
+        self.assertIn('lg:grid-cols-[minmax(0,1.2fr)_360px]', content)
+        self.assertIn("ResearchSidecard", content)
 
     def test_market_api_handles_non_array_items(self) -> None:
         content = (WEB_LIB / "api.ts").read_text(encoding="utf-8")

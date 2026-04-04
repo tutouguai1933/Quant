@@ -76,12 +76,10 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
         }
       />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.18fr)_minmax(380px,0.92fr)]">
-        <div className="space-y-6">
-          <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} />
-        </div>
+      <section className="space-y-6">
+        <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} />
 
-        <div className="space-y-6">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
           <ResearchCandidateBoard
             title="研究候选"
             summary={{

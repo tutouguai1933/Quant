@@ -94,7 +94,7 @@ export function TradingChartPanel({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="grid gap-4 lg:grid-cols-[120px_minmax(0,1fr)_120px] lg:items-start">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <TimeframeTabs
             symbol={symbol}
             activeInterval={interval}
@@ -103,60 +103,6 @@ export function TradingChartPanel({
             pendingInterval={pendingInterval}
             align="left"
           />
-
-          <div className="min-w-0 space-y-4">
-            <section className="rounded-2xl border border-border/60 bg-background/70 p-3">
-              <div className="mb-3 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/60 bg-card/80 px-4 py-3">
-                <div>
-                  <p className="eyebrow">本地主图</p>
-                  <h3 className="text-lg font-semibold text-foreground">先看稳定可见的 K 线、入场位和止损位</h3>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    这块主图完全基于当前接口数据生成，不依赖额外脚本，保证打开页面就能先看清趋势和关键价格。
-                  </p>
-                </div>
-                <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
-                  <ChartStat label="当前周期" value={interval} />
-                  <ChartStat label="当前价格" value={currentPrice} />
-                  <ChartStat label="最近图表点" value={latestSignal} />
-                  <ChartStat label="入场" value={formatLatestMarkerPrice(markers.entries)} />
-                  <ChartStat label="止损" value={formatLatestMarkerPrice(markers.stops)} />
-                </div>
-              </div>
-              {renderFallbackChart(symbol, interval, normalizedItems, markers)}
-            </section>
-
-            <section className="rounded-2xl border border-border/60 bg-card/70 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="eyebrow">交互增强</p>
-                  <h3 className="text-lg font-semibold text-foreground">放大查看、拖拽缩放和十字光标</h3>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    这块是增强层。它能提供更细的查看体验，但不应该决定你能不能看见 K 线。
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
-                  {runtimeReady && normalizedItems.length ? "交互增强已连接" : "交互增强暂未连接"}
-                </div>
-              </div>
-              <div className="mt-4 min-w-0 rounded-2xl border border-border/60 bg-background/70 p-3">
-                {runtimeReady && normalizedItems.length ? (
-                  <ProKlineChart
-                    symbol={symbol}
-                    interval={interval}
-                    items={normalizedItems}
-                    markers={markers}
-                    overlays={overlays}
-                    runtimeReady={runtimeReady}
-                  />
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border/60 bg-card/70 px-5 py-8 text-sm leading-6 text-muted-foreground">
-                    当前页面已经显示了完整本地主图。交互增强层如果没有连上，多半是外部图表脚本暂时不可用，不影响你继续查看趋势、信号点和关键价位。
-                  </div>
-                )}
-              </div>
-            </section>
-          </div>
-
           <TimeframeTabs
             symbol={symbol}
             activeInterval={interval}
@@ -165,6 +111,59 @@ export function TradingChartPanel({
             pendingInterval={pendingInterval}
             align="right"
           />
+        </section>
+
+        <div className="space-y-4">
+          <section className="rounded-2xl border border-border/60 bg-background/70 p-3">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/60 bg-card/80 px-4 py-3">
+              <div>
+                <p className="eyebrow">本地主图</p>
+                <h3 className="text-lg font-semibold text-foreground">先看稳定可见的 K 线、入场位和止损位</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  这块主图完全基于当前接口数据生成，不依赖额外脚本，保证打开页面就能先看清趋势和关键价格。
+                </p>
+              </div>
+              <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-5">
+                <ChartStat label="当前周期" value={interval} />
+                <ChartStat label="当前价格" value={currentPrice} />
+                <ChartStat label="最近图表点" value={latestSignal} />
+                <ChartStat label="入场" value={formatLatestMarkerPrice(markers.entries)} />
+                <ChartStat label="止损" value={formatLatestMarkerPrice(markers.stops)} />
+              </div>
+            </div>
+            {renderFallbackChart(symbol, interval, normalizedItems, markers)}
+          </section>
+
+          <section className="rounded-2xl border border-border/60 bg-card/70 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="eyebrow">交互增强</p>
+                <h3 className="text-lg font-semibold text-foreground">放大查看、拖拽缩放和十字光标</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  这块是增强层。它能提供更细的查看体验，但不应该决定你能不能看见 K 线。
+                </p>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
+                {runtimeReady && normalizedItems.length ? "交互增强已连接" : "交互增强暂未连接"}
+              </div>
+            </div>
+            <div className="mt-4 min-w-0 rounded-2xl border border-border/60 bg-background/70 p-3">
+              {runtimeReady && normalizedItems.length ? (
+                <ProKlineChart
+                  symbol={symbol}
+                  interval={interval}
+                  items={normalizedItems}
+                  markers={markers}
+                  overlays={overlays}
+                  runtimeReady={runtimeReady}
+                />
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/60 bg-card/70 px-5 py-8 text-sm leading-6 text-muted-foreground">
+                  当前页面已经显示了完整本地主图。交互增强层如果没有连上，多半是外部图表脚本暂时不可用，不影响你继续查看趋势、信号点和关键价位。
+                </div>
+              )}
+            </div>
+          </section>
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
