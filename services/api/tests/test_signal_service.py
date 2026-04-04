@@ -162,6 +162,18 @@ class SignalServiceTests(unittest.TestCase):
 
         self.assertIsNone(claimed)
 
+    def test_executor_strategy_does_not_fall_back_to_mock_when_pending_qlib_candidates_are_blocked(self) -> None:
+        self.service.run_pipeline("mock")
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _BlockedResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(1)
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        self.assertIsNone(claimed)
+
     def test_executor_strategy_prefers_ready_research_recommendation(self) -> None:
         original_research_service = signal_service_module.research_service
         signal_service_module.research_service = _MultiCandidateResearchService()

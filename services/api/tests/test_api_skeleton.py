@@ -5,6 +5,8 @@ import threading
 import unittest
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
@@ -258,6 +260,18 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("item", review["data"])
         self.assertIn("overview", report["data"]["item"])
         self.assertIn("task_health", report["data"]["item"])
+
+    def test_validation_review_http_route_is_not_shadowed_by_task_id_route(self) -> None:
+        token = self._login_token()
+        run_review_task(token=token)
+        client = TestClient(app)
+
+        response = client.get("/api/v1/tasks/validation-review", headers={"Authorization": f"Bearer {token}"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIsNone(payload["error"])
+        self.assertIn("overview", payload["data"]["item"])
 
     def test_research_report_route_stays_unavailable_without_results(self) -> None:
         original_research_service = signals_route.research_service

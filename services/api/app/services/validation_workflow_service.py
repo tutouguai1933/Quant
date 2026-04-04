@@ -24,15 +24,16 @@ class ValidationWorkflowService:
         """返回固定验证工作流复盘。"""
 
         research_report = self._research_reader.get_factory_report()
-        recent_tasks = self._scheduler.list_tasks(limit=limit)
+        raw_recent_tasks = self._scheduler.list_tasks(limit=limit)
         task_health = self._scheduler.get_health_summary()
         execution_health = self._sync_reader.get_execution_health_summary(task_health=task_health)
         account_snapshot = self._build_account_snapshot(limit=limit)
         steps = self._build_steps(
             research_report=research_report,
-            recent_tasks=recent_tasks,
+            recent_tasks=raw_recent_tasks,
             execution_health=execution_health,
         )
+        recent_tasks = self._serialize_recent_tasks(raw_recent_tasks)
         return {
             "overview": {
                 "recommended_symbol": str(research_report.get("overview", {}).get("recommended_symbol", "")),
@@ -95,11 +96,40 @@ class ValidationWorkflowService:
             self._step("dry_run", latest_sync_status if runtime_mode != "live" else "waiting", "dry-run 验证"),
             self._step("live", latest_sync_status if runtime_mode == "live" else "waiting", "小额 live 验证"),
             self._step(
-                "review",
+            "review",
                 str(last_review.get("status", "waiting")) if last_review else "waiting",
                 "统一复盘",
             ),
         ]
+
+    @staticmethod
+    def _serialize_recent_tasks(items: list[dict[str, object]]) -> list[dict[str, object]]:
+        """裁剪任务列表，避免把大结果和自引用直接塞进复盘报告。"""
+
+        serialized: list[dict[str, object]] = []
+        for item in items:
+            payload = dict(item.get("payload") or {})
+            result = item.get("result")
+            result_summary = ""
+            if isinstance(result, dict):
+                result_summary = str(result.get("status") or result.get("detail") or "")
+            serialized.append(
+                {
+                    "id": item.get("id"),
+                    "task_type": item.get("task_type"),
+                    "source": item.get("source"),
+                    "status": item.get("status"),
+                    "target_type": item.get("target_type"),
+                    "target_id": item.get("target_id"),
+                    "requested_at": item.get("requested_at"),
+                    "started_at": item.get("started_at"),
+                    "finished_at": item.get("finished_at"),
+                    "error_message": item.get("error_message"),
+                    "payload": payload,
+                    "result_summary": result_summary,
+                }
+            )
+        return serialized
 
     @staticmethod
     def _latest_task(items: list[dict[str, object]], task_type: str) -> dict[str, Any] | None:

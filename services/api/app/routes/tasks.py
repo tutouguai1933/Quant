@@ -55,16 +55,6 @@ def list_tasks(limit: int = 100, token: str = "", authorization: str = Header(""
     return _success({"items": items}, {"limit": limit, "source": "task-scheduler"})
 
 
-@router.get("/{task_id}")
-def get_task(task_id: int, token: str = "", authorization: str = Header("")) -> dict:
-    try:
-        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
-    except PermissionError:
-        return _unauthorized()
-    item = task_scheduler.get_task(task_id)
-    return _success({"item": item}, {"task_id": task_id, "source": "task-scheduler"})
-
-
 @router.post("/train")
 def run_train_task(
     source: str = "user",
@@ -180,3 +170,13 @@ def retry_task(task_id: int, clear_failure: bool = True, token: str = "", author
         return _unauthorized()
     item = task_scheduler.retry_task(task_id, clear_failure=clear_failure)
     return _success({"item": item}, {"task_id": task_id, "source": "task-scheduler", "action": "retry"})
+
+
+@router.get("/{task_id}")
+def get_task(task_id: int, token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = task_scheduler.get_task(task_id)
+    return _success({"item": item}, {"task_id": task_id, "source": "task-scheduler"})

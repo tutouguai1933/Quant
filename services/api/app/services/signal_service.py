@@ -89,8 +89,11 @@ class SignalService:
         dispatchable_statuses = {SignalStatus.RECEIVED.value, SignalStatus.ACCEPTED.value}
         with self._dispatch_lock:
             ordered_signals = sorted(self._signals.values(), key=lambda item: item.signal_id or 0, reverse=True)
+            latest_pending_qlib_signal_id = self._latest_pending_qlib_signal_id(ordered_signals, dispatchable_statuses)
             for signal in ordered_signals:
                 signal_id = signal.signal_id or 0
+                if signal.source != SignalSource.QLIB and 0 < signal_id < latest_pending_qlib_signal_id:
+                    continue
                 if signal.strategy_id != strategy_id:
                     continue
                 if signal.status not in dispatchable_statuses:
@@ -108,6 +111,8 @@ class SignalService:
             generic_candidates: list[SignalContract] = []
             for signal in ordered_signals:
                 signal_id = signal.signal_id or 0
+                if signal.source != SignalSource.QLIB and 0 < signal_id < latest_pending_qlib_signal_id:
+                    continue
                 if signal.strategy_id is not None:
                     continue
                 if str(signal.side) == SignalSide.FLAT.value:
@@ -125,6 +130,24 @@ class SignalService:
                 self._dispatch_claims.add(chosen_id)
                 return self._serialize_signal(chosen)
         return None
+
+    def _latest_pending_qlib_signal_id(
+        self,
+        ordered_signals: list[SignalContract],
+        dispatchable_statuses: set[str],
+    ) -> int:
+        """返回当前待处理研究信号里的最新编号。"""
+
+        for signal in ordered_signals:
+            signal_id = signal.signal_id or 0
+            if signal.source != SignalSource.QLIB:
+                continue
+            if signal.status not in dispatchable_statuses:
+                continue
+            if signal_id in self._dispatch_claims:
+                continue
+            return signal_id
+        return 0
 
     def release_dispatch_claim(self, signal_id: int) -> None:
         """释放派发认领，允许后续状态继续推进。"""
