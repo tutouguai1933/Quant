@@ -20,6 +20,7 @@
 - 只接 `Binance`
 - 只接 `Freqtrade`
 - 执行模式当前仍以 `dry-run` 为主
+- 下一阶段会按“先自动运维、再自动 `dry-run`、最后小额自动 `live`”推进自动化
 
 ## 现在已经做到哪里
 
@@ -507,6 +508,8 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] Qlib 数据快照与实验账本
 - [x] Qlib 带成本的最小回测
 - [x] Qlib 统一复盘接口与执行健康摘要
+- [x] 自动化运维与自动买卖设计文档
+- [x] 自动化运维与自动买卖实现计划
 - [x] 前端终端化设计基线（决策优先 + 双栏交易研究终端）
 - [x] 首页 / 信号页 / 策略页第一批终端化重构
 
@@ -561,6 +564,8 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [2026-04-02-qlib-trading-view-flow-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-02-qlib-trading-view-flow-design.md)
 - [2026-04-04-decision-first-terminal-ui-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-04-decision-first-terminal-ui-design.md)
 - [2026-04-04-decision-first-terminal-ui-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-decision-first-terminal-ui-implementation.md)
+- [2026-04-04-automation-ops-and-auto-trading-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-04-automation-ops-and-auto-trading-design.md)
+- [2026-04-04-automation-ops-and-auto-trading-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-automation-ops-and-auto-trading-implementation.md)
 - [2026-04-02-qlib-trading-view-flow-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-trading-view-flow-implementation.md)
 - [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
 - [ops-freqtrade.md](/home/djy/Quant/docs/ops-freqtrade.md)

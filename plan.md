@@ -179,6 +179,8 @@
 - [x] Qlib 数据快照与实验账本
 - [x] Qlib 带成本的最小回测
 - [x] Qlib 统一复盘接口与执行健康摘要
+- [x] 自动化运维与自动买卖设计文档
+- [x] 自动化运维与自动买卖实现计划
 - [ ] 补 Lean / vn.py 扩展目录与接口位
 - [ ] 补 OpenClaw 非交易任务入口
 
@@ -190,6 +192,8 @@
 - [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
 - [2026-04-03-qlib-screening-and-validation-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-03-qlib-screening-and-validation-implementation.md)
 - [2026-04-04-qlib-data-replay-hardening-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-qlib-data-replay-hardening-implementation.md)
+- [2026-04-04-automation-ops-and-auto-trading-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-04-automation-ops-and-auto-trading-design.md)
+- [2026-04-04-automation-ops-and-auto-trading-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-automation-ops-and-auto-trading-implementation.md)
 
 ## 当前文档入口
 
