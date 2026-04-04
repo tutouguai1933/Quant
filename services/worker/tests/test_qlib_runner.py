@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -37,6 +38,19 @@ class QlibConfigTests(unittest.TestCase):
                 config.ensure_ready()
 
         self.assertIn("运行目录不存在", str(context.exception))
+
+    def test_backtest_assumptions_can_be_overridden_from_env(self) -> None:
+        config = load_qlib_config(
+            env={
+                "QUANT_QLIB_RUNTIME_ROOT": "/tmp/quant-qlib-runtime",
+                "QUANT_QLIB_BACKTEST_FEE_BPS": "12",
+                "QUANT_QLIB_BACKTEST_SLIPPAGE_BPS": "7",
+            },
+            require_explicit=True,
+        )
+
+        self.assertEqual(str(config.backtest_fee_bps), "12")
+        self.assertEqual(str(config.backtest_slippage_bps), "7")
 
 
 class QlibFeatureTests(unittest.TestCase):
@@ -148,6 +162,8 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertIn("overview", result["experiment_report"])
         self.assertEqual(result["experiment_report"]["overview"]["candidate_count"], 0)
         self.assertEqual(result["experiment_report"]["latest_training"]["model_version"], result["model_version"])
+        self.assertIn("dataset_snapshot", result)
+        self.assertIn("dataset_snapshot_path", result)
 
     def test_training_uses_dataset_bundle_for_multi_timeframe_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -197,6 +213,7 @@ class QlibRunnerTests(unittest.TestCase):
             runner = QlibRunner(config=config)
 
             result = runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+            self.assertTrue(Path(result["dataset_snapshot_path"]).exists())
 
         self.assertEqual(result["status"], "completed")
         self.assertIn("run_id", result)
@@ -204,6 +221,27 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertGreater(result["sample_count"], 0)
         self.assertIn("validation", result)
         self.assertIn("backtest", result)
+        self.assertIn("assumptions", result["backtest"])
+
+    def test_training_writes_dataset_snapshot_and_experiment_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+
+            result = runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+
+            dataset_snapshot = json.loads(config.paths.latest_dataset_snapshot_path.read_text(encoding="utf-8"))
+            experiment_index = json.loads(config.paths.experiment_index_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(dataset_snapshot["snapshot_id"], result["dataset_snapshot"]["snapshot_id"])
+        self.assertEqual(dataset_snapshot["summary"]["symbol_count"], 2)
+        self.assertEqual(experiment_index["items"][0]["run_id"], result["run_id"])
+        self.assertEqual(experiment_index["items"][0]["run_type"], "training")
 
     def test_inference_returns_standardized_signal_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -258,6 +296,25 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertEqual(result["experiment_report"]["overview"]["candidate_count"], len(result["candidates"]["items"]))
         self.assertIn("leaderboard", result["experiment_report"])
         self.assertIn("screening", result["experiment_report"])
+        self.assertIn("recent_runs", result["experiment_report"]["experiments"])
+
+    def test_inference_appends_recent_runs_to_experiment_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+
+            result = runner.infer(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+
+        recent_runs = result["experiment_report"]["experiments"]["recent_runs"]
+        self.assertGreaterEqual(len(recent_runs), 2)
+        self.assertEqual(recent_runs[0]["run_type"], "inference")
+        self.assertEqual(recent_runs[1]["run_type"], "training")
 
     def test_inference_builds_candidate_level_dry_run_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -18,6 +18,11 @@ class TaskScheduler:
     def __init__(self) -> None:
         self._tasks: dict[int, dict[str, object]] = {}
         self._next_task_id = 1
+        self._health_summary = {
+            "latest_status_by_type": {},
+            "latest_success_by_type": {},
+            "latest_failure_by_type": {},
+        }
 
     def list_tasks(self, limit: int = 100) -> list[dict[str, object]]:
         ordered = sorted(self._tasks.values(), key=lambda item: int(item["id"]), reverse=True)
@@ -97,6 +102,15 @@ class TaskScheduler:
         self._apply_success_side_effects(task)
         return dict(task)
 
+    def get_health_summary(self) -> dict[str, object]:
+        """返回任务与执行健康摘要。"""
+
+        return {
+            "latest_status_by_type": dict(self._health_summary["latest_status_by_type"]),
+            "latest_success_by_type": dict(self._health_summary["latest_success_by_type"]),
+            "latest_failure_by_type": dict(self._health_summary["latest_failure_by_type"]),
+        }
+
     def _create_task(
         self,
         task_type: str,
@@ -134,6 +148,7 @@ class TaskScheduler:
             task["finished_at"] = None
         elif status in {"succeeded", "failed", "cancelled"}:
             task["finished_at"] = utc_now()
+        self._record_health(task, status)
 
     def _execute_named_task(self, task_type: str, payload: dict[str, object]) -> dict[str, object]:
         if payload.get("simulate_failure"):
@@ -153,6 +168,10 @@ class TaskScheduler:
             )
         if task_type == "reconcile":
             return {"status": "completed", "detail": "reconcile placeholder completed"}
+        if task_type == "review":
+            from services.api.app.services.validation_workflow_service import validation_workflow_service
+
+            return validation_workflow_service.build_report(limit=int(payload.get("limit", 10)))
         if task_type == "archive":
             return {"status": "completed", "detail": "archive placeholder completed"}
         if task_type == "health_check":
@@ -176,6 +195,19 @@ class TaskScheduler:
             signal_service.update_signal_status(int(source_signal_id), "synced")
         except Exception:
             return
+
+    def _record_health(self, task: dict[str, object], status: str) -> None:
+        """记录任务健康状态，给复盘和执行健康摘要复用。"""
+
+        task_type = str(task.get("task_type", ""))
+        self._health_summary["latest_status_by_type"][task_type] = status
+        if status == "succeeded":
+            self._health_summary["latest_success_by_type"][task_type] = str(task.get("finished_at") or task.get("started_at") or "")
+        if status == "failed":
+            self._health_summary["latest_failure_by_type"][task_type] = {
+                "finished_at": str(task.get("finished_at") or ""),
+                "error_message": str(task.get("error_message") or ""),
+            }
 
 
 task_scheduler = TaskScheduler()

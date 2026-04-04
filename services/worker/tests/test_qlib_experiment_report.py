@@ -38,7 +38,9 @@ class QlibExperimentReportTests(unittest.TestCase):
                 "model_version": "m2",
                 "backtest": {
                     "metrics": {
-                        "total_return_pct": "12.40",
+                        "total_return_pct": "12.10",
+                        "gross_return_pct": "12.40",
+                        "net_return_pct": "12.10",
                         "max_drawdown_pct": "-4.80",
                         "sharpe": "1.22",
                         "win_rate": "0.58",
@@ -62,10 +64,25 @@ class QlibExperimentReportTests(unittest.TestCase):
                         "score": "0.6010",
                         "allowed_to_dry_run": False,
                         "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                        "rule_gate": {"status": "failed", "reasons": ["trend_broken"]},
+                        "research_validation_gate": {"status": "failed", "reasons": ["validation_positive_rate_too_low"]},
+                        "backtest_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                        "consistency_gate": {"status": "failed", "reasons": ["validation_backtest_drift_too_large"]},
                         "backtest": {"metrics": {"sharpe": "0.41"}},
                     },
                 ]
             },
+            recent_runs=[
+                {
+                    "run_id": "infer-1",
+                    "run_type": "inference",
+                    "status": "completed",
+                    "generated_at": "2026-04-04T09:00:00+00:00",
+                    "model_version": "m2",
+                    "dataset_snapshot_path": "/tmp/dataset.json",
+                    "artifact_path": "/tmp/artifact.json",
+                }
+            ],
         )
 
         self.assertEqual(report["overview"]["blocked_count"], 1)
@@ -78,6 +95,11 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["leaderboard"][0]["symbol"], "BTCUSDT")
         self.assertEqual(report["leaderboard"][1]["next_action"], "continue_research")
         self.assertEqual(report["screening"]["blocked_reason_counts"]["drawdown_too_large"], 1)
+        self.assertEqual(report["screening"]["gate_reason_counts"]["rule_gate"]["trend_broken"], 1)
+        self.assertEqual(report["screening"]["gate_reason_counts"]["validation_gate"]["validation_positive_rate_too_low"], 1)
+        self.assertEqual(report["screening"]["gate_reason_counts"]["consistency_gate"]["validation_backtest_drift_too_large"], 1)
+        self.assertEqual(report["experiments"]["training"]["backtest"]["net_return_pct"], "12.10")
+        self.assertEqual(report["experiments"]["recent_runs"][0]["run_id"], "infer-1")
 
 
 if __name__ == "__main__":

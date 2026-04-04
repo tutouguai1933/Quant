@@ -39,6 +39,7 @@ class ResearchService:
         try:
             training_payload = self._read_json(config.paths.latest_training_path)
             inference_payload = self._read_json(config.paths.latest_inference_path)
+            experiment_index = self._read_json(config.paths.experiment_index_path)
         except RuntimeError as exc:
             return {
                 "status": "unavailable",
@@ -47,6 +48,7 @@ class ResearchService:
                 "detail": str(exc),
                 "latest_training": None,
                 "latest_inference": None,
+                "recent_runs": [],
                 "symbols": {},
             }
         if not training_payload or not inference_payload:
@@ -60,6 +62,7 @@ class ResearchService:
                 ),
                 "latest_training": training_payload,
                 "latest_inference": inference_payload,
+                "recent_runs": list((experiment_index or {}).get("items") or []),
                 "symbols": {},
             }
         symbols = {
@@ -74,6 +77,7 @@ class ResearchService:
             "detail": config.detail,
             "latest_training": training_payload,
             "latest_inference": inference_payload,
+            "recent_runs": list((experiment_index or {}).get("items") or []),
             "symbols": symbols,
         }
 
@@ -194,6 +198,7 @@ class ResearchService:
             "detail": str(getattr(config, "detail", "研究层未就绪")),
             "latest_training": None,
             "latest_inference": None,
+            "recent_runs": [],
             "symbols": {},
         }
 

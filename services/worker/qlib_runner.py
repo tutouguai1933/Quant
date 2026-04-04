@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from services.worker.qlib_rule_gate import evaluate_rule_gate
 class TrainingBundle:
     """训练阶段的中间结果。"""
 
+    symbol_bundles: dict[str, DatasetBundle]
     training_rows: list[dict[str, object]]
     validation_rows: list[dict[str, object]]
     backtest_rows: list[dict[str, object]]
@@ -46,9 +48,19 @@ class QlibRunner:
         self._config.ensure_ready()
         self._ensure_runtime_directories()
         bundle = self._build_training_bundle(dataset)
+        dataset_snapshot_path, dataset_snapshot = self._write_dataset_snapshot(
+            symbol_bundles=bundle.symbol_bundles,
+            generated_at=_utc_now(),
+            snapshot_label="training",
+        )
         metrics = self._fit_model(bundle.training_rows)
         validation = self._build_validation_summary(bundle.validation_rows)
-        backtest = run_backtest(rows=bundle.backtest_rows, holding_window="1-3d")
+        backtest = run_backtest(
+            rows=bundle.backtest_rows,
+            holding_window="1-3d",
+            fee_bps=self._config.backtest_fee_bps,
+            slippage_bps=self._config.backtest_slippage_bps,
+        )
         run_id = self._new_run_id("train")
         generated_at = _utc_now()
         model_version = f"qlib-minimal-{generated_at.strftime('%Y%m%d%H%M%S%f')}"
@@ -79,11 +91,16 @@ class QlibRunner:
             "backtest": backtest,
             "warnings": self._build_warnings(),
             "artifact_path": str(artifact_path),
+            "dataset_snapshot": dataset_snapshot,
+            "dataset_snapshot_path": str(dataset_snapshot_path),
         }
         result["experiment_report"] = build_experiment_report(
             latest_training=result,
             latest_inference=None,
             candidates={"items": []},
+            recent_runs=[
+                self._build_experiment_entry(run_type="training", payload=result),
+            ],
         )
         self._write_run_record("training", run_id, result, self._config.paths.latest_training_path)
         return result
@@ -99,8 +116,10 @@ class QlibRunner:
 
         signals: list[dict[str, object]] = []
         candidates: list[dict[str, object]] = []
+        symbol_bundles: dict[str, DatasetBundle] = {}
         for symbol, market_payload in dataset.items():
             bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
+            symbol_bundles[symbol] = bundle
             latest = self._pick_latest_row(bundle)
             if latest is None:
                 continue
@@ -137,6 +156,11 @@ class QlibRunner:
             candidates,
             validation=dict(training_payload.get("validation") or {}),
         )
+        dataset_snapshot_path, dataset_snapshot = self._write_dataset_snapshot(
+            symbol_bundles=symbol_bundles,
+            generated_at=_utc_now(),
+            snapshot_label="inference",
+        )
 
         result = {
             "run_id": self._new_run_id("infer"),
@@ -154,11 +178,17 @@ class QlibRunner:
             },
             "candidates": ranked_candidates,
             "warnings": self._build_warnings(),
+            "dataset_snapshot": dataset_snapshot,
+            "dataset_snapshot_path": str(dataset_snapshot_path),
         }
         result["experiment_report"] = build_experiment_report(
             latest_training=training_payload,
             latest_inference=result,
             candidates=result["candidates"],
+            recent_runs=[
+                self._build_experiment_entry(run_type="inference", payload=result),
+                *self._read_experiment_index(),
+            ],
         )
         self._write_run_record("inference", result["run_id"], result, self._config.paths.latest_inference_path)
         return result
@@ -166,11 +196,13 @@ class QlibRunner:
     def _build_training_bundle(self, dataset: dict[str, object]) -> TrainingBundle:
         """把输入数据整理成训练样本。"""
 
+        symbol_bundles: dict[str, DatasetBundle] = {}
         training_rows: list[dict[str, object]] = []
         validation_rows: list[dict[str, object]] = []
         backtest_rows: list[dict[str, object]] = []
         for symbol, market_payload in dataset.items():
             bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
+            symbol_bundles[symbol] = bundle
             training_rows.extend(bundle.training_rows)
             validation_rows.extend(bundle.validation_rows)
             backtest_rows.extend(bundle.testing_rows)
@@ -179,6 +211,7 @@ class QlibRunner:
         if not validation_rows or not backtest_rows:
             raise RuntimeError("研究层样本不足，无法生成完整验证和回测结果")
         return TrainingBundle(
+            symbol_bundles=symbol_bundles,
             training_rows=training_rows,
             validation_rows=validation_rows,
             backtest_rows=backtest_rows,
@@ -189,7 +222,12 @@ class QlibRunner:
     def _build_candidate_backtest(self, *, rows: list[dict[str, object]]) -> dict[str, object]:
         """为单个候选生成独立回测摘要。"""
 
-        return run_backtest(rows=rows, holding_window="1-3d")
+        return run_backtest(
+            rows=rows,
+            holding_window="1-3d",
+            fee_bps=self._config.backtest_fee_bps,
+            slippage_bps=self._config.backtest_slippage_bps,
+        )
 
     def _build_symbol_dataset_bundle(self, *, symbol: str, market_payload: object) -> DatasetBundle:
         """把单个币种的输入统一转换成数据集包。"""
@@ -310,6 +348,7 @@ class QlibRunner:
         """在已存在根目录下补齐子目录。"""
 
         self._config.paths.dataset_dir.mkdir(exist_ok=True)
+        self._config.paths.dataset_snapshots_dir.mkdir(parents=True, exist_ok=True)
         self._config.paths.artifacts_dir.mkdir(exist_ok=True)
         self._config.paths.runs_dir.mkdir(exist_ok=True)
 
@@ -325,6 +364,97 @@ class QlibRunner:
         run_path = self._config.paths.runs_dir / f"{run_id}-{run_type}.json"
         self._write_json(run_path, payload)
         self._write_json(latest_path, payload)
+        self._append_experiment_index(run_type=run_type, payload=payload)
+
+    def _write_dataset_snapshot(
+        self,
+        *,
+        symbol_bundles: dict[str, DatasetBundle],
+        generated_at: datetime,
+        snapshot_label: str,
+    ) -> tuple[Path, dict[str, object]]:
+        """写入最新数据快照和带唯一名的历史快照。"""
+
+        payload = self._build_dataset_snapshot(symbol_bundles=symbol_bundles, generated_at=generated_at)
+        snapshot_path = self._config.paths.dataset_snapshots_dir / f"{payload['snapshot_id']}-{snapshot_label}.json"
+        self._write_json(snapshot_path, payload)
+        self._write_json(self._config.paths.latest_dataset_snapshot_path, payload)
+        return snapshot_path, payload
+
+    def _build_dataset_snapshot(
+        self,
+        *,
+        symbol_bundles: dict[str, DatasetBundle],
+        generated_at: datetime,
+    ) -> dict[str, object]:
+        """把当前输入样本压成可复用的数据快照摘要。"""
+
+        symbols: list[dict[str, object]] = []
+        total_training = 0
+        total_validation = 0
+        total_testing = 0
+        for symbol, bundle in sorted(symbol_bundles.items()):
+            training_count = len(bundle.training_rows)
+            validation_count = len(bundle.validation_rows)
+            testing_count = len(bundle.testing_rows)
+            total_training += training_count
+            total_validation += validation_count
+            total_testing += testing_count
+            symbols.append(
+                {
+                    "symbol": symbol,
+                    "timeframe": bundle.timeframe,
+                    "training_count": training_count,
+                    "validation_count": validation_count,
+                    "testing_count": testing_count,
+                    "total_count": training_count + validation_count + testing_count,
+                }
+            )
+        base_payload = {
+            "generated_at": generated_at.isoformat(),
+            "symbols": symbols,
+            "summary": {
+                "symbol_count": len(symbols),
+                "training_count": total_training,
+                "validation_count": total_validation,
+                "testing_count": total_testing,
+            },
+        }
+        signature = hashlib.sha256(
+            json.dumps(base_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()[:16]
+        return {
+            "snapshot_id": f"dataset-{generated_at.strftime('%Y%m%d%H%M%S%f')}",
+            **base_payload,
+            "signature": signature,
+        }
+
+    def _append_experiment_index(self, *, run_type: str, payload: dict[str, object]) -> None:
+        """把最近实验账本保持成可直接读取的索引。"""
+
+        current = self._read_experiment_index()
+        current.insert(0, self._build_experiment_entry(run_type=run_type, payload=payload))
+        self._write_json(self._config.paths.experiment_index_path, {"items": current[:20]})
+
+    def _read_experiment_index(self) -> list[dict[str, object]]:
+        """读取最近实验账本。"""
+
+        payload = self._read_json(self._config.paths.experiment_index_path)
+        return list((payload or {}).get("items") or [])
+
+    @staticmethod
+    def _build_experiment_entry(*, run_type: str, payload: dict[str, object]) -> dict[str, object]:
+        """构造统一实验账本条目。"""
+
+        return {
+            "run_id": str(payload.get("run_id", "")),
+            "run_type": run_type,
+            "status": str(payload.get("status", "")),
+            "generated_at": str(payload.get("generated_at", "")),
+            "model_version": str(payload.get("model_version", "")),
+            "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
+            "artifact_path": str(payload.get("artifact_path", "")),
+        }
 
     @staticmethod
     def _new_run_id(prefix: str) -> str:

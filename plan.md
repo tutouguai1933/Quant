@@ -176,6 +176,9 @@
 - [x] Qlib 训练验证门接入候选主链
 - [x] 统一研究报告补齐排行榜、下一步动作和失败原因汇总
 - [x] 研究推荐更深接入执行元数据
+- [x] Qlib 数据快照与实验账本
+- [x] Qlib 带成本的最小回测
+- [x] Qlib 统一复盘接口与执行健康摘要
 - [ ] 补 Lean / vn.py 扩展目录与接口位
 - [ ] 补 OpenClaw 非交易任务入口
 
@@ -186,6 +189,7 @@
 - [2026-04-02-qlib-minimal-research-layer-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-minimal-research-layer-implementation.md)
 - [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
 - [2026-04-03-qlib-screening-and-validation-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-03-qlib-screening-and-validation-implementation.md)
+- [2026-04-04-qlib-data-replay-hardening-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-qlib-data-replay-hardening-implementation.md)
 
 ## 当前文档入口
 

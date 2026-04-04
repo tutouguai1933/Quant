@@ -42,8 +42,9 @@ def _normalize_candidate(
     metrics = dict(backtest.get("metrics") or {})
     rule_gate = _normalize_rule_gate(item.get("rule_gate"))
     research_validation_gate = _evaluate_validation_gate(validation)
-    model_gate = _evaluate_dry_run_gate(metrics)
-    dry_run_gate = _merge_gates(rule_gate, research_validation_gate, model_gate)
+    backtest_gate = _evaluate_backtest_gate(metrics)
+    consistency_gate = _evaluate_consistency_gate(validation=validation, metrics=metrics)
+    dry_run_gate = _merge_gates(rule_gate, research_validation_gate, backtest_gate, consistency_gate)
     allowed_to_dry_run = dry_run_gate["status"] == "passed"
     return {
         "rank": index,
@@ -53,6 +54,8 @@ def _normalize_candidate(
         "backtest": {"metrics": metrics},
         "rule_gate": rule_gate,
         "research_validation_gate": research_validation_gate,
+        "backtest_gate": backtest_gate,
+        "consistency_gate": consistency_gate,
         "dry_run_gate": dry_run_gate,
         "allowed_to_dry_run": allowed_to_dry_run,
         "review_status": "ready_for_dry_run" if allowed_to_dry_run else "needs_research_iteration",
@@ -61,10 +64,10 @@ def _normalize_candidate(
     }
 
 
-def _evaluate_dry_run_gate(metrics: dict[str, object]) -> dict[str, object]:
+def _evaluate_backtest_gate(metrics: dict[str, object]) -> dict[str, object]:
     """根据最小回测指标判断是否允许进入 dry-run。"""
 
-    total_return_pct = _to_decimal(metrics.get("total_return_pct"))
+    total_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
     max_drawdown_pct = _to_decimal(metrics.get("max_drawdown_pct"))
     sharpe = _to_decimal(metrics.get("sharpe"))
     win_rate = _to_decimal(metrics.get("win_rate"))
@@ -111,6 +114,36 @@ def _evaluate_validation_gate(validation: dict[str, object] | None) -> dict[str,
         failures.append("validation_positive_rate_too_low")
     if avg_future_return_pct < Decimal("-0.1"):
         failures.append("validation_future_return_not_positive")
+
+    if failures:
+        return {"status": "failed", "reasons": failures}
+    return {"status": "passed", "reasons": []}
+
+
+def _evaluate_consistency_gate(
+    *,
+    validation: dict[str, object] | None,
+    metrics: dict[str, object],
+) -> dict[str, object]:
+    """判断验证摘要和净回测之间是否出现明显漂移。"""
+
+    payload = dict(validation or {})
+    if not payload:
+        return {"status": "passed", "reasons": []}
+
+    sample_count = _to_int_or_none(metrics.get("sample_count"))
+    if sample_count is None or sample_count <= 0:
+        return {"status": "passed", "reasons": []}
+
+    validation_avg = _to_decimal(payload.get("avg_future_return_pct"))
+    net_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
+    avg_net_return_pct = net_return_pct / Decimal(sample_count)
+
+    failures: list[str] = []
+    if validation_avg > Decimal("0") and avg_net_return_pct <= Decimal("0"):
+        failures.append("validation_backtest_drift_too_large")
+    elif (validation_avg - avg_net_return_pct) > Decimal("1.5"):
+        failures.append("validation_backtest_drift_too_large")
 
     if failures:
         return {"status": "failed", "reasons": failures}

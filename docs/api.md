@@ -110,6 +110,8 @@
 - `POST /api/v1/tasks/reconcile`
 - `POST /api/v1/tasks/archive`
 - `POST /api/v1/tasks/health-check`
+- `GET /api/v1/tasks/validation-review`
+- `POST /api/v1/tasks/review`
 - `POST /api/v1/tasks/{task_id}/retry`
 
 ## 当前最重要的几个接口
@@ -184,6 +186,9 @@
 - 最近一次推理结果
 - 当前候选列表
 - 最近实验摘要
+- 最近实验账本
+- 当前推荐动作
+- 按门控分组的失败原因
 
 适合用于：
 
@@ -195,6 +200,31 @@
 
 - 如果训练和推理结果文件都还不存在，`status` 会明确返回 `unavailable`
 - 如果推理摘要里缺少 `signal_count`，接口会按 `signals` 列表回退计算，保证报告字段自洽
+
+### `GET /api/v1/tasks/validation-review`
+
+这是当前固定验证工作流的统一复盘入口。
+会返回：
+
+- 当前推荐标的和下一步动作
+- `training / inference / screening / dry-run / live / review` 六个步骤状态
+- 最近任务健康摘要
+- 执行健康摘要
+- 当前账户快照
+
+适合用于：
+
+- 联调后快速判断卡在哪一步
+- 小额 `live` 后统一回看
+- 多 session 接手时快速恢复上下文
+
+### `POST /api/v1/tasks/review`
+
+这是把当前验证状态主动收成一条任务记录的入口。
+会返回：
+
+- 本次复盘任务
+- 任务结果里的统一复盘报告
 
 ### `GET /api/v1/signals/research/candidates`
 

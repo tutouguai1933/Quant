@@ -51,6 +51,7 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("latest_training", latest)
         self.assertIn("latest_inference", latest)
         self.assertTrue(latest["symbols"])
+        self.assertTrue(latest["recent_runs"])
 
     def test_research_service_returns_ranked_candidates(self) -> None:
         self.service.run_training()
@@ -109,6 +110,7 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(report["experiments"]["inference"]["status"], "completed")
         self.assertIn("leaderboard", report)
         self.assertIn("screening", report)
+        self.assertTrue(report["experiments"]["recent_runs"])
 
     def test_research_service_report_uses_worker_experiment_builder(self) -> None:
         self.service.run_training()

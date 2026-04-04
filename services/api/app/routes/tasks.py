@@ -145,6 +145,33 @@ def run_health_check_task(source: str = "scheduler", token: str = "", authorizat
     return _success({"item": item}, {"source": "task-scheduler", "action": "health-check"})
 
 
+@router.get("/validation-review")
+def get_validation_review(limit: int = 10, token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    from services.api.app.services.validation_workflow_service import validation_workflow_service
+
+    item = validation_workflow_service.build_report(limit=limit)
+    return _success({"item": item}, {"source": "validation-workflow", "limit": limit})
+
+
+@router.post("/review")
+def run_review_task(source: str = "user", limit: int = 10, token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = task_scheduler.run_named_task(
+        task_type="review",
+        source=source,
+        target_type="system",
+        payload={"limit": limit},
+    )
+    return _success({"item": item}, {"source": "task-scheduler", "action": "review"})
+
+
 @router.post("/{task_id}/retry")
 def retry_task(task_id: int, clear_failure: bool = True, token: str = "", authorization: str = Header("")) -> dict:
     try:

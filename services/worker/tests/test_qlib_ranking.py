@@ -206,6 +206,52 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["review_status"], "needs_research_iteration")
         self.assertEqual(result["items"][0]["next_action"], "continue_research")
 
+    def test_rank_candidates_blocks_dry_run_when_net_return_turns_negative_after_costs(self) -> None:
+        metrics = _passing_metrics()
+        metrics["gross_return_pct"] = "1.2000"
+        metrics["net_return_pct"] = "-0.4000"
+        metrics["total_return_pct"] = "-0.4000"
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "DOGEUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "score": "0.7100",
+                    "backtest": {"metrics": metrics},
+                }
+            ],
+            validation={
+                "sample_count": 20,
+                "positive_rate": "0.55",
+                "avg_future_return_pct": "0.80",
+            },
+        )
+
+        self.assertIn("non_positive_return", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertIn("validation_backtest_drift_too_large", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
+    def test_rank_candidates_exposes_consistency_gate_for_drifted_candidate(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": {**_failing_metrics(), "sample_count": "24", "net_return_pct": "-3.20"}},
+                    "rule_gate": {"status": "failed", "reasons": ["trend_broken"]},
+                }
+            ],
+            validation={
+                "sample_count": 12,
+                "positive_rate": "0.60",
+                "avg_future_return_pct": "1.80",
+            },
+        )
+
+        self.assertEqual(result["items"][0]["consistency_gate"]["status"], "failed")
+        self.assertIn("validation_backtest_drift_too_large", result["items"][0]["consistency_gate"]["reasons"])
+
     def test_rank_candidates_marks_ready_candidate_with_execution_priority(self) -> None:
         result = rank_candidates(
             [

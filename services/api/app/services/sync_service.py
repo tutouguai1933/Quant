@@ -102,6 +102,31 @@ class SyncService:
             "source_signal_id": action.get("source_signal_id"),
         }
 
+    def get_execution_health_summary(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
+        """返回执行链当前健康状态，给复盘和页面统一复用。"""
+
+        runtime = self.get_runtime_snapshot()
+        health = dict(task_health or {})
+        latest_status = dict(health.get("latest_status_by_type") or {})
+        latest_success = dict(health.get("latest_success_by_type") or {})
+        latest_failure = dict(health.get("latest_failure_by_type") or {})
+        latest_sync_status = str(latest_status.get("sync", "unknown"))
+        latest_review_status = str(latest_status.get("review", "unknown"))
+        latest_failed_sync = dict(latest_failure.get("sync") or {})
+        return {
+            "runtime_mode": str(runtime.get("mode", "")),
+            "backend": str(runtime.get("backend", "")),
+            "connection_status": str(runtime.get("connection_status", "")),
+            "latest_sync_status": latest_sync_status,
+            "latest_review_status": latest_review_status,
+            "latest_successful_sync_at": str(latest_success.get("sync", "")),
+            "latest_successful_review_at": str(latest_success.get("review", "")),
+            "latest_failed_sync": latest_failed_sync,
+            "sync_stale": latest_sync_status not in {"succeeded", "retrying"},
+            "order_count": int(runtime.get("order_count", 0) or 0),
+            "position_count": int(runtime.get("position_count", 0) or 0),
+        }
+
     def _confirm_live_dispatch_sync(
         self,
         orders: list[dict[str, object]],

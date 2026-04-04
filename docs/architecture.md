@@ -189,6 +189,15 @@
 - 研究层运行目录约束
 - 研究层可执行状态判断
 - `qlib / qlib-fallback` 后端状态切换
+- 回测手续费和滑点假设
+- 数据快照、实验账本路径约定
+
+### `services/worker/qlib_dataset.py`
+
+负责：
+
+- 把 `1h / 4h` K 线整理成训练 / 验证 / 测试三段
+- 给训练和推理提供统一的数据切分基线
 
 ### `services/worker/qlib_features.py`
 
@@ -212,7 +221,16 @@
 - 在候选输出前真实执行 `qlib_rule_gate` 规则门
 - 把训练阶段验证摘要真实接进候选筛选
 - 输出统一实验对比摘要
+- 写入数据快照和实验账本
 - 写入最近一次训练和推理结果
+
+### `services/worker/qlib_backtest.py`
+
+负责：
+
+- 统一最小回测指标
+- 扣除手续费和滑点后输出净收益
+- 给筛选门提供更接近真实交易的净结果
 
 ### `services/api/app/services/research_service.py`
 
@@ -231,6 +249,7 @@
 - 把研究结果整理成统一候选快照
 - 复用 worker 的统一实验摘要，给控制平面输出统一研究报告
 - 统一输出排行榜、筛选失败原因汇总和下一步动作
+- 统一输出最近实验账本
 - 给单币页和策略页输出可直接消费的候选摘要
 
 ### `services/api/app/services/strategy_workspace_service.py`
@@ -247,6 +266,14 @@
 - 保存和读取信号
 - 控制信号能否进入派发
 - 对通用 `Qlib` 研究信号按“当前推荐候选优先”做认领排序
+
+### `services/api/app/services/validation_workflow_service.py`
+
+负责：
+
+- 把研究报告、最近任务、账户状态和执行健康摘要收成一份固定复盘
+- 统一输出 `dry-run -> 小额 live -> 复盘` 当前走到哪一步
+- 给任务接口和后续页面提供统一复盘入口
 
 ### `services/api/app/services/research_cockpit_service.py`
 

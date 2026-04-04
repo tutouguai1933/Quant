@@ -59,7 +59,7 @@ from services.api.app.services.strategy_catalog import StrategyCatalogService  #
 from services.api.app.services.strategy_workspace_service import StrategyWorkspaceService  # noqa: E402
 from services.api.app.adapters.freqtrade.client import FreqtradeClient  # noqa: E402
 from services.api.app.tasks.scheduler import TaskScheduler  # noqa: E402
-from services.api.app.routes.tasks import get_task, list_tasks  # noqa: E402
+from services.api.app.routes.tasks import get_task, get_validation_review, list_tasks, run_review_task  # noqa: E402
 from services.api.app.routes.orders import list_orders  # noqa: E402
 from services.api.app.routes.positions import list_positions  # noqa: E402
 
@@ -246,8 +246,43 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("overview", report["data"]["item"])
         self.assertIn("experiments", report["data"]["item"])
 
+    def test_validation_review_routes_return_consistent_response_shape(self) -> None:
+        token = self._login_token()
+        review = run_review_task(token=token)
+        report = get_validation_review(token=token)
+
+        self.assertEqual(set(review.keys()), {"data", "error", "meta"})
+        self.assertEqual(set(report.keys()), {"data", "error", "meta"})
+        self.assertIsNone(review["error"])
+        self.assertIsNone(report["error"])
+        self.assertIn("item", review["data"])
+        self.assertIn("overview", report["data"]["item"])
+        self.assertIn("task_health", report["data"]["item"])
+
     def test_research_report_route_stays_unavailable_without_results(self) -> None:
-        report = get_research_report()
+        original_research_service = signals_route.research_service
+
+        class _UnavailableResearchService:
+            @staticmethod
+            def get_factory_report() -> dict[str, object]:
+                return {
+                    "status": "unavailable",
+                    "overview": {},
+                    "experiments": {
+                        "training": {"status": "unavailable"},
+                        "inference": {"status": "unavailable"},
+                        "recent_runs": [],
+                    },
+                    "candidates": [],
+                    "leaderboard": [],
+                    "screening": {},
+                }
+
+        signals_route.research_service = _UnavailableResearchService()
+        try:
+            report = get_research_report()
+        finally:
+            signals_route.research_service = original_research_service
 
         self.assertEqual(set(report.keys()), {"data", "error", "meta"})
         self.assertIsNone(report["error"])

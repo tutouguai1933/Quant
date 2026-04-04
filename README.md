@@ -244,6 +244,8 @@ infra/deploy                阿里云统一部署骨架
   图表周期规范和多周期摘要生成
 - `services/worker/qlib_runner.py`
   最小训练、最小推理和结果落盘
+- `services/api/app/services/validation_workflow_service.py`
+  把研究、任务和执行状态整理成统一复盘报告
 - `services/worker/qlib_features.py`
   最小研究特征
 - `services/worker/qlib_labels.py`
@@ -459,6 +461,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - `Qlib` 这条线本轮已经通过 worker 测试、研究服务测试、前端测试和真实页面验收
 - 研究训练和研究推理现在需要管理员登录后再触发
 - 研究层现在已有统一研究报告接口，后续页面和联调优先读这一个汇总出口
+- 研究运行目录现在还会留下数据快照和实验账本，方便复盘和多 session 接力
 
 ## Qlib 验证工作流
 
@@ -471,6 +474,14 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 5. 先跑 `dry-run`
 6. `dry-run` 稳定后，才允许进入小额 `live`
 7. `live` 完成后，统一回看余额、订单、持仓、任务和风险
+
+补充：
+
+- 现在还可以直接读取统一复盘接口：`GET /api/v1/tasks/validation-review`
+- 如果想把当前状态收成一次任务记录，可以调用：`POST /api/v1/tasks/review`
+- 研究运行目录里最重要的两个文件是：
+  - `dataset/latest_dataset_snapshot.json`
+  - `runs/experiment_index.json`
 
 说明：
 
@@ -493,6 +504,9 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] Task 9：与 `Qlib` 进行对接和调试
 - [x] Qlib 统一研究报告出口
 - [x] 固定 `dry-run -> 小额 live -> 复盘` 验证工作流
+- [x] Qlib 数据快照与实验账本
+- [x] Qlib 带成本的最小回测
+- [x] Qlib 统一复盘接口与执行健康摘要
 - [x] 前端终端化设计基线（决策优先 + 双栏交易研究终端）
 - [x] 首页 / 信号页 / 策略页第一批终端化重构
 

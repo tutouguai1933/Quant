@@ -26,6 +26,10 @@
   - 最近训练摘要
   - 最近推理摘要
   - 最近实验记录摘要
+- 输出统一复盘报告：
+  - 当前验证工作流状态
+  - 最近任务健康摘要
+  - 最近账户和执行状态
 - 在信号页、策略页、单币图表页看到最近一次研究结果
 
 当前还保留的边界：
@@ -54,6 +58,9 @@ mkdir -p /tmp/quant-qlib-runtime
 
 - 目录不存在时，训练和推理会直接报明确错误
 - 目录存在后，系统会自己补齐 `dataset / artifacts / runs` 子目录
+- 研究层现在还会固定写出：
+  - `dataset/latest_dataset_snapshot.json`
+  - `runs/experiment_index.json`
 - 目录刚建好但还没有训练/推理结果时，统一研究报告会明确返回 `unavailable`
 - 如果是多 session 并行开发，建议额外设置：
 
@@ -70,6 +77,16 @@ export QUANT_QLIB_SESSION_ID=qlib-main
 - 如果没安装，研究后端会显示为 `qlib-fallback`
 
 这轮实现刻意保留这个回退，是为了不改依赖文件也能先把研究闭环做通。
+
+## 回测假设
+
+当前最小回测已经会扣基础成本：
+
+- `QUANT_QLIB_BACKTEST_FEE_BPS`
+- `QUANT_QLIB_BACKTEST_SLIPPAGE_BPS`
+
+如果不显式设置，系统会使用默认值继续运行。
+研究报告和候选排行现在优先看净收益，不再只看毛收益。
 
 ## 页面上会看到什么
 
@@ -125,6 +142,7 @@ export QUANT_QLIB_SESSION_ID=qlib-main
 8. 登录策略页，确认能看到研究状态、模型版本、研究分数和研究解释
 9. 调用 `GET /api/v1/signals/research/report`，确认能一次读到训练、推理、候选和实验摘要
 10. 打开策略页，确认能看到“当前推荐执行候选”，并且推荐标的和允许进入 `dry-run` 的候选一致
+11. 调用 `GET /api/v1/tasks/validation-review`，确认能读到当前验证步骤、任务健康摘要和账户快照
 
 如果只是想重复验证执行链路，不看研究结论，可以在信号页改用“运行演示信号流水线”。
 
@@ -146,6 +164,7 @@ export QUANT_QLIB_SESSION_ID=qlib-main
 - 如果系统仍给出推荐，但 `allowed_to_dry_run=false`，这表示当前下一步是“继续研究”，不是直接执行
 - 如果只是重复验收执行链路，不看研究判断，可以继续使用“演示信号流水线”
 - 如果进入 `live`，默认仍按当前小额限制和白名单执行，不放宽已有安全门
+- 如果要把当前状态收成一次任务记录，可以调用 `POST /api/v1/tasks/review`
 
 ## 这轮已经做过的真实验证
 

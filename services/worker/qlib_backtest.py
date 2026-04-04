@@ -9,21 +9,42 @@ import math
 from decimal import Decimal, InvalidOperation
 
 
-def run_backtest(*, rows: list[dict[str, object]], holding_window: str) -> dict[str, object]:
+def run_backtest(
+    *,
+    rows: list[dict[str, object]],
+    holding_window: str,
+    fee_bps: Decimal | str | float | int = Decimal("0"),
+    slippage_bps: Decimal | str | float | int = Decimal("0"),
+) -> dict[str, object]:
     """运行一次最小回测并返回统一指标。"""
 
-    returns = [_to_float(item.get("future_return_pct")) for item in rows]
+    gross_returns = [_to_float(item.get("future_return_pct")) for item in rows]
+    fee_bps_decimal = _to_decimal(fee_bps)
+    slippage_bps_decimal = _to_decimal(slippage_bps)
+    round_trip_cost_pct = float((fee_bps_decimal + slippage_bps_decimal) * Decimal("2") / Decimal("100"))
+    net_returns = [item - round_trip_cost_pct for item in gross_returns]
 
     metrics = {
-        "total_return_pct": _format_float(sum(returns)),
-        "max_drawdown_pct": _format_float(_max_drawdown_pct(returns)),
-        "sharpe": _format_float(_sharpe_ratio(returns)),
-        "win_rate": _format_float(_win_rate(returns)),
+        "total_return_pct": _format_float(sum(net_returns)),
+        "gross_return_pct": _format_float(sum(gross_returns)),
+        "net_return_pct": _format_float(sum(net_returns)),
+        "cost_impact_pct": _format_float(sum(gross_returns) - sum(net_returns)),
+        "max_drawdown_pct": _format_float(_max_drawdown_pct(net_returns)),
+        "sharpe": _format_float(_sharpe_ratio(net_returns)),
+        "win_rate": _format_float(_win_rate(net_returns)),
         "turnover": _format_float(_turnover_ratio(rows)),
         "sample_count": str(len(rows)),
-        "max_loss_streak": str(_max_loss_streak(returns)),
+        "max_loss_streak": str(_max_loss_streak(net_returns)),
     }
-    return {"holding_window": holding_window, "metrics": metrics}
+    return {
+        "holding_window": holding_window,
+        "assumptions": {
+            "fee_bps": str(fee_bps_decimal),
+            "slippage_bps": str(slippage_bps_decimal),
+            "round_trip_cost_pct": _format_float(round_trip_cost_pct),
+        },
+        "metrics": metrics,
+    }
 
 
 def _max_drawdown_pct(returns: list[float]) -> float:
@@ -100,6 +121,15 @@ def _to_float(value: object) -> float:
         return float(Decimal(str(value)))
     except (TypeError, ValueError, InvalidOperation):
         return 0.0
+
+
+def _to_decimal(value: object) -> Decimal:
+    """把任意值尽量转成 Decimal。"""
+
+    try:
+        return Decimal(str(value))
+    except (TypeError, ValueError, InvalidOperation):
+        return Decimal("0")
 
 
 def _format_float(value: float) -> str:

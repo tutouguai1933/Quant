@@ -11,6 +11,7 @@ def build_experiment_report(
     latest_training: dict[str, object] | None,
     latest_inference: dict[str, object] | None,
     candidates: dict[str, object] | None,
+    recent_runs: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """统一整理研究实验对比摘要。"""
 
@@ -48,6 +49,7 @@ def build_experiment_report(
         "experiments": {
             "training": _build_experiment_entry(latest_training_payload),
             "inference": _build_experiment_entry(latest_inference_payload),
+            "recent_runs": _build_recent_runs(recent_runs),
         },
     }
 
@@ -75,6 +77,8 @@ def _build_backtest_snapshot(value: object) -> dict[str, str]:
     metrics = dict(payload.get("metrics") or {})
     return {
         "total_return_pct": str(metrics.get("total_return_pct", "")),
+        "gross_return_pct": str(metrics.get("gross_return_pct", metrics.get("total_return_pct", ""))),
+        "net_return_pct": str(metrics.get("net_return_pct", metrics.get("total_return_pct", ""))),
         "max_drawdown_pct": str(metrics.get("max_drawdown_pct", "")),
         "sharpe": str(metrics.get("sharpe", "")),
         "win_rate": str(metrics.get("win_rate", "")),
@@ -119,6 +123,12 @@ def _build_screening_summary(items: list[dict[str, object]]) -> dict[str, object
     """汇总候选的失败原因和通过名单。"""
 
     blocked_reason_counts: dict[str, int] = {}
+    gate_reason_counts = {
+        "rule_gate": {},
+        "validation_gate": {},
+        "backtest_gate": {},
+        "consistency_gate": {},
+    }
     ready_symbols: list[str] = []
     blocked_symbols: list[str] = []
     for item in items:
@@ -130,11 +140,46 @@ def _build_screening_summary(items: list[dict[str, object]]) -> dict[str, object
         blocked_symbols.append(symbol)
         for reason in reasons:
             blocked_reason_counts[reason] = blocked_reason_counts.get(reason, 0) + 1
+        _accumulate_gate_reasons(gate_reason_counts["rule_gate"], dict(item.get("rule_gate") or {}))
+        _accumulate_gate_reasons(gate_reason_counts["validation_gate"], dict(item.get("research_validation_gate") or {}))
+        _accumulate_gate_reasons(gate_reason_counts["backtest_gate"], dict(item.get("backtest_gate") or {}))
+        _accumulate_gate_reasons(gate_reason_counts["consistency_gate"], dict(item.get("consistency_gate") or {}))
     return {
         "ready_symbols": ready_symbols,
         "blocked_symbols": blocked_symbols,
         "blocked_reason_counts": blocked_reason_counts,
+        "gate_reason_counts": gate_reason_counts,
     }
+
+
+def _build_recent_runs(items: list[dict[str, object]] | None) -> list[dict[str, object]]:
+    """整理最近实验账本，方便页面和接口直接消费。"""
+
+    recent_runs: list[dict[str, object]] = []
+    for item in list(items or []):
+        payload = dict(item or {})
+        recent_runs.append(
+            {
+                "run_id": str(payload.get("run_id", "")),
+                "run_type": str(payload.get("run_type", "")),
+                "status": str(payload.get("status", "")),
+                "generated_at": str(payload.get("generated_at", "")),
+                "model_version": str(payload.get("model_version", "")),
+                "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
+                "artifact_path": str(payload.get("artifact_path", "")),
+            }
+        )
+    return recent_runs
+
+
+def _accumulate_gate_reasons(target: dict[str, int], gate: dict[str, object]) -> None:
+    """把单个门控里的失败原因累计到汇总里。"""
+
+    for reason in list(gate.get("reasons") or []):
+        normalized = str(reason).strip()
+        if not normalized:
+            continue
+        target[normalized] = target.get(normalized, 0) + 1
 
 
 def _resolve_recommendation(

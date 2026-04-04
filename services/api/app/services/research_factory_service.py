@@ -55,6 +55,7 @@ class ResearchFactoryService:
             latest_training=training,
             latest_inference=inference,
             candidates={"items": list(snapshot.get("candidates") or [])},
+            recent_runs=list(latest.get("recent_runs") or []),
         )
         overview = dict(report.get("overview") or {})
         return {

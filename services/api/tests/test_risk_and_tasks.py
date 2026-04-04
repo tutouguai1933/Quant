@@ -25,7 +25,7 @@ from services.api.app.routes.auth import login  # noqa: E402
 from services.api.app.routes.risk_events import list_risk_events  # noqa: E402
 from services.api.app.routes.signals import get_signal, run_signal_pipeline  # noqa: E402
 from services.api.app.routes.strategies import dispatch_latest_signal, start_strategy  # noqa: E402
-from services.api.app.routes.tasks import retry_task, run_reconcile_task, run_sync_task  # noqa: E402
+from services.api.app.routes.tasks import get_validation_review, retry_task, run_reconcile_task, run_review_task, run_sync_task  # noqa: E402
 from services.api.app.services.auth_service import auth_service  # noqa: E402
 from services.api.app.services.risk_service import risk_service  # noqa: E402
 from services.api.app.services.signal_service import signal_service  # noqa: E402
@@ -355,6 +355,21 @@ class RiskAndTaskTests(unittest.TestCase):
         self.assertEqual(response["data"]["sync_task"]["status"], "failed")
         self.assertEqual(retry_response["data"]["item"]["status"], "succeeded")
         self.assertEqual(get_signal(1)["data"]["item"]["status"], "synced")
+
+    def test_review_task_returns_validation_workflow_report(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        run_sync_task(token=token)
+
+        review_response = run_review_task(token=token)
+        report_response = get_validation_review(token=token)
+
+        self.assertEqual(review_response["data"]["item"]["status"], "succeeded")
+        self.assertIn("overview", review_response["data"]["item"]["result"])
+        self.assertIn("steps", review_response["data"]["item"]["result"])
+        self.assertIn("task_health", review_response["data"]["item"]["result"])
+        self.assertIn("execution_health", report_response["data"]["item"])
+        self.assertIn("recent_tasks", report_response["data"]["item"])
 
 
 if __name__ == "__main__":
