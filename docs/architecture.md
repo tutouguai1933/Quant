@@ -743,4 +743,11 @@
 - 策略研究工作台聚合服务：`services/api/app/services/research_workspace_service.py`
 - 策略研究工作台页面：`apps/web/app/research/page.tsx`
 - 策略研究工作台聚合口径：优先复用统一研究报告里的模板、标签、窗口和实验参数，并在同页保留研究训练/研究推理动作入口
+
+当前也已完成第四步：
+
+- 回测工作台后端入口：`services/api/app/routes/backtest_workspace.py`
+- 回测工作台聚合服务：`services/api/app/services/backtest_workspace_service.py`
+- 回测工作台页面：`apps/web/app/backtest/page.tsx`
+- 回测工作台聚合口径：优先复用研究报告里的训练回测摘要和候选排行榜，把净收益、成本影响、最大回撤和动作段统计直接显性化到前端
 - 作用：把研究报告中的数据快照、训练窗口和市场样本预览收成一个最小工作台，直接回答“这次研究用了什么数据”

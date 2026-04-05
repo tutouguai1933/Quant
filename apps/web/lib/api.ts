@@ -422,6 +422,25 @@ export type ResearchWorkspaceModel = {
   };
 };
 
+export type BacktestWorkspaceModel = {
+  status: string;
+  backend: string;
+  overview: {
+    holding_window: string;
+    candidate_count: number;
+    recommended_symbol: string;
+  };
+  assumptions: Record<string, string>;
+  training_backtest: {
+    metrics: Record<string, string>;
+  };
+  leaderboard: Array<{
+    symbol: string;
+    strategy_template: string;
+    backtest: Record<string, string>;
+  }>;
+};
+
 export type ValidationReviewItem = {
   overview: Record<string, unknown>;
   steps: Array<Record<string, unknown>>;
@@ -976,6 +995,42 @@ export async function getResearchWorkspace(): Promise<ApiEnvelope<{ item: Resear
   };
 }
 
+export async function getBacktestWorkspace(): Promise<ApiEnvelope<{ item: BacktestWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/backtest/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getBacktestWorkspaceFallback(),
+      },
+      error: {
+        code: "backtest_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "回测工作台暂时不可用",
+      },
+      meta: {
+        source: "backtest-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getBacktestWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeBacktestWorkspaceModel(response.data.item),
+    },
+  };
+}
+
 export function getDataWorkspaceFallback(symbol?: string, interval?: string, limit?: number): DataWorkspaceModel {
   return {
     status: "unavailable",
@@ -1068,6 +1123,23 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       symbols: [],
       timeframes: [],
     },
+  };
+}
+
+export function getBacktestWorkspaceFallback(): BacktestWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    overview: {
+      holding_window: "",
+      candidate_count: 0,
+      recommended_symbol: "",
+    },
+    assumptions: {},
+    training_backtest: {
+      metrics: {},
+    },
+    leaderboard: [],
   };
 }
 
@@ -1289,6 +1361,46 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       symbols: normalizeStringArray(selectors.symbols, []),
       timeframes: normalizeStringArray(selectors.timeframes, []),
     },
+  };
+}
+
+function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+  const assumptions = isPlainObject(row.assumptions) ? row.assumptions : {};
+  const trainingBacktest = isPlainObject(row.training_backtest) ? row.training_backtest : {};
+  const metrics = isPlainObject(trainingBacktest.metrics) ? trainingBacktest.metrics : {};
+  const leaderboard = Array.isArray(row.leaderboard) ? row.leaderboard : [];
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    overview: {
+      holding_window: String(overview.holding_window ?? ""),
+      candidate_count: Number(overview.candidate_count ?? 0),
+      recommended_symbol: String(overview.recommended_symbol ?? ""),
+    },
+    assumptions: Object.fromEntries(
+      Object.entries(assumptions).map(([name, value]) => [String(name), String(value ?? "")]),
+    ),
+    training_backtest: {
+      metrics: Object.fromEntries(
+        Object.entries(metrics).map(([name, value]) => [String(name), String(value ?? "")]),
+      ),
+    },
+    leaderboard: leaderboard
+      .map((value) => {
+        const item = isPlainObject(value) ? value : {};
+        const backtest = isPlainObject(item.backtest) ? item.backtest : {};
+        return {
+          symbol: String(item.symbol ?? ""),
+          strategy_template: String(item.strategy_template ?? ""),
+          backtest: Object.fromEntries(
+            Object.entries(backtest).map(([name, metric]) => [String(name), String(metric ?? "")]),
+          ),
+        };
+      })
+      .filter((item) => item.symbol.length > 0),
   };
 }
 
