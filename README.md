@@ -218,6 +218,19 @@ services/worker             研究层最小运行入口和研究逻辑
 packages/db                 数据库结构
 docs                        架构、接口、运维说明
 infra/scripts               演示脚本
+
+## 系统导览
+
+如果你想先看懂整个系统怎么跑，再去体验页面，先读这份文档：
+
+- [docs/system-flow-guide.md](docs/system-flow-guide.md)
+
+它会用非技术语言解释：
+
+- 研究层在做什么
+- 点击 `运行 Qlib 信号流水线` 后系统会发生什么
+- `dry-run / live / 复盘` 分别是什么意思
+- 自动化工作流是怎么串起来的
 infra/freqtrade             Freqtrade Spot dry-run Docker 骨架
 infra/deploy                阿里云统一部署骨架
 ```
