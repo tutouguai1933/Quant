@@ -33,6 +33,7 @@ from services.api.app.main import app  # noqa: E402
 from services.api.app.routes.accounts import list_accounts  # noqa: E402
 from services.api.app.routes.auth import login  # noqa: E402
 from services.api.app.routes.data_workspace import get_data_workspace  # noqa: E402
+from services.api.app.routes.feature_workspace import get_feature_workspace  # noqa: E402
 from services.api.app.routes.health import get_health, get_healthz  # noqa: E402
 from services.api.app.routes.risk_events import get_risk_event, list_risk_events  # noqa: E402
 from services.api.app.routes.signals import (  # noqa: E402
@@ -175,6 +176,7 @@ class ApiSkeletonTests(unittest.TestCase):
             router_prefixes.append(prefix)
         self.assertIn("/api/v1/auth", router_prefixes)
         self.assertIn("/api/v1/data", router_prefixes)
+        self.assertIn("/api/v1/features", router_prefixes)
 
     def test_health_endpoints_return_success_envelope(self) -> None:
         self.assertEqual(get_health()["error"], None)
@@ -268,6 +270,14 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIsNone(response["error"])
         self.assertIn("item", response["data"])
         self.assertEqual(response["meta"]["source"], "data-workspace")
+
+    def test_feature_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_feature_workspace()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        self.assertEqual(response["meta"]["source"], "feature-workspace")
 
     def test_research_routes_return_consistent_response_shape(self) -> None:
         token = self._login_token()

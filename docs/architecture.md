@@ -729,4 +729,11 @@
 - 数据工作台聚合服务：`services/api/app/services/data_workspace_service.py`
 - 数据工作台页面：`apps/web/app/data/page.tsx`
 - 数据工作台异常策略：研究快照正常但样本预览失败时，接口状态会降级成 `degraded`，页面直接显示预览失败原因
+
+当前也已完成第二步：
+
+- 特征工作台后端入口：`services/api/app/routes/feature_workspace.py`
+- 特征工作台聚合服务：`services/api/app/services/feature_workspace_service.py`
+- 特征工作台页面：`apps/web/app/features/page.tsx`
+- 特征工作台聚合口径：优先复用研究报告里的 `factor_protocol`，把因子分类、角色、预处理和周期参数直接显性化到前端
 - 作用：把研究报告中的数据快照、训练窗口和市场样本预览收成一个最小工作台，直接回答“这次研究用了什么数据”

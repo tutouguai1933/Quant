@@ -367,6 +367,35 @@ export type ResearchReportItem = {
   };
 };
 
+export type FeatureWorkspaceModel = {
+  status: string;
+  backend: string;
+  overview: {
+    feature_version: string;
+    factor_count: number;
+    primary_count: number;
+    auxiliary_count: number;
+    holding_window: string;
+  };
+  categories: Record<string, string[]>;
+  roles: {
+    primary: string[];
+    auxiliary: string[];
+  };
+  preprocessing: {
+    missing_policy: string;
+    outlier_policy: string;
+    normalization_policy: string;
+  };
+  timeframe_profiles: Record<string, Record<string, unknown>>;
+  factors: Array<{
+    name: string;
+    category: string;
+    role: string;
+    description: string;
+  }>;
+};
+
 export type ValidationReviewItem = {
   overview: Record<string, unknown>;
   steps: Array<Record<string, unknown>>;
@@ -849,6 +878,42 @@ export async function getDataWorkspace(
   };
 }
 
+export async function getFeatureWorkspace(): Promise<ApiEnvelope<{ item: FeatureWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/features/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getFeatureWorkspaceFallback(),
+      },
+      error: {
+        code: "feature_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "特征工作台暂时不可用",
+      },
+      meta: {
+        source: "feature-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getFeatureWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeFeatureWorkspaceModel(response.data.item),
+    },
+  };
+}
+
 export function getDataWorkspaceFallback(symbol?: string, interval?: string, limit?: number): DataWorkspaceModel {
   return {
     status: "unavailable",
@@ -887,6 +952,32 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
       sample_window: {},
     },
     symbols: [],
+  };
+}
+
+export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    overview: {
+      feature_version: "",
+      factor_count: 0,
+      primary_count: 0,
+      auxiliary_count: 0,
+      holding_window: "",
+    },
+    categories: {},
+    roles: {
+      primary: [],
+      auxiliary: [],
+    },
+    preprocessing: {
+      missing_policy: "",
+      outlier_policy: "",
+      normalization_policy: "",
+    },
+    timeframe_profiles: {},
+    factors: [],
   };
 }
 
@@ -1020,6 +1111,54 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
         };
       })
       .filter((value) => value.symbol.length > 0),
+  };
+}
+
+function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+  const roles = isPlainObject(row.roles) ? row.roles : {};
+  const preprocessing = isPlainObject(row.preprocessing) ? row.preprocessing : {};
+  const categories = isPlainObject(row.categories) ? row.categories : {};
+  const timeframeProfiles = isPlainObject(row.timeframe_profiles) ? row.timeframe_profiles : {};
+  const factors = Array.isArray(row.factors) ? row.factors : [];
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    overview: {
+      feature_version: String(overview.feature_version ?? ""),
+      factor_count: Number(overview.factor_count ?? 0),
+      primary_count: Number(overview.primary_count ?? 0),
+      auxiliary_count: Number(overview.auxiliary_count ?? 0),
+      holding_window: String(overview.holding_window ?? ""),
+    },
+    categories: Object.fromEntries(
+      Object.entries(categories).map(([name, values]) => [String(name), normalizeStringArray(values, [])]),
+    ),
+    roles: {
+      primary: normalizeStringArray(roles.primary, []),
+      auxiliary: normalizeStringArray(roles.auxiliary, []),
+    },
+    preprocessing: {
+      missing_policy: String(preprocessing.missing_policy ?? ""),
+      outlier_policy: String(preprocessing.outlier_policy ?? ""),
+      normalization_policy: String(preprocessing.normalization_policy ?? ""),
+    },
+    timeframe_profiles: Object.fromEntries(
+      Object.entries(timeframeProfiles).map(([name, values]) => [String(name), isPlainObject(values) ? values : {}]),
+    ),
+    factors: factors
+      .map((value) => {
+        const factor = isPlainObject(value) ? value : {};
+        return {
+          name: String(factor.name ?? ""),
+          category: String(factor.category ?? ""),
+          role: String(factor.role ?? ""),
+          description: String(factor.description ?? ""),
+        };
+      })
+      .filter((value) => value.name.length > 0),
   };
 }
 
