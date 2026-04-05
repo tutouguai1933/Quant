@@ -35,6 +35,8 @@ def run_backtest(
         "turnover": _format_float(_turnover_ratio(rows)),
         "sample_count": str(len(rows)),
         "max_loss_streak": str(_max_loss_streak(net_returns)),
+        "action_segment_count": str(_action_segment_count(rows)),
+        "direction_switch_count": str(_direction_switch_count(rows)),
     }
     return {
         "holding_window": holding_window,
@@ -42,6 +44,9 @@ def run_backtest(
             "fee_bps": str(fee_bps_decimal),
             "slippage_bps": str(slippage_bps_decimal),
             "round_trip_cost_pct": _format_float(round_trip_cost_pct),
+            "cost_model": "round_trip_basis_points",
+            "switch_rule": "signal_flip_only",
+            "segment_turnover_mode": "watch_to_action_segments",
         },
         "metrics": metrics,
     }
@@ -100,6 +105,34 @@ def _turnover_ratio(rows: list[dict[str, object]]) -> float:
     return turnover_count / len(rows)
 
 
+def _action_segment_count(rows: list[dict[str, object]]) -> int:
+    """统计从空档进入动作段的次数。"""
+
+    if not rows:
+        return 0
+    count = 0
+    previous_direction = "watch"
+    for row in rows:
+        current_direction = _normalize_direction(row.get("label"))
+        if current_direction != "watch" and current_direction != previous_direction:
+            count += 1
+        previous_direction = current_direction
+    return count
+
+
+def _direction_switch_count(rows: list[dict[str, object]]) -> int:
+    """统计动作段内部从买切到卖或从卖切到买的次数。"""
+
+    switch_count = 0
+    previous_direction = "watch"
+    for row in rows:
+        current_direction = _normalize_direction(row.get("label"))
+        if previous_direction in {"buy", "sell"} and current_direction in {"buy", "sell"} and current_direction != previous_direction:
+            switch_count += 1
+        previous_direction = current_direction
+    return switch_count
+
+
 def _max_loss_streak(returns: list[float]) -> int:
     """计算最长连续亏损段。"""
 
@@ -112,6 +145,13 @@ def _max_loss_streak(returns: list[float]) -> int:
             continue
         current = 0
     return longest
+
+
+def _normalize_direction(value: object) -> str:
+    """把标签统一成动作方向。"""
+
+    raw = str(value or "").strip()
+    return raw if raw in {"buy", "sell"} else "watch"
 
 
 def _to_float(value: object) -> float:

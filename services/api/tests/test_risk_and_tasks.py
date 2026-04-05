@@ -448,6 +448,10 @@ class RiskAndTaskTests(unittest.TestCase):
         self.assertIn("overview", review_response["data"]["item"]["result"])
         self.assertIn("steps", review_response["data"]["item"]["result"])
         self.assertIn("task_health", review_response["data"]["item"]["result"])
+        self.assertIn("execution_comparison", review_response["data"]["item"]["result"])
+        self.assertIn("status", review_response["data"]["item"]["result"]["execution_comparison"])
+        self.assertIn("backtest", review_response["data"]["item"]["result"]["execution_comparison"])
+        self.assertIn("execution", review_response["data"]["item"]["result"]["execution_comparison"])
         self.assertIn("execution_health", report_response["data"]["item"])
         self.assertIn("recent_tasks", report_response["data"]["item"])
 

@@ -56,6 +56,11 @@ class ValidationWorkflowService:
             "research_report": research_report,
             "task_health": task_health,
             "execution_health": execution_health,
+            "execution_comparison": self._build_execution_comparison(
+                research_report=research_report,
+                account_snapshot=account_snapshot,
+                execution_health=execution_health,
+            ),
             "automation": automation,
             "recent_tasks": recent_tasks,
             "account_snapshot": account_snapshot,
@@ -112,6 +117,57 @@ class ValidationWorkflowService:
                 "统一复盘",
             ),
         ]
+
+    def _build_execution_comparison(
+        self,
+        *,
+        research_report: dict[str, object],
+        account_snapshot: dict[str, object],
+        execution_health: dict[str, object],
+    ) -> dict[str, object]:
+        """把研究回测结果和当前执行结果收成同一份摘要。"""
+
+        candidate = self._pick_recommended_candidate(research_report)
+        symbol = str(candidate.get("symbol", ""))
+        normalized_symbol = self._normalize_symbol(symbol)
+        orders = list(account_snapshot.get("orders") or [])
+        positions = list(account_snapshot.get("positions") or [])
+        matched_orders = [item for item in orders if self._normalize_symbol(item.get("symbol")) == normalized_symbol]
+        matched_positions = [item for item in positions if self._normalize_symbol(item.get("symbol")) == normalized_symbol]
+        recommended_action = str(research_report.get("overview", {}).get("recommended_action", ""))
+        latest_sync_status = str(execution_health.get("latest_sync_status", ""))
+
+        if not symbol:
+            status = "unavailable"
+            note = "当前没有可对照的研究候选"
+        elif matched_orders or matched_positions:
+            status = "matched"
+            note = "当前执行结果里已经能看到和研究候选对应的订单或持仓"
+        elif recommended_action == "continue_research":
+            status = "waiting_research"
+            note = "研究结论还没放行到执行，当前应先继续研究"
+        elif latest_sync_status == "failed":
+            status = "attention_required"
+            note = "研究允许执行，但最近同步没有成功，需要先检查执行链"
+        else:
+            status = "no_execution"
+            note = "研究侧已有候选，但当前执行结果里还没有看到对应动作"
+
+        return {
+            "status": status,
+            "symbol": symbol,
+            "recommended_action": recommended_action,
+            "note": note,
+            "backtest": dict(candidate.get("backtest") or {}),
+            "execution": {
+                "runtime_mode": str(execution_health.get("runtime_mode", "")),
+                "latest_sync_status": latest_sync_status,
+                "matched_order_count": len(matched_orders),
+                "matched_position_count": len(matched_positions),
+                "orders": matched_orders,
+                "positions": matched_positions,
+            },
+        }
 
     @staticmethod
     def _serialize_recent_tasks(items: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -204,6 +260,34 @@ class ValidationWorkflowService:
         if automation_mode == "auto_live" and runtime_mode == "live" and latest_sync_status == "succeeded":
             return "retain_small_live"
         return "continue_dry_run"
+
+    @staticmethod
+    def _pick_recommended_candidate(research_report: dict[str, object]) -> dict[str, object]:
+        """优先取当前推荐候选，没有则回退到排行第一名。"""
+
+        recommended_symbol = str(research_report.get("overview", {}).get("recommended_symbol", "")).strip().upper()
+        candidates = list(research_report.get("candidates") or [])
+        if recommended_symbol:
+            for item in candidates:
+                if str(item.get("symbol", "")).strip().upper() == recommended_symbol:
+                    return dict(item)
+        if candidates:
+            return dict(candidates[0])
+        leaderboard = list(research_report.get("leaderboard") or [])
+        if leaderboard:
+            return dict(leaderboard[0])
+        return {}
+
+    @staticmethod
+    def _normalize_symbol(value: object) -> str:
+        """统一 symbol 口径，方便研究结果和执行结果对照。"""
+
+        raw = str(value or "").strip().upper().replace("/", "")
+        if raw.endswith("USDT"):
+            return raw
+        if raw:
+            return f"{raw}USDT"
+        return ""
 
 
 validation_workflow_service = ValidationWorkflowService()
