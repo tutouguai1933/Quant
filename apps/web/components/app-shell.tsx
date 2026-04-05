@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { FormSubmitButton } from "./form-submit-button";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
@@ -95,7 +96,13 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
 
                 {isAuthenticated ? (
                   <form action="/logout" method="post">
-                    <Button type="submit" variant="outline">退出登录</Button>
+                    <FormSubmitButton
+                      type="submit"
+                      variant="outline"
+                      idleLabel="退出登录"
+                      pendingLabel="退出中…"
+                      pendingHint="会话正在清理，页面会自动返回未登录状态。"
+                    />
                   </form>
                 ) : (
                   <Button asChild variant="outline">

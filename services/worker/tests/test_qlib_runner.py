@@ -26,18 +26,15 @@ class QlibConfigTests(unittest.TestCase):
         self.assertEqual(config.status, "unconfigured")
         self.assertIn("QUANT_QLIB_RUNTIME_ROOT", config.detail)
 
-    def test_missing_runtime_root_raises_clear_error(self) -> None:
+    def test_missing_runtime_root_is_created_automatically(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir) / "missing-root"
             config = load_qlib_config(
                 env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
                 require_explicit=True,
             )
-
-            with self.assertRaises(QlibConfigurationError) as context:
-                config.ensure_ready()
-
-        self.assertIn("运行目录不存在", str(context.exception))
+            config.ensure_ready()
+            self.assertTrue(runtime_root.exists())
 
     def test_backtest_assumptions_can_be_overridden_from_env(self) -> None:
         config = load_qlib_config(

@@ -5,6 +5,7 @@ import { ArrowRight, Radar, ShieldAlert, Zap } from "lucide-react";
 
 import { AppShell } from "../components/app-shell";
 import { FeedbackBanner } from "../components/feedback-banner";
+import { FormSubmitButton } from "../components/form-submit-button";
 import { MetricGrid } from "../components/metric-grid";
 import { PageHero } from "../components/page-hero";
 import { StatusBadge } from "../components/status-badge";
@@ -247,9 +248,14 @@ function ActionFormCard({
             <p className="text-sm font-semibold text-foreground">{label}</p>
             <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
           </div>
-          <Button type="submit" variant={danger ? "danger" : "default"} size="sm">
-            {label}
-          </Button>
+          <FormSubmitButton
+            type="submit"
+            variant={danger ? "danger" : "default"}
+            size="sm"
+            idleLabel={label}
+            pendingLabel={`${label}运行中…`}
+            pendingHint="控制平面正在处理这次动作，页面会在完成后刷新。"
+          />
         </form>
       </CardContent>
     </Card>

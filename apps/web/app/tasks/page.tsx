@@ -3,6 +3,7 @@
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
+import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
@@ -214,9 +215,14 @@ function ActionCard({
             <p className="text-sm font-semibold text-foreground">{label}</p>
             <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
           </div>
-          <Button type="submit" variant={danger ? "danger" : "terminal"} size="sm">
-            {label}
-          </Button>
+          <FormSubmitButton
+            type="submit"
+            variant={danger ? "danger" : "terminal"}
+            size="sm"
+            idleLabel={label}
+            pendingLabel={`${label}运行中…`}
+            pendingHint="自动化动作已提交，页面会在状态更新后自动刷新。"
+          />
         </form>
       </CardContent>
     </Card>

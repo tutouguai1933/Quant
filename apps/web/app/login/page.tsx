@@ -2,6 +2,7 @@
 
 import { AppShell } from "../../components/app-shell";
 import { FeedbackBanner } from "../../components/feedback-banner";
+import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { Button } from "../../components/ui/button";
@@ -84,7 +85,13 @@ export default async function LoginPage({ searchParams }: PageProps) {
                 <p className="text-sm leading-6 text-muted-foreground">
                   当前登录只做单管理员入口，目的是快速进入策略、风险和任务控制区。
                 </p>
-                <Button type="submit" className="w-full">登录并继续</Button>
+                <FormSubmitButton
+                  type="submit"
+                  className="w-full"
+                  idleLabel="登录并继续"
+                  pendingLabel="登录中…"
+                  pendingHint="正在建立管理员会话，完成后会自动跳转。"
+                />
               </div>
             </form>
           </CardContent>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
+import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
@@ -329,9 +330,13 @@ function ActionForm({ action, label, focusSymbol }: ActionFormProps) {
       <input type="hidden" name="action" value={action} />
       <input type="hidden" name="strategyId" value="1" />
       <input type="hidden" name="returnTo" value={returnTo} />
-      <Button type="submit" variant={action === "dispatch_latest_signal" ? "terminal" : "outline"}>
-        {label}
-      </Button>
+      <FormSubmitButton
+        type="submit"
+        variant={action === "dispatch_latest_signal" ? "terminal" : "outline"}
+        idleLabel={label}
+        pendingLabel={`${label}运行中…`}
+        pendingHint="执行动作已提交，页面会在状态返回后自动刷新。"
+      />
       <p>{focusSymbol ? `当前跟进对象：${focusSymbol}。` : ""}把控制动作统一走控制平面，当前阶段固定控制整台执行器。</p>
     </form>
   );

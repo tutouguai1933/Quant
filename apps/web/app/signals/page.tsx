@@ -5,6 +5,7 @@ import { FlaskConical, ScanSearch, Sparkles } from "lucide-react";
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
+import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
@@ -181,9 +182,13 @@ function ActionForm({ action, label, returnTo }: ActionFormProps) {
             <p className="text-sm font-semibold text-foreground">{label}</p>
             <p className="text-sm leading-6 text-muted-foreground">通过控制平面提交研究动作，不直接碰后端实现。</p>
           </div>
-          <Button type="submit" size="sm">
-            {label}
-          </Button>
+          <FormSubmitButton
+            type="submit"
+            size="sm"
+            idleLabel={label}
+            pendingLabel={`${label}运行中…`}
+            pendingHint="研究动作已发出，页面会在结果返回后自动刷新。"
+          />
         </form>
       </CardContent>
     </Card>

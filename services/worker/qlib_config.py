@@ -54,8 +54,10 @@ class QlibRuntimeConfig:
 
         if self.status != "ready":
             raise QlibConfigurationError(self.detail)
-        if not self.paths.runtime_root.exists():
-            raise QlibConfigurationError(f"研究层运行目录不存在：{self.paths.runtime_root}")
+        try:
+            self.paths.runtime_root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise QlibConfigurationError(f"研究层运行目录不可写：{self.paths.runtime_root}") from exc
 
 
 def load_qlib_config(
