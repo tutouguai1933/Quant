@@ -110,6 +110,7 @@ class QlibRunner:
             "artifact_path": str(artifact_path),
             "dataset_snapshot": dataset_snapshot,
             "dataset_snapshot_path": str(dataset_snapshot_path),
+            "training_context": self._build_training_context(bundle=bundle, dataset_snapshot=dataset_snapshot),
         }
         result["backtest"]["data_snapshot"] = {
             "snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
@@ -151,6 +152,7 @@ class QlibRunner:
             signal = _classify_signal(score)
             target_weight = _target_weight(signal, score)
             rule_gate = self._build_rule_gate(latest)
+            recommendation_context = self._build_recommendation_context(feature_row=latest)
             signals.append(
                 {
                     "symbol": symbol,
@@ -172,12 +174,14 @@ class QlibRunner:
                     "score": _format_float(score),
                     "backtest": self._build_candidate_backtest(rows=bundle.testing_rows),
                     "rule_gate": rule_gate,
+                    "recommendation_context": recommendation_context,
                 }
             )
 
         ranked_candidates = rank_candidates(
             candidates,
             validation=dict(training_payload.get("validation") or {}),
+            training_metrics=dict(training_payload.get("metrics") or {}),
             force_validation_top_candidate=self._config.force_validation_top_candidate,
         )
         dataset_snapshot_path, dataset_snapshot = self._write_dataset_snapshot(
@@ -207,6 +211,13 @@ class QlibRunner:
             "warnings": self._build_warnings(),
             "dataset_snapshot": dataset_snapshot,
             "dataset_snapshot_path": str(dataset_snapshot_path),
+            "inference_context": self._build_inference_context(
+                symbol_bundles=symbol_bundles,
+                signals=signals,
+                candidates=ranked_candidates,
+                training_payload=training_payload,
+                dataset_snapshot=dataset_snapshot,
+            ),
         }
         result["experiment_report"] = build_experiment_report(
             latest_training=training_payload,
@@ -408,6 +419,79 @@ class QlibRunner:
             f"trend_gap={feature_row['trend_gap_pct']}%, "
             f"volume_ratio={feature_row['volume_ratio']}"
         )
+
+    def _build_training_context(self, *, bundle: TrainingBundle, dataset_snapshot: dict[str, object]) -> dict[str, object]:
+        """整理训练阶段的实验元数据。"""
+
+        return {
+            "feature_version": str(bundle.factor_protocol.get("version", "")),
+            "holding_window": "1-3d",
+            "symbols": sorted(bundle.symbol_bundles.keys()),
+            "timeframes": sorted({item.timeframe for item in bundle.symbol_bundles.values()}),
+            "sample_window": self._build_sample_window(bundle=bundle),
+            "parameters": {
+                "backtest_fee_bps": str(self._config.backtest_fee_bps),
+                "backtest_slippage_bps": str(self._config.backtest_slippage_bps),
+                "force_validation_top_candidate": bool(self._config.force_validation_top_candidate),
+            },
+            "dataset_snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
+        }
+
+    def _build_inference_context(
+        self,
+        *,
+        symbol_bundles: dict[str, DatasetBundle],
+        signals: list[dict[str, object]],
+        candidates: dict[str, object],
+        training_payload: dict[str, object],
+        dataset_snapshot: dict[str, object],
+    ) -> dict[str, object]:
+        """整理推理阶段输入和输出摘要。"""
+
+        candidate_items = list(candidates.get("items") or [])
+        return {
+            "feature_version": str((training_payload.get("factor_protocol") or {}).get("version", "")),
+            "symbol_count": len(symbol_bundles),
+            "input_summary": {
+                "symbols": sorted(symbol_bundles.keys()),
+                "timeframes": sorted({item.timeframe for item in symbol_bundles.values()}),
+                "dataset_snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
+            },
+            "output_summary": {
+                "signal_count": len(signals),
+                "ready_count": sum(1 for item in candidate_items if bool(item.get("allowed_to_dry_run"))),
+                "blocked_count": sum(1 for item in candidate_items if not bool(item.get("allowed_to_dry_run"))),
+                "top_symbol": str(candidate_items[0].get("symbol", "")) if candidate_items else "",
+            },
+        }
+
+    @staticmethod
+    def _build_sample_window(*, bundle: TrainingBundle) -> dict[str, object]:
+        """把训练、验证、回测的样本窗口压成统一结构。"""
+
+        def _window(rows: list[dict[str, object]]) -> dict[str, object]:
+            timestamps = [int(item.get("generated_at") or 0) for item in rows if item.get("generated_at") is not None]
+            if not timestamps:
+                return {"start": 0, "end": 0, "count": 0}
+            return {"start": min(timestamps), "end": max(timestamps), "count": len(rows)}
+
+        return {
+            "training": _window(bundle.training_rows),
+            "validation": _window(bundle.validation_rows),
+            "backtest": _window(bundle.backtest_rows),
+        }
+
+    @staticmethod
+    def _build_recommendation_context(*, feature_row: dict[str, object]) -> dict[str, str]:
+        """根据当前因子状态补充市场形态和主要依赖指标。"""
+
+        regime = "trend"
+        rsi = _to_float(feature_row.get("rsi14"))
+        cci = _to_float(feature_row.get("cci20"))
+        if 40 <= rsi <= 60 and abs(cci) < 80:
+            regime = "range"
+        indicator_mix = "trend+momentum+volume" if regime == "trend" else "oscillator+volume"
+        return {"regime": regime, "indicator_mix": indicator_mix}
 
     def _ensure_runtime_directories(self) -> None:
         """在已存在根目录下补齐子目录。"""

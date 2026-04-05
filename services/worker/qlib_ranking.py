@@ -12,17 +12,19 @@ def rank_candidates(
     items: list[dict[str, object]],
     *,
     validation: dict[str, object] | None = None,
+    training_metrics: dict[str, object] | None = None,
     force_validation_top_candidate: bool = False,
 ) -> dict[str, object]:
     """按分数输出统一候选排行。"""
 
     ranked = sorted(items, key=lambda item: _to_decimal(item.get("score")), reverse=True)
     normalized = [
-        _normalize_candidate(item, index=index, validation=validation)
+        _normalize_candidate(item, index=index, validation=validation, training_metrics=training_metrics)
         for index, item in enumerate(ranked, start=1)
     ]
     if force_validation_top_candidate:
         normalized = _apply_force_validation_override(normalized)
+    normalized = _apply_recommendation_order(normalized)
     return {
         "items": normalized,
         "summary": {
@@ -38,6 +40,7 @@ def _normalize_candidate(
     *,
     index: int,
     validation: dict[str, object] | None,
+    training_metrics: dict[str, object] | None,
 ) -> dict[str, object]:
     """把单个候选统一成稳定结构。"""
 
@@ -46,9 +49,21 @@ def _normalize_candidate(
     rule_gate = _normalize_rule_gate(item.get("rule_gate"))
     research_validation_gate = _evaluate_validation_gate(validation)
     backtest_gate = _evaluate_backtest_gate(metrics)
-    consistency_gate = _evaluate_consistency_gate(validation=validation, metrics=metrics)
+    consistency_gate = _evaluate_consistency_gate(validation=validation, metrics=metrics, training_metrics=training_metrics)
     dry_run_gate = _merge_gates(rule_gate, research_validation_gate, backtest_gate, consistency_gate)
     allowed_to_dry_run = dry_run_gate["status"] == "passed"
+    recommendation_context = _normalize_recommendation_context(item.get("recommendation_context"))
+    recommendation_score = _build_recommendation_score(
+        raw_score=_to_decimal(item.get("score")),
+        metrics=metrics,
+        validation=validation,
+        training_metrics=training_metrics,
+        recommendation_context=recommendation_context,
+    )
+    recommendation_reason = _build_recommendation_reason(
+        recommendation_context=recommendation_context,
+        allowed_to_dry_run=allowed_to_dry_run,
+    )
     return {
         "rank": index,
         "symbol": str(item.get("symbol", "")).strip().upper(),
@@ -66,6 +81,9 @@ def _normalize_candidate(
         "review_status": "ready_for_dry_run" if allowed_to_dry_run else "needs_research_iteration",
         "next_action": "enter_dry_run" if allowed_to_dry_run else "continue_research",
         "execution_priority": 0 if allowed_to_dry_run else 100 + index,
+        "recommendation_context": recommendation_context,
+        "recommendation_score": _format_decimal(recommendation_score),
+        "recommendation_reason": recommendation_reason,
     }
 
 
@@ -83,6 +101,31 @@ def _apply_force_validation_override(items: list[dict[str, object]]) -> list[dic
     top_item["next_action"] = "enter_dry_run"
     top_item["execution_priority"] = 0
     return overridden
+
+
+def _apply_recommendation_order(items: list[dict[str, object]]) -> list[dict[str, object]]:
+    """按推荐可信度重新整理排序和执行优先级。"""
+
+    ordered = sorted(
+        [dict(item) for item in items],
+        key=lambda item: (
+            0 if bool(item.get("allowed_to_dry_run")) else 1,
+            -float(str(item.get("recommendation_score") or "0")),
+            -float(str(item.get("score") or "0")),
+            str(item.get("symbol", "")),
+        ),
+    )
+    ready_rank = 0
+    blocked_rank = 0
+    for index, item in enumerate(ordered, start=1):
+        item["rank"] = index
+        if bool(item.get("allowed_to_dry_run")):
+            item["execution_priority"] = ready_rank
+            ready_rank += 1
+        else:
+            item["execution_priority"] = 100 + blocked_rank
+            blocked_rank += 1
+    return ordered
 
 
 def _evaluate_backtest_gate(metrics: dict[str, object]) -> dict[str, object]:
@@ -145,6 +188,7 @@ def _evaluate_consistency_gate(
     *,
     validation: dict[str, object] | None,
     metrics: dict[str, object],
+    training_metrics: dict[str, object] | None,
 ) -> dict[str, object]:
     """判断验证摘要和净回测之间是否出现明显漂移。"""
 
@@ -165,10 +209,70 @@ def _evaluate_consistency_gate(
         failures.append("validation_backtest_drift_too_large")
     elif (validation_avg - avg_net_return_pct) > Decimal("1.5"):
         failures.append("validation_backtest_drift_too_large")
+    training_payload = dict(training_metrics or {})
+    training_positive_rate = _to_decimal(training_payload.get("positive_rate"))
+    validation_positive_rate = _to_decimal(payload.get("positive_rate"))
+    training_avg = _to_decimal(training_payload.get("avg_future_return_pct"))
+    if training_payload:
+        if (training_positive_rate - validation_positive_rate) > Decimal("0.20"):
+            failures.append("validation_training_drift_too_large")
+        if (training_avg - validation_avg) > Decimal("1.5"):
+            failures.append("validation_training_drift_too_large")
 
     if failures:
         return {"status": "failed", "reasons": failures}
     return {"status": "passed", "reasons": []}
+
+
+def _normalize_recommendation_context(value: object) -> dict[str, str]:
+    """统一推荐上下文结构。"""
+
+    payload = dict(value or {}) if isinstance(value, dict) else {}
+    return {
+        "regime": str(payload.get("regime", "trend")).strip() or "trend",
+        "indicator_mix": str(payload.get("indicator_mix", "")).strip(),
+    }
+
+
+def _build_recommendation_score(
+    *,
+    raw_score: Decimal,
+    metrics: dict[str, object],
+    validation: dict[str, object] | None,
+    training_metrics: dict[str, object] | None,
+    recommendation_context: dict[str, str],
+) -> Decimal:
+    """根据分数、验证、回测和市场状态生成更稳的推荐分。"""
+
+    net_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
+    sharpe = _to_decimal(metrics.get("sharpe"))
+    max_drawdown_pct = abs(_to_decimal(metrics.get("max_drawdown_pct")))
+    validation_positive_rate = _to_decimal(dict(validation or {}).get("positive_rate"))
+    training_positive_rate = _to_decimal(dict(training_metrics or {}).get("positive_rate"))
+    recommendation_score = raw_score
+    recommendation_score += net_return_pct / Decimal("100")
+    recommendation_score += sharpe / Decimal("20")
+    recommendation_score -= max_drawdown_pct / Decimal("100")
+    recommendation_score += validation_positive_rate / Decimal("10")
+    if training_positive_rate > Decimal("0") and validation_positive_rate > Decimal("0"):
+        recommendation_score -= abs(training_positive_rate - validation_positive_rate) / Decimal("5")
+    if recommendation_context.get("regime") == "trend":
+        recommendation_score += Decimal("0.0500")
+    return recommendation_score
+
+
+def _build_recommendation_reason(
+    *,
+    recommendation_context: dict[str, str],
+    allowed_to_dry_run: bool,
+) -> str:
+    """生成更稳的推荐说明。"""
+
+    regime = recommendation_context.get("regime", "trend")
+    indicator_mix = recommendation_context.get("indicator_mix", "") or "trend+momentum"
+    if allowed_to_dry_run:
+        return f"{regime} 行情下优先参考 {indicator_mix}"
+    return f"{regime} 行情下 {indicator_mix} 仍需继续研究"
 
 
 def _normalize_rule_gate(value: object) -> dict[str, object]:

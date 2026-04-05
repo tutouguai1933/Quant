@@ -252,6 +252,30 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["consistency_gate"]["status"], "failed")
         self.assertIn("validation_backtest_drift_too_large", result["items"][0]["consistency_gate"]["reasons"])
 
+    def test_rank_candidates_blocks_when_validation_drift_from_training_is_too_large(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7900",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            validation={
+                "sample_count": 20,
+                "positive_rate": "0.48",
+                "avg_future_return_pct": "0.20",
+            },
+            training_metrics={
+                "positive_rate": "0.82",
+                "avg_future_return_pct": "1.80",
+            },
+        )
+
+        self.assertIn("validation_training_drift_too_large", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
     def test_rank_candidates_marks_ready_candidate_with_execution_priority(self) -> None:
         result = rank_candidates(
             [
@@ -302,6 +326,42 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["forced_reason"], "force_top_candidate_for_validation")
         self.assertFalse(result["items"][1]["allowed_to_dry_run"])
         self.assertFalse(result["items"][1]["forced_for_validation"])
+
+    def test_rank_candidates_recommendation_score_is_not_only_raw_score(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.9000",
+                    "backtest": {"metrics": {**_passing_metrics(), "net_return_pct": "3.0000", "max_drawdown_pct": "-10.0000"}},
+                    "recommendation_context": {"regime": "range", "indicator_mix": "oscillator+volume"},
+                },
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.8200",
+                    "backtest": {"metrics": {**_passing_metrics(), "net_return_pct": "12.0000", "max_drawdown_pct": "-2.0000", "sharpe": "2.1000"}},
+                    "recommendation_context": {"regime": "trend", "indicator_mix": "trend+momentum+volume"},
+                },
+            ],
+            validation={
+                "sample_count": 20,
+                "positive_rate": "0.62",
+                "avg_future_return_pct": "0.80",
+            },
+            training_metrics={
+                "positive_rate": "0.64",
+                "avg_future_return_pct": "0.90",
+            },
+        )
+
+        eth = next(item for item in result["items"] if item["symbol"] == "ETHUSDT")
+        btc = next(item for item in result["items"] if item["symbol"] == "BTCUSDT")
+        self.assertGreater(float(btc["score"]), float(eth["score"]))
+        self.assertGreater(float(eth["recommendation_score"]), float(btc["recommendation_score"]))
+        self.assertIn("trend", eth["recommendation_reason"])
+        self.assertEqual(eth["next_action"], "enter_dry_run")
 
 
 def _passing_metrics() -> dict[str, str]:

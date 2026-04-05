@@ -116,6 +116,8 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("auxiliary_feature_columns", report["factor_protocol"])
         self.assertIn("evaluation", report)
         self.assertIn("reviews", report)
+        self.assertIn("training_context", report["latest_training"])
+        self.assertIn("inference_context", report["latest_inference"])
         self.assertEqual(report["experiments"]["training"]["dataset_snapshot"]["data_states"]["current"], "feature-ready")
         self.assertIn("cache", report["experiments"]["training"]["dataset_snapshot"])
         self.assertIn("snapshots", report)
