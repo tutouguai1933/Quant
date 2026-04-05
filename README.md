@@ -577,6 +577,8 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 
 ## 文档入口
 
+- [docs/system-flow-guide.md](/home/djy/Quant/docs/system-flow-guide.md)
+- [docs/superpowers/plans/2026-04-06-quant-system-hardening-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-06-quant-system-hardening-implementation.md)
 - [plan.md](/home/djy/Quant/plan.md)
 - [architecture.md](/home/djy/Quant/docs/architecture.md)
 - [api.md](/home/djy/Quant/docs/api.md)
@@ -590,6 +592,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [2026-04-04-decision-first-terminal-ui-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-decision-first-terminal-ui-implementation.md)
 - [2026-04-04-automation-ops-and-auto-trading-design.md](/home/djy/Quant/docs/superpowers/specs/2026-04-04-automation-ops-and-auto-trading-design.md)
 - [2026-04-04-automation-ops-and-auto-trading-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-04-automation-ops-and-auto-trading-implementation.md)
+- [2026-04-06-quant-system-hardening-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-06-quant-system-hardening-implementation.md)
 - [2026-04-02-qlib-trading-view-flow-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-qlib-trading-view-flow-implementation.md)
 - [2026-04-02-platform-extension-slots-implementation.md](/home/djy/Quant/docs/superpowers/plans/2026-04-02-platform-extension-slots-implementation.md)
 - [ops-freqtrade.md](/home/djy/Quant/docs/ops-freqtrade.md)
