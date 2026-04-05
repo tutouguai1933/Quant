@@ -130,6 +130,66 @@ class ExecutionFlowTests(unittest.TestCase):
         self.assertIn("positions", snapshot)
         self.assertIn("balances", snapshot)
 
+    def test_execution_health_summary_surfaces_state_machine_and_recovery(self) -> None:
+        with patch.object(
+            SyncService,
+            "get_runtime_snapshot",
+            return_value={
+                "mode": "live",
+                "backend": "rest",
+                "connection_status": "disconnected",
+                "order_count": 1,
+                "position_count": 1,
+            },
+        ), patch.object(
+            sync_service_module.account_sync_service,
+            "list_balances",
+            return_value=[{"asset": "DOGE", "tradeStatus": "dust"}],
+        ), patch.object(
+            sync_service_module.account_sync_service,
+            "list_orders",
+            return_value=[{"symbol": "ETHUSDT", "lifecycle": "pending_exit"}],
+        ), patch.object(
+            sync_service_module.account_sync_service,
+            "list_positions",
+            return_value=[{"symbol": "ETHUSDT", "positionStatus": "open"}],
+        ):
+            summary = SyncService().get_execution_health_summary(
+                task_health={
+                    "latest_status_by_type": {"sync": "failed"},
+                    "latest_failure_by_type": {"sync": {"error_message": "timeout"}},
+                },
+                automation_state={"paused": False, "manual_takeover": True},
+            )
+
+        self.assertEqual(summary["execution_state"]["state"], "takeover")
+        self.assertTrue(summary["retry_allowed"])
+        self.assertTrue(summary["reconnect_required"])
+        self.assertEqual(summary["latest_error_message"], "timeout")
+        self.assertEqual(summary["dust_balance_count"], 1)
+        self.assertEqual(summary["pending_exit_count"], 1)
+        self.assertIn("manual", summary["execution_state"]["allowed_transitions"])
+
+    def test_execution_health_summary_reports_paused_state(self) -> None:
+        with patch.object(
+            SyncService,
+            "get_runtime_snapshot",
+            return_value={
+                "mode": "live",
+                "backend": "rest",
+                "connection_status": "connected",
+                "order_count": 0,
+                "position_count": 0,
+            },
+        ):
+            summary = SyncService().get_execution_health_summary(
+                task_health={"latest_status_by_type": {"sync": "succeeded"}},
+                automation_state={"paused": True, "manual_takeover": False},
+            )
+
+        self.assertEqual(summary["execution_state"]["state"], "paused")
+        self.assertEqual(summary["recovery_action"], "resume_after_review")
+
     def test_demo_mode_still_uses_current_in_memory_fake_execution(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "demo"}, clear=False):
             client = FreqtradeClient()

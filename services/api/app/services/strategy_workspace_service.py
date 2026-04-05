@@ -93,6 +93,8 @@ class StrategyWorkspaceService:
             "dust_count": sum(1 for item in balances if str(item.get("tradeStatus", "")).lower() == "dust"),
             "order_count": len(orders),
             "position_count": len(positions),
+            "pending_exit_count": sum(1 for item in orders if str(item.get("lifecycle", "")).lower() == "pending_exit"),
+            "open_position_count": sum(1 for item in positions if str(item.get("positionStatus", "open")).lower() == "open"),
         }
 
         return {

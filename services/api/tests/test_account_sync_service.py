@@ -332,6 +332,7 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(orders_result[0]["side"], "buy")
         self.assertEqual(orders_result[0]["orderType"], "LIMIT")
         self.assertEqual(orders_result[0]["order_type"], "LIMIT")
+        self.assertEqual(orders_result[0]["lifecycle"], "filled_entry")
         self.assertEqual(positions_result[0]["id"], "position-BTCUSDT")
         self.assertEqual(positions_result[0]["symbol"], "BTCUSDT")
         self.assertEqual(positions_result[0]["side"], "long")
@@ -358,6 +359,33 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(balances_result[0]["dustQuantity"], "0.976")
         self.assertEqual(balances_result[1]["tradeStatus"], "tradable")
         self.assertEqual(balances_result[2]["tradeStatus"], "tradable")
+
+    def test_account_sync_service_marks_pending_exit_order_lifecycle(self) -> None:
+        class PendingExitClient:
+            def get_orders(self, symbol: str | None = None, limit: int = 100) -> list[dict[str, object]]:
+                if symbol != "ETHUSDT":
+                    return []
+                return [
+                    {
+                        "orderId": "102",
+                        "symbol": "ETHUSDT",
+                        "status": "NEW",
+                        "side": "SELL",
+                        "type": "MARKET",
+                        "time": 2000,
+                        "price": "0.0000000000",
+                        "origQty": "0.2000000000",
+                        "executedQty": "0.0000000000",
+                    }
+                ]
+
+        service = AccountSyncService(PendingExitClient(), market_client=FakeBalanceMarketClient())
+
+        orders_result = service.list_orders(limit=10, symbols=("ETHUSDT",))
+
+        self.assertEqual(orders_result[0]["side"], "sell")
+        self.assertEqual(orders_result[0]["status"], "NEW")
+        self.assertEqual(orders_result[0]["lifecycle"], "pending_exit")
 
     def test_dry_run_mode_uses_binance_only_for_balances(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):

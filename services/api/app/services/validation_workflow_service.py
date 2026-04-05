@@ -27,10 +27,14 @@ class ValidationWorkflowService:
         research_report = self._research_reader.get_factory_report()
         raw_recent_tasks = self._scheduler.list_tasks(limit=limit)
         task_health = self._scheduler.get_health_summary()
-        execution_health = self._sync_reader.get_execution_health_summary(task_health=task_health)
+        automation_state = automation_service.get_state()
+        execution_health = self._sync_reader.get_execution_health_summary(
+            task_health=task_health,
+            automation_state=automation_state,
+        )
         account_snapshot = self._build_account_snapshot(limit=limit)
         automation = {
-            "state": automation_service.get_state(),
+            "state": automation_state,
             "health": automation_service.build_health_summary(task_health=task_health),
         }
         execution_comparison = self._build_execution_comparison(
