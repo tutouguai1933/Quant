@@ -167,6 +167,9 @@ export type AutomationStatusModel = {
   researchOverview: Record<string, unknown>;
   health: Record<string, unknown>;
   executionHealth: Record<string, unknown>;
+  dailySummary: Record<string, unknown>;
+  schedulerPlan: Array<Record<string, unknown>>;
+  failurePolicy: Record<string, unknown>;
 };
 
 export type MarketSnapshot = {
@@ -704,6 +707,9 @@ export async function getAutomationStatus(
         researchOverview: isPlainObject(item.review_overview) ? item.review_overview : {},
         health,
         executionHealth: isPlainObject(item.execution_health) ? item.execution_health : {},
+        dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
+        schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
+        failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
       },
     },
   };
@@ -1566,6 +1572,9 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       researchOverview: {},
       health: {},
       executionHealth: {},
+      dailySummary: {},
+      schedulerPlan: [],
+      failurePolicy: {},
     },
   };
 }

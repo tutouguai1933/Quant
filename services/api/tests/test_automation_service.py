@@ -150,6 +150,52 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(state["armed_symbol"], "ETHUSDT")
         self.assertTrue(state["paused"])
 
+    def test_dry_run_only_and_kill_switch_update_state(self) -> None:
+        service = AutomationService()
+
+        dry_run_only = service.enable_dry_run_only(actor="tester")
+        kill_switch = service.kill_switch(actor="tester")
+
+        self.assertEqual(dry_run_only["mode"], "auto_dry_run")
+        self.assertFalse(dry_run_only["paused"])
+        self.assertTrue(kill_switch["paused"])
+        self.assertEqual(kill_switch["paused_reason"], "kill_switch")
+        self.assertTrue(kill_switch["manual_takeover"])
+
+    def test_daily_summary_accumulates_cycle_and_alert_counts(self) -> None:
+        service = AutomationService()
+
+        service.record_cycle({"status": "succeeded", "next_action": "continue_dry_run"})
+        service.record_cycle({"status": "attention_required", "next_action": "stop"})
+        service.record_alert(level="error", code="train_failed", message="自动训练失败", source="tester")
+
+        status = service.get_status(task_health={})
+
+        self.assertIn("daily_summary", status)
+        self.assertEqual(status["daily_summary"]["cycle_count"], 2)
+        self.assertEqual(status["daily_summary"]["status_counts"]["succeeded"], 1)
+        self.assertEqual(status["daily_summary"]["status_counts"]["attention_required"], 1)
+        self.assertEqual(status["daily_summary"]["alert_count"], 1)
+
+    def test_status_exposes_scheduler_plan_and_failure_policy(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertIn("scheduler_plan", status)
+        self.assertEqual(status["scheduler_plan"][0]["task_type"], "research_train")
+        self.assertIn("failure_policy", status)
+        self.assertEqual(status["failure_policy"]["research_train"], "stop")
+
 
 class _ReadyResearchService:
     def get_research_recommendation(self) -> dict[str, object]:
@@ -223,7 +269,12 @@ class _FakeSyncService:
     def __init__(self, *, runtime_mode: str) -> None:
         self._runtime_mode = runtime_mode
 
-    def get_execution_health_summary(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
+    def get_execution_health_summary(
+        self,
+        *,
+        task_health: dict[str, object] | None = None,
+        automation_state: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         return {
             "runtime_mode": self._runtime_mode,
             "backend": "rest",

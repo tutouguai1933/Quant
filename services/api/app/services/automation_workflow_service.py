@@ -38,7 +38,13 @@ class AutomationWorkflowService:
             "state": state,
             "health": self._automation.build_health_summary(task_health=task_health),
             "review_overview": dict(report.get("overview") or {}),
-            "execution_health": self._syncer.get_execution_health_summary(task_health=task_health),
+            "execution_health": self._syncer.get_execution_health_summary(
+                task_health=task_health,
+                automation_state=state,
+            ),
+            "daily_summary": dict(self._automation.get_status(task_health=task_health).get("daily_summary") or {}),
+            "scheduler_plan": self._build_scheduler_plan(),
+            "failure_policy": self._build_failure_policy(),
         }
 
     def run_cycle(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:
@@ -230,6 +236,30 @@ class AutomationWorkflowService:
         }
         self._automation.record_cycle(summary)
         return summary
+
+    @staticmethod
+    def _build_scheduler_plan() -> list[dict[str, str]]:
+        """返回固定自动化调度顺序。"""
+
+        return [
+            {"task_type": "research_train", "detail": "先训练，刷新最新研究模型"},
+            {"task_type": "research_infer", "detail": "再推理，产出候选和推荐动作"},
+            {"task_type": "signal_output", "detail": "把研究结果写成统一信号"},
+            {"task_type": "dispatch", "detail": "按当前模式进入 dry-run 或小额 live"},
+            {"task_type": "review", "detail": "最后统一复盘和健康摘要"},
+        ]
+
+    @staticmethod
+    def _build_failure_policy() -> dict[str, str]:
+        """返回失败后的固定处理规则。"""
+
+        return {
+            "research_train": "stop",
+            "research_infer": "stop",
+            "signal_output": "stop",
+            "dispatch": "review_and_decide",
+            "sync": "retry_then_review",
+        }
 
 
 automation_workflow_service = AutomationWorkflowService()

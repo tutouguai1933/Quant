@@ -251,6 +251,20 @@ function resolveActionConfig(action: string, strategyId: string): ActionConfig |
       successTitle: "自动化反馈",
       successMessage: "自动化已恢复，可以继续跑完整工作流。",
     },
+    automation_dry_run_only: {
+      path: "/tasks/automation/dry-run-only",
+      method: "POST",
+      requiresToken: true,
+      successTitle: "自动化反馈",
+      successMessage: "系统已切到 dry-run only。",
+    },
+    automation_kill_switch: {
+      path: "/tasks/automation/kill-switch",
+      method: "POST",
+      requiresToken: true,
+      successTitle: "自动化反馈",
+      successMessage: "Kill Switch 已触发，自动化已停机。",
+    },
     automation_run_cycle: {
       path: "/tasks/automation/run",
       method: "POST",

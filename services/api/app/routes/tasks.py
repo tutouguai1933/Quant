@@ -204,6 +204,26 @@ def resume_automation(mode: str = "", actor: str = "user", token: str = "", auth
     return _success({"item": item}, {"source": "automation-service", "action": "resume"})
 
 
+@router.post("/automation/dry-run-only")
+def enable_dry_run_only(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.enable_dry_run_only(actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "dry-run-only"})
+
+
+@router.post("/automation/kill-switch")
+def trigger_kill_switch(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.kill_switch(actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "kill-switch"})
+
+
 @router.post("/automation/run")
 def run_automation_cycle(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
     try:

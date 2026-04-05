@@ -119,6 +119,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <ActionCard action="automation_run_cycle" label="运行自动化工作流" detail="按当前模式推进一轮训练、推理、执行和复盘。" />
                   <ActionCard action="automation_pause" label="暂停自动化" detail="停止后续自动推进，切回人工接管。" danger />
                   <ActionCard action="automation_resume" label="恢复自动化" detail="恢复当前模式，让系统继续自动推进。" />
+                  <ActionCard action="automation_dry_run_only" label="dry-run only" detail="只保留自动 dry-run，不再继续自动小额 live。" />
+                  <ActionCard action="automation_kill_switch" label="Kill Switch" detail="一键停机，立即切回人工接管。" danger />
                 </CardContent>
               </Card>
 
@@ -186,6 +188,46 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     <span className="text-sm text-muted-foreground">告警级别</span>
                     <StatusBadge value={latestAlert?.level || "ok"} />
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">今日摘要</p>
+                  <CardTitle>今天自动化跑了多少轮</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>日期：{String(automation.dailySummary.date ?? "n/a")}</p>
+                  <p>轮数：{String(automation.dailySummary.cycle_count ?? 0)}</p>
+                  <p>告警数：{String(automation.dailySummary.alert_count ?? 0)}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">调度顺序</p>
+                  <CardTitle>固定自动化编排</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  {(automation.schedulerPlan.length > 0 ? automation.schedulerPlan : []).map((step, index) => (
+                    <p key={`${String(step.task_type ?? index)}-${index}`}>
+                      {index + 1}. {String(step.task_type ?? "task")} / {String(step.detail ?? "")}
+                    </p>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">失败规则</p>
+                  <CardTitle>失败后怎么处理</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  {Object.entries(automation.failurePolicy).map(([key, value]) => (
+                    <p key={key}>
+                      {key}：{String(value)}
+                    </p>
+                  ))}
                 </CardContent>
               </Card>
 

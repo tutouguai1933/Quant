@@ -69,7 +69,7 @@ from services.api.app.services.validation_workflow_service import ValidationWork
 from services.api.app.adapters.freqtrade.client import FreqtradeClient  # noqa: E402
 from services.api.app.tasks.scheduler import TaskScheduler  # noqa: E402
 from services.api.app.routes.tasks import get_task, get_validation_review, list_tasks, run_review_task, run_train_task  # noqa: E402
-from services.api.app.routes.tasks import get_automation_status, set_automation_mode, halt_automation, resume_automation, run_automation_cycle  # noqa: E402
+from services.api.app.routes.tasks import get_automation_status, set_automation_mode, halt_automation, resume_automation, run_automation_cycle, enable_dry_run_only, trigger_kill_switch  # noqa: E402
 from services.api.app.routes.orders import list_orders  # noqa: E402
 from services.api.app.routes.positions import list_positions  # noqa: E402
 
@@ -313,8 +313,10 @@ class ApiSkeletonTests(unittest.TestCase):
 
         status = get_automation_status(token=token)
         switched = set_automation_mode(mode="auto_dry_run", token=token)
+        dry_run_only = enable_dry_run_only(token=token)
         halted = halt_automation(reason="manual", token=token)
         resumed = resume_automation(mode="manual", token=token)
+        killed = trigger_kill_switch(token=token)
         with mock.patch.object(
             tasks_route.task_scheduler,
             "run_named_task",
@@ -322,12 +324,14 @@ class ApiSkeletonTests(unittest.TestCase):
         ):
             cycled = run_automation_cycle(token=token)
 
-        for response in (status, switched, halted, resumed, cycled):
+        for response in (status, switched, dry_run_only, halted, resumed, killed, cycled):
             self.assertEqual(set(response.keys()), {"data", "error", "meta"})
             self.assertIsNone(response["error"])
             self.assertIn("item", response["data"])
         self.assertIn("state", status["data"]["item"])
         self.assertIn("health", status["data"]["item"])
+        self.assertIn("daily_summary", status["data"]["item"])
+        self.assertIn("scheduler_plan", status["data"]["item"])
         self.assertIn("status", cycled["data"]["item"])
 
     def test_validation_review_http_route_is_not_shadowed_by_task_id_route(self) -> None:

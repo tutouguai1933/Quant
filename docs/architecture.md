@@ -110,6 +110,20 @@
 - 训练/验证漂移门：不只看验证和回测，还会检查训练与验证之间是否出现明显漂移
 - 推荐可信度：候选推荐会综合分数、回测、验证和市场状态，而不再只是“谁分数高”
 
+当前执行层工程化后还新增了：
+
+- 固定执行状态机：`manual / dry-run / live / paused / takeover`
+- 订单生命周期：`pending_entry / pending_exit / filled_entry / filled_exit`
+- 账户形态摘要：会统一统计 `dust_balance_count / pending_exit_count / open_position_count`
+- 恢复方向：健康摘要会明确告诉调用方应该 `retry_sync / reconnect_executor / review_dust / watch_pending_exit / resume_after_review`
+
+当前自动化系统化后还新增了：
+
+- 固定调度顺序：`research_train -> research_infer -> signal_output -> dispatch -> review`
+- 固定失败规则：训练、推理、信号输出失败直接停；执行失败保留复盘结果再决定
+- 每日摘要：自动统计当日轮数、状态分布和告警数量
+- 人工接管：支持 `dry-run only` 和 `Kill Switch`
+
 ### 3. 策略层
 
 当前固定两套首批策略：
@@ -273,6 +287,7 @@
 - 把研究、执行、任务和自动化状态收成统一复盘报告
 - 给出“回测结果 vs 当前执行结果”的最小对照摘要
 - 告诉页面当前工作流状态和下一步动作
+- 现在也会区分研究、`dry-run`、`live` 三段复盘，告诉用户当前停在哪一步
 
 ### `services/worker/qlib_experiment_report.py`
 
@@ -281,6 +296,39 @@
 - 把训练、推理、候选、评估、复盘统一收成一份稳定研究报告
 - 输出固定评估指标目录和候选淘汰原因统计
 - 给研究层提供统一的“做了什么、结果是什么、下一步是什么”摘要
+
+### `services/api/app/services/sync_service.py`
+
+负责：
+
+- 汇总执行链健康摘要
+- 输出固定执行状态机和恢复方向
+- 区分零头余额、待平仓订单和真实打开持仓
+
+### `services/api/app/services/automation_service.py`
+
+负责：
+
+- 保存自动化模式、暂停状态、人工接管状态和最近告警
+- 记录最近一轮自动化结果
+- 维护日报摘要
+- 提供 `dry-run only` 和 `Kill Switch`
+
+### `services/api/app/services/automation_workflow_service.py`
+
+负责：
+
+- 固定自动化调度顺序
+- 输出固定失败规则
+- 给控制平面统一返回自动化状态、执行健康和日报摘要
+
+### `services/api/app/services/account_sync_service.py`
+
+负责：
+
+- 把 Binance 账户原始数据标准化
+- 给余额补 `tradable / dust / locked / untracked`
+- 给订单补统一生命周期，给持仓补统一状态
 
 ### `services/worker/qlib_ranking.py`
 
@@ -670,5 +718,4 @@
 
 下一步先按系统补强计划继续往下做：
 
-- `Phase 6`：再收执行层和自动化层的长期运行能力
-- `Phase 7`：最后把告警、日报、人工接管和 Kill Switch 收成完整自动化层
+- `Phase 7`：告警、日报、人工接管和 Kill Switch 已完成，后续如继续则转向更细的页面呈现和长期运维收口

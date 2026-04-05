@@ -37,6 +37,7 @@ class AutomationService:
         self._next_alert_id = 1
         self._armed_symbol = ""
         self._armed_at = ""
+        self._daily_summary = self._new_daily_summary()
         self._load_state()
 
     def get_state(self) -> dict[str, object]:
@@ -56,6 +57,7 @@ class AutomationService:
             "allow_live_execution": settings.allow_live_execution,
             "last_cycle": last_cycle,
             "alerts": list(self._alerts),
+            "daily_summary": dict(self._daily_summary),
         }
 
     def get_status(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
@@ -71,6 +73,7 @@ class AutomationService:
             "alerts_count": len(self._alerts),
             "latest_alert_level": str(self._alerts[0]["level"]) if self._alerts else "",
             "latest_alert_title": str(self._alerts[0]["message"]) if self._alerts else "",
+            "daily_summary": dict(self._daily_summary),
         }
 
     def set_mode(self, mode: str) -> dict[str, object]:
@@ -93,6 +96,37 @@ class AutomationService:
         self.record_alert(level="info", code="automation_mode_changed", message=f"自动化模式已切到 {mode}", source=actor)
         return {
             **self.set_mode(mode),
+            "actor": actor,
+        }
+
+    def enable_dry_run_only(self, *, actor: str = "user") -> dict[str, object]:
+        """切到只保留 dry-run 的安全模式。"""
+
+        state = self.set_mode("auto_dry_run")
+        self._paused = False
+        self._paused_reason = ""
+        self._manual_takeover = False
+        self._updated_at = _utc_now()
+        self.record_alert(level="warning", code="dry_run_only_enabled", message="系统已切到 dry-run only", source=actor)
+        self._persist_state()
+        return {
+            **state,
+            "actor": actor,
+        }
+
+    def kill_switch(self, *, actor: str = "user") -> dict[str, object]:
+        """触发一键停机。"""
+
+        self._mode = "manual"
+        self._paused = True
+        self._paused_reason = "kill_switch"
+        self._manual_takeover = True
+        self.clear_armed_symbol()
+        self._updated_at = _utc_now()
+        self.record_alert(level="error", code="kill_switch_enabled", message="Kill Switch 已触发，自动化已停机", source=actor)
+        self._persist_state()
+        return {
+            **self.get_state(),
             "actor": actor,
         }
 
@@ -146,16 +180,23 @@ class AutomationService:
     def record_cycle(self, payload: dict[str, object]) -> None:
         """记录最近一次自动化工作流结果。"""
 
+        self._ensure_daily_summary()
         self._last_cycle = {
             **dict(payload),
             "recorded_at": _utc_now(),
         }
+        status = str(payload.get("status", "")).strip() or "unknown"
+        self._daily_summary["cycle_count"] = int(self._daily_summary.get("cycle_count", 0)) + 1
+        status_counts = dict(self._daily_summary.get("status_counts") or {})
+        status_counts[status] = int(status_counts.get(status, 0) or 0) + 1
+        self._daily_summary["status_counts"] = status_counts
         self._updated_at = _utc_now()
         self._persist_state()
 
     def record_alert(self, *, level: str, code: str, message: str, source: str, detail: str = "") -> dict[str, object]:
         """记录自动化告警。"""
 
+        self._ensure_daily_summary()
         item = {
             "id": self._next_alert_id,
             "level": level,
@@ -168,6 +209,10 @@ class AutomationService:
         self._next_alert_id += 1
         self._alerts.insert(0, item)
         self._alerts = self._alerts[:20]
+        self._daily_summary["alert_count"] = int(self._daily_summary.get("alert_count", 0)) + 1
+        level_counts = dict(self._daily_summary.get("alert_level_counts") or {})
+        level_counts[level] = int(level_counts.get(level, 0) or 0) + 1
+        self._daily_summary["alert_level_counts"] = level_counts
         self._updated_at = _utc_now()
         self._persist_state()
         return dict(item)
@@ -195,6 +240,7 @@ class AutomationService:
             "latest_review_status": str(latest_status.get("review", "unknown")),
             "alert_count": len(self._alerts),
             "last_alert": dict(last_alert) if last_alert else None,
+            "daily_summary_date": str(self._daily_summary.get("date", "")),
         }
 
     def run_cycle(self, *, actor: str = "user") -> dict[str, object]:
@@ -241,6 +287,9 @@ class AutomationService:
         self._next_alert_id = int(payload.get("next_alert_id", len(self._alerts) + 1) or (len(self._alerts) + 1))
         self._armed_symbol = str(payload.get("armed_symbol", "")).strip().upper()
         self._armed_at = str(payload.get("armed_at", ""))
+        daily_summary = dict(payload.get("daily_summary") or {})
+        self._daily_summary = daily_summary if daily_summary else self._new_daily_summary()
+        self._ensure_daily_summary()
 
     def _persist_state(self) -> None:
         """把当前自动化状态写回本地状态文件。"""
@@ -256,9 +305,29 @@ class AutomationService:
             "next_alert_id": self._next_alert_id,
             "armed_symbol": self._armed_symbol,
             "armed_at": self._armed_at,
+            "daily_summary": self._daily_summary,
         }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _new_daily_summary() -> dict[str, object]:
+        """创建当日自动化摘要。"""
+
+        return {
+            "date": _utc_now()[:10],
+            "cycle_count": 0,
+            "status_counts": {},
+            "alert_count": 0,
+            "alert_level_counts": {},
+        }
+
+    def _ensure_daily_summary(self) -> None:
+        """跨天时自动重置日报摘要。"""
+
+        current_date = _utc_now()[:10]
+        if str(self._daily_summary.get("date", "")) != current_date:
+            self._daily_summary = self._new_daily_summary()
 
 
 automation_service = AutomationService()
