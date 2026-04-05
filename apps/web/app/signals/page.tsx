@@ -14,7 +14,14 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { readFeedback } from "../../lib/feedback";
-import { getResearchReport, getResearchReportFallback, getSignalsPageFallback, listSignals } from "../../lib/api";
+import {
+  getAutomationStatus,
+  getAutomationStatusFallback,
+  getResearchReport,
+  getResearchReportFallback,
+  getSignalsPageFallback,
+  listSignals,
+} from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
 type PageProps = {
@@ -27,19 +34,28 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   const session = await getControlSessionState();
   let items = getSignalsPageFallback().items;
   let researchReport = getResearchReportFallback().item;
+  let automation = getAutomationStatusFallback().item;
 
-  const [signalsResult, researchReportResult] = await Promise.allSettled([listSignals(), getResearchReport()]);
+  const [signalsResult, researchReportResult, automationResult] = await Promise.allSettled([
+    listSignals(),
+    getResearchReport(),
+    session.token ? getAutomationStatus(session.token) : Promise.resolve(null),
+  ]);
   if (signalsResult.status === "fulfilled") {
     items = signalsResult.value.data.items;
   }
   if (researchReportResult.status === "fulfilled" && !researchReportResult.value.error) {
     researchReport = researchReportResult.value.data.item;
   }
+  if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
+    automation = automationResult.value.data.item;
+  }
 
   const latestTraining = asRecord(researchReport.latest_training);
   const latestInference = asRecord(researchReport.latest_inference);
   const trainingExperiment = asRecord(researchReport.experiments.training);
   const inferenceExperiment = asRecord(researchReport.experiments.inference);
+  const automationCycle = asRecord(automation.lastCycle);
 
   return (
     <AppShell
@@ -72,6 +88,23 @@ export default async function SignalsPage({ searchParams }: PageProps) {
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <div className="space-y-6">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <ScanSearch className="size-4 text-primary" />
+                <p className="eyebrow">自动化入口</p>
+              </div>
+              <CardTitle>先确认这一轮会不会继续往下跑</CardTitle>
+              <CardDescription>研究页先告诉你自动化现在是手动、dry-run 还是小额 live，再决定是否继续提交动作。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-2">
+              <InfoBlock label="当前模式" value={formatText(automation.mode, "manual")} />
+              <InfoBlock label="最近一轮" value={formatText(automationCycle.status, "waiting")} />
+              <InfoBlock label="推荐标的" value={formatText(automationCycle.recommended_symbol, "n/a")} />
+              <InfoBlock label="下一步动作" value={formatText(automationCycle.next_action, "continue_research")} />
+            </CardContent>
+          </Card>
+
           <ResearchCandidateBoard
             title="候选排行榜"
             summary={{

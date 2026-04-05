@@ -14,6 +14,8 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { readFeedback } from "../../lib/feedback";
 import {
+  getAutomationStatus,
+  getAutomationStatusFallback,
   getResearchCandidate,
   getResearchCandidates,
   getResearchCandidatesFallback,
@@ -36,9 +38,11 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   const feedback = readFeedback(params);
   let workspace = getStrategyWorkspaceFallback();
   let candidateSnapshot = getResearchCandidatesFallback();
-  const [workspaceResult, candidateResult] = await Promise.allSettled([
+  let automation = getAutomationStatusFallback().item;
+  const [workspaceResult, candidateResult, automationResult] = await Promise.allSettled([
     token ? getStrategyWorkspace(token) : Promise.resolve(null),
     focusSymbol ? getResearchCandidate(focusSymbol) : getResearchCandidates(),
+    token ? getAutomationStatus(token) : Promise.resolve(null),
   ]);
 
   if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
@@ -65,6 +69,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
       }
     }
   }
+  if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
+    automation = automationResult.value.data.item;
+  }
+  const automationCycle = asRecord(automation.lastCycle);
 
   return (
     <AppShell
@@ -159,6 +167,20 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 focusSymbol={focusSymbol}
                 nextStep={focusSymbol ? `下一步动作：先围绕 ${focusSymbol} 确认是否允许进入 dry-run，再决定是否派发。` : "下一步动作：优先看是否允许进入 dry-run，再决定要不要派发。"}
               />
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">自动化判断</p>
+                  <CardTitle>这一轮会不会继续走到 dry-run 或 live</CardTitle>
+                  <CardDescription>策略页不只看执行器状态，也直接告诉你当前自动化模式、最近一轮结果和下一步动作。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  <AutomationInfo label="当前模式" value={readText(automation.mode, "manual")} />
+                  <AutomationInfo label="最近一轮" value={readText(automationCycle.status, "waiting")} />
+                  <AutomationInfo label="自动化推荐" value={readText(automationCycle.recommended_symbol, "n/a")} />
+                  <AutomationInfo label="下一步动作" value={readText(automationCycle.next_action, "continue_research")} />
+                </CardContent>
+              </Card>
 
               <MetricGrid
                 items={[
@@ -347,6 +369,27 @@ function readQueryText(value: string | string[] | undefined): string {
     return String(value[0] ?? "").trim();
   }
   return String(value ?? "").trim();
+}
+
+function readText(value: unknown, fallback: string): string {
+  const text = String(value ?? "").trim();
+  return text.length > 0 ? text : fallback;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function AutomationInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/80 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-3 text-sm font-medium leading-6 text-foreground">{value}</p>
+    </div>
+  );
 }
 
 function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
