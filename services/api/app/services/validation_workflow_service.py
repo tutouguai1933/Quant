@@ -33,6 +33,11 @@ class ValidationWorkflowService:
             "state": automation_service.get_state(),
             "health": automation_service.build_health_summary(task_health=task_health),
         }
+        execution_comparison = self._build_execution_comparison(
+            research_report=research_report,
+            account_snapshot=account_snapshot,
+            execution_health=execution_health,
+        )
         steps = self._build_steps(
             research_report=research_report,
             recent_tasks=raw_recent_tasks,
@@ -56,10 +61,12 @@ class ValidationWorkflowService:
             "research_report": research_report,
             "task_health": task_health,
             "execution_health": execution_health,
-            "execution_comparison": self._build_execution_comparison(
+            "execution_comparison": execution_comparison,
+            "reviews": self._build_reviews(
                 research_report=research_report,
-                account_snapshot=account_snapshot,
                 execution_health=execution_health,
+                execution_comparison=execution_comparison,
+                automation_state=automation["state"],
             ),
             "automation": automation,
             "recent_tasks": recent_tasks,
@@ -167,6 +174,73 @@ class ValidationWorkflowService:
                 "orders": matched_orders,
                 "positions": matched_positions,
             },
+        }
+
+    def _build_reviews(
+        self,
+        *,
+        research_report: dict[str, object],
+        execution_health: dict[str, object],
+        execution_comparison: dict[str, object],
+        automation_state: dict[str, object],
+    ) -> dict[str, dict[str, object]]:
+        """统一给出研究、dry-run、live 三段复盘摘要。"""
+
+        research_review = dict((research_report.get("reviews") or {}).get("research") or {})
+        automation_mode = str(automation_state.get("mode", "manual"))
+        runtime_mode = str(execution_health.get("runtime_mode", ""))
+        latest_sync_status = str(execution_health.get("latest_sync_status", ""))
+
+        dry_run_review = {
+            "what_happened": "当前 dry-run 验证还在等待研究候选或执行结果",
+            "result": "waiting",
+            "next_action": "continue_dry_run",
+        }
+        if research_review.get("next_action") == "continue_research":
+            dry_run_review = {
+                "what_happened": "研究层还没有放行候选进入 dry-run",
+                "result": "blocked_by_research",
+                "next_action": "continue_research",
+            }
+        elif runtime_mode != "live" and latest_sync_status == "succeeded":
+            dry_run_review = {
+                "what_happened": "最近一次同步已经完成，dry-run 结果可以进入复盘",
+                "result": "succeeded",
+                "next_action": "review_dry_run",
+            }
+
+        live_review = {
+            "what_happened": "当前还没有进入小额 live",
+            "result": "waiting",
+            "next_action": "wait_live",
+        }
+        if automation_mode == "manual" and research_review.get("next_action") == "enter_dry_run":
+            live_review = {
+                "what_happened": "系统当前仍在手动模式，小额 live 需要人工确认",
+                "result": "manual_review",
+                "next_action": "manual_review",
+            }
+        elif runtime_mode == "live" and execution_comparison.get("status") == "matched":
+            live_review = {
+                "what_happened": "当前执行结果已经和研究候选对上，小额 live 已产生可复盘结果",
+                "result": "succeeded",
+                "next_action": "retain_small_live",
+            }
+        elif runtime_mode == "live":
+            live_review = {
+                "what_happened": "系统已经进入 live，但这轮还没有对上可复盘执行结果",
+                "result": "attention_required",
+                "next_action": "check_execution",
+            }
+
+        return {
+            "research": {
+                "what_happened": str(research_review.get("what_happened", "")),
+                "result": str(research_review.get("result", "unavailable")),
+                "next_action": str(research_review.get("next_action", "")),
+            },
+            "dry_run": dry_run_review,
+            "live": live_review,
         }
 
     @staticmethod

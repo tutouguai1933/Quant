@@ -190,6 +190,58 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["experiments"]["training"]["dataset_snapshot_id"], "dataset-abc123")
         self.assertEqual(report["experiments"]["inference"]["active_data_state"], "feature-ready")
 
+    def test_build_experiment_report_includes_evaluation_and_review_summary(self) -> None:
+        report = build_experiment_report(
+            latest_training={
+                "run_id": "train-2",
+                "status": "completed",
+                "model_version": "m5",
+                "backtest": {
+                    "metrics": {
+                        "gross_return_pct": "12.4000",
+                        "net_return_pct": "11.1000",
+                        "cost_impact_pct": "1.3000",
+                        "max_drawdown_pct": "-4.2000",
+                        "sharpe": "1.2800",
+                        "win_rate": "0.6100",
+                        "turnover": "0.1400",
+                        "max_loss_streak": "2",
+                    }
+                },
+            },
+            latest_inference={"signals": [{"symbol": "ETHUSDT"}]},
+            candidates={
+                "items": [
+                    {
+                        "symbol": "ETHUSDT",
+                        "score": "0.8300",
+                        "allowed_to_dry_run": True,
+                        "review_status": "ready_for_dry_run",
+                        "next_action": "enter_dry_run",
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                        "backtest": {"metrics": {"net_return_pct": "11.1000", "max_drawdown_pct": "-4.2000"}},
+                    },
+                    {
+                        "symbol": "BTCUSDT",
+                        "score": "0.5200",
+                        "allowed_to_dry_run": False,
+                        "review_status": "needs_research_iteration",
+                        "next_action": "continue_research",
+                        "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                        "backtest": {"metrics": {"net_return_pct": "-2.3000", "max_drawdown_pct": "-12.0000"}},
+                    },
+                ]
+            },
+        )
+
+        self.assertIn("evaluation", report)
+        self.assertEqual(report["evaluation"]["metrics_catalog"][0], "gross_return_pct")
+        self.assertEqual(report["evaluation"]["candidate_status"]["ready_count"], 1)
+        self.assertIn("drawdown_too_large", report["evaluation"]["elimination_rules"]["blocked_reason_counts"])
+        self.assertIn("reviews", report)
+        self.assertEqual(report["reviews"]["research"]["next_action"], "enter_dry_run")
+        self.assertEqual(report["reviews"]["research"]["result"], "candidate_ready")
+
 
 if __name__ == "__main__":
     unittest.main()

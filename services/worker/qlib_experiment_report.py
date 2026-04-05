@@ -57,6 +57,19 @@ def build_experiment_report(
         "candidates": candidate_items,
         "leaderboard": _build_leaderboard(candidate_items),
         "screening": _build_screening_summary(candidate_items),
+        "evaluation": _build_evaluation_summary(
+            overview=overview,
+            latest_training=latest_training_payload,
+            leaderboard=_build_leaderboard(candidate_items),
+            screening=_build_screening_summary(candidate_items),
+        ),
+        "reviews": {
+            "research": _build_research_review(
+                overview=overview,
+                screening=_build_screening_summary(candidate_items),
+                leaderboard=_build_leaderboard(candidate_items),
+            )
+        },
         "experiments": {
             "training": _build_experiment_entry(latest_training_payload),
             "inference": _build_experiment_entry(latest_inference_payload),
@@ -165,6 +178,83 @@ def _build_screening_summary(items: list[dict[str, object]]) -> dict[str, object
         "blocked_symbols": blocked_symbols,
         "blocked_reason_counts": blocked_reason_counts,
         "gate_reason_counts": gate_reason_counts,
+    }
+
+
+def _build_evaluation_summary(
+    *,
+    overview: dict[str, object],
+    latest_training: dict[str, object],
+    leaderboard: list[dict[str, object]],
+    screening: dict[str, object],
+) -> dict[str, object]:
+    """统一整理评估层摘要。"""
+
+    forced_validation_count = sum(1 for item in leaderboard if bool(item.get("forced_for_validation")))
+    return {
+        "metrics_catalog": [
+            "gross_return_pct",
+            "net_return_pct",
+            "cost_impact_pct",
+            "max_drawdown_pct",
+            "sharpe",
+            "win_rate",
+            "turnover",
+            "max_loss_streak",
+        ],
+        "candidate_status": {
+            "candidate_count": int(overview.get("candidate_count", 0) or 0),
+            "ready_count": int(overview.get("ready_count", 0) or 0),
+            "blocked_count": int(overview.get("blocked_count", 0) or 0),
+            "forced_validation_count": forced_validation_count,
+            "pass_rate_pct": str(overview.get("pass_rate_pct", "0.00") or "0.00"),
+        },
+        "training_backtest": _build_backtest_snapshot(latest_training.get("backtest")),
+        "recommended_candidate": dict(leaderboard[0]) if leaderboard else {},
+        "elimination_rules": {
+            "blocked_reason_counts": dict(screening.get("blocked_reason_counts") or {}),
+            "gate_reason_counts": dict(screening.get("gate_reason_counts") or {}),
+        },
+    }
+
+
+def _build_research_review(
+    *,
+    overview: dict[str, object],
+    screening: dict[str, object],
+    leaderboard: list[dict[str, object]],
+) -> dict[str, object]:
+    """构造研究阶段复盘摘要。"""
+
+    recommended_action = str(overview.get("recommended_action", ""))
+    recommended_symbol = str(overview.get("recommended_symbol", ""))
+    top_candidate = dict(leaderboard[0]) if leaderboard else {}
+    blocked_reason_counts = dict(screening.get("blocked_reason_counts") or {})
+
+    if recommended_action == "enter_dry_run":
+        result = "candidate_ready"
+        what_happened = f"研究结果已放行 {recommended_symbol or top_candidate.get('symbol', '')} 进入 dry-run"
+        next_action = "enter_dry_run"
+    elif recommended_action == "run_inference":
+        result = "training_ready"
+        what_happened = "训练结果已准备好，但还没有完成推理"
+        next_action = "run_inference"
+    elif recommended_action == "run_training":
+        result = "training_missing"
+        what_happened = "当前还没有可用训练结果"
+        next_action = "run_training"
+    else:
+        result = "candidate_blocked"
+        reason_text = ", ".join(sorted(blocked_reason_counts.keys())[:3]) or "筛选门未通过"
+        what_happened = f"当前最佳候选仍被研究筛选门拦下：{reason_text}"
+        next_action = "continue_research"
+
+    return {
+        "what_happened": what_happened,
+        "result": result,
+        "next_action": next_action,
+        "recommended_symbol": recommended_symbol,
+        "blocked_reason_counts": blocked_reason_counts,
     }
 
 

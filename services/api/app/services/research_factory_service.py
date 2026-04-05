@@ -83,6 +83,8 @@ class ResearchFactoryService:
             "candidates": list(report.get("candidates") or []),
             "leaderboard": list(report.get("leaderboard") or []),
             "screening": dict(report.get("screening") or {}),
+            "evaluation": dict(report.get("evaluation") or {}),
+            "reviews": dict(report.get("reviews") or {}),
             "experiments": dict(report.get("experiments") or {}),
         }
 
