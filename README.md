@@ -579,7 +579,9 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
 - [x] 自动化运维与自动买卖实现计划
 - [x] 前端终端化设计基线（决策优先 + 双栏交易研究终端）
 - [x] 首页 / 信号页 / 策略页第一批终端化重构
-- [ ] 下一阶段如果继续，就进入更细的前端呈现和长期运维收口
+- [ ] 研究到执行一体化工作台
+  - 设计文档：`docs/superpowers/specs/2026-04-06-research-to-execution-workbench-design.md`
+  - 实施计划：`docs/superpowers/plans/2026-04-06-research-to-execution-workbench-implementation.md`
 
 - [x] 目录骨架和基础文档
 - [x] 统一契约和数据库模型
