@@ -736,4 +736,11 @@
 - 特征工作台聚合服务：`services/api/app/services/feature_workspace_service.py`
 - 特征工作台页面：`apps/web/app/features/page.tsx`
 - 特征工作台聚合口径：优先复用研究报告里的 `factor_protocol`，把因子分类、角色、预处理和周期参数直接显性化到前端
+
+当前也已完成第三步：
+
+- 策略研究工作台后端入口：`services/api/app/routes/research_workspace.py`
+- 策略研究工作台聚合服务：`services/api/app/services/research_workspace_service.py`
+- 策略研究工作台页面：`apps/web/app/research/page.tsx`
+- 策略研究工作台聚合口径：优先复用统一研究报告里的模板、标签、窗口和实验参数，并在同页保留研究训练/研究推理动作入口
 - 作用：把研究报告中的数据快照、训练窗口和市场样本预览收成一个最小工作台，直接回答“这次研究用了什么数据”

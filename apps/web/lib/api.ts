@@ -396,6 +396,32 @@ export type FeatureWorkspaceModel = {
   }>;
 };
 
+export type ResearchWorkspaceModel = {
+  status: string;
+  backend: string;
+  overview: {
+    holding_window: string;
+    candidate_count: number;
+    recommended_symbol: string;
+    recommended_action: string;
+  };
+  strategy_templates: string[];
+  labeling: {
+    label_columns: string[];
+    definition: string;
+  };
+  sample_window: Record<string, Record<string, unknown>>;
+  model: {
+    model_version: string;
+    backend: string;
+  };
+  parameters: Record<string, string>;
+  selectors: {
+    symbols: string[];
+    timeframes: string[];
+  };
+};
+
 export type ValidationReviewItem = {
   overview: Record<string, unknown>;
   steps: Array<Record<string, unknown>>;
@@ -914,6 +940,42 @@ export async function getFeatureWorkspace(): Promise<ApiEnvelope<{ item: Feature
   };
 }
 
+export async function getResearchWorkspace(): Promise<ApiEnvelope<{ item: ResearchWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/research/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getResearchWorkspaceFallback(),
+      },
+      error: {
+        code: "research_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "策略研究工作台暂时不可用",
+      },
+      meta: {
+        source: "research-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getResearchWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeResearchWorkspaceModel(response.data.item),
+    },
+  };
+}
+
 export function getDataWorkspaceFallback(symbol?: string, interval?: string, limit?: number): DataWorkspaceModel {
   return {
     status: "unavailable",
@@ -978,6 +1040,34 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
     },
     timeframe_profiles: {},
     factors: [],
+  };
+}
+
+export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    overview: {
+      holding_window: "",
+      candidate_count: 0,
+      recommended_symbol: "",
+      recommended_action: "",
+    },
+    strategy_templates: [],
+    labeling: {
+      label_columns: [],
+      definition: "",
+    },
+    sample_window: {},
+    model: {
+      model_version: "",
+      backend: "qlib-fallback",
+    },
+    parameters: {},
+    selectors: {
+      symbols: [],
+      timeframes: [],
+    },
   };
 }
 
@@ -1159,6 +1249,46 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
         };
       })
       .filter((value) => value.name.length > 0),
+  };
+}
+
+function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+  const labeling = isPlainObject(row.labeling) ? row.labeling : {};
+  const model = isPlainObject(row.model) ? row.model : {};
+  const selectors = isPlainObject(row.selectors) ? row.selectors : {};
+  const sampleWindow = isPlainObject(row.sample_window) ? row.sample_window : {};
+  const parameters = isPlainObject(row.parameters) ? row.parameters : {};
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    overview: {
+      holding_window: String(overview.holding_window ?? ""),
+      candidate_count: Number(overview.candidate_count ?? 0),
+      recommended_symbol: String(overview.recommended_symbol ?? ""),
+      recommended_action: String(overview.recommended_action ?? ""),
+    },
+    strategy_templates: normalizeStringArray(row.strategy_templates, []),
+    labeling: {
+      label_columns: normalizeStringArray(labeling.label_columns, []),
+      definition: String(labeling.definition ?? ""),
+    },
+    sample_window: Object.fromEntries(
+      Object.entries(sampleWindow).map(([name, value]) => [String(name), isPlainObject(value) ? value : {}]),
+    ),
+    model: {
+      model_version: String(model.model_version ?? ""),
+      backend: String(model.backend ?? "qlib-fallback"),
+    },
+    parameters: Object.fromEntries(
+      Object.entries(parameters).map(([name, value]) => [String(name), String(value ?? "")]),
+    ),
+    selectors: {
+      symbols: normalizeStringArray(selectors.symbols, []),
+      timeframes: normalizeStringArray(selectors.timeframes, []),
+    },
   };
 }
 

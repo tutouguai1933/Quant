@@ -125,6 +125,10 @@
   - 新增特征工作台 `/features`
   - 新增特征工作台接口 `GET /api/v1/features/workspace`
   - 页面会直接显示因子分组、主判断因子、辅助确认因子、预处理规则、周期参数和特征版本
+- 研究到执行一体化工作台现在已完成第三步：
+  - 新增策略研究工作台 `/research`
+  - 新增策略研究工作台接口 `GET /api/v1/research/workspace`
+  - 页面会直接显示研究模板、标签定义、训练窗口、当前模型、实验参数，并在同页提供“研究训练 / 研究推理”入口
 
 ### 当前最重要的新能力
 
@@ -593,7 +597,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm build
   - 实施计划：`docs/superpowers/plans/2026-04-06-research-to-execution-workbench-implementation.md`
   - [x] Step 1：数据工作台
   - [x] Step 2：特征工作台
-  - [ ] Step 3：策略研究工作台
+  - [x] Step 3：策略研究工作台
   - [ ] Step 4：回测工作台
   - [ ] Step 5：评估与实验中心
   - [ ] Step 6：执行与自动化工作台收口

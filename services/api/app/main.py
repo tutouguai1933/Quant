@@ -28,6 +28,7 @@ from services.api.app.routes.health import router as health_router
 from services.api.app.routes.market import router as market_router
 from services.api.app.routes.orders import router as orders_router
 from services.api.app.routes.positions import router as positions_router
+from services.api.app.routes.research_workspace import router as research_workspace_router
 from services.api.app.routes.risk_events import router as risk_events_router
 from services.api.app.routes.signals import router as signals_router
 from services.api.app.routes.strategies import router as strategies_router
@@ -55,6 +56,8 @@ app.include_router(data_workspace_router)
 app.include_router(feature_workspace_router)
 app.routers.append(data_workspace_router)  # type: ignore[attr-defined]
 app.routers.append(feature_workspace_router)  # type: ignore[attr-defined]
+app.include_router(research_workspace_router)
+app.routers.append(research_workspace_router)  # type: ignore[attr-defined]
 app.include_router(market_router)
 app.routers.append(market_router)  # type: ignore[attr-defined]
 app.include_router(positions_router)
