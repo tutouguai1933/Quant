@@ -11,6 +11,7 @@ dist/
 out/
 coverage/
 .deploy/
+.runtime/
 .DS_Store
 .next.bak-*/
 apps/web/test-results/

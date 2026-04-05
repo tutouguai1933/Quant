@@ -21,6 +21,7 @@ from decimal import Decimal
 
 from services.api.app.domain.contracts import SignalContract, SignalSide, SignalSource, SignalStatus
 from services.api.app.services.research_service import research_service
+from services.api.app.services.strategy_catalog import strategy_catalog_service
 
 
 @dataclass(slots=True)
@@ -105,9 +106,6 @@ class SignalService:
                 self._dispatch_claims.add(signal_id)
                 return self._serialize_signal(signal)
 
-            if strategy_id != 1:
-                return None
-
             generic_candidates: list[SignalContract] = []
             for signal in ordered_signals:
                 signal_id = signal.signal_id or 0
@@ -125,7 +123,18 @@ class SignalService:
                     continue
                 generic_candidates.append(signal)
             if generic_candidates:
-                chosen = sorted(generic_candidates, key=self._dispatch_sort_key)[0]
+                matched_candidates = [
+                    signal
+                    for signal in generic_candidates
+                    if self._matches_strategy_context(signal=signal, strategy_id=strategy_id)
+                ]
+                if strategy_id == 1:
+                    source_candidates = matched_candidates or generic_candidates
+                else:
+                    source_candidates = matched_candidates
+                if not source_candidates:
+                    return None
+                chosen = sorted(source_candidates, key=self._dispatch_sort_key)[0]
                 chosen_id = chosen.signal_id or 0
                 self._dispatch_claims.add(chosen_id)
                 return self._serialize_signal(chosen)
@@ -183,6 +192,18 @@ class SignalService:
         self._last_run = summary
         return summary.to_dict()
 
+    def refresh_qlib_signals_from_latest_result(self) -> dict[str, object]:
+        """把最近一次研究推理结果写回信号主链。"""
+
+        latest = research_service.get_latest_result()
+        training = dict(latest.get("latest_training") or {})
+        inference = dict(latest.get("latest_inference") or {})
+        if not training or not inference:
+            raise SignalPipelineUnavailableError("研究层还没有可写入信号主链的训练和推理结果")
+        summary = self._store_qlib_pipeline_result(training=training, inference=inference)
+        self._last_run = summary
+        return summary.to_dict()
+
     def get_last_run(self) -> dict[str, object] | None:
         return None if self._last_run is None else self._last_run.to_dict()
 
@@ -219,6 +240,18 @@ class SignalService:
         except Exception as exc:
             raise SignalPipelineUnavailableError(str(exc)) from exc
 
+        return self._store_qlib_pipeline_result(training=training, inference=inference)
+
+    def _store_qlib_pipeline_result(
+        self,
+        *,
+        training: dict[str, object],
+        inference: dict[str, object],
+    ) -> TrainingRunSummary:
+        """把研究层结果写进信号主链。"""
+
+        self._expire_pending_qlib_signals()
+
         signal_count = 0
         candidate_items = list((inference.get("candidates") or {}).get("items", []))
         recommended_symbol = self._resolve_recommended_symbol(candidate_items)
@@ -251,6 +284,7 @@ class SignalService:
                 "review_status": str(candidate.get("review_status", "")),
                 "next_action": str(candidate.get("next_action", "")),
                 "execution_priority": candidate.get("execution_priority"),
+                "strategy_template": str(candidate.get("strategy_template", "")),
                 "recommended_for_execution": normalized_symbol == recommended_symbol,
             }
             signal_count += 1
@@ -266,6 +300,16 @@ class SignalService:
             ],
             signal_count=signal_count,
         )
+
+    def _expire_pending_qlib_signals(self) -> None:
+        """把旧的待处理研究信号标成过期，避免重复派发。"""
+
+        for signal in self._signals.values():
+            if signal.source != SignalSource.QLIB:
+                continue
+            if signal.status not in {SignalStatus.RECEIVED.value, SignalStatus.ACCEPTED.value}:
+                continue
+            signal.status = SignalStatus.EXPIRED
 
     def _prepare_mock_dataset(self) -> list[dict[str, object]]:
         anchor = datetime(2026, 4, 1, 6, 0, tzinfo=timezone.utc)
@@ -350,6 +394,18 @@ class SignalService:
         if gate:
             return str(gate.get("status", "")).strip() == "passed"
         return bool(metadata.get("allowed_to_dry_run"))
+
+    def _matches_strategy_context(self, *, signal: SignalContract, strategy_id: int) -> bool:
+        """判断一条通用研究信号是否适合当前策略实例。"""
+
+        if strategy_id == 1:
+            return True
+        metadata = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
+        strategy_template = str(metadata.get("strategy_template", "")).strip()
+        if not strategy_template:
+            return False
+        resolved_strategy_id = strategy_catalog_service.resolve_strategy_id(strategy_template)
+        return resolved_strategy_id == strategy_id
 
     def _dispatch_sort_key(self, signal: SignalContract) -> tuple[int, int, int]:
         """给通用研究信号排序，优先推荐候选，其次看候选 rank。"""

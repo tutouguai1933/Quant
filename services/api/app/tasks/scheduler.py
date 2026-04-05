@@ -157,6 +157,18 @@ class TaskScheduler:
         if task_type == "train":
             source = str(payload.get("pipeline_source", "mock"))
             return signal_service.run_pipeline(source=source)
+        if task_type == "research_train":
+            from services.api.app.services.research_service import research_service
+
+            return research_service.run_training()
+        if task_type == "research_infer":
+            from services.api.app.services.research_service import research_service
+
+            result = research_service.run_inference()
+            signal_service.refresh_qlib_signals_from_latest_result()
+            return result
+        if task_type == "signal_output":
+            return signal_service.refresh_qlib_signals_from_latest_result()
         if task_type == "sync":
             return sync_service.sync_task_state(
                 limit=int(payload.get("limit", 100)),
@@ -172,6 +184,13 @@ class TaskScheduler:
             from services.api.app.services.validation_workflow_service import validation_workflow_service
 
             return validation_workflow_service.build_report(limit=int(payload.get("limit", 10)))
+        if task_type == "automation_cycle":
+            from services.api.app.services.automation_workflow_service import automation_workflow_service
+
+            return automation_workflow_service.run_cycle(
+                source=str(payload.get("source", "automation")),
+                review_limit=int(payload.get("limit", 10)),
+            )
         if task_type == "archive":
             return {"status": "completed", "detail": "archive placeholder completed"}
         if task_type == "health_check":

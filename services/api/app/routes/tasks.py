@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from services.api.app.services.automation_service import automation_service
+from services.api.app.services.automation_workflow_service import automation_workflow_service
 from services.api.app.services.auth_service import auth_service
 from services.api.app.tasks.scheduler import task_scheduler
 
@@ -58,7 +60,6 @@ def list_tasks(limit: int = 100, token: str = "", authorization: str = Header(""
 @router.post("/train")
 def run_train_task(
     source: str = "user",
-    pipeline_source: str = "mock",
     token: str = "",
     authorization: str = Header(""),
 ) -> dict:
@@ -67,12 +68,11 @@ def run_train_task(
     except PermissionError:
         return _unauthorized()
     item = task_scheduler.run_named_task(
-        task_type="train",
+        task_type="research_train",
         source=source,
         target_type="system",
-        payload={"pipeline_source": pipeline_source},
     )
-    return _success({"item": item}, {"source": "task-scheduler", "action": "train"})
+    return _success({"item": item}, {"source": "task-scheduler", "action": "research-train"})
 
 
 @router.post("/sync")
@@ -160,6 +160,63 @@ def run_review_task(source: str = "user", limit: int = 10, token: str = "", auth
         payload={"limit": limit},
     )
     return _success({"item": item}, {"source": "task-scheduler", "action": "review"})
+
+
+@router.get("/automation")
+def get_automation_status(token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_workflow_service.get_status()
+    return _success({"item": item}, {"source": "automation-workflow"})
+
+
+@router.post("/automation/configure")
+def set_automation_mode(mode: str, actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.configure_mode(mode, actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "configure"})
+
+
+@router.post("/automation/pause")
+def halt_automation(reason: str = "manual_pause", actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.pause(reason=reason, actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "pause"})
+
+
+@router.post("/automation/resume")
+def resume_automation(mode: str = "", actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    if str(mode).strip():
+        automation_service.configure_mode(mode, actor=actor)
+    item = automation_service.resume(actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "resume"})
+
+
+@router.post("/automation/run")
+def run_automation_cycle(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = task_scheduler.run_named_task(
+        task_type="automation_cycle",
+        source=actor,
+        target_type="system",
+        payload={"source": actor},
+    )
+    return _success({"item": item}, {"source": "task-scheduler", "action": "automation-cycle"})
 
 
 @router.post("/{task_id}/retry")

@@ -17,6 +17,7 @@ DEFAULT_BINANCE_BASE_URL = "https://api.binance.com"
 DEFAULT_BINANCE_MARKET_BASE_URL = DEFAULT_BINANCE_BASE_URL
 DEFAULT_BINANCE_ACCOUNT_BASE_URL = DEFAULT_BINANCE_BASE_URL
 DEFAULT_BINANCE_TIMEOUT_SECONDS = 10.0
+DEFAULT_AUTOMATION_STATE_PATH = ".runtime/automation_state.json"
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class Settings:
     live_allowed_symbols: tuple[str, ...] = ()
     live_max_stake_usdt: Decimal | None = None
     live_max_open_trades: int | None = None
+    automation_state_path: str = DEFAULT_AUTOMATION_STATE_PATH
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -121,6 +123,7 @@ class Settings:
                 raise ValueError("QUANT_LIVE_MAX_OPEN_TRADES 必须是整数") from exc
             if live_max_open_trades <= 0:
                 raise ValueError("QUANT_LIVE_MAX_OPEN_TRADES 必须大于 0")
+        automation_state_path = (os.getenv("QUANT_AUTOMATION_STATE_PATH") or DEFAULT_AUTOMATION_STATE_PATH).strip() or DEFAULT_AUTOMATION_STATE_PATH
 
         freqtrade_config_values = (freqtrade_api_url, freqtrade_api_username, freqtrade_api_password)
         has_freqtrade_config = any(freqtrade_config_values)
@@ -147,6 +150,7 @@ class Settings:
             live_allowed_symbols=live_allowed_symbols,
             live_max_stake_usdt=live_max_stake_usdt,
             live_max_open_trades=live_max_open_trades,
+            automation_state_path=automation_state_path,
         )
 
     @staticmethod

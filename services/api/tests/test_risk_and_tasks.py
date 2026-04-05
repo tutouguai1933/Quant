@@ -20,6 +20,7 @@ import services.api.app.services.signal_service as signal_service_module  # noqa
 import services.api.app.services.execution_service as execution_service_module  # noqa: E402
 import services.api.app.services.risk_service as risk_service_module  # noqa: E402
 import services.api.app.services.sync_service as sync_service_module  # noqa: E402
+import services.api.app.services.strategy_dispatch_service as strategy_dispatch_module  # noqa: E402
 import services.api.app.tasks.scheduler as scheduler_module  # noqa: E402
 from services.api.app.adapters.freqtrade.client import freqtrade_client  # noqa: E402
 from services.api.app.routes.auth import login  # noqa: E402
@@ -56,6 +57,12 @@ class RiskAndTaskTests(unittest.TestCase):
         execution_service_module.freqtrade_client = freqtrade_client
         execution_service_module.signal_service = signal_service
         scheduler_module.signal_service = signal_service
+        strategy_dispatch_module.signal_service = signal_service
+        strategy_dispatch_module.risk_service = risk_service
+        strategy_dispatch_module.execution_service = execution_service_module.execution_service
+        strategy_dispatch_module.sync_service = sync_service_module.sync_service
+        strategy_dispatch_module.task_scheduler = task_scheduler
+        strategies_route.strategy_dispatch_service = strategy_dispatch_module.strategy_dispatch_service
 
     @staticmethod
     def _login_token() -> str:
@@ -144,7 +151,7 @@ class RiskAndTaskTests(unittest.TestCase):
             "runtime": {"mode": "dry-run", "backend": "memory", "connection_status": "connected"},
         }
         with patch.object(
-            strategies_route.execution_service,
+            strategy_dispatch_module.execution_service,
             "dispatch_signal",
             return_value=fake_dispatch_result,
         ) as dispatch_mock:
@@ -243,7 +250,7 @@ class RiskAndTaskTests(unittest.TestCase):
         ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
-            strategies_route.execution_service, "dispatch_signal", return_value=fake_dispatch_result
+            strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
         ):
             response = dispatch_latest_signal(1, token=token)
 
@@ -299,7 +306,7 @@ class RiskAndTaskTests(unittest.TestCase):
         ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
-            strategies_route.execution_service, "dispatch_signal", return_value=fake_dispatch_result
+            strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
         ):
             response = dispatch_latest_signal(1, token=token)
 
@@ -357,7 +364,7 @@ class RiskAndTaskTests(unittest.TestCase):
         ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
-            strategies_route.execution_service, "dispatch_signal", return_value=fake_dispatch_result
+            strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
         ):
             response = dispatch_latest_signal(1, token=token)
 
@@ -419,7 +426,7 @@ class RiskAndTaskTests(unittest.TestCase):
         ), patch.object(sync_service_module, "account_sync_service", fake_account_sync_service), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
-            strategies_route.execution_service, "dispatch_signal", return_value=fake_dispatch_result
+            strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
         ):
             response = dispatch_latest_signal(1, token=token)
             task_id = int(response["data"]["sync_task"]["id"])

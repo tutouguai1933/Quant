@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from services.api.app.adapters.freqtrade.client import freqtrade_client
+from services.api.app.services.automation_workflow_service import automation_workflow_service
 from services.api.app.services.auth_service import auth_service
-from services.api.app.services.execution_service import execution_service
-from services.api.app.services.risk_service import risk_service
-from services.api.app.services.signal_service import signal_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
+from services.api.app.services.strategy_dispatch_service import strategy_dispatch_service
 from services.api.app.services.strategy_workspace_service import strategy_workspace_service
 from services.api.app.services.sync_service import sync_service
-from services.api.app.tasks.scheduler import task_scheduler
 
 
 try:
@@ -105,6 +103,7 @@ def get_strategy_workspace(token: str = "", authorization: str = Header("")) -> 
     except PermissionError:
         return _unauthorized()
     workspace = strategy_workspace_service.get_workspace()
+    workspace["automation"] = automation_workflow_service.get_status()
     return _success(
         workspace,
         {
@@ -199,69 +198,24 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:
         return _unauthorized()
-    latest = signal_service.claim_latest_dispatchable_signal(strategy_id)
-    if latest is None:
+    result = strategy_dispatch_service.dispatch_latest_signal(strategy_id, source="system")
+    if result.get("status") != "succeeded":
         return {
             "data": None,
-            "error": {"code": "signal_not_ready", "message": f"no pending signal available for strategy {strategy_id}"},
-            "meta": {"strategy_id": strategy_id, "source": "control-plane-api"},
-        }
-
-    risk_task = task_scheduler.run_custom_task(
-        task_type="risk_check",
-        source="system",
-        target_type="signal",
-        target_id=int(latest["signal_id"]),
-        payload={"strategy_id": strategy_id},
-        runner=lambda: risk_service.evaluate_signal(int(latest["signal_id"]), strategy_context_id=strategy_id),
-    )
-    decision = risk_task.get("result")
-    if risk_task["status"] != "succeeded" or decision["status"] == "block":
-        signal_service.release_dispatch_claim(int(latest["signal_id"]))
-        return {
-            "data": None,
-            "error": {
-                "code": "risk_blocked",
-                "message": decision["reason"] if decision is not None else "risk evaluation failed",
-            },
+            "error": {"code": str(result.get("error_code", "dispatch_failed")), "message": str(result.get("message", "dispatch failed"))},
             "meta": {
                 "strategy_id": strategy_id,
                 "source": "control-plane-api",
-                "risk_task_id": risk_task["id"],
+                "risk_task_id": result.get("risk_task", {}).get("id") if isinstance(result.get("risk_task"), dict) else None,
             },
         }
-
-    try:
-        result = execution_service.dispatch_signal(int(latest["signal_id"]), strategy_context_id=strategy_id)
-    except Exception as exc:
-        signal_service.release_dispatch_claim(int(latest["signal_id"]))
-        return {
-            "data": None,
-            "error": {
-                "code": "execution_failed",
-                "message": str(exc),
-            },
-            "meta": {
-                "strategy_id": strategy_id,
-                "source": "control-plane-api",
-                "risk_task_id": risk_task["id"],
-            },
-        }
-    signal_service.update_signal_status(int(latest["signal_id"]), "dispatched")
-    sync_payload: dict[str, object] = {}
-    if str(result.get("runtime", {}).get("mode", "")).strip().lower() == "live":
-        sync_payload.update(sync_service.build_live_sync_payload(result))
-    sync_payload["source_signal_id"] = int(latest["signal_id"])
-    sync_task = task_scheduler.run_named_task(
-        task_type="sync",
-        source="system",
-        target_type="strategy",
-        target_id=strategy_id,
-        payload=sync_payload,
-    )
-    signal_service.release_dispatch_claim(int(latest["signal_id"]))
     return _success(
-        {"item": result, "risk_decision": decision, "risk_task": risk_task, "sync_task": sync_task},
+        {
+            "item": result.get("item"),
+            "risk_decision": result.get("risk_decision"),
+            "risk_task": result.get("risk_task"),
+            "sync_task": result.get("sync_task"),
+        },
         {
             "strategy_id": strategy_id,
             "action": "dispatch-latest-signal",

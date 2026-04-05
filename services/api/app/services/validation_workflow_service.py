@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.api.app.services.automation_service import automation_service
 from services.api.app.services.research_service import research_service
 from services.api.app.services.sync_service import sync_service
 from services.api.app.tasks.scheduler import task_scheduler
@@ -28,6 +29,10 @@ class ValidationWorkflowService:
         task_health = self._scheduler.get_health_summary()
         execution_health = self._sync_reader.get_execution_health_summary(task_health=task_health)
         account_snapshot = self._build_account_snapshot(limit=limit)
+        automation = {
+            "state": automation_service.get_state(),
+            "health": automation_service.build_health_summary(task_health=task_health),
+        }
         steps = self._build_steps(
             research_report=research_report,
             recent_tasks=raw_recent_tasks,
@@ -41,11 +46,17 @@ class ValidationWorkflowService:
                 "candidate_count": int(research_report.get("overview", {}).get("candidate_count", 0) or 0),
                 "ready_count": int(research_report.get("overview", {}).get("ready_count", 0) or 0),
                 "workflow_status": self._resolve_workflow_status(steps),
+                "next_action": self._resolve_next_action(
+                    research_report=research_report,
+                    execution_health=execution_health,
+                    automation_state=automation["state"],
+                ),
             },
             "steps": steps,
             "research_report": research_report,
             "task_health": task_health,
             "execution_health": execution_health,
+            "automation": automation,
             "recent_tasks": recent_tasks,
             "account_snapshot": account_snapshot,
         }
@@ -170,6 +181,29 @@ class ValidationWorkflowService:
         if all(item["status"] in {"completed", "succeeded", "waiting"} for item in steps):
             return "in_progress"
         return "unknown"
+
+    @staticmethod
+    def _resolve_next_action(
+        *,
+        research_report: dict[str, object],
+        execution_health: dict[str, object],
+        automation_state: dict[str, object],
+    ) -> str:
+        """给复盘统一输出下一步动作。"""
+
+        if bool(automation_state.get("paused")):
+            return "stop"
+        recommended_action = str(research_report.get("overview", {}).get("recommended_action", ""))
+        if recommended_action != "enter_dry_run":
+            return "continue_research"
+        automation_mode = str(automation_state.get("mode", "manual"))
+        runtime_mode = str(execution_health.get("runtime_mode", ""))
+        latest_sync_status = str(execution_health.get("latest_sync_status", ""))
+        if automation_mode == "manual":
+            return "manual_review"
+        if automation_mode == "auto_live" and runtime_mode == "live" and latest_sync_status == "succeeded":
+            return "retain_small_live"
+        return "continue_dry_run"
 
 
 validation_workflow_service = ValidationWorkflowService()

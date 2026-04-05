@@ -138,6 +138,14 @@
 - 不让前端直接连接交易所或执行器
 - 在服务器部署时，作为 WebUI、Freqtrade 和研究层之间的统一入口
 
+### 6.5 自动化层
+
+作用：
+- 保存自动化模式、暂停状态和最近告警
+- 统一触发训练、推理、自动 dry-run、小额 live 和复盘
+- 让自动化状态在本地状态文件里持久化，服务重启后仍能恢复
+- 按研究候选里的策略模板选择真实策略实例，而不是一律回退到默认策略
+
 ### 7. WebUI
 
 作用：
@@ -279,6 +287,22 @@
 - 统一输出 `dry-run -> 小额 live -> 复盘` 当前走到哪一步
 - 给任务接口和后续页面提供统一复盘入口
 
+### `services/api/app/services/automation_service.py`
+
+负责：
+
+- 保存自动化模式、暂停状态、最近告警和最近 armed 候选
+- 把自动化状态写入本地状态文件，重启后继续恢复
+- 给任务页和策略页输出自动化健康摘要
+
+### `services/api/app/services/automation_workflow_service.py`
+
+负责：
+
+- 把训练、推理、信号输出、自动 dry-run、小额 live 和复盘串成一轮自动化工作流
+- 根据研究推荐里的 `strategy_template` 选择真实策略实例
+- 在自动化动作结束后统一回写最近一轮状态
+
 ### `services/api/app/services/research_cockpit_service.py`
 
 负责：
@@ -303,6 +327,7 @@
 - 固定白名单
 - 固定两套首批策略
 - 统一输出默认参数
+- 把研究模板名映射到真实策略实例编号
 
 ### `services/api/app/services/strategy_engine.py`
 

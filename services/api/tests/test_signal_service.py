@@ -107,6 +107,20 @@ class SignalServiceTests(unittest.TestCase):
 
         self.assertIsNone(claimed)
 
+    def test_matching_strategy_can_claim_generic_qlib_signal_with_template(self) -> None:
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _TemplateMatchedResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(2)
+        finally:
+            signal_service_module.research_service = original_research_service
+
+        self.assertIsNotNone(claimed)
+        assert claimed is not None
+        self.assertEqual(claimed["symbol"], "ETHUSDT")
+        self.assertEqual(claimed["payload"]["strategy_template"], "trend_pullback_timing")
+
     def test_executor_strategy_prefers_strategy_bound_signal_over_generic_research_signal(self) -> None:
         original_research_service = signal_service_module.research_service
         signal_service_module.research_service = _PassingResearchService()
@@ -358,6 +372,37 @@ class _ForcedValidationResearchService(_PassingResearchService):
                         "next_action": "enter_dry_run",
                         "execution_priority": 0,
                         "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                    }
+                ]
+            },
+        }
+
+
+class _TemplateMatchedResearchService(_PassingResearchService):
+    def run_inference(self) -> dict[str, object]:
+        return {
+            "backend": "qlib-fallback",
+            "signals": [
+                {
+                    "symbol": "ETHUSDT",
+                    "side": "long",
+                    "score": "0.8300",
+                    "confidence": "0.8400",
+                    "target_weight": "0.2000",
+                    "generated_at": "2026-04-02T01:00:00+00:00",
+                }
+            ],
+            "candidates": {
+                "items": [
+                    {
+                        "rank": 1,
+                        "symbol": "ETHUSDT",
+                        "strategy_template": "trend_pullback_timing",
+                        "allowed_to_dry_run": True,
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                        "review_status": "ready_for_dry_run",
+                        "next_action": "enter_dry_run",
+                        "execution_priority": 0,
                     }
                 ]
             },

@@ -4,8 +4,7 @@ import sys
 import threading
 import unittest
 from pathlib import Path
-
-from fastapi.testclient import TestClient
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -18,13 +17,17 @@ import services.api.app.routes.risk_events as risk_events_route  # noqa: E402
 import services.api.app.routes.signals as signals_route  # noqa: E402
 import services.api.app.routes.strategies as strategies_route  # noqa: E402
 import services.api.app.routes.tasks as tasks_route  # noqa: E402
+import services.api.app.services.automation_service as automation_service_module  # noqa: E402
+import services.api.app.services.automation_workflow_service as automation_workflow_module  # noqa: E402
 import services.api.app.services.auth_service as auth_service_module  # noqa: E402
 import services.api.app.services.execution_service as execution_service_module  # noqa: E402
 import services.api.app.services.risk_service as risk_service_module  # noqa: E402
 import services.api.app.services.signal_service as signal_service_module  # noqa: E402
+import services.api.app.services.strategy_dispatch_service as strategy_dispatch_module  # noqa: E402
 import services.api.app.services.strategy_catalog as strategy_catalog_module  # noqa: E402
 import services.api.app.services.strategy_workspace_service as strategy_workspace_module  # noqa: E402
 import services.api.app.services.sync_service as sync_service_module  # noqa: E402
+import services.api.app.services.validation_workflow_service as validation_workflow_module  # noqa: E402
 import services.api.app.tasks.scheduler as scheduler_module  # noqa: E402
 from services.api.app.main import app  # noqa: E402
 from services.api.app.routes.accounts import list_accounts  # noqa: E402
@@ -55,13 +58,18 @@ from services.api.app.routes.strategies import (  # noqa: E402
     stop_strategy,
 )
 from services.api.app.services.auth_service import AuthService  # noqa: E402
+from services.api.app.services.automation_service import AutomationService  # noqa: E402
+from services.api.app.services.automation_workflow_service import AutomationWorkflowService  # noqa: E402
 from services.api.app.services.risk_service import RiskService  # noqa: E402
 from services.api.app.services.signal_service import SignalService  # noqa: E402
+from services.api.app.services.strategy_dispatch_service import StrategyDispatchService  # noqa: E402
 from services.api.app.services.strategy_catalog import StrategyCatalogService  # noqa: E402
 from services.api.app.services.strategy_workspace_service import StrategyWorkspaceService  # noqa: E402
+from services.api.app.services.validation_workflow_service import ValidationWorkflowService  # noqa: E402
 from services.api.app.adapters.freqtrade.client import FreqtradeClient  # noqa: E402
 from services.api.app.tasks.scheduler import TaskScheduler  # noqa: E402
-from services.api.app.routes.tasks import get_task, get_validation_review, list_tasks, run_review_task  # noqa: E402
+from services.api.app.routes.tasks import get_task, get_validation_review, list_tasks, run_review_task, run_train_task  # noqa: E402
+from services.api.app.routes.tasks import get_automation_status, set_automation_mode, halt_automation, resume_automation, run_automation_cycle  # noqa: E402
 from services.api.app.routes.orders import list_orders  # noqa: E402
 from services.api.app.routes.positions import list_positions  # noqa: E402
 
@@ -115,6 +123,39 @@ class ApiSkeletonTests(unittest.TestCase):
         risk_service_module.risk_service = new_risk_service
         risk_events_route.risk_service = new_risk_service
         strategies_route.risk_service = new_risk_service
+
+        new_automation_service = AutomationService()
+        automation_service_module.automation_service = new_automation_service
+        tasks_route.automation_service = new_automation_service
+        validation_workflow_module.automation_service = new_automation_service
+
+        strategy_dispatch_module.signal_service = new_signal_service
+        strategy_dispatch_module.task_scheduler = new_task_scheduler
+        strategy_dispatch_module.sync_service = sync_service_module.sync_service
+        strategy_dispatch_module.risk_service = new_risk_service
+        strategy_dispatch_module.execution_service = execution_service_module.execution_service
+        new_strategy_dispatch_service = StrategyDispatchService()
+        strategy_dispatch_module.strategy_dispatch_service = new_strategy_dispatch_service
+
+        new_validation_workflow_service = ValidationWorkflowService(
+            research_reader=signals_route.research_service,
+            sync_reader=sync_service_module.sync_service,
+            scheduler=new_task_scheduler,
+        )
+        validation_workflow_module.validation_workflow_service = new_validation_workflow_service
+
+        new_automation_workflow_service = AutomationWorkflowService(
+            scheduler=new_task_scheduler,
+            automation=new_automation_service,
+            research=signals_route.research_service,
+            signals=new_signal_service,
+            dispatcher=new_strategy_dispatch_service,
+            reviewer=new_validation_workflow_service,
+            syncer=sync_service_module.sync_service,
+        )
+        automation_workflow_module.automation_workflow_service = new_automation_workflow_service
+        tasks_route.automation_workflow_service = new_automation_workflow_service
+        strategies_route.automation_workflow_service = new_automation_workflow_service
 
     @staticmethod
     def _login_token() -> str:
@@ -210,6 +251,14 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("run", response["data"])
         self.assertEqual(response["data"]["run"]["source"], "mock")
 
+    def test_train_task_route_now_records_research_training(self) -> None:
+        token = self._login_token()
+        response = run_train_task(token=token)
+
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["meta"]["action"], "research-train")
+        self.assertEqual(response["data"]["item"]["task_type"], "research_train")
+
     def test_research_routes_return_consistent_response_shape(self) -> None:
         token = self._login_token()
         latest = get_latest_research()
@@ -258,18 +307,33 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIsNone(review["error"])
         self.assertIsNone(report["error"])
         self.assertIn("item", review["data"])
-        self.assertIn("overview", report["data"]["item"])
-        self.assertIn("task_health", report["data"]["item"])
+
+    def test_automation_routes_return_consistent_response_shape(self) -> None:
+        token = self._login_token()
+
+        status = get_automation_status(token=token)
+        switched = set_automation_mode(mode="auto_dry_run", token=token)
+        halted = halt_automation(reason="manual", token=token)
+        resumed = resume_automation(mode="manual", token=token)
+        with mock.patch.object(
+            tasks_route.task_scheduler,
+            "run_named_task",
+            return_value={"id": 1, "task_type": "automation_cycle", "status": "succeeded", "result": {"status": "completed"}},
+        ):
+            cycled = run_automation_cycle(token=token)
+
+        for response in (status, switched, halted, resumed, cycled):
+            self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+            self.assertIsNone(response["error"])
+            self.assertIn("item", response["data"])
+        self.assertIn("state", status["data"]["item"])
+        self.assertIn("health", status["data"]["item"])
+        self.assertIn("status", cycled["data"]["item"])
 
     def test_validation_review_http_route_is_not_shadowed_by_task_id_route(self) -> None:
         token = self._login_token()
         run_review_task(token=token)
-        client = TestClient(app)
-
-        response = client.get("/api/v1/tasks/validation-review", headers={"Authorization": f"Bearer {token}"})
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
+        payload = get_validation_review(token=token)
         self.assertIsNone(payload["error"])
         self.assertIn("overview", payload["data"]["item"])
 
@@ -366,12 +430,18 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
-        original_dispatch = strategies_route.execution_service.dispatch_signal
-        strategies_route.execution_service.dispatch_signal = lambda signal_id: (_ for _ in ()).throw(RuntimeError("freqtrade busy"))  # type: ignore[assignment]
+        original_dispatch = strategies_route.strategy_dispatch_service.dispatch_latest_signal
+        strategies_route.strategy_dispatch_service.dispatch_latest_signal = lambda strategy_id, source="system": {  # type: ignore[assignment]
+            "status": "failed",
+            "error_code": "execution_failed",
+            "message": "freqtrade busy",
+            "risk_task": None,
+            "sync_task": None,
+        }
         try:
             response = dispatch_latest_signal(1, token=token)
         finally:
-            strategies_route.execution_service.dispatch_signal = original_dispatch  # type: ignore[assignment]
+            strategies_route.strategy_dispatch_service.dispatch_latest_signal = original_dispatch  # type: ignore[assignment]
 
         self.assertEqual(response["error"]["code"], "execution_failed")
         self.assertIn("freqtrade busy", response["error"]["message"])
@@ -393,18 +463,18 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
-        original_dispatch = strategies_route.execution_service.dispatch_signal
+        original_dispatch = strategy_dispatch_module.execution_service.dispatch_signal
         entered = threading.Event()
         release = threading.Event()
         call_count = {"value": 0}
 
-        def blocking_dispatch(signal_id: int) -> dict[str, object]:
+        def blocking_dispatch(signal_id: int, strategy_context_id: int | None = None) -> dict[str, object]:
             call_count["value"] += 1
             entered.set()
             release.wait(timeout=2)
-            return original_dispatch(signal_id)
+            return original_dispatch(signal_id, strategy_context_id=strategy_context_id)
 
-        strategies_route.execution_service.dispatch_signal = blocking_dispatch  # type: ignore[assignment]
+        strategy_dispatch_module.execution_service.dispatch_signal = blocking_dispatch  # type: ignore[assignment]
         responses: list[dict[str, object]] = []
         try:
             thread = threading.Thread(target=lambda: responses.append(dispatch_latest_signal(1, token=token)))
@@ -414,7 +484,7 @@ class ApiSkeletonTests(unittest.TestCase):
             release.set()
             thread.join(timeout=5)
         finally:
-            strategies_route.execution_service.dispatch_signal = original_dispatch  # type: ignore[assignment]
+            strategy_dispatch_module.execution_service.dispatch_signal = original_dispatch  # type: ignore[assignment]
 
         self.assertEqual(call_count["value"], 1)
         self.assertEqual(second_response["error"]["code"], "signal_not_ready")

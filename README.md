@@ -77,6 +77,13 @@
   - 最小推理
   - 标准化输出研究分数、解释和模型版本
   - 在信号页、单币图表页、策略页展示最近研究结果
+- 自动化主链已经有了最小可用版本：
+  - 自动化模式和全局开关
+  - 统一调度入口
+  - 自动 `dry-run`
+  - 自动小额 `live`
+  - 健康摘要和统一复盘
+  - 自动化状态会本地持久化，重启后仍能恢复当前模式
 
 ### 当前最重要的新能力
 
@@ -247,6 +254,10 @@ infra/deploy                阿里云统一部署骨架
   最小训练、最小推理和结果落盘
 - `services/api/app/services/validation_workflow_service.py`
   把研究、任务和执行状态整理成统一复盘报告
+- `services/api/app/services/automation_service.py`
+  保存自动化模式、暂停状态、最近告警和本地持久化状态
+- `services/api/app/services/automation_workflow_service.py`
+  把训练、推理、自动 dry-run、小额 live 和复盘收成统一自动化流程
 - `services/worker/qlib_features.py`
   最小研究特征
 - `services/worker/qlib_labels.py`

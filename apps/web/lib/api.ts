@@ -153,6 +153,22 @@ type TasksPageModel = {
   items: Array<{ id: string; taskType: string; source: string; status: string }>;
 };
 
+export type AutomationStatusModel = {
+  mode: string;
+  paused: boolean;
+  pauseReason: string;
+  manualTakeover: boolean;
+  armedSymbol: string;
+  runtimeMode: string;
+  allowLiveExecution: boolean;
+  alerts: Array<{ level: string; code: string; message: string; createdAt: string }>;
+  lastCycle: Record<string, unknown>;
+  reviewOverview: Record<string, unknown>;
+  researchOverview: Record<string, unknown>;
+  health: Record<string, unknown>;
+  executionHealth: Record<string, unknown>;
+};
+
 export type MarketSnapshot = {
   symbol: string;
   last_price: string;
@@ -304,6 +320,17 @@ export type ResearchReportItem = {
     training: Record<string, unknown>;
     inference: Record<string, unknown>;
   };
+};
+
+export type ValidationReviewItem = {
+  overview: Record<string, unknown>;
+  steps: Array<Record<string, unknown>>;
+  research_report: Record<string, unknown>;
+  task_health: Record<string, unknown>;
+  execution_health: Record<string, unknown>;
+  automation?: Record<string, unknown>;
+  recent_tasks: Array<Record<string, unknown>>;
+  account_snapshot: Record<string, unknown>;
 };
 
 export type MarketChartData = {
@@ -636,6 +663,71 @@ export async function listTasks(
         source: String(item.source ?? ""),
         status: String(item.status ?? ""),
       })),
+    },
+  };
+}
+
+export async function getAutomationStatus(
+  token?: string,
+): Promise<ApiEnvelope<{ item: AutomationStatusModel }>> {
+  const response = await fetchJson<{ item: Record<string, unknown> }>("/tasks/automation", token);
+  if (response.error) {
+    return response as ApiEnvelope<{ item: AutomationStatusModel }>;
+  }
+  const item = isPlainObject(response.data.item) ? response.data.item : {};
+  const state = isPlainObject(item.state) ? item.state : {};
+  const health = isPlainObject(item.health) ? item.health : {};
+  return {
+    ...response,
+    data: {
+      item: {
+        mode: String(state.mode ?? "manual"),
+        paused: Boolean(state.paused),
+        pauseReason: String(state.paused_reason ?? ""),
+        manualTakeover: Boolean(state.manual_takeover),
+        armedSymbol: String(state.armed_symbol ?? ""),
+        runtimeMode: String(state.runtime_mode ?? "demo"),
+        allowLiveExecution: Boolean(state.allow_live_execution),
+        alerts: Array.isArray(state.alerts)
+          ? state.alerts.map((entry) => {
+              const row = isPlainObject(entry) ? entry : {};
+              return {
+                level: String(row.level ?? ""),
+                code: String(row.code ?? ""),
+                message: String(row.message ?? ""),
+                createdAt: String(row.created_at ?? ""),
+              };
+            })
+          : [],
+        lastCycle: isPlainObject(state.last_cycle) ? state.last_cycle : {},
+        reviewOverview: isPlainObject(item.review_overview) ? item.review_overview : {},
+        researchOverview: isPlainObject(item.review_overview) ? item.review_overview : {},
+        health,
+        executionHealth: isPlainObject(item.execution_health) ? item.execution_health : {},
+      },
+    },
+  };
+}
+
+export async function getValidationReview(
+  token?: string,
+): Promise<ApiEnvelope<{ item: ValidationReviewItem }>> {
+  const response = await fetchJson<{ item: Record<string, unknown> }>("/tasks/validation-review", token);
+  if (response.error) {
+    return response as ApiEnvelope<{ item: ValidationReviewItem }>;
+  }
+  return {
+    ...response,
+    data: {
+      item: isPlainObject(response.data.item) ? (response.data.item as ValidationReviewItem) : {
+        overview: {},
+        steps: [],
+        research_report: {},
+        task_health: {},
+        execution_health: {},
+        recent_tasks: [],
+        account_snapshot: {},
+      },
     },
   };
 }
@@ -1455,6 +1547,26 @@ export function getTasksPageModel(): TasksPageModel {
         status: "queued",
       },
     ],
+  };
+}
+
+export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
+  return {
+    item: {
+      mode: "manual",
+      paused: false,
+      pauseReason: "",
+      manualTakeover: false,
+      armedSymbol: "",
+      runtimeMode: "demo",
+      allowLiveExecution: false,
+      alerts: [],
+      lastCycle: {},
+      reviewOverview: {},
+      researchOverview: {},
+      health: {},
+      executionHealth: {},
+    },
   };
 }
 

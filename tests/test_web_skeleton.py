@@ -41,7 +41,7 @@ class WebSkeletonTests(unittest.TestCase):
             WEB_APP / "positions" / "page.tsx": "listPositions",
             WEB_APP / "orders" / "page.tsx": "listOrders",
             WEB_APP / "risk" / "page.tsx": "listRiskEvents",
-            WEB_APP / "tasks" / "page.tsx": "listTasks",
+            WEB_APP / "tasks" / "page.tsx": "getAutomationStatus",
             WEB_APP / "login" / "page.tsx": "getLoginPageModel",
         }
 
