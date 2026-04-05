@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { logoutAdmin } from "../../lib/api";
+import { buildRedirectUrl } from "../../lib/redirect";
 import { SESSION_COOKIE_NAME } from "../../lib/session";
 
 
@@ -21,5 +22,5 @@ export async function POST(request: Request) {
   }
 
   cookieStore.delete(SESSION_COOKIE_NAME);
-  return NextResponse.redirect(new URL("/login?tone=info&title=退出成功&message=当前会话已经清除。", request.url));
+  return NextResponse.redirect(buildRedirectUrl(request, "/login?tone=info&title=退出成功&message=当前会话已经清除。"));
 }

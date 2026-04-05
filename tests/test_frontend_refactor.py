@@ -10,6 +10,16 @@ WEB_COMPONENTS = REPO_ROOT / "apps" / "web" / "components"
 
 
 class FrontendRefactorTests(unittest.TestCase):
+    def test_frontend_source_does_not_mix_localhost_with_loopback_ip(self) -> None:
+        excluded_parts = {"node_modules"}
+        for file_path in (REPO_ROOT / "apps" / "web").rglob("*"):
+            if not file_path.is_file():
+                continue
+            if any(part in excluded_parts or part.startswith(".next") for part in file_path.parts):
+                continue
+            content = file_path.read_text(encoding="utf-8")
+            self.assertNotIn("localhost", content, f"frontend source should avoid localhost: {file_path}")
+
     def test_shared_shell_components_exist(self) -> None:
         expected_files = [
             WEB_COMPONENTS / "app-shell.tsx",
@@ -35,6 +45,22 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn('action="/login/submit"', content)
         self.assertIn("登录反馈", content)
         self.assertIn("继续前往", content)
+        self.assertIn("autoComplete=\"current-password\"", content)
+        self.assertNotIn("placeholder=\"1933\"", content)
+
+    def test_login_submit_route_keeps_absolute_redirects(self) -> None:
+        content = (WEB_APP / "login" / "submit" / "route.ts").read_text(encoding="utf-8")
+        self.assertIn("buildRedirectUrl", content)
+        self.assertIn('from "../../../lib/redirect"', content)
+
+    def test_frontend_redirect_routes_share_same_host_helper(self) -> None:
+        actions_content = (WEB_APP / "actions" / "route.ts").read_text(encoding="utf-8")
+        logout_content = (WEB_APP / "logout" / "route.ts").read_text(encoding="utf-8")
+        redirect_helper = (REPO_ROOT / "apps" / "web" / "lib" / "redirect.ts").read_text(encoding="utf-8")
+
+        self.assertIn("buildRedirectUrl", actions_content)
+        self.assertIn("buildRedirectUrl", logout_content)
+        self.assertIn("x-forwarded-host", redirect_helper)
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {

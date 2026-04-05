@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { buildApiUrl, fetchJson, getAdminSession } from "../../lib/api";
+import { buildRedirectUrl } from "../../lib/redirect";
 import { normalizeAppPath, SESSION_COOKIE_NAME } from "../../lib/session";
 
 
@@ -26,11 +27,11 @@ export async function POST(request: Request) {
   const config = resolveActionConfig(action, strategyId);
 
   if (!config) {
-    return NextResponse.redirect(new URL(`${returnTo}?tone=error&title=动作反馈&message=未识别的操作请求。`, request.url));
+    return NextResponse.redirect(buildRedirectUrl(request, `${returnTo}?tone=error&title=动作反馈&message=未识别的操作请求。`));
   }
 
   if (config.requiresToken && !token) {
-    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=请先登录后再执行受保护操作。`, request.url));
+    return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=请先登录后再执行受保护操作。`));
   }
 
   if (config.requiresToken) {
@@ -38,11 +39,11 @@ export async function POST(request: Request) {
       const session = await getAdminSession(token);
       if (session.error) {
         cookieStore.delete(SESSION_COOKIE_NAME);
-        return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话已失效，请重新登录。`, request.url));
+        return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话已失效，请重新登录。`));
       }
     } catch {
       cookieStore.delete(SESSION_COOKIE_NAME);
-      return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话校验失败，请重新登录。`, request.url));
+      return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话校验失败，请重新登录。`));
     }
   }
 
@@ -59,9 +60,9 @@ export async function POST(request: Request) {
 
     if (payload.error) {
       return NextResponse.redirect(
-        new URL(
+        buildRedirectUrl(
+          request,
           `${returnTo}?tone=error&title=${encodeURIComponent("动作反馈")}&message=${encodeURIComponent(payload.error.message)}`,
-          request.url,
         ),
       );
     }
@@ -69,24 +70,24 @@ export async function POST(request: Request) {
     const feedback = resolveActionFeedback(action, payload, config);
     if (feedback) {
       return NextResponse.redirect(
-        new URL(
+        buildRedirectUrl(
+          request,
           `${returnTo}?tone=${encodeURIComponent(feedback.tone)}&title=${encodeURIComponent(feedback.title)}&message=${encodeURIComponent(feedback.message)}`,
-          request.url,
         ),
       );
     }
 
     return NextResponse.redirect(
-      new URL(
+      buildRedirectUrl(
+        request,
         `${returnTo}?tone=success&title=${encodeURIComponent(config.successTitle)}&message=${encodeURIComponent(config.successMessage)}`,
-        request.url,
       ),
     );
   } catch {
     return NextResponse.redirect(
-      new URL(
+      buildRedirectUrl(
+        request,
         `${returnTo}?tone=error&title=${encodeURIComponent("动作反馈")}&message=${encodeURIComponent("控制平面暂时不可达，请稍后重试。")}`,
-        request.url,
       ),
     );
   }

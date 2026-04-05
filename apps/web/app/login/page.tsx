@@ -78,7 +78,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
 
               <div className="grid gap-2">
                 <label htmlFor="password" className="text-sm font-medium text-foreground">密码</label>
-                <Input id="password" name="password" type="password" placeholder="1933" />
+                <Input id="password" name="password" type="password" autoComplete="current-password" />
               </div>
 
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">

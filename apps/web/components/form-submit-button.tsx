@@ -29,7 +29,9 @@ export function FormSubmitButton({
         {...props}
         disabled={disabled || pending}
         onClick={(event) => {
-          setPending(true);
+          window.setTimeout(() => {
+            setPending(true);
+          }, 0);
           onClick?.(event);
         }}
       >
