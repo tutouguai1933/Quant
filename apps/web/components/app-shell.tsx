@@ -18,6 +18,7 @@ type AppShellProps = {
 
 const NAV_ITEMS = [
   { href: "/", label: "驾驶舱", protected: false },
+  { href: "/data", label: "数据", protected: false },
   { href: "/signals", label: "信号", protected: false },
   { href: "/market", label: "市场", protected: false },
   { href: "/strategies", label: "策略", protected: true },

@@ -22,6 +22,7 @@ except ImportError:
 from services.api.app.routes.accounts import router as accounts_router
 from services.api.app.routes.auth import router as auth_router
 from services.api.app.routes.balances import router as balances_router
+from services.api.app.routes.data_workspace import router as data_workspace_router
 from services.api.app.routes.health import router as health_router
 from services.api.app.routes.market import router as market_router
 from services.api.app.routes.orders import router as orders_router
@@ -49,6 +50,8 @@ app.include_router(accounts_router)
 app.routers.append(accounts_router)  # type: ignore[attr-defined]
 app.include_router(balances_router)
 app.routers.append(balances_router)  # type: ignore[attr-defined]
+app.include_router(data_workspace_router)
+app.routers.append(data_workspace_router)  # type: ignore[attr-defined]
 app.include_router(market_router)
 app.routers.append(market_router)  # type: ignore[attr-defined]
 app.include_router(positions_router)

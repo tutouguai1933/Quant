@@ -32,6 +32,7 @@ import services.api.app.tasks.scheduler as scheduler_module  # noqa: E402
 from services.api.app.main import app  # noqa: E402
 from services.api.app.routes.accounts import list_accounts  # noqa: E402
 from services.api.app.routes.auth import login  # noqa: E402
+from services.api.app.routes.data_workspace import get_data_workspace  # noqa: E402
 from services.api.app.routes.health import get_health, get_healthz  # noqa: E402
 from services.api.app.routes.risk_events import get_risk_event, list_risk_events  # noqa: E402
 from services.api.app.routes.signals import (  # noqa: E402
@@ -173,6 +174,7 @@ class ApiSkeletonTests(unittest.TestCase):
                 prefix = getattr(router, "kwargs", {}).get("prefix")
             router_prefixes.append(prefix)
         self.assertIn("/api/v1/auth", router_prefixes)
+        self.assertIn("/api/v1/data", router_prefixes)
 
     def test_health_endpoints_return_success_envelope(self) -> None:
         self.assertEqual(get_health()["error"], None)
@@ -258,6 +260,14 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIsNone(response["error"])
         self.assertEqual(response["meta"]["action"], "research-train")
         self.assertEqual(response["data"]["item"]["task_type"], "research_train")
+
+    def test_data_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_data_workspace(symbol="BTCUSDT", interval="4h", limit=120)
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        self.assertEqual(response["meta"]["source"], "data-workspace")
 
     def test_research_routes_return_consistent_response_shape(self) -> None:
         token = self._login_token()

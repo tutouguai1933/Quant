@@ -172,6 +172,48 @@ export type AutomationStatusModel = {
   failurePolicy: Record<string, unknown>;
 };
 
+export type DataWorkspaceModel = {
+  status: string;
+  backend: string;
+  filters: {
+    selected_symbol: string;
+    selected_interval: string;
+    limit: number;
+    available_symbols: string[];
+    available_intervals: string[];
+  };
+  sources: {
+    research: string;
+    market: string;
+  };
+  snapshot: {
+    snapshot_id: string;
+    cache_signature: string;
+    active_data_state: string;
+    data_states: Record<string, unknown>;
+    dataset_snapshot_path: string;
+  };
+  preview: {
+    symbol: string;
+    interval: string;
+    effective_interval: string;
+    source: string;
+    total_rows: number;
+    first_open_time: string;
+    last_close_time: string;
+    status: string;
+    detail: string;
+  };
+  training_window: {
+    holding_window: string;
+    sample_window: Record<string, unknown>;
+  };
+  symbols: Array<{
+    symbol: string;
+    selected: boolean;
+  }>;
+};
+
 export type MarketSnapshot = {
   symbol: string;
   last_price: string;
@@ -757,6 +799,97 @@ export async function listMarketSnapshots(): Promise<
   };
 }
 
+export async function getDataWorkspace(
+  symbol?: string,
+  interval?: string,
+  limit?: number,
+): Promise<ApiEnvelope<{ item: DataWorkspaceModel }>> {
+  const query = new URLSearchParams();
+  if (symbol) {
+    query.set("symbol", symbol);
+  }
+  if (interval) {
+    query.set("interval", interval);
+  }
+  if (typeof limit === "number" && Number.isFinite(limit)) {
+    query.set("limit", String(limit));
+  }
+  const path = query.size > 0 ? `/data/workspace?${query.toString()}` : "/data/workspace";
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>(path);
+  } catch (error) {
+    return {
+      data: {
+        item: getDataWorkspaceFallback(symbol, interval, limit),
+      },
+      error: {
+        code: "workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "数据工作台暂时不可用",
+      },
+      meta: {
+        source: "data-workspace",
+      },
+    };
+  }
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getDataWorkspaceFallback(symbol, interval, limit),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeDataWorkspaceModel(response.data.item),
+    },
+  };
+}
+
+export function getDataWorkspaceFallback(symbol?: string, interval?: string, limit?: number): DataWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    filters: {
+      selected_symbol: String(symbol ?? "").trim() || "BTCUSDT",
+      selected_interval: String(interval ?? "").trim() || "4h",
+      limit: typeof limit === "number" && Number.isFinite(limit) ? limit : 200,
+      available_symbols: [],
+      available_intervals: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
+    },
+    sources: {
+      research: "qlib-fallback",
+      market: "binance",
+    },
+    snapshot: {
+      snapshot_id: "",
+      cache_signature: "",
+      active_data_state: "",
+      data_states: {},
+      dataset_snapshot_path: "",
+    },
+    preview: {
+      symbol: String(symbol ?? "").trim() || "BTCUSDT",
+      interval: String(interval ?? "").trim() || "4h",
+      effective_interval: String(interval ?? "").trim() || "4h",
+      source: "binance",
+      total_rows: 0,
+      first_open_time: "",
+      last_close_time: "",
+      status: "unavailable",
+      detail: "数据工作台当前没有拿到可用响应。",
+    },
+    training_window: {
+      holding_window: "",
+      sample_window: {},
+    },
+    symbols: [],
+  };
+}
+
 export async function getMarketChart(symbol: string, interval?: string): Promise<
   ApiEnvelope<MarketChartData>
 > {
@@ -830,6 +963,63 @@ function normalizeMarketSnapshot(item: unknown): MarketSnapshot {
     trend_state: trendState,
     strategy_summary: normalizeStrategySummary(row.strategy_summary),
     research_brief: normalizeResearchCockpitSummary(row.research_brief),
+  };
+}
+
+function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const filters = isPlainObject(row.filters) ? row.filters : {};
+  const sources = isPlainObject(row.sources) ? row.sources : {};
+  const snapshot = isPlainObject(row.snapshot) ? row.snapshot : {};
+  const preview = isPlainObject(row.preview) ? row.preview : {};
+  const trainingWindow = isPlainObject(row.training_window) ? row.training_window : {};
+  const sampleWindow = isPlainObject(trainingWindow.sample_window) ? trainingWindow.sample_window : {};
+  const symbols = Array.isArray(row.symbols) ? row.symbols : [];
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    filters: {
+      selected_symbol: String(filters.selected_symbol ?? ""),
+      selected_interval: String(filters.selected_interval ?? "4h"),
+      limit: Number(filters.limit ?? 0),
+      available_symbols: normalizeStringArray(filters.available_symbols, []),
+      available_intervals: normalizeStringArray(filters.available_intervals, ["1h", "4h", "1d"]),
+    },
+    sources: {
+      research: String(sources.research ?? "qlib-fallback"),
+      market: String(sources.market ?? "binance"),
+    },
+    snapshot: {
+      snapshot_id: String(snapshot.snapshot_id ?? ""),
+      cache_signature: String(snapshot.cache_signature ?? ""),
+      active_data_state: String(snapshot.active_data_state ?? ""),
+      data_states: isPlainObject(snapshot.data_states) ? snapshot.data_states : {},
+      dataset_snapshot_path: String(snapshot.dataset_snapshot_path ?? ""),
+    },
+    preview: {
+      symbol: String(preview.symbol ?? ""),
+      interval: String(preview.interval ?? "4h"),
+      effective_interval: String(preview.effective_interval ?? preview.interval ?? "4h"),
+      source: String(preview.source ?? "binance"),
+      total_rows: Number(preview.total_rows ?? 0),
+      first_open_time: String(preview.first_open_time ?? ""),
+      last_close_time: String(preview.last_close_time ?? ""),
+      status: String(preview.status ?? "ready"),
+      detail: String(preview.detail ?? ""),
+    },
+    training_window: {
+      holding_window: String(trainingWindow.holding_window ?? ""),
+      sample_window: sampleWindow,
+    },
+    symbols: symbols
+      .map((value) => {
+        const symbolRow = isPlainObject(value) ? value : {};
+        return {
+          symbol: String(symbolRow.symbol ?? ""),
+          selected: Boolean(symbolRow.selected),
+        };
+      })
+      .filter((value) => value.symbol.length > 0),
   };
 }
 
