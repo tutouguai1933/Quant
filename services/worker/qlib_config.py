@@ -28,6 +28,7 @@ class QlibRuntimePaths:
     runtime_root: Path
     dataset_dir: Path
     dataset_snapshots_dir: Path
+    dataset_cache_dir: Path
     artifacts_dir: Path
     runs_dir: Path
     latest_training_path: Path
@@ -47,6 +48,7 @@ class QlibRuntimeConfig:
     backtest_fee_bps: Decimal
     backtest_slippage_bps: Decimal
     force_validation_top_candidate: bool
+    research_data_layer: str
     paths: QlibRuntimePaths
 
     def ensure_ready(self) -> None:
@@ -125,6 +127,7 @@ def _build_config(
         runtime_root=runtime_root,
         dataset_dir=runtime_root / "dataset",
         dataset_snapshots_dir=runtime_root / "dataset" / "snapshots",
+        dataset_cache_dir=runtime_root / "dataset" / "cache",
         artifacts_dir=runtime_root / "artifacts",
         runs_dir=runtime_root / "runs",
         latest_training_path=runtime_root / "latest_training.json",
@@ -140,6 +143,7 @@ def _build_config(
         backtest_fee_bps=backtest_fee_bps,
         backtest_slippage_bps=backtest_slippage_bps,
         force_validation_top_candidate=force_validation_top_candidate,
+        research_data_layer="feature-ready",
         paths=paths,
     )
 

@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+DATA_STATE_NAMES = ("raw", "cleaned", "feature-ready")
 
 from services.worker.qlib_features import build_feature_rows
 from services.worker.qlib_labels import build_label_rows
@@ -20,6 +23,8 @@ class DatasetBundle:
     training_rows: list[dict[str, object]]
     validation_rows: list[dict[str, object]]
     testing_rows: list[dict[str, object]]
+    data_states: dict[str, dict[str, object]] = field(default_factory=dict)
+    cache: dict[str, object] = field(default_factory=dict)
 
 
 def build_dataset_bundle(
@@ -77,6 +82,11 @@ def _build_dataset_bundle_for_candles(
         training_rows=training_rows,
         validation_rows=validation_rows,
         testing_rows=testing_rows,
+        data_states=_build_data_states(
+            raw_count=len(candles),
+            cleaned_count=min(len(feature_rows), len(label_rows)),
+            feature_ready_count=len(merged_rows),
+        ),
     )
 
 
@@ -122,3 +132,57 @@ def _normalize_symbol(symbol: str) -> str:
     """把币种代码统一成标准格式。"""
 
     return symbol.strip().upper()
+
+
+def _build_data_states(*, raw_count: int, cleaned_count: int, feature_ready_count: int) -> dict[str, dict[str, object]]:
+    """构造统一数据状态说明。"""
+
+    symbol_count = 1
+    return {
+        "raw": {
+            "state": "ready" if raw_count > 0 else "empty",
+            "symbol_count": symbol_count,
+            "row_count": raw_count,
+            "dropped_count": max(raw_count - cleaned_count, 0),
+        },
+        "cleaned": {
+            "state": "ready" if cleaned_count > 0 else "empty",
+            "symbol_count": symbol_count,
+            "row_count": cleaned_count,
+            "dropped_count": max(cleaned_count - feature_ready_count, 0),
+        },
+        "feature-ready": {
+            "state": "ready" if feature_ready_count > 0 else "empty",
+            "symbol_count": symbol_count,
+            "row_count": feature_ready_count,
+            "dropped_count": 0,
+        },
+    }
+
+
+def serialize_dataset_bundle(bundle: DatasetBundle) -> dict[str, object]:
+    """把数据集包序列化成可缓存结构。"""
+
+    return {
+        "symbol": bundle.symbol,
+        "timeframe": bundle.timeframe,
+        "training_rows": bundle.training_rows,
+        "validation_rows": bundle.validation_rows,
+        "testing_rows": bundle.testing_rows,
+        "data_states": bundle.data_states,
+        "cache": bundle.cache,
+    }
+
+
+def deserialize_dataset_bundle(payload: dict[str, object]) -> DatasetBundle:
+    """从缓存结构恢复数据集包。"""
+
+    return DatasetBundle(
+        symbol=str(payload.get("symbol", "")),
+        timeframe=str(payload.get("timeframe", "")),
+        training_rows=list(payload.get("training_rows") or []),
+        validation_rows=list(payload.get("validation_rows") or []),
+        testing_rows=list(payload.get("testing_rows") or []),
+        data_states=dict(payload.get("data_states") or {}),
+        cache=dict(payload.get("cache") or {}),
+    )

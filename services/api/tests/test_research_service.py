@@ -111,6 +111,14 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("leaderboard", report)
         self.assertIn("screening", report)
         self.assertTrue(report["experiments"]["recent_runs"])
+        self.assertEqual(report["experiments"]["training"]["dataset_snapshot"]["data_states"]["current"], "feature-ready")
+        self.assertIn("cache", report["experiments"]["training"]["dataset_snapshot"])
+        self.assertIn("snapshots", report)
+        self.assertEqual(report["snapshots"]["training"]["active_data_state"], "feature-ready")
+        self.assertEqual(
+            report["snapshots"]["training"]["cache_signature"],
+            report["snapshots"]["inference"]["cache_signature"],
+        )
 
     def test_research_service_report_uses_worker_experiment_builder(self) -> None:
         self.service.run_training()
@@ -146,6 +154,15 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn(("BTCUSDT", "4h", 120), self.service._market_reader.calls)
         self.assertIn(("ETHUSDT", "1h", 120), self.service._market_reader.calls)
         self.assertIn(("ETHUSDT", "4h", 120), self.service._market_reader.calls)
+
+    def test_research_service_reuses_cached_kline_batch_between_training_and_inference(self) -> None:
+        training_result = self.service.run_training()
+        inference_result = self.service.run_inference()
+
+        self.assertEqual(len(self.service._market_reader.calls), 4)
+        self.assertEqual(training_result["market_cache"]["reused_count"], 0)
+        self.assertEqual(inference_result["market_cache"]["reused_count"], 4)
+        self.assertEqual(training_result["dataset_snapshot"]["cache_signature"], inference_result["dataset_snapshot"]["cache_signature"])
 
     def test_research_report_uses_signal_list_when_summary_missing(self) -> None:
         self._write_json(

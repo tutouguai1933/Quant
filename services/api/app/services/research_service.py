@@ -28,6 +28,7 @@ class ResearchService:
         self._config_loader = config_loader or load_qlib_config
         self._market_reader = market_reader or MarketService()
         self._whitelist_provider = whitelist_provider or strategy_catalog_service.get_whitelist
+        self._market_cache: dict[tuple[str, str, int, tuple[str, ...]], list[dict[str, object]]] = {}
 
     def get_latest_result(self) -> dict[str, object]:
         """返回最近一次研究结果。"""
@@ -86,14 +87,20 @@ class ResearchService:
 
         config = self._config_loader()
         runner = QlibRunner(config=config)
-        return runner.train(self._prepare_dataset())
+        dataset, market_cache = self._prepare_dataset()
+        result = runner.train(dataset)
+        result["market_cache"] = market_cache
+        return result
 
     def run_inference(self) -> dict[str, object]:
         """触发一次推理。"""
 
         config = self._config_loader()
         runner = QlibRunner(config=config)
-        return runner.infer(self._prepare_dataset())
+        dataset, market_cache = self._prepare_dataset()
+        result = runner.infer(dataset)
+        result["market_cache"] = market_cache
+        return result
 
     def get_symbol_research(self, symbol: str) -> dict[str, object] | None:
         """读取单个币种最近一次研究摘要。"""
@@ -149,24 +156,34 @@ class ResearchService:
             "recommended_for_execution": bool(recommendation.get("allowed_to_dry_run")),
         }
 
-    def _prepare_dataset(self) -> dict[str, dict[str, list[dict[str, object]]]]:
+    def _prepare_dataset(self) -> tuple[dict[str, dict[str, list[dict[str, object]]]], dict[str, int]]:
         """准备最小研究输入。"""
 
         dataset: dict[str, dict[str, list[dict[str, object]]]] = {}
         whitelist = list(self._whitelist_provider())
+        cache_summary = {
+            "request_count": 0,
+            "reused_count": 0,
+            "fresh_count": 0,
+            "scope": "service-instance",
+            "refresh_rule": "service_restart",
+        }
         for symbol in whitelist:
-            chart_1h = self._market_reader.get_symbol_chart(
+            chart_1h, reused_1h = self._read_market_chart_cached(
                 symbol=symbol,
                 interval="1h",
                 limit=120,
                 allowed_symbols=tuple(whitelist),
             )
-            chart_4h = self._market_reader.get_symbol_chart(
+            chart_4h, reused_4h = self._read_market_chart_cached(
                 symbol=symbol,
                 interval="4h",
                 limit=120,
                 allowed_symbols=tuple(whitelist),
             )
+            cache_summary["request_count"] += 2
+            cache_summary["reused_count"] += int(reused_1h) + int(reused_4h)
+            cache_summary["fresh_count"] += int(not reused_1h) + int(not reused_4h)
             candles_1h = list(chart_1h.get("items", []))
             candles_4h = list(chart_4h.get("items", []))
             if candles_1h or candles_4h:
@@ -176,7 +193,36 @@ class ResearchService:
                 }
         if not dataset:
             raise QlibConfigurationError("研究层没有拿到可用市场样本")
-        return dataset
+        return dataset, cache_summary
+
+    def _read_market_chart_cached(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        limit: int,
+        allowed_symbols: tuple[str, ...],
+    ) -> tuple[dict[str, object], bool]:
+        """优先复用已读取的市场图表数据。"""
+
+        cache_key = (
+            symbol.strip().upper(),
+            interval,
+            limit,
+            tuple(sorted(item.strip().upper() for item in allowed_symbols)),
+        )
+        cached = self._market_cache.get(cache_key)
+        if cached is not None:
+            return {"items": list(cached)}, True
+        chart = self._market_reader.get_symbol_chart(
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+            allowed_symbols=allowed_symbols,
+        )
+        items = list(chart.get("items", []))
+        self._market_cache[cache_key] = list(items)
+        return {"items": items}, False
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, object] | None:

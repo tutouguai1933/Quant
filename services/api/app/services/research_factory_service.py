@@ -76,6 +76,7 @@ class ResearchFactoryService:
                 "forced_validation": bool(overview.get("forced_validation")),
                 "forced_symbol": str(overview.get("forced_symbol", "")),
             },
+            "snapshots": dict(report.get("snapshots") or {}),
             "latest_training": dict(report.get("latest_training") or {}),
             "latest_inference": dict(report.get("latest_inference") or {}),
             "candidates": list(report.get("candidates") or []),

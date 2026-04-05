@@ -43,6 +43,10 @@ def build_experiment_report(
     }
     return {
         "overview": overview,
+        "snapshots": {
+            "training": _build_dataset_snapshot_summary(latest_training_payload),
+            "inference": _build_dataset_snapshot_summary(latest_inference_payload),
+        },
         "latest_training": latest_training_payload,
         "latest_inference": latest_inference_payload,
         "candidates": candidate_items,
@@ -64,6 +68,9 @@ def _build_experiment_entry(payload: dict[str, object]) -> dict[str, object]:
         "status": str(payload.get("status", "unavailable")),
         "generated_at": str(payload.get("generated_at", "")),
         "model_version": str(payload.get("model_version", "")),
+        "dataset_snapshot_id": str(dict(payload.get("dataset_snapshot") or {}).get("snapshot_id", "")),
+        "active_data_state": str(dict(payload.get("dataset_snapshot") or {}).get("active_data_state", "")),
+        "dataset_snapshot": _build_dataset_snapshot_summary(payload),
         "signal_count": max(
             len(list(payload.get("signals") or [])),
             _parse_int(dict(payload.get("summary") or {}).get("signal_count")),
@@ -170,10 +177,32 @@ def _build_recent_runs(items: list[dict[str, object]] | None) -> list[dict[str, 
                 "generated_at": str(payload.get("generated_at", "")),
                 "model_version": str(payload.get("model_version", "")),
                 "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
+                "dataset_snapshot": dict(payload.get("dataset_snapshot") or {}),
                 "artifact_path": str(payload.get("artifact_path", "")),
             }
         )
     return recent_runs
+
+
+def _build_dataset_snapshot_summary(payload: dict[str, object]) -> dict[str, object]:
+    """抽取统一数据快照摘要。"""
+
+    snapshot = dict(payload.get("dataset_snapshot") or {})
+    snapshot_summary = dict(snapshot.get("summary") or {})
+    data_states = dict(snapshot.get("data_states") or {})
+    if not data_states and isinstance(snapshot_summary.get("data_states"), dict):
+        data_states = dict(snapshot_summary.get("data_states") or {})
+    if "current" not in data_states:
+        data_states["current"] = str(snapshot.get("active_data_state", ""))
+    return {
+        "snapshot_id": str(snapshot.get("snapshot_id", "")),
+        "cache_signature": str(snapshot.get("cache_signature", "")),
+        "cache_status": str(snapshot.get("cache_status", "")),
+        "active_data_state": str(snapshot.get("active_data_state", "")) or str(data_states.get("current", "")),
+        "data_states": data_states,
+        "cache": dict(snapshot_summary.get("cache") or snapshot.get("cache") or {}),
+        "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
+    }
 
 
 def _accumulate_gate_reasons(target: dict[str, int], gate: dict[str, object]) -> None:

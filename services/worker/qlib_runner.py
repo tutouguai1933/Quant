@@ -16,8 +16,15 @@ from uuid import uuid4
 
 from services.worker.qlib_backtest import run_backtest
 from services.worker.qlib_config import QlibRuntimeConfig
-from services.worker.qlib_dataset import DatasetBundle, build_dataset_bundle
+from services.worker.qlib_dataset import (
+    DATA_STATE_NAMES,
+    DatasetBundle,
+    build_dataset_bundle,
+    deserialize_dataset_bundle,
+    serialize_dataset_bundle,
+)
 from services.worker.qlib_experiment_report import build_experiment_report
+from services.worker.qlib_experiment_report import _build_dataset_snapshot_summary
 from services.worker.qlib_features import FEATURE_COLUMNS
 from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
@@ -92,6 +99,12 @@ class QlibRunner:
             "warnings": self._build_warnings(),
             "artifact_path": str(artifact_path),
             "dataset_snapshot": dataset_snapshot,
+            "dataset_snapshot_path": str(dataset_snapshot_path),
+        }
+        result["backtest"]["data_snapshot"] = {
+            "snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
+            "cache_signature": str(dataset_snapshot.get("cache_signature", "")),
+            "active_data_state": str(dataset_snapshot.get("active_data_state", "")),
             "dataset_snapshot_path": str(dataset_snapshot_path),
         }
         result["experiment_report"] = build_experiment_report(
@@ -234,8 +247,19 @@ class QlibRunner:
         """把单个币种的输入统一转换成数据集包。"""
 
         candles_1h, candles_4h = self._extract_timeframe_candles(market_payload)
+        cache_key = self._build_dataset_cache_key(symbol=symbol, candles_1h=candles_1h, candles_4h=candles_4h)
+        cache_path = self._config.paths.dataset_cache_dir / f"{cache_key}.json"
+        cached_payload = self._read_json(cache_path)
+        if cached_payload:
+            bundle = deserialize_dataset_bundle(cached_payload)
+            bundle.cache = {
+                "key": cache_key,
+                "status": "hit",
+                "path": str(cache_path),
+            }
+            return bundle
         try:
-            return build_dataset_bundle(
+            bundle = build_dataset_bundle(
                 symbol=symbol,
                 candles_1h=candles_1h,
                 candles_4h=candles_4h,
@@ -244,6 +268,13 @@ class QlibRunner:
             if "样本不足以切成训练/验证/测试三段" not in str(exc):
                 raise
             raise RuntimeError("研究层样本不足，无法生成完整验证和回测结果") from exc
+        bundle.cache = {
+            "key": cache_key,
+            "status": "miss",
+            "path": str(cache_path),
+        }
+        self._write_json(cache_path, serialize_dataset_bundle(bundle))
+        return bundle
 
     def _pick_latest_row(self, bundle: DatasetBundle) -> dict[str, object] | None:
         """优先从测试段挑最新样本，没有则回退到验证和训练。"""
@@ -283,6 +314,24 @@ class QlibRunner:
         if self._infer_timeframe(candles) == "4h":
             return [], candles
         return candles, []
+
+    @staticmethod
+    def _build_dataset_cache_key(
+        *,
+        symbol: str,
+        candles_1h: list[dict[str, object]],
+        candles_4h: list[dict[str, object]],
+    ) -> str:
+        """根据输入 K 线构造稳定缓存键。"""
+
+        payload = {
+            "symbol": symbol.strip().upper(),
+            "candles_1h": candles_1h,
+            "candles_4h": candles_4h,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()[:16]
 
     @staticmethod
     def _infer_timeframe(candles: list[dict[str, object]]) -> str:
@@ -350,6 +399,7 @@ class QlibRunner:
 
         self._config.paths.dataset_dir.mkdir(exist_ok=True)
         self._config.paths.dataset_snapshots_dir.mkdir(parents=True, exist_ok=True)
+        self._config.paths.dataset_cache_dir.mkdir(parents=True, exist_ok=True)
         self._config.paths.artifacts_dir.mkdir(exist_ok=True)
         self._config.paths.runs_dir.mkdir(exist_ok=True)
 
@@ -376,8 +426,13 @@ class QlibRunner:
     ) -> tuple[Path, dict[str, object]]:
         """写入最新数据快照和带唯一名的历史快照。"""
 
-        payload = self._build_dataset_snapshot(symbol_bundles=symbol_bundles, generated_at=generated_at)
-        snapshot_path = self._config.paths.dataset_snapshots_dir / f"{payload['snapshot_id']}-{snapshot_label}.json"
+        payload = self._build_dataset_snapshot(symbol_bundles=symbol_bundles, generated_at=generated_at, snapshot_label=snapshot_label)
+        snapshot_path = self._config.paths.dataset_snapshots_dir / f"{payload['snapshot_id']}.json"
+        if snapshot_path.exists():
+            existing_payload = self._read_json(snapshot_path) or {}
+            payload["cache_status"] = "reused"
+            if existing_payload.get("generated_at"):
+                payload["generated_at"] = str(existing_payload.get("generated_at"))
         self._write_json(snapshot_path, payload)
         self._write_json(self._config.paths.latest_dataset_snapshot_path, payload)
         return snapshot_path, payload
@@ -387,6 +442,7 @@ class QlibRunner:
         *,
         symbol_bundles: dict[str, DatasetBundle],
         generated_at: datetime,
+        snapshot_label: str,
     ) -> dict[str, object]:
         """把当前输入样本压成可复用的数据快照摘要。"""
 
@@ -394,6 +450,13 @@ class QlibRunner:
         total_training = 0
         total_validation = 0
         total_testing = 0
+        aggregated_states = {
+            state: {"symbol_count": 0, "row_count": 0}
+            for state in DATA_STATE_NAMES
+        }
+        cache_hit_count = 0
+        cache_miss_count = 0
+        cache_signatures: list[str] = []
         for symbol, bundle in sorted(symbol_bundles.items()):
             training_count = len(bundle.training_rows)
             validation_count = len(bundle.validation_rows)
@@ -401,6 +464,18 @@ class QlibRunner:
             total_training += training_count
             total_validation += validation_count
             total_testing += testing_count
+            symbol_states = dict(bundle.data_states or {})
+            for state in DATA_STATE_NAMES:
+                state_payload = dict(symbol_states.get(state) or {})
+                aggregated_states[state]["symbol_count"] += int(state_payload.get("symbol_count", 0) or 0)
+                aggregated_states[state]["row_count"] += int(state_payload.get("row_count", 0) or 0)
+            cache_payload = dict(bundle.cache or {})
+            if str(cache_payload.get("status", "")) == "hit":
+                cache_hit_count += 1
+            else:
+                cache_miss_count += 1
+            if str(cache_payload.get("key", "")).strip():
+                cache_signatures.append(str(cache_payload.get("key", "")).strip())
             symbols.append(
                 {
                     "symbol": symbol,
@@ -409,11 +484,26 @@ class QlibRunner:
                     "validation_count": validation_count,
                     "testing_count": testing_count,
                     "total_count": training_count + validation_count + testing_count,
+                    "data_layers": symbol_states,
+                    "cache": cache_payload,
                 }
             )
-        base_payload = {
-            "generated_at": generated_at.isoformat(),
-            "symbols": symbols,
+        stable_signature_payload = {
+            "active_data_state": self._config.research_data_layer,
+            "data_states": aggregated_states,
+            "symbols": [
+                {
+                    "symbol": item["symbol"],
+                    "timeframe": item["timeframe"],
+                    "training_count": item["training_count"],
+                    "validation_count": item["validation_count"],
+                    "testing_count": item["testing_count"],
+                    "total_count": item["total_count"],
+                    "data_layers": item["data_layers"],
+                    "cache_key": dict(item.get("cache") or {}).get("key", ""),
+                }
+                for item in symbols
+            ],
             "summary": {
                 "symbol_count": len(symbols),
                 "training_count": total_training,
@@ -422,12 +512,38 @@ class QlibRunner:
             },
         }
         signature = hashlib.sha256(
-            json.dumps(base_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            json.dumps(stable_signature_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
         ).hexdigest()[:16]
+        base_payload = {
+            "generated_at": generated_at.isoformat(),
+            "active_data_state": self._config.research_data_layer,
+            "data_states": aggregated_states,
+            "symbols": symbols,
+            "summary": {
+                "symbol_count": len(symbols),
+                "training_count": total_training,
+                "validation_count": total_validation,
+                "testing_count": total_testing,
+                "data_states": {
+                    "current": self._config.research_data_layer,
+                    **aggregated_states,
+                },
+                "cache": {
+                    "hit_count": cache_hit_count,
+                    "miss_count": cache_miss_count,
+                    "scope": "runtime-dataset-cache",
+                    "refresh_rule": "change_input_signature",
+                },
+            },
+        }
         return {
-            "snapshot_id": f"dataset-{generated_at.strftime('%Y%m%d%H%M%S%f')}",
+            "snapshot_id": f"dataset-{signature}",
             **base_payload,
+            "snapshot_label": snapshot_label,
+            "cache_signature": signature,
             "signature": signature,
+            "cache_status": "created",
+            "cache_signatures": sorted(set(cache_signatures)),
         }
 
     def _append_experiment_index(self, *, run_type: str, payload: dict[str, object]) -> None:
@@ -454,6 +570,7 @@ class QlibRunner:
             "generated_at": str(payload.get("generated_at", "")),
             "model_version": str(payload.get("model_version", "")),
             "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
+            "dataset_snapshot": _build_dataset_snapshot_summary(payload),
             "artifact_path": str(payload.get("artifact_path", "")),
         }
 

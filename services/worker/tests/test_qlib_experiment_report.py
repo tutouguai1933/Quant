@@ -20,7 +20,15 @@ from services.worker.qlib_experiment_report import build_experiment_report  # no
 class QlibExperimentReportTests(unittest.TestCase):
     def test_build_experiment_report_returns_latest_training_and_candidate_summary(self) -> None:
         report = build_experiment_report(
-            latest_training={"model_version": "m1", "backtest": {"metrics": {"sharpe": "1.10"}}},
+            latest_training={
+                "model_version": "m1",
+                "backtest": {"metrics": {"sharpe": "1.10"}},
+                "dataset_snapshot": {
+                    "snapshot_id": "dataset-training",
+                    "data_states": {"current": "feature-ready"},
+                    "cache": {"hit_count": 1, "miss_count": 0},
+                },
+            },
             latest_inference={"signals": [{"symbol": "BTCUSDT"}]},
             candidates={"items": [{"symbol": "BTCUSDT", "allowed_to_dry_run": True}]},
         )
@@ -31,6 +39,8 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["latest_training"]["model_version"], "m1")
         self.assertEqual(report["latest_inference"]["signals"][0]["symbol"], "BTCUSDT")
         self.assertEqual(report["candidates"][0]["symbol"], "BTCUSDT")
+        self.assertEqual(report["experiments"]["training"]["dataset_snapshot"]["data_states"]["current"], "feature-ready")
+        self.assertEqual(report["experiments"]["training"]["dataset_snapshot"]["cache"]["hit_count"], 1)
 
     def test_build_experiment_report_includes_screening_summary_and_backtest_snapshot(self) -> None:
         report = build_experiment_report(
@@ -80,6 +90,11 @@ class QlibExperimentReportTests(unittest.TestCase):
                     "generated_at": "2026-04-04T09:00:00+00:00",
                     "model_version": "m2",
                     "dataset_snapshot_path": "/tmp/dataset.json",
+                    "dataset_snapshot": {
+                        "snapshot_id": "dataset-inference",
+                        "data_states": {"current": "feature-ready"},
+                        "cache": {"hit_count": 1, "miss_count": 0},
+                    },
                     "artifact_path": "/tmp/artifact.json",
                 }
             ],
@@ -100,6 +115,7 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["screening"]["gate_reason_counts"]["consistency_gate"]["validation_backtest_drift_too_large"], 1)
         self.assertEqual(report["experiments"]["training"]["backtest"]["net_return_pct"], "12.10")
         self.assertEqual(report["experiments"]["recent_runs"][0]["run_id"], "infer-1")
+        self.assertEqual(report["experiments"]["recent_runs"][0]["dataset_snapshot"]["cache"]["hit_count"], 1)
 
     def test_build_experiment_report_marks_forced_validation_recommendation(self) -> None:
         report = build_experiment_report(
@@ -126,6 +142,53 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["overview"]["recommended_symbol"], "ETHUSDT")
         self.assertEqual(report["overview"]["recommended_action"], "enter_dry_run")
         self.assertEqual(report["leaderboard"][0]["review_status"], "forced_validation")
+
+    def test_build_experiment_report_exposes_snapshot_and_data_state_references(self) -> None:
+        report = build_experiment_report(
+            latest_training={
+                "run_id": "train-1",
+                "status": "completed",
+                "generated_at": "2026-04-06T09:00:00+00:00",
+                "model_version": "m4",
+                "dataset_snapshot_path": "/tmp/qlib-dataset-cache-abc123.json",
+                "dataset_snapshot": {
+                    "snapshot_id": "dataset-abc123",
+                    "cache_signature": "abc123",
+                    "cache_status": "created",
+                    "active_data_state": "feature-ready",
+                    "data_states": {
+                        "raw": {"symbol_count": 2, "row_count": 160},
+                        "cleaned": {"symbol_count": 2, "row_count": 160},
+                        "feature-ready": {"symbol_count": 2, "row_count": 120},
+                    },
+                },
+            },
+            latest_inference={
+                "run_id": "infer-1",
+                "status": "completed",
+                "generated_at": "2026-04-06T10:00:00+00:00",
+                "model_version": "m4",
+                "dataset_snapshot_path": "/tmp/qlib-dataset-cache-abc123.json",
+                "dataset_snapshot": {
+                    "snapshot_id": "dataset-abc123",
+                    "cache_signature": "abc123",
+                    "cache_status": "reused",
+                    "active_data_state": "feature-ready",
+                    "data_states": {
+                        "raw": {"symbol_count": 2, "row_count": 160},
+                        "cleaned": {"symbol_count": 2, "row_count": 160},
+                        "feature-ready": {"symbol_count": 2, "row_count": 120},
+                    },
+                },
+                "signals": [{"symbol": "BTCUSDT"}],
+            },
+            candidates={"items": [{"symbol": "BTCUSDT", "allowed_to_dry_run": True}]},
+        )
+
+        self.assertEqual(report["snapshots"]["training"]["snapshot_id"], "dataset-abc123")
+        self.assertEqual(report["snapshots"]["inference"]["cache_status"], "reused")
+        self.assertEqual(report["experiments"]["training"]["dataset_snapshot_id"], "dataset-abc123")
+        self.assertEqual(report["experiments"]["inference"]["active_data_state"], "feature-ready")
 
 
 if __name__ == "__main__":
