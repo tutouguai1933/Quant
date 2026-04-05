@@ -25,7 +25,11 @@ from services.worker.qlib_dataset import (
 )
 from services.worker.qlib_experiment_report import build_experiment_report
 from services.worker.qlib_experiment_report import _build_dataset_snapshot_summary
-from services.worker.qlib_features import FEATURE_COLUMNS
+from services.worker.qlib_features import (
+    AUXILIARY_FEATURE_COLUMNS,
+    FEATURE_PROTOCOL,
+    PRIMARY_FEATURE_COLUMNS,
+)
 from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
 from services.worker.qlib_rule_gate import evaluate_rule_gate
@@ -40,7 +44,9 @@ class TrainingBundle:
     validation_rows: list[dict[str, object]]
     backtest_rows: list[dict[str, object]]
     feature_columns: tuple[str, ...]
+    auxiliary_feature_columns: tuple[str, ...]
     label_columns: tuple[str, ...]
+    factor_protocol: dict[str, object]
 
 
 class QlibRunner:
@@ -75,7 +81,9 @@ class QlibRunner:
             "model_version": model_version,
             "generated_at": generated_at.isoformat(),
             "feature_columns": list(bundle.feature_columns),
+            "auxiliary_feature_columns": list(bundle.auxiliary_feature_columns),
             "label_columns": list(bundle.label_columns),
+            "factor_protocol": dict(bundle.factor_protocol),
             "metrics": metrics,
             "validation": validation,
             "backtest": backtest,
@@ -92,7 +100,9 @@ class QlibRunner:
             "model_version": model_version,
             "sample_count": len(bundle.training_rows),
             "feature_columns": list(bundle.feature_columns),
+            "auxiliary_feature_columns": list(bundle.auxiliary_feature_columns),
             "label_columns": list(bundle.label_columns),
+            "factor_protocol": dict(bundle.factor_protocol),
             "metrics": metrics,
             "validation": validation,
             "backtest": backtest,
@@ -183,6 +193,9 @@ class QlibRunner:
             "qlib_available": self._config.qlib_available,
             "generated_at": _utc_now().isoformat(),
             "model_version": str(training_payload.get("model_version", "")),
+            "feature_columns": list(PRIMARY_FEATURE_COLUMNS),
+            "auxiliary_feature_columns": list(AUXILIARY_FEATURE_COLUMNS),
+            "factor_protocol": dict(training_payload.get("factor_protocol") or FEATURE_PROTOCOL),
             "signals": signals,
             "summary": {
                 "signal_count": len(signals),
@@ -229,8 +242,10 @@ class QlibRunner:
             training_rows=training_rows,
             validation_rows=validation_rows,
             backtest_rows=backtest_rows,
-            feature_columns=FEATURE_COLUMNS,
+            feature_columns=PRIMARY_FEATURE_COLUMNS,
+            auxiliary_feature_columns=AUXILIARY_FEATURE_COLUMNS,
             label_columns=LABEL_COLUMNS,
+            factor_protocol=FEATURE_PROTOCOL,
         )
 
     def _build_candidate_backtest(self, *, rows: list[dict[str, object]]) -> dict[str, object]:

@@ -43,6 +43,11 @@ def build_experiment_report(
     }
     return {
         "overview": overview,
+        "factor_protocol": dict(
+            latest_training_payload.get("factor_protocol")
+            or latest_inference_payload.get("factor_protocol")
+            or {}
+        ),
         "snapshots": {
             "training": _build_dataset_snapshot_summary(latest_training_payload),
             "inference": _build_dataset_snapshot_summary(latest_inference_payload),
