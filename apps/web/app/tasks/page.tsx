@@ -47,6 +47,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const latestAlert = automation.alerts[0];
   const reviewOverview = asRecord(review.overview);
   const executionHealth = asRecord(automation.executionHealth);
+  const lastCycle = asRecord(automation.lastCycle);
+  const dispatch = asRecord(lastCycle.dispatch);
+  const dispatchMeta = asRecord(dispatch.meta);
+  const dispatchItem = asRecord(dispatch.item);
+  const dispatchOrder = asRecord(dispatchItem.order);
+  const cycleMessage = readText(lastCycle.message, "当前还没有新的自动化判断。");
+  const failureReason = readText(lastCycle.failure_reason, "当前没有新的失败原因。");
 
   return (
     <AppShell
@@ -136,6 +143,24 @@ export default async function TasksPage({ searchParams }: PageProps) {
             </section>
 
             <aside className="grid gap-5">
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">本轮自动化判断</p>
+                  <CardTitle>先看为什么推荐、为什么阻塞、为什么执行</CardTitle>
+                  <CardDescription>这里直接收口最近一轮自动化工作流的关键判断，不需要自己翻任务列表和复盘结果去拼。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>推荐标的：{readText(lastCycle.recommended_symbol, "n/a")}</p>
+                  <p>推荐策略实例：{readText(lastCycle.recommended_strategy_id, "n/a")}</p>
+                  <p>派发结果：{readText(dispatch.status, "waiting")}</p>
+                  <p>最近订单：{readText(dispatchOrder.symbol, "n/a")} / {readText(dispatchOrder.status, "n/a")}</p>
+                  <p>失败原因：{failureReason}</p>
+                  <p>本轮说明：{cycleMessage}</p>
+                  <p>下一步：{readText(lastCycle.next_action, "n/a")}</p>
+                  <p>触发来源：{readText(dispatchMeta.source, "n/a")}</p>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <p className="eyebrow">健康摘要</p>
@@ -259,6 +284,11 @@ function formatMode(mode: string) {
     return "自动小额 live";
   }
   return "手动";
+}
+
+function readText(value: unknown, fallback: string): string {
+  const text = String(value ?? "").trim();
+  return text.length > 0 ? text : fallback;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

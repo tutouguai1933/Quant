@@ -103,9 +103,12 @@ class AutomationWorkflowService:
         recommended_strategy_id = strategy_catalog_service.resolve_strategy_id(str(recommendation.get("strategy_template", ""))) or 1
         dispatch_result: dict[str, object] | None = None
         dispatch_status = "waiting"
+        cycle_message = ""
+        failure_reason = ""
 
         if mode == "manual":
             next_action = "manual_review"
+            cycle_message = "当前处于手动模式，请先人工确认再继续。"
         elif next_action != "enter_dry_run":
             self._automation.record_alert(
                 level="warning",
@@ -115,6 +118,8 @@ class AutomationWorkflowService:
                 detail=recommended_symbol,
             )
             dispatch_status = "blocked"
+            cycle_message = "当前候选还没有通过研究筛选门"
+            failure_reason = "screening_blocked"
         elif mode == "auto_live" and Settings.from_env().runtime_mode != "live":
             next_action = "continue_dry_run"
             self._automation.record_alert(
@@ -124,6 +129,8 @@ class AutomationWorkflowService:
                 source=source,
             )
             dispatch_status = "blocked"
+            cycle_message = "自动 live 已开启，但当前运行模式不是 live"
+            failure_reason = "runtime_not_live"
         elif mode == "auto_live" and armed_symbol != recommended_symbol:
             next_action = "continue_dry_run"
             self._automation.record_alert(
@@ -134,6 +141,8 @@ class AutomationWorkflowService:
                 detail=recommended_symbol,
             )
             dispatch_status = "blocked"
+            cycle_message = "当前候选还没有完成上一轮 dry-run 验证"
+            failure_reason = "dry_run_not_confirmed"
         else:
             dispatch_result = self._dispatcher.dispatch_latest_signal(recommended_strategy_id, source=source)
             if dispatch_result["status"] != "succeeded":
@@ -147,14 +156,18 @@ class AutomationWorkflowService:
                 )
                 next_action = "continue_research" if dispatch_result["error_code"] == "signal_not_ready" else "stop"
                 dispatch_status = dispatch_result["status"]
+                cycle_message = str(dispatch_result.get("message") or "")
+                failure_reason = str(dispatch_result.get("error_code") or "")
             else:
                 dispatch_status = "succeeded"
                 if mode == "auto_live":
                     self._automation.clear_armed_symbol()
                     next_action = "retain_small_live"
+                    cycle_message = "自动小额 live 已完成，本轮结果可进入统一复盘。"
                 else:
                     self._automation.arm_symbol(recommended_symbol)
                     next_action = "continue_dry_run"
+                    cycle_message = "候选已通过自动 dry-run，等待下一轮 live 验证。"
 
         review_task = self._scheduler.run_named_task(
             task_type="review",
@@ -174,6 +187,8 @@ class AutomationWorkflowService:
             "recommended_symbol": recommended_symbol,
             "recommended_strategy_id": recommended_strategy_id,
             "next_action": next_action,
+            "message": cycle_message,
+            "failure_reason": failure_reason,
             "armed_symbol": str(self._automation.get_state().get("armed_symbol", "")),
             "train_task": train_task,
             "infer_task": infer_task,
@@ -207,6 +222,8 @@ class AutomationWorkflowService:
             "mode": mode,
             "recommended_symbol": "",
             "next_action": next_action,
+            "message": "自动化本轮在训练或推理阶段失败，请先看统一复盘。",
+            "failure_reason": "workflow_failed",
             "review_task": review_task,
             "review_overview": dict(report.get("overview") or {}),
             **tasks,

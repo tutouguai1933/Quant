@@ -63,6 +63,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(result["recommended_symbol"], "ETHUSDT")
         self.assertEqual(result["recommended_strategy_id"], 2)
         self.assertEqual(result["next_action"], "continue_dry_run")
+        self.assertEqual(result["message"], "候选已通过自动 dry-run，等待下一轮 live 验证。")
         self.assertEqual(automation.get_state()["armed_symbol"], "ETHUSDT")
         self.assertEqual(dispatcher.calls[0]["strategy_id"], 2)
         self.assertGreaterEqual(len(scheduler.named_calls), 4)
@@ -85,6 +86,7 @@ class AutomationServiceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "waiting")
         self.assertEqual(result["next_action"], "continue_dry_run")
+        self.assertEqual(result["message"], "当前候选还没有完成上一轮 dry-run 验证")
         self.assertEqual(automation.get_state()["armed_symbol"], "")
 
     def test_auto_live_cycle_dispatches_after_symbol_is_armed(self) -> None:
@@ -107,8 +109,28 @@ class AutomationServiceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "succeeded")
         self.assertEqual(result["next_action"], "retain_small_live")
+        self.assertEqual(result["message"], "自动小额 live 已完成，本轮结果可进入统一复盘。")
         self.assertEqual(automation.get_state()["armed_symbol"], "")
         self.assertEqual(dispatcher.calls[0]["strategy_id"], 2)
+
+    def test_manual_mode_cycle_reports_manual_review_message(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        automation.configure_mode("manual", actor="tester")
+        result = workflow.run_cycle(source="tester")
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["next_action"], "manual_review")
+        self.assertEqual(result["message"], "当前处于手动模式，请先人工确认再继续。")
 
     def test_state_is_restored_from_local_state_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
