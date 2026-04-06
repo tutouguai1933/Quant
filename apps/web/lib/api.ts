@@ -441,6 +441,20 @@ export type BacktestWorkspaceModel = {
   }>;
 };
 
+export type EvaluationWorkspaceModel = {
+  status: string;
+  backend: string;
+  overview: {
+    recommended_symbol: string;
+    recommended_action: string;
+    candidate_count: number;
+  };
+  evaluation: Record<string, unknown>;
+  reviews: Record<string, unknown>;
+  leaderboard: Array<Record<string, unknown>>;
+  recent_runs: Array<Record<string, unknown>>;
+};
+
 export type ValidationReviewItem = {
   overview: Record<string, unknown>;
   steps: Array<Record<string, unknown>>;
@@ -1031,6 +1045,42 @@ export async function getBacktestWorkspace(): Promise<ApiEnvelope<{ item: Backte
   };
 }
 
+export async function getEvaluationWorkspace(): Promise<ApiEnvelope<{ item: EvaluationWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/evaluation/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getEvaluationWorkspaceFallback(),
+      },
+      error: {
+        code: "evaluation_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "评估与实验中心暂时不可用",
+      },
+      meta: {
+        source: "evaluation-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getEvaluationWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeEvaluationWorkspaceModel(response.data.item),
+    },
+  };
+}
+
 export function getDataWorkspaceFallback(symbol?: string, interval?: string, limit?: number): DataWorkspaceModel {
   return {
     status: "unavailable",
@@ -1140,6 +1190,22 @@ export function getBacktestWorkspaceFallback(): BacktestWorkspaceModel {
       metrics: {},
     },
     leaderboard: [],
+  };
+}
+
+export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    overview: {
+      recommended_symbol: "",
+      recommended_action: "",
+      candidate_count: 0,
+    },
+    evaluation: {},
+    reviews: {},
+    leaderboard: [],
+    recent_runs: [],
   };
 }
 
@@ -1401,6 +1467,25 @@ function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel 
         };
       })
       .filter((item) => item.symbol.length > 0),
+  };
+}
+
+function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    overview: {
+      recommended_symbol: String(overview.recommended_symbol ?? ""),
+      recommended_action: String(overview.recommended_action ?? ""),
+      candidate_count: Number(overview.candidate_count ?? 0),
+    },
+    evaluation: isPlainObject(row.evaluation) ? row.evaluation : {},
+    reviews: isPlainObject(row.reviews) ? row.reviews : {},
+    leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
+    recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
   };
 }
 

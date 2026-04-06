@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { API_BASE_URL, WEB_BASE_URL } = require("./test-urls.cjs");
 
 test.use({
   launchOptions: { executablePath: "/snap/bin/chromium" },
@@ -16,7 +17,7 @@ test("tasks page shows latest automation decision after login", async ({ page })
     errors.push(error.message);
   });
 
-  const loginResponse = await page.request.post("http://127.0.0.1:9011/api/v1/auth/login", {
+  const loginResponse = await page.request.post(`${API_BASE_URL}/auth/login`, {
     data: { username: "admin", password: "1933" },
   });
   const loginPayload = await loginResponse.json();
@@ -36,7 +37,7 @@ test("tasks page shows latest automation decision after login", async ({ page })
     },
   ]);
 
-  await page.goto("http://127.0.0.1:9012/tasks", { waitUntil: "networkidle" });
+  await page.goto(`${WEB_BASE_URL}/tasks`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.body.innerText.includes("任务") && !document.body.innerText.includes("正在切换工作区"));
 
   await expect(page.getByText("本轮自动化判断")).toBeVisible();

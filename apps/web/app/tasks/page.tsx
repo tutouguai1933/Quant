@@ -1,5 +1,7 @@
 /* 这个文件负责渲染任务与自动化控制台。 */
 
+import Link from "next/link";
+
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -10,7 +12,7 @@ import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { readFeedback } from "../../lib/feedback";
-import { getAutomationStatus, getAutomationStatusFallback, getValidationReview, getTasksPageModel, listTasks } from "../../lib/api";
+import { getAutomationStatus, getAutomationStatusFallback, getEvaluationWorkspace, getEvaluationWorkspaceFallback, getValidationReview, getTasksPageModel, listTasks } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
 
@@ -25,13 +27,15 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const feedback = readFeedback(params);
   let items = getTasksPageModel().items;
   let automation = getAutomationStatusFallback().item;
+  let evaluation = getEvaluationWorkspaceFallback();
   let review: Record<string, unknown> = {};
 
   if (token) {
-    const [tasksResponse, automationResponse, reviewResponse] = await Promise.allSettled([
+    const [tasksResponse, automationResponse, reviewResponse, evaluationResponse] = await Promise.allSettled([
       listTasks(token),
       getAutomationStatus(token),
       getValidationReview(token),
+      getEvaluationWorkspace(),
     ]);
     if (tasksResponse.status === "fulfilled" && !tasksResponse.value.error) {
       items = tasksResponse.value.data.items;
@@ -42,10 +46,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
     if (reviewResponse.status === "fulfilled" && !reviewResponse.value.error) {
       review = reviewResponse.value.data.item;
     }
+    if (evaluationResponse.status === "fulfilled" && !evaluationResponse.value.error) {
+      evaluation = evaluationResponse.value.data.item;
+    }
   }
 
   const latestAlert = automation.alerts[0];
   const reviewOverview = asRecord(review.overview);
+  const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
   const executionHealth = asRecord(automation.executionHealth);
   const lastCycle = asRecord(automation.lastCycle);
   const dispatch = asRecord(lastCycle.dispatch);
@@ -241,6 +249,28 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <p>推荐动作：{String(reviewOverview.recommended_action ?? automation.researchOverview.recommended_action ?? "n/a")}</p>
                   <p>候选数量：{String(reviewOverview.candidate_count ?? automation.researchOverview.candidate_count ?? 0)}</p>
                   <p>可进 dry-run：{String(reviewOverview.ready_count ?? automation.researchOverview.ready_count ?? 0)}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">回到研究链</p>
+                  <CardTitle>先回到研究链，再决定自动化动作</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>评估中心推荐：{readText(evaluation.overview.recommended_symbol, "n/a")}</p>
+                  <p>推荐原因：{readText(evaluationReview.result, "未生成")}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="outline">
+                      <Link href="/research">回到研究链</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/backtest">去回测工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/evaluation">去评估与实验中心</Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </aside>

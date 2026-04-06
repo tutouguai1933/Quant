@@ -24,6 +24,7 @@ from services.api.app.routes.auth import router as auth_router
 from services.api.app.routes.backtest_workspace import router as backtest_workspace_router
 from services.api.app.routes.balances import router as balances_router
 from services.api.app.routes.data_workspace import router as data_workspace_router
+from services.api.app.routes.evaluation_workspace import router as evaluation_workspace_router
 from services.api.app.routes.feature_workspace import router as feature_workspace_router
 from services.api.app.routes.health import router as health_router
 from services.api.app.routes.market import router as market_router
@@ -51,6 +52,8 @@ app.include_router(auth_router)
 app.routers.append(auth_router)  # type: ignore[attr-defined]
 app.include_router(backtest_workspace_router)
 app.routers.append(backtest_workspace_router)  # type: ignore[attr-defined]
+app.include_router(evaluation_workspace_router)
+app.routers.append(evaluation_workspace_router)  # type: ignore[attr-defined]
 app.include_router(accounts_router)
 app.routers.append(accounts_router)  # type: ignore[attr-defined]
 app.include_router(balances_router)

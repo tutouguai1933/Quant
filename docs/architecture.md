@@ -751,3 +751,17 @@
 - 回测工作台页面：`apps/web/app/backtest/page.tsx`
 - 回测工作台聚合口径：优先复用研究报告里的训练回测摘要和候选排行榜，把净收益、成本影响、最大回撤和动作段统计直接显性化到前端
 - 作用：把研究报告中的数据快照、训练窗口和市场样本预览收成一个最小工作台，直接回答“这次研究用了什么数据”
+
+当前也已完成第五步：
+
+- 评估与实验中心后端入口：`services/api/app/routes/evaluation_workspace.py`
+- 评估与实验中心聚合服务：`services/api/app/services/evaluation_workspace_service.py`
+- 评估与实验中心页面：`apps/web/app/evaluation/page.tsx`
+- 评估与实验中心聚合口径：优先复用统一研究报告里的评估摘要、推荐原因、淘汰原因和最近实验账本，把“为什么推荐 / 为什么淘汰”集中到一个页面
+
+当前也已完成第六步：
+
+- 执行与自动化工作台收口页面：`apps/web/app/strategies/page.tsx`、`apps/web/app/tasks/page.tsx`
+- 站内路径管理：`apps/web/lib/session.ts`
+- 浏览器测试入口：`apps/web/tests/test-urls.cjs`
+- 收口方式：策略页和任务页都直接补上回到研究链、回测工作台和评估中心的入口，不再让研究链和执行链断开

@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { WEB_BASE_URL } = require("./test-urls.cjs");
 
 test.use({
   launchOptions: { executablePath: "/snap/bin/chromium" },
@@ -17,7 +18,7 @@ test("signals page shows pending feedback while qlib pipeline is submitting", as
     });
   });
 
-  await page.goto("http://127.0.0.1:9012/signals", { waitUntil: "networkidle" });
+  await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "运行 Qlib 信号流水线" }).click();
 
   await expect(page.getByRole("button", { name: "运行 Qlib 信号流水线运行中…" })).toBeVisible();

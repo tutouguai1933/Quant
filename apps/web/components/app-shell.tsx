@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { href: "/features", label: "特征", protected: false },
   { href: "/research", label: "研究", protected: false },
   { href: "/backtest", label: "回测", protected: false },
+  { href: "/evaluation", label: "评估", protected: false },
   { href: "/signals", label: "信号", protected: false },
   { href: "/market", label: "市场", protected: false },
   { href: "/strategies", label: "策略", protected: true },

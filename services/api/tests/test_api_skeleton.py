@@ -34,6 +34,7 @@ from services.api.app.routes.accounts import list_accounts  # noqa: E402
 from services.api.app.routes.auth import login  # noqa: E402
 from services.api.app.routes.backtest_workspace import get_backtest_workspace  # noqa: E402
 from services.api.app.routes.data_workspace import get_data_workspace  # noqa: E402
+from services.api.app.routes.evaluation_workspace import get_evaluation_workspace  # noqa: E402
 from services.api.app.routes.feature_workspace import get_feature_workspace  # noqa: E402
 from services.api.app.routes.health import get_health, get_healthz  # noqa: E402
 from services.api.app.routes.research_workspace import get_research_workspace  # noqa: E402
@@ -179,6 +180,7 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("/api/v1/auth", router_prefixes)
         self.assertIn("/api/v1/backtest", router_prefixes)
         self.assertIn("/api/v1/data", router_prefixes)
+        self.assertIn("/api/v1/evaluation", router_prefixes)
         self.assertIn("/api/v1/features", router_prefixes)
         self.assertIn("/api/v1/research", router_prefixes)
 
@@ -282,6 +284,14 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIsNone(response["error"])
         self.assertIn("item", response["data"])
         self.assertEqual(response["meta"]["source"], "backtest-workspace")
+
+    def test_evaluation_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_evaluation_workspace()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        self.assertEqual(response["meta"]["source"], "evaluation-workspace")
 
     def test_feature_workspace_route_returns_consistent_response_shape(self) -> None:
         response = get_feature_workspace()

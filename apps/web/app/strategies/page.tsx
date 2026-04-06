@@ -16,6 +16,8 @@ import { readFeedback } from "../../lib/feedback";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
+  getEvaluationWorkspace,
+  getEvaluationWorkspaceFallback,
   getResearchCandidate,
   getResearchCandidates,
   getResearchCandidatesFallback,
@@ -39,10 +41,12 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   let workspace = getStrategyWorkspaceFallback();
   let candidateSnapshot = getResearchCandidatesFallback();
   let automation = getAutomationStatusFallback().item;
-  const [workspaceResult, candidateResult, automationResult] = await Promise.allSettled([
+  let evaluation = getEvaluationWorkspaceFallback();
+  const [workspaceResult, candidateResult, automationResult, evaluationResult] = await Promise.allSettled([
     token ? getStrategyWorkspace(token) : Promise.resolve(null),
     focusSymbol ? getResearchCandidate(focusSymbol) : getResearchCandidates(),
     token ? getAutomationStatus(token) : Promise.resolve(null),
+    getEvaluationWorkspace(),
   ]);
 
   if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
@@ -72,7 +76,11 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
     automation = automationResult.value.data.item;
   }
+  if (evaluationResult.status === "fulfilled" && !evaluationResult.value.error) {
+    evaluation = evaluationResult.value.data.item;
+  }
   const automationCycle = asRecord(automation.lastCycle);
+  const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
 
   return (
     <AppShell
@@ -153,6 +161,15 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                     <Button asChild variant="outline">
                       <Link href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>去这个币的图表页</Link>
                     </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/research">去研究工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/backtest">去回测工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/evaluation">去评估与实验中心</Link>
+                    </Button>
                     <Button asChild variant="terminal">
                       <Link href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>围绕这个币继续执行</Link>
                     </Button>
@@ -206,6 +223,29 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <Button asChild variant="secondary">
                     <Link href="/signals">回到信号页复核</Link>
                   </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">研究链入口</p>
+                  <CardTitle>先看研究工作台、回测工作台和评估与实验中心</CardTitle>
+                  <CardDescription>执行页继续承接研究链，而不是让你自己在多个页面之间拼结论。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>评估中心推荐：{readText(evaluation.overview.recommended_symbol, "n/a")}</p>
+                  <p>推荐原因：{readText(evaluationReview.result, "未生成")}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="outline">
+                      <Link href="/research">研究工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/backtest">回测工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/evaluation">评估与实验中心</Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
 

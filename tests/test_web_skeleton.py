@@ -72,6 +72,14 @@ class WebSkeletonTests(unittest.TestCase):
         self.assertIn("model.protectedPages", content)
         self.assertIn("model.sessionMode", content)
 
+    def test_session_known_paths_include_workbenches(self) -> None:
+        content = (WEB_LIB / "session.ts").read_text(encoding="utf-8")
+        self.assertIn('"/data"', content)
+        self.assertIn('"/features"', content)
+        self.assertIn('"/research"', content)
+        self.assertIn('"/backtest"', content)
+        self.assertIn('"/evaluation"', content)
+
 
 if __name__ == "__main__":
     unittest.main()

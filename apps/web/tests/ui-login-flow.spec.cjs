@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { WEB_BASE_URL } = require("./test-urls.cjs");
 
 test.use({
   launchOptions: { executablePath: "/snap/bin/chromium" },
@@ -6,7 +7,7 @@ test.use({
 });
 
 test("login page submits and redirects without getting stuck", async ({ page }) => {
-  await page.goto("http://127.0.0.1:9012/login?next=%2Fstrategies", { waitUntil: "networkidle" });
+  await page.goto(`${WEB_BASE_URL}/login?next=%2Fstrategies`, { waitUntil: "networkidle" });
 
   await expect(page.locator('input[name="password"]')).not.toHaveAttribute("placeholder", "1933");
 
@@ -14,7 +15,7 @@ test("login page submits and redirects without getting stuck", async ({ page }) 
   await page.locator('input[name="password"]').fill("1933");
   await page.getByRole("button", { name: "登录并继续" }).click();
 
-  await page.waitForURL("http://127.0.0.1:9012/strategies**", { timeout: 15000 });
-  await expect(page).toHaveURL(/http:\/\/127\.0\.0\.1:9012\/strategies/);
+  await page.waitForURL(`${WEB_BASE_URL}/strategies**`, { timeout: 15000 });
+  await expect(page).toHaveURL(new RegExp(`${WEB_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/strategies`));
   await expect(page.getByText("策略中心", { exact: true })).toBeVisible();
 });

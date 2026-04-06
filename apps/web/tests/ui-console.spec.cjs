@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { WEB_BASE_URL } = require("./test-urls.cjs");
 
 const PATHS = ["/signals", "/market/BTCUSDT", "/market/ETHUSDT"];
 
@@ -19,7 +20,7 @@ for (const path of PATHS) {
       errors.push(error.message);
     });
 
-    await page.goto(`http://127.0.0.1:9012${path}`, { waitUntil: "networkidle" });
+    await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "networkidle" });
     expect(errors, `${path} should not log console errors`).toEqual([]);
   });
 }
