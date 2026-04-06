@@ -26,6 +26,8 @@ class BacktestWorkspaceTests(unittest.TestCase):
         self.assertIn("最大回撤", content)
         self.assertIn("动作段统计", content)
         self.assertIn("交易明细", content)
+        self.assertIn("回测参数配置", content)
+        self.assertIn("fee_bps", content)
 
 
 if __name__ == "__main__":

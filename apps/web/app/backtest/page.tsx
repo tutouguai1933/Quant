@@ -4,6 +4,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getBacktestWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -13,6 +14,8 @@ export default async function BacktestPage() {
   const response = await getBacktestWorkspace();
   const workspace = response.data.item;
   const metrics = workspace.training_backtest.metrics;
+  const configEditable = workspace.status !== "unavailable";
+  const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
   return (
     <AppShell
@@ -70,6 +73,22 @@ export default async function BacktestPage() {
         </div>
 
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="回测参数配置"
+            description="这里改的是成本模型，保存后下一轮训练、回测和评估都会按这里的口径重算。"
+            scope="backtest"
+            returnTo="/backtest"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="手续费和滑点" hint="先把成本口径定清楚，再看净收益和回撤。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="fee_bps" defaultValue={workspace.controls.fee_bps} placeholder="手续费 bps" />
+                <ConfigInput name="slippage_bps" defaultValue={workspace.controls.slippage_bps} placeholder="滑点 bps" />
+              </div>
+            </ConfigField>
+          </WorkbenchConfigCard>
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>成本模型</CardTitle>

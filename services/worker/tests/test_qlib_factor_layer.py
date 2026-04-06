@@ -51,6 +51,24 @@ class QlibFactorLayerTests(unittest.TestCase):
         self.assertIn("cci20", rows[-1])
         self.assertIn("stoch_k14", rows[-1])
 
+    def test_feature_builder_supports_configurable_preprocessing_policies(self) -> None:
+        candles = _sample_timing_candles(step_hours=4)
+        clipped_rows = build_feature_rows(
+            "ETHUSDT",
+            candles,
+            outlier_policy="clip",
+            normalization_policy="fixed_4dp",
+        )
+        normalized_rows = build_feature_rows(
+            "ETHUSDT",
+            candles,
+            outlier_policy="raw",
+            normalization_policy="zscore_by_symbol",
+        )
+
+        self.assertNotEqual(clipped_rows[-1]["ema20_gap_pct"], normalized_rows[-1]["ema20_gap_pct"])
+        self.assertNotEqual(clipped_rows[-1]["volume_ratio"], normalized_rows[-1]["volume_ratio"])
+
     def test_training_and_inference_share_same_factor_protocol(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = load_qlib_config(
@@ -77,6 +95,32 @@ class QlibFactorLayerTests(unittest.TestCase):
         self.assertEqual(
             training_result["factor_protocol"]["roles"],
             inference_result["factor_protocol"]["roles"],
+        )
+
+    def test_training_and_inference_expose_selected_preprocessing_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = load_qlib_config(
+                env={
+                    "QUANT_QLIB_RUNTIME_ROOT": str(Path(temp_dir)),
+                    "QUANT_QLIB_OUTLIER_POLICY": "raw",
+                    "QUANT_QLIB_NORMALIZATION_POLICY": "zscore_by_symbol",
+                },
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            dataset = {
+                "BTCUSDT": _sample_timing_candles(step_hours=4),
+                "ETHUSDT": _sample_timing_candles(step_hours=4),
+            }
+
+            training_result = runner.train(dataset)
+            inference_result = runner.infer(dataset)
+
+        self.assertEqual(training_result["factor_protocol"]["preprocessing"]["outlier_policy"], "保留原始极值")
+        self.assertEqual(training_result["factor_protocol"]["preprocessing"]["normalization_policy"], "按单币样本做 z-score 标准化")
+        self.assertEqual(
+            inference_result["factor_protocol"]["preprocessing"],
+            training_result["factor_protocol"]["preprocessing"],
         )
 
 

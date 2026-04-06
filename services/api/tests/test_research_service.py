@@ -30,6 +30,8 @@ class ResearchServiceTests(unittest.TestCase):
             config_loader=self._load_config,
             market_reader=_FakeMarketReader(),
             whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=_default_workbench_config,
+            runtime_override_provider=lambda: {},
         )
         research_service_module.research_service = self.service
         signals_route.research_service = self.service
@@ -97,6 +99,16 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(item["symbol"], "BTCUSDT")
         self.assertIn("allowed_to_dry_run", item)
+
+    def test_research_service_recommendation_exposes_live_gate(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        item = self.service.get_research_recommendation()
+
+        self.assertIsNotNone(item)
+        self.assertIn("allowed_to_live", item)
+        self.assertIn("live_gate", item)
 
     def test_research_service_returns_unified_report(self) -> None:
         self.service.run_training()
@@ -180,6 +192,76 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(training_result["market_cache"]["reused_count"], 0)
         self.assertEqual(inference_result["market_cache"]["reused_count"], 4)
         self.assertEqual(training_result["dataset_snapshot"]["cache_signature"], inference_result["dataset_snapshot"]["cache_signature"])
+
+    def test_research_service_uses_workbench_controls_for_symbol_timeframe_and_limit(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["ETHUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 180,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        controlled_service.run_training()
+
+        self.assertEqual(controlled_service._market_reader.calls, [("ETHUSDT", "4h", 180)])
+
+    def test_research_service_marks_report_stale_when_current_config_has_changed(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+        stale_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["ETHUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                },
+                "features": {
+                    "primary_factors": ["trend_gap_pct"],
+                    "auxiliary_factors": ["volume_ratio"],
+                    "outlier_policy": "clip",
+                    "normalization_policy": "fixed_4dp",
+                },
+                "research": {
+                    "research_template": "single_asset_timing_strict",
+                    "model_key": "trend_bias_v2",
+                    "label_mode": "close_only",
+                    "holding_window_label": "1-3d",
+                    "min_holding_days": 1,
+                    "max_holding_days": 3,
+                    "label_target_pct": "1",
+                    "label_stop_pct": "-1",
+                },
+                "backtest": {"fee_bps": "10", "slippage_bps": "5"},
+                "thresholds": {
+                    "dry_run_min_score": "0.55",
+                    "dry_run_min_positive_rate": "0.45",
+                    "dry_run_min_net_return_pct": "0",
+                    "dry_run_min_sharpe": "0.5",
+                    "dry_run_max_drawdown_pct": "15",
+                    "dry_run_max_loss_streak": "3",
+                    "live_min_score": "0.65",
+                    "live_min_positive_rate": "0.50",
+                    "live_min_net_return_pct": "0.20",
+                },
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        latest = stale_service.get_latest_result()
+
+        self.assertEqual(latest["config_alignment"]["status"], "stale")
+        self.assertIn("selected_symbols", latest["config_alignment"]["stale_fields"])
+        self.assertIn("research_template", latest["config_alignment"]["stale_fields"])
 
     def test_research_report_uses_signal_list_when_summary_missing(self) -> None:
         self._write_json(
@@ -459,6 +541,16 @@ class _FakeMarketReader:
                 }
             )
         return {"items": items, "overlays": {}, "markers": {"signals": [], "entries": [], "stops": []}}
+
+
+def _default_workbench_config() -> dict[str, object]:
+    return {
+        "data": {
+            "selected_symbols": ["BTCUSDT", "ETHUSDT"],
+            "timeframes": ["1h", "4h"],
+            "sample_limit": 120,
+        }
+    }
 
 
 if __name__ == "__main__":

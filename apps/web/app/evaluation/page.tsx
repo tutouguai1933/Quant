@@ -4,6 +4,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getEvaluationWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -17,6 +18,10 @@ export default async function EvaluationPage() {
   const eliminationRules = asRecord(evaluation.elimination_rules);
   const recommendedCandidate = asRecord(evaluation.recommended_candidate);
   const researchReview = asRecord(asRecord(workspace.reviews).research);
+  const executionAlignment = asRecord(workspace.execution_alignment);
+  const configAlignment = asRecord(workspace.config_alignment);
+  const configEditable = workspace.status !== "unavailable";
+  const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
   return (
     <AppShell
@@ -42,6 +47,33 @@ export default async function EvaluationPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="准入门槛配置"
+            description="这里改的是进入 dry-run 和进入小额 live 的门槛，保存后候选排序和自动化放行都会按新规则执行。"
+            scope="thresholds"
+            returnTo="/evaluation"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="dry-run 门槛" hint="先决定一个候选要满足什么条件，才允许进入 dry-run。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="dry_run_min_score" defaultValue={workspace.controls.dry_run_min_score} placeholder="最低分数" />
+                <ConfigInput name="dry_run_min_positive_rate" defaultValue={workspace.controls.dry_run_min_positive_rate} placeholder="最低验证正收益比例" />
+                <ConfigInput name="dry_run_min_net_return_pct" defaultValue={workspace.controls.dry_run_min_net_return_pct} placeholder="最低净收益 %" />
+                <ConfigInput name="dry_run_min_sharpe" defaultValue={workspace.controls.dry_run_min_sharpe} placeholder="最低 Sharpe" />
+                <ConfigInput name="dry_run_max_drawdown_pct" defaultValue={workspace.controls.dry_run_max_drawdown_pct} placeholder="最大回撤 %" />
+                <ConfigInput name="dry_run_max_loss_streak" defaultValue={workspace.controls.dry_run_max_loss_streak} placeholder="最大连续亏损段" />
+              </div>
+            </ConfigField>
+            <ConfigField label="live 门槛" hint="这里更严格，自动小额 live 会额外检查这些条件。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="live_min_score" defaultValue={workspace.controls.live_min_score} placeholder="最低 live 分数" />
+                <ConfigInput name="live_min_positive_rate" defaultValue={workspace.controls.live_min_positive_rate} placeholder="最低 live 正收益比例" />
+                <ConfigInput name="live_min_net_return_pct" defaultValue={workspace.controls.live_min_net_return_pct} placeholder="最低 live 净收益 %" />
+              </div>
+            </ConfigField>
+          </WorkbenchConfigCard>
+
           <DataTable
             columns={["实验排行榜", "推荐原因", "下一步动作", "淘汰原因"]}
             rows={workspace.leaderboard.map((item, index) => {
@@ -59,6 +91,25 @@ export default async function EvaluationPage() {
             })}
             emptyTitle="还没有实验排行榜"
             emptyDetail="先运行研究训练和研究推理，再回到这里比较候选。"
+          />
+
+          <DataTable
+            columns={["实验对照", "状态", "模型版本", "数据快照", "信号数"]}
+            rows={workspace.experiment_comparison.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${row.run_type ?? index}-${row.run_id ?? index}`,
+                cells: [
+                  String(row.run_type ?? "n/a"),
+                  String(row.status ?? "n/a"),
+                  String(row.model_version ?? "n/a"),
+                  String(row.dataset_snapshot_id ?? "n/a"),
+                  String(row.signal_count ?? "n/a"),
+                ],
+              };
+            })}
+            emptyTitle="当前还没有实验对照"
+            emptyDetail="先运行研究训练和推理，系统才会把训练、推理和最近运行放到同一张对照表里。"
           />
 
           <Card className="bg-card/90">
@@ -102,6 +153,31 @@ export default async function EvaluationPage() {
                   </p>
                 );
               }) : <p>当前还没有实验账本。</p>}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>当前结果与配置对齐</CardTitle>
+              <CardDescription>先确认当前评估结果是不是仍然基于这页右上角的最新门槛。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
+              <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
+              <InfoBlock label="变更字段" value={Array.isArray(configAlignment.stale_fields) && configAlignment.stale_fields.length ? configAlignment.stale_fields.map(String).join(" / ") : "当前没有发现漂移字段"} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>研究与执行对齐</CardTitle>
+              <CardDescription>这里直接说明当前研究推荐和真实执行结果是不是站在同一边。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="状态" value={String(executionAlignment.status ?? "当前没有对齐结果")} />
+              <InfoBlock label="标的" value={String(executionAlignment.symbol ?? "未对齐")} />
+              <InfoBlock label="推荐动作" value={String(executionAlignment.recommended_action ?? "继续研究")} />
+              <InfoBlock label="说明" value={String(executionAlignment.note ?? "当前还没有可展示的研究与执行对齐结果")} />
             </CardContent>
           </Card>
         </div>

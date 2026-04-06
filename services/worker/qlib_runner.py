@@ -28,6 +28,9 @@ from services.worker.qlib_experiment_report import _build_dataset_snapshot_summa
 from services.worker.qlib_features import (
     AUXILIARY_FEATURE_COLUMNS,
     FEATURE_PROTOCOL,
+    FACTOR_METADATA,
+    NORMALIZATION_POLICY_LABELS,
+    OUTLIER_POLICY_LABELS,
     PRIMARY_FEATURE_COLUMNS,
 )
 from services.worker.qlib_labels import LABEL_COLUMNS
@@ -70,7 +73,7 @@ class QlibRunner:
         validation = self._build_validation_summary(bundle.validation_rows)
         backtest = run_backtest(
             rows=bundle.backtest_rows,
-            holding_window="1-3d",
+            holding_window=self._config.holding_window_label,
             fee_bps=self._config.backtest_fee_bps,
             slippage_bps=self._config.backtest_slippage_bps,
         )
@@ -153,6 +156,7 @@ class QlibRunner:
             target_weight = _target_weight(signal, score)
             rule_gate = self._build_rule_gate(latest)
             recommendation_context = self._build_recommendation_context(feature_row=latest)
+            strategy_template = self._resolve_strategy_template(feature_row=latest)
             signals.append(
                 {
                     "symbol": symbol,
@@ -170,7 +174,7 @@ class QlibRunner:
             candidates.append(
                 {
                     "symbol": symbol,
-                    "strategy_template": "trend_breakout_timing",
+                    "strategy_template": strategy_template,
                     "score": _format_float(score),
                     "backtest": self._build_candidate_backtest(rows=bundle.testing_rows),
                     "rule_gate": rule_gate,
@@ -183,6 +187,18 @@ class QlibRunner:
             validation=dict(training_payload.get("validation") or {}),
             training_metrics=dict(training_payload.get("metrics") or {}),
             force_validation_top_candidate=self._config.force_validation_top_candidate,
+            research_template=self._config.research_template,
+            thresholds={
+                "dry_run_min_score": self._config.dry_run_min_score,
+                "dry_run_min_positive_rate": self._config.dry_run_min_positive_rate,
+                "dry_run_min_net_return_pct": self._config.dry_run_min_net_return_pct,
+                "dry_run_min_sharpe": self._config.dry_run_min_sharpe,
+                "dry_run_max_drawdown_pct": self._config.dry_run_max_drawdown_pct,
+                "dry_run_max_loss_streak": self._config.dry_run_max_loss_streak,
+                "live_min_score": self._config.live_min_score,
+                "live_min_positive_rate": self._config.live_min_positive_rate,
+                "live_min_net_return_pct": self._config.live_min_net_return_pct,
+            },
         )
         dataset_snapshot_path, dataset_snapshot = self._write_dataset_snapshot(
             symbol_bundles=symbol_bundles,
@@ -197,9 +213,9 @@ class QlibRunner:
             "qlib_available": self._config.qlib_available,
             "generated_at": _utc_now().isoformat(),
             "model_version": str(training_payload.get("model_version", "")),
-            "feature_columns": list(PRIMARY_FEATURE_COLUMNS),
-            "auxiliary_feature_columns": list(AUXILIARY_FEATURE_COLUMNS),
-            "factor_protocol": dict(training_payload.get("factor_protocol") or FEATURE_PROTOCOL),
+            "feature_columns": list(self._active_primary_feature_columns()),
+            "auxiliary_feature_columns": list(self._active_auxiliary_feature_columns()),
+            "factor_protocol": dict(training_payload.get("factor_protocol") or self._build_factor_protocol()),
             "signals": signals,
             "summary": {
                 "signal_count": len(signals),
@@ -253,10 +269,10 @@ class QlibRunner:
             training_rows=training_rows,
             validation_rows=validation_rows,
             backtest_rows=backtest_rows,
-            feature_columns=PRIMARY_FEATURE_COLUMNS,
-            auxiliary_feature_columns=AUXILIARY_FEATURE_COLUMNS,
+            feature_columns=self._active_primary_feature_columns(),
+            auxiliary_feature_columns=self._active_auxiliary_feature_columns(),
             label_columns=LABEL_COLUMNS,
-            factor_protocol=FEATURE_PROTOCOL,
+            factor_protocol=self._build_factor_protocol(),
         )
 
     def _build_candidate_backtest(self, *, rows: list[dict[str, object]]) -> dict[str, object]:
@@ -264,7 +280,7 @@ class QlibRunner:
 
         return run_backtest(
             rows=rows,
-            holding_window="1-3d",
+            holding_window=self._config.holding_window_label,
             fee_bps=self._config.backtest_fee_bps,
             slippage_bps=self._config.backtest_slippage_bps,
         )
@@ -289,6 +305,14 @@ class QlibRunner:
                 symbol=symbol,
                 candles_1h=candles_1h,
                 candles_4h=candles_4h,
+                label_mode=self._config.label_mode,
+                outlier_policy=self._config.outlier_policy,
+                normalization_policy=self._config.normalization_policy,
+                label_target_pct=self._config.label_target_pct,
+                label_stop_pct=self._config.label_stop_pct,
+                min_window_days=self._config.holding_window_min_days,
+                max_window_days=self._config.holding_window_max_days,
+                holding_window_label=self._config.holding_window_label,
             )
         except RuntimeError as exc:
             if "样本不足以切成训练/验证/测试三段" not in str(exc):
@@ -316,7 +340,7 @@ class QlibRunner:
     def _build_rule_gate(self, feature_row: dict[str, object]) -> dict[str, object]:
         """把规则门结果统一成候选结构。"""
 
-        decision = evaluate_rule_gate(feature_row)
+        decision = evaluate_rule_gate(feature_row, research_template=self._config.research_template)
         if bool(decision.get("allowed")):
             return {"status": "passed", "reasons": []}
         reason = str(decision.get("reason", "")).strip() or "rule_gate_blocked"
@@ -341,8 +365,8 @@ class QlibRunner:
             return [], candles
         return candles, []
 
-    @staticmethod
     def _build_dataset_cache_key(
+        self,
         *,
         symbol: str,
         candles_1h: list[dict[str, object]],
@@ -354,6 +378,19 @@ class QlibRunner:
             "symbol": symbol.strip().upper(),
             "candles_1h": candles_1h,
             "candles_4h": candles_4h,
+            "label_config": {
+                "research_template": self._config.research_template,
+                "label_mode": self._config.label_mode,
+                "target_pct": str(self._config.label_target_pct),
+                "stop_pct": str(self._config.label_stop_pct),
+                "min_days": self._config.holding_window_min_days,
+                "max_days": self._config.holding_window_max_days,
+                "holding_window_label": self._config.holding_window_label,
+            },
+            "feature_config": {
+                "outlier_policy": self._config.outlier_policy,
+                "normalization_policy": self._config.normalization_policy,
+            },
         }
         return hashlib.sha256(
             json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -375,7 +412,7 @@ class QlibRunner:
     def _fit_model(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """拟合最小启发式模型。"""
 
-        numeric_columns = ("close_return_pct", "range_pct", "body_pct", "volume_ratio", "trend_gap_pct")
+        numeric_columns = self._active_primary_feature_columns()
         averages: dict[str, float] = {}
         for column in numeric_columns:
             values = [_to_float(item.get(column)) for item in rows]
@@ -405,27 +442,45 @@ class QlibRunner:
 
         averages = dict(metrics.get("feature_averages") or {})
         raw_score = 0.0
-        for key in ("close_return_pct", "range_pct", "body_pct", "volume_ratio", "trend_gap_pct"):
-            raw_score += _to_float(feature_row.get(key)) - _to_float(averages.get(key))
-        raw_score += _to_float(metrics.get("avg_future_return_pct"))
+        primary_columns = self._active_primary_feature_columns()
+        model_key = str(self._config.model_key or "heuristic_v1")
+        if model_key == "trend_bias_v2":
+            for key in primary_columns:
+                delta = _to_float(feature_row.get(key)) - _to_float(averages.get(key))
+                weight = self._feature_weight(key)
+                raw_score += delta * weight
+            for key in self._active_auxiliary_feature_columns():
+                raw_score += _to_float(feature_row.get(key)) * self._feature_weight(key) * 0.05
+            raw_score += _to_float(metrics.get("avg_future_return_pct")) * 1.2
+            raw_score += _to_float(metrics.get("positive_rate")) * 0.8
+        else:
+            for key in primary_columns:
+                raw_score += _to_float(feature_row.get(key)) - _to_float(averages.get(key))
+            raw_score += _to_float(metrics.get("avg_future_return_pct"))
+        if self._config.research_template == "single_asset_timing_strict":
+            raw_score -= max(0.0, 1.2 - _to_float(feature_row.get("ema20_gap_pct"))) * 0.8
+            raw_score -= max(0.0, 1.8 - _to_float(feature_row.get("ema55_gap_pct"))) * 0.8
+            raw_score -= max(0.0, _to_float(feature_row.get("atr_pct")) - 4.5) * 0.5
+            raw_score -= max(0.0, 1.05 - _to_float(feature_row.get("volume_ratio"))) * 1.0
         normalized = 1 / (1 + math.exp(-(raw_score / 8)))
         return max(0.0, min(normalized, 1.0))
 
     def _build_explanation(self, feature_row: dict[str, object]) -> str:
         """生成最小解释摘要。"""
 
-        return (
-            f"close_return={feature_row['close_return_pct']}%, "
-            f"trend_gap={feature_row['trend_gap_pct']}%, "
-            f"volume_ratio={feature_row['volume_ratio']}"
-        )
+        parts: list[str] = []
+        for key in (*self._active_primary_feature_columns()[:3], *self._active_auxiliary_feature_columns()[:1]):
+            metadata = FACTOR_METADATA.get(key) or {}
+            label = str(metadata.get("name", key))
+            parts.append(f"{label}={feature_row.get(key, 'n/a')}")
+        return ", ".join(parts)
 
     def _build_training_context(self, *, bundle: TrainingBundle, dataset_snapshot: dict[str, object]) -> dict[str, object]:
         """整理训练阶段的实验元数据。"""
 
         return {
             "feature_version": str(bundle.factor_protocol.get("version", "")),
-            "holding_window": "1-3d",
+            "holding_window": self._config.holding_window_label,
             "symbols": sorted(bundle.symbol_bundles.keys()),
             "timeframes": sorted({item.timeframe for item in bundle.symbol_bundles.values()}),
             "sample_window": self._build_sample_window(bundle=bundle),
@@ -433,6 +488,17 @@ class QlibRunner:
                 "backtest_fee_bps": str(self._config.backtest_fee_bps),
                 "backtest_slippage_bps": str(self._config.backtest_slippage_bps),
                 "force_validation_top_candidate": bool(self._config.force_validation_top_candidate),
+                "research_template": str(self._config.research_template),
+                "model_key": str(self._config.model_key),
+                "label_mode": str(self._config.label_mode),
+                "label_target_pct": str(self._config.label_target_pct),
+                "label_stop_pct": str(self._config.label_stop_pct),
+                "holding_window_min_days": self._config.holding_window_min_days,
+                "holding_window_max_days": self._config.holding_window_max_days,
+                "outlier_policy": str(self._config.outlier_policy),
+                "normalization_policy": str(self._config.normalization_policy),
+                "primary_factors": list(self._config.primary_feature_columns),
+                "auxiliary_factors": list(self._config.auxiliary_feature_columns),
             },
             "dataset_snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
         }
@@ -456,6 +522,20 @@ class QlibRunner:
                 "symbols": sorted(symbol_bundles.keys()),
                 "timeframes": sorted({item.timeframe for item in symbol_bundles.values()}),
                 "dataset_snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
+                "model_key": str(self._config.model_key),
+                "research_template": str(self._config.research_template),
+                "label_mode": str(self._config.label_mode),
+                "outlier_policy": str(self._config.outlier_policy),
+                "normalization_policy": str(self._config.normalization_policy),
+                "dry_run_min_score": str(self._config.dry_run_min_score),
+                "dry_run_min_positive_rate": str(self._config.dry_run_min_positive_rate),
+                "dry_run_min_net_return_pct": str(self._config.dry_run_min_net_return_pct),
+                "dry_run_min_sharpe": str(self._config.dry_run_min_sharpe),
+                "dry_run_max_drawdown_pct": str(self._config.dry_run_max_drawdown_pct),
+                "dry_run_max_loss_streak": str(self._config.dry_run_max_loss_streak),
+                "live_min_score": str(self._config.live_min_score),
+                "live_min_positive_rate": str(self._config.live_min_positive_rate),
+                "live_min_net_return_pct": str(self._config.live_min_net_return_pct),
             },
             "output_summary": {
                 "signal_count": len(signals),
@@ -481,8 +561,7 @@ class QlibRunner:
             "backtest": _window(bundle.backtest_rows),
         }
 
-    @staticmethod
-    def _build_recommendation_context(*, feature_row: dict[str, object]) -> dict[str, str]:
+    def _build_recommendation_context(self, *, feature_row: dict[str, object]) -> dict[str, str]:
         """根据当前因子状态补充市场形态和主要依赖指标。"""
 
         regime = "trend"
@@ -491,7 +570,86 @@ class QlibRunner:
         if 40 <= rsi <= 60 and abs(cci) < 80:
             regime = "range"
         indicator_mix = "trend+momentum+volume" if regime == "trend" else "oscillator+volume"
-        return {"regime": regime, "indicator_mix": indicator_mix}
+        return {
+            "regime": regime,
+            "indicator_mix": indicator_mix,
+            "research_template": str(self._config.research_template),
+        }
+
+    def _resolve_strategy_template(self, *, feature_row: dict[str, object]) -> str:
+        """根据研究模板和当前市场状态选择执行策略模板。"""
+
+        if self._config.research_template == "single_asset_timing_strict":
+            return "trend_pullback_timing"
+        breakout_strength = _to_float(feature_row.get("breakout_strength"))
+        trend_gap_pct = _to_float(feature_row.get("trend_gap_pct"))
+        volume_ratio = _to_float(feature_row.get("volume_ratio"))
+        if breakout_strength > 0 and trend_gap_pct >= 0 and volume_ratio >= 1:
+            return "trend_breakout_timing"
+        return "trend_pullback_timing"
+
+    def _active_primary_feature_columns(self) -> tuple[str, ...]:
+        """返回当前启用的主判断因子。"""
+
+        return self._config.primary_feature_columns
+
+    def _active_auxiliary_feature_columns(self) -> tuple[str, ...]:
+        """返回当前启用的辅助因子。"""
+
+        return self._config.auxiliary_feature_columns
+
+    def _build_factor_protocol(self) -> dict[str, object]:
+        """把当前启用因子写回协议摘要。"""
+
+        enabled_primary = set(self._active_primary_feature_columns())
+        enabled_auxiliary = set(self._active_auxiliary_feature_columns())
+        factors = []
+        for item in list(FEATURE_PROTOCOL.get("factors") or []):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", ""))
+            enabled = name in enabled_primary or name in enabled_auxiliary
+            factors.append({**item, "enabled": enabled})
+        categories: dict[str, list[str]] = {}
+        for name, items in dict(FEATURE_PROTOCOL.get("categories") or {}).items():
+            categories[str(name)] = [
+                str(item)
+                for item in list(items or [])
+                if str(item) in enabled_primary or str(item) in enabled_auxiliary
+            ]
+        return {
+            **FEATURE_PROTOCOL,
+            "categories": categories,
+            "preprocessing": {
+                **dict(FEATURE_PROTOCOL.get("preprocessing") or {}),
+                "missing_policy": str((FEATURE_PROTOCOL.get("preprocessing") or {}).get("missing_policy", "")),
+                "outlier_policy": OUTLIER_POLICY_LABELS.get(self._config.outlier_policy, self._config.outlier_policy),
+                "normalization_policy": NORMALIZATION_POLICY_LABELS.get(
+                    self._config.normalization_policy,
+                    self._config.normalization_policy,
+                ),
+            },
+            "roles": {
+                "primary": list(self._active_primary_feature_columns()),
+                "auxiliary": list(self._active_auxiliary_feature_columns()),
+            },
+            "factors": factors,
+        }
+
+    @staticmethod
+    def _feature_weight(name: str) -> float:
+        """按因子类别给简单权重。"""
+
+        category = str((FACTOR_METADATA.get(name) or {}).get("category", ""))
+        if category == "trend":
+            return 1.3
+        if category == "volume":
+            return 1.1
+        if category == "oscillator":
+            return 0.7
+        if category == "volatility":
+            return 0.9
+        return 1.0
 
     def _ensure_runtime_directories(self) -> None:
         """在已存在根目录下补齐子目录。"""

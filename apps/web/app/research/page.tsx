@@ -5,6 +5,7 @@ import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
+import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { FormSubmitButton } from "../../components/form-submit-button";
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -22,6 +23,9 @@ export default async function ResearchPage() {
     runtimeResponse.status === "fulfilled" && !runtimeResponse.value.error
       ? runtimeResponse.value.data.item
       : getResearchRuntimeStatusFallback();
+  const configAlignment = asRecord(workspace.config_alignment);
+  const configEditable = workspace.status !== "unavailable";
+  const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
   return (
     <AppShell
@@ -68,7 +72,20 @@ export default async function ResearchPage() {
             </CardHeader>
             <CardContent className="grid gap-3">
               <InfoBlock label="标签列" value={workspace.labeling.label_columns.join(" / ") || "未生成"} />
+              <InfoBlock label="标签模式" value={workspace.labeling.label_mode || "未设置"} />
               <InfoBlock label="定义" value={workspace.labeling.definition || "当前没有标签定义"} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>当前结果与配置对齐</CardTitle>
+              <CardDescription>先确认页面上的配置和当前研究结果是不是同一轮产物。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
+              <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
+              <InfoBlock label="变更字段" value={Array.isArray(configAlignment.stale_fields) && configAlignment.stale_fields.length ? configAlignment.stale_fields.map(String).join(" / ") : "当前没有发现漂移字段"} />
             </CardContent>
           </Card>
 
@@ -84,6 +101,49 @@ export default async function ResearchPage() {
         </div>
 
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="研究参数配置"
+            description="这里改的是训练、推理和标签定义本身，保存后下一轮研究会按这里的参数运行。"
+            scope="research"
+            returnTo="/research"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="研究模板" hint="先在更宽松和更严格的单币择时模板之间切换。">
+              <ConfigSelect
+                name="research_template"
+                defaultValue={workspace.controls.research_template}
+                options={workspace.controls.available_research_templates.map((item) => ({ value: item, label: item }))}
+              />
+            </ConfigField>
+            <ConfigField label="模型" hint="现在支持基础启发式和更偏趋势权重的版本。">
+              <ConfigSelect
+                name="model_key"
+                defaultValue={workspace.controls.model_key}
+                options={workspace.controls.available_models.map((item) => ({ value: item, label: item }))}
+              />
+            </ConfigField>
+            <ConfigField label="标签方式" hint="用未来窗口里的目标收益和止损阈值定义 buy / sell / watch。">
+              <div className="grid gap-3">
+                <ConfigSelect
+                  name="label_mode"
+                  defaultValue={workspace.controls.label_mode}
+                  options={workspace.controls.available_label_modes.map((item) => ({ value: item, label: item }))}
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="label_target_pct" defaultValue={workspace.controls.label_target_pct} placeholder="目标收益 %" />
+                <ConfigInput name="label_stop_pct" defaultValue={workspace.controls.label_stop_pct} placeholder="止损阈值 %" />
+              </div>
+            </ConfigField>
+            <ConfigField label="持有窗口" hint="这会决定标签在未来几天里寻找最早命中结果。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="min_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.min_holding_days)} />
+                <ConfigInput name="max_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.max_holding_days)} />
+              </div>
+            </ConfigField>
+          </WorkbenchConfigCard>
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>当前模型</CardTitle>
@@ -160,4 +220,8 @@ function formatWindow(payload: Record<string, unknown>) {
     parts.push(`count=${String(payload.count)}`);
   }
   return parts.join(" / ") || "当前没有窗口信息";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

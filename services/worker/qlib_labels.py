@@ -23,17 +23,31 @@ LABEL_COLUMNS = (
 )
 
 
-def build_label_rows(symbol: str, candles: list[dict[str, object]]) -> list[dict[str, object]]:
+def build_label_rows(
+    symbol: str,
+    candles: list[dict[str, object]],
+    *,
+    label_mode: str = "earliest_hit",
+    target_return_pct: Decimal = Decimal("1"),
+    stop_return_pct: Decimal = Decimal("-1"),
+    min_window_days: int = MIN_WINDOW_DAYS,
+    max_window_days: int = MAX_WINDOW_DAYS,
+    holding_window_label: str = "1-3d",
+) -> list[dict[str, object]]:
     """把 K 线样本转成标签行。"""
 
+    normalized_target = target_return_pct if isinstance(target_return_pct, Decimal) else Decimal(str(target_return_pct or "1"))
+    normalized_stop = stop_return_pct if isinstance(stop_return_pct, Decimal) else Decimal(str(stop_return_pct or "-1"))
     normalized = [_normalize_candle(item) for item in candles]
     valid_candles = [item for item in normalized if item is not None]
     if not valid_candles:
         return []
 
     bar_step_ms = _infer_bar_step_ms(candles)
-    min_window_bars = _window_bars(bar_step_ms, MIN_WINDOW_DAYS)
-    max_window_bars = _window_bars(bar_step_ms, MAX_WINDOW_DAYS)
+    normalized_min_days = max(1, int(min_window_days))
+    normalized_max_days = max(normalized_min_days, int(max_window_days))
+    min_window_bars = _window_bars(bar_step_ms, normalized_min_days)
+    max_window_bars = _window_bars(bar_step_ms, normalized_max_days)
 
     rows: list[dict[str, object]] = []
     for index, candle in enumerate(valid_candles):
@@ -51,6 +65,9 @@ def build_label_rows(symbol: str, candles: list[dict[str, object]]) -> list[dict
             future_return, label = _classify_window_label(
                 entry_close=candle["close"],
                 future_window=future_window,
+                label_mode=label_mode,
+                target_return_pct=normalized_target,
+                stop_return_pct=normalized_stop,
             )
             is_trainable = True
 
@@ -60,7 +77,7 @@ def build_label_rows(symbol: str, candles: list[dict[str, object]]) -> list[dict
                 "generated_at": int(candle["close_time"]),
                 "future_return_pct": None if future_return is None else _format_decimal(future_return),
                 "label": label,
-                "holding_window": "1-3d",
+                "holding_window": holding_window_label,
                 "is_trainable": is_trainable,
             }
         )
@@ -111,6 +128,9 @@ def _classify_window_label(
     *,
     entry_close: Decimal,
     future_window: list[dict[str, Decimal | int]],
+    label_mode: str,
+    target_return_pct: Decimal,
+    stop_return_pct: Decimal,
 ) -> tuple[Decimal, str]:
     """按 1-3 天窗口内的最早命中结果生成标签。"""
 
@@ -118,12 +138,19 @@ def _classify_window_label(
         ((candle["close"] - entry_close) / entry_close) * Decimal("100")
         for candle in future_window
     ]
+    if label_mode == "close_only":
+        final_return = future_returns[-1]
+        if final_return >= target_return_pct:
+            return final_return, "buy"
+        if final_return <= stop_return_pct:
+            return final_return, "sell"
+        return final_return, "watch"
     first_buy_index = next(
-        (index for index, value in enumerate(future_returns) if value >= Decimal("1")),
+        (index for index, value in enumerate(future_returns) if value >= target_return_pct),
         None,
     )
     first_sell_index = next(
-        (index for index, value in enumerate(future_returns) if value <= Decimal("-1")),
+        (index for index, value in enumerate(future_returns) if value <= stop_return_pct),
         None,
     )
 

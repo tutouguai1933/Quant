@@ -4,6 +4,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ConfigCheckboxGrid, ConfigField, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getFeatureWorkspace } from "../../lib/api";
@@ -13,6 +14,8 @@ export default async function FeaturePage() {
   const session = await getControlSessionState();
   const response = await getFeatureWorkspace();
   const workspace = response.data.item;
+  const configEditable = workspace.status !== "unavailable";
+  const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
   const categoryRows = Object.entries(workspace.categories).map(([name, items]) => ({
     id: name,
@@ -66,6 +69,50 @@ export default async function FeaturePage() {
         </div>
 
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="因子组合配置"
+            description="这里选的主判断因子和辅助因子，会真正进入研究评分和解释，不只是页面展示。"
+            scope="features"
+            returnTo="/features"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="主判断因子" hint="这些因子会直接参与当前模型的打分。">
+              <ConfigCheckboxGrid
+                name="primary_factors"
+                options={workspace.controls.available_primary_factors.map((item) => ({
+                  value: item,
+                  label: item,
+                  checked: workspace.controls.primary_factors.includes(item),
+                }))}
+              />
+            </ConfigField>
+            <ConfigField label="辅助因子" hint="这些因子只做确认和解释，不单独决定最终推荐。">
+              <ConfigCheckboxGrid
+                name="auxiliary_factors"
+                options={workspace.controls.available_auxiliary_factors.map((item) => ({
+                  value: item,
+                  label: item,
+                  checked: workspace.controls.auxiliary_factors.includes(item),
+                }))}
+              />
+            </ConfigField>
+            <ConfigField label="预处理规则" hint="这里改的是因子进入训练前的清洗方式，保存后下一轮训练和推理都会按这里重算。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigSelect
+                  name="outlier_policy"
+                  defaultValue={workspace.controls.outlier_policy}
+                  options={workspace.controls.available_outlier_policies.map((item) => ({ value: item, label: item }))}
+                />
+                <ConfigSelect
+                  name="normalization_policy"
+                  defaultValue={workspace.controls.normalization_policy}
+                  options={workspace.controls.available_normalization_policies.map((item) => ({ value: item, label: item }))}
+                />
+              </div>
+            </ConfigField>
+          </WorkbenchConfigCard>
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>主判断因子</CardTitle>

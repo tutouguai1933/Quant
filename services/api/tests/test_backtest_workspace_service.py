@@ -14,7 +14,7 @@ from services.api.app.services.backtest_workspace_service import BacktestWorkspa
 
 class BacktestWorkspaceServiceTests(unittest.TestCase):
     def test_workspace_returns_backtest_summary_and_candidates(self) -> None:
-        service = BacktestWorkspaceService(report_reader=_FakeResearchService())
+        service = BacktestWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
 
         item = service.get_workspace()
 
@@ -24,9 +24,10 @@ class BacktestWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["assumptions"]["fee_bps"], "10")
         self.assertEqual(item["leaderboard"][0]["symbol"], "ETHUSDT")
         self.assertEqual(item["leaderboard"][0]["backtest"]["net_return_pct"], "2.3000")
+        self.assertIn("controls", item)
 
     def test_workspace_handles_missing_backtest(self) -> None:
-        service = BacktestWorkspaceService(report_reader=_UnavailableResearchService())
+        service = BacktestWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
 
         item = service.get_workspace()
 
@@ -75,6 +76,17 @@ class _FakeResearchService:
 class _UnavailableResearchService:
     def get_factory_report(self) -> dict[str, object]:
         return {"status": "unavailable"}
+
+
+def _fake_controls() -> dict[str, object]:
+    return {
+        "config": {
+            "backtest": {
+                "fee_bps": "10",
+                "slippage_bps": "5",
+            }
+        }
+    }
 
 
 if __name__ == "__main__":

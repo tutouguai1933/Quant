@@ -97,8 +97,22 @@ class QlibDatasetTests(unittest.TestCase):
                     candles_4h=_sample_candles(3, step_hours=4),
                 )
 
-        mocked_features.assert_called_once_with("ETHUSDT", _sample_candles(3, step_hours=4))
-        mocked_labels.assert_called_once_with("ETHUSDT", _sample_candles(3, step_hours=4))
+        mocked_features.assert_called_once_with(
+            "ETHUSDT",
+            _sample_candles(3, step_hours=4),
+            outlier_policy="clip",
+            normalization_policy="fixed_4dp",
+        )
+        mocked_labels.assert_called_once_with(
+            "ETHUSDT",
+            _sample_candles(3, step_hours=4),
+            label_mode="earliest_hit",
+            target_return_pct=None,
+            stop_return_pct=None,
+            min_window_days=1,
+            max_window_days=3,
+            holding_window_label="1-3d",
+        )
         self.assertEqual(bundle.symbol, "ETHUSDT")
         self.assertEqual(bundle.timeframe, "4h")
 

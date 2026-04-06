@@ -21,6 +21,7 @@ def build_experiment_report(
     candidate_items = list(candidate_payload.get("items") or [])
     inference_summary = dict(latest_inference_payload.get("summary") or {})
     ready_count = sum(1 for item in candidate_items if bool(item.get("allowed_to_dry_run")))
+    live_ready_count = sum(1 for item in candidate_items if bool(item.get("allowed_to_live")))
     blocked_count = max(len(candidate_items) - ready_count, 0)
     top_candidate = candidate_items[0] if candidate_items else {}
     recommended = _resolve_recommendation(
@@ -31,6 +32,7 @@ def build_experiment_report(
     overview = {
         "candidate_count": len(candidate_items),
         "ready_count": ready_count,
+        "live_ready_count": live_ready_count,
         "blocked_count": blocked_count,
         "pass_rate_pct": _format_ratio(ready_count, len(candidate_items)),
         "signal_count": max(len(list(latest_inference_payload.get("signals") or [])), _parse_int(inference_summary.get("signal_count"))),
@@ -135,6 +137,7 @@ def _build_leaderboard(items: list[dict[str, object]]) -> list[dict[str, object]
                 "score": str(item.get("score", "")),
                 "strategy_template": str(item.get("strategy_template", "")),
                 "allowed_to_dry_run": bool(item.get("allowed_to_dry_run")),
+                "allowed_to_live": bool(item.get("allowed_to_live")),
                 "review_status": str(item.get("review_status", "")),
                 "forced_for_validation": bool(item.get("forced_for_validation")),
                 "forced_reason": str(item.get("forced_reason", "")),
@@ -205,6 +208,7 @@ def _build_evaluation_summary(
         "candidate_status": {
             "candidate_count": int(overview.get("candidate_count", 0) or 0),
             "ready_count": int(overview.get("ready_count", 0) or 0),
+            "live_ready_count": int(overview.get("live_ready_count", 0) or 0),
             "blocked_count": int(overview.get("blocked_count", 0) or 0),
             "forced_validation_count": forced_validation_count,
             "pass_rate_pct": str(overview.get("pass_rate_pct", "0.00") or "0.00"),

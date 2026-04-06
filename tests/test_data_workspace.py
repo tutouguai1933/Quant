@@ -29,6 +29,8 @@ class DataWorkspaceTests(unittest.TestCase):
         self.assertIn("刷新数据认知", content)
         self.assertIn("预览状态", content)
         self.assertIn("还没有数据状态", content)
+        self.assertIn("数据范围配置", content)
+        self.assertIn("selected_symbols", content)
 
 
 if __name__ == "__main__":

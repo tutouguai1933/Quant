@@ -107,6 +107,11 @@ class AutomationWorkflowService:
         next_action = str(recommendation.get("next_action", "")) or "continue_research"
         recommended_symbol = str(recommendation.get("symbol", ""))
         recommended_strategy_id = strategy_catalog_service.resolve_strategy_id(str(recommendation.get("strategy_template", ""))) or 1
+        live_ready = bool(
+            recommendation.get("allowed_to_live")
+            if recommendation.get("allowed_to_live") is not None
+            else recommendation.get("allowed_to_dry_run")
+        )
         dispatch_result: dict[str, object] | None = None
         dispatch_status = "waiting"
         cycle_message = ""
@@ -137,6 +142,18 @@ class AutomationWorkflowService:
             dispatch_status = "blocked"
             cycle_message = "自动 live 已开启，但当前运行模式不是 live"
             failure_reason = "runtime_not_live"
+        elif mode == "auto_live" and not live_ready:
+            next_action = "continue_dry_run"
+            self._automation.record_alert(
+                level="warning",
+                code="live_gate_blocked",
+                message="当前候选还没有通过 live 门槛",
+                source=source,
+                detail=recommended_symbol,
+            )
+            dispatch_status = "blocked"
+            cycle_message = "当前候选还没有通过 live 门槛"
+            failure_reason = "live_gate_blocked"
         elif mode == "auto_live" and armed_symbol != recommended_symbol:
             next_action = "continue_dry_run"
             self._automation.record_alert(

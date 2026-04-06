@@ -61,6 +61,7 @@ class ResearchFactoryService:
         return {
             "status": str(snapshot.get("status", "unavailable")),
             "backend": str(snapshot.get("backend", "qlib-fallback")),
+            "config_alignment": dict(latest.get("config_alignment") or {}),
             "factor_protocol": dict(report.get("factor_protocol") or {}),
             "overview": {
                 "model_version": str(snapshot.get("model_version", "")),

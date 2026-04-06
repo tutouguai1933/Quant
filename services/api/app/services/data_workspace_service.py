@@ -13,6 +13,7 @@ from services.api.app.services.market_timeframe_service import get_supported_mar
 from services.api.app.services.market_timeframe_service import normalize_market_interval
 from services.api.app.services.research_service import research_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 
 class DataWorkspaceService:
@@ -24,19 +25,31 @@ class DataWorkspaceService:
         research_reader: object | None = None,
         market_reader: MarketService | None = None,
         whitelist_provider: Callable[[], list[str]] | None = None,
+        controls_builder: Callable[[], dict[str, object]] | None = None,
     ) -> None:
         self._research_reader = research_reader or research_service
         self._market_reader = market_reader or MarketService()
         self._whitelist_provider = whitelist_provider or strategy_catalog_service.get_whitelist
+        self._controls_builder = controls_builder or workbench_config_service.build_workspace_controls
 
     def get_workspace(self, *, symbol: str, interval: str, limit: int) -> dict[str, object]:
         """返回数据工作台统一模型。"""
 
         whitelist = [item.strip().upper() for item in self._whitelist_provider() if item.strip()]
+        workbench_controls = self._controls_builder()
+        configured_data = dict((workbench_controls.get("config") or {}).get("data") or {})
         requested_symbol = symbol.strip().upper()
-        selected_symbol = requested_symbol if requested_symbol in whitelist else (whitelist[0] if whitelist else requested_symbol)
-        normalized_interval = normalize_market_interval(interval)
-        normalized_limit = max(int(limit or 200), 1)
+        configured_primary_symbol = str(configured_data.get("primary_symbol", "")).strip().upper()
+        if requested_symbol:
+            selected_symbol = requested_symbol if requested_symbol in whitelist else ""
+        else:
+            selected_symbol = configured_primary_symbol
+        if selected_symbol not in whitelist:
+            selected_symbol = whitelist[0] if whitelist else requested_symbol
+        requested_interval = interval.strip()
+        configured_intervals = [str(item) for item in list(configured_data.get("timeframes") or [])]
+        normalized_interval = normalize_market_interval(requested_interval or (configured_intervals[0] if configured_intervals else "4h"))
+        normalized_limit = max(int(limit or configured_data.get("sample_limit", 200) or 200), 1)
 
         research_report = self._read_factory_report()
         training_snapshot = self._extract_training_snapshot(research_report)
@@ -64,6 +77,14 @@ class DataWorkspaceService:
             "sources": {
                 "research": str(research_report.get("backend", "qlib-fallback")),
                 "market": "binance",
+            },
+            "controls": {
+                "selected_symbols": list(configured_data.get("selected_symbols") or []),
+                "primary_symbol": str(configured_data.get("primary_symbol", "")),
+                "timeframes": list(configured_data.get("timeframes") or []),
+                "sample_limit": int(configured_data.get("sample_limit", normalized_limit) or normalized_limit),
+                "available_symbols": whitelist,
+                "available_timeframes": list(get_supported_market_intervals()),
             },
             "snapshot": training_snapshot,
             "preview": preview,

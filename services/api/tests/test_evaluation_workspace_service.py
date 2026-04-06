@@ -14,7 +14,11 @@ from services.api.app.services.evaluation_workspace_service import EvaluationWor
 
 class EvaluationWorkspaceServiceTests(unittest.TestCase):
     def test_workspace_returns_evaluation_summary(self) -> None:
-        service = EvaluationWorkspaceService(report_reader=_FakeResearchService())
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
 
         item = service.get_workspace()
 
@@ -24,9 +28,16 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("net_return_pct", item["evaluation"]["metrics_catalog"])
         self.assertEqual(item["reviews"]["research"]["result"], "candidate_ready")
         self.assertEqual(item["leaderboard"][0]["symbol"], "ETHUSDT")
+        self.assertEqual(item["execution_alignment"]["status"], "matched")
+        self.assertEqual(item["experiment_comparison"][0]["run_type"], "training")
+        self.assertIn("controls", item)
 
     def test_workspace_handles_missing_evaluation(self) -> None:
-        service = EvaluationWorkspaceService(report_reader=_UnavailableResearchService())
+        service = EvaluationWorkspaceService(
+            report_reader=_UnavailableResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
 
         item = service.get_workspace()
 
@@ -71,9 +82,57 @@ class _FakeResearchService:
         }
 
 
+class _FakeValidationReviewService:
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        return {
+            "execution_comparison": {
+                "status": "matched",
+                "symbol": "ETHUSDT",
+                "recommended_action": "enter_dry_run",
+                "note": "研究结果和执行结果已经对上",
+                "execution": {
+                    "matched_order_count": 1,
+                    "matched_position_count": 1,
+                },
+            },
+            "reviews": {
+                "research": {
+                    "result": "candidate_ready",
+                    "next_action": "enter_dry_run",
+                },
+                "dry_run": {
+                    "result": "succeeded",
+                    "next_action": "review_dry_run",
+                },
+                "live": {
+                    "result": "waiting",
+                    "next_action": "wait_live",
+                },
+            },
+        }
+
+
 class _UnavailableResearchService:
     def get_factory_report(self) -> dict[str, object]:
         return {"status": "unavailable"}
+
+
+def _fake_controls() -> dict[str, object]:
+    return {
+        "config": {
+            "thresholds": {
+                "dry_run_min_score": "0.55",
+                "dry_run_min_positive_rate": "0.45",
+                "dry_run_min_net_return_pct": "0",
+                "dry_run_min_sharpe": "0.5",
+                "dry_run_max_drawdown_pct": "15",
+                "dry_run_max_loss_streak": "3",
+                "live_min_score": "0.65",
+                "live_min_positive_rate": "0.50",
+                "live_min_net_return_pct": "0.20",
+            }
+        }
+    }
 
 
 if __name__ == "__main__":

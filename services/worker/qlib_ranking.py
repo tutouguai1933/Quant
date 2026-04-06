@@ -14,12 +14,21 @@ def rank_candidates(
     validation: dict[str, object] | None = None,
     training_metrics: dict[str, object] | None = None,
     force_validation_top_candidate: bool = False,
+    research_template: str = "single_asset_timing",
+    thresholds: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """按分数输出统一候选排行。"""
 
     ranked = sorted(items, key=lambda item: _to_decimal(item.get("score")), reverse=True)
     normalized = [
-        _normalize_candidate(item, index=index, validation=validation, training_metrics=training_metrics)
+        _normalize_candidate(
+            item,
+            index=index,
+            validation=validation,
+            training_metrics=training_metrics,
+            research_template=research_template,
+            thresholds=thresholds,
+        )
         for index, item in enumerate(ranked, start=1)
     ]
     if force_validation_top_candidate:
@@ -30,6 +39,7 @@ def rank_candidates(
         "summary": {
             "candidate_count": len(normalized),
             "ready_count": sum(1 for item in normalized if item["allowed_to_dry_run"]),
+            "live_ready_count": sum(1 for item in normalized if item["allowed_to_live"]),
             "blocked_count": sum(1 for item in normalized if not item["allowed_to_dry_run"]),
         },
     }
@@ -41,17 +51,29 @@ def _normalize_candidate(
     index: int,
     validation: dict[str, object] | None,
     training_metrics: dict[str, object] | None,
+    research_template: str,
+    thresholds: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """把单个候选统一成稳定结构。"""
 
     backtest = dict(item.get("backtest") or {})
     metrics = dict(backtest.get("metrics") or {})
+    gate_thresholds = _resolve_thresholds(thresholds, research_template=research_template)
     rule_gate = _normalize_rule_gate(item.get("rule_gate"))
-    research_validation_gate = _evaluate_validation_gate(validation)
-    backtest_gate = _evaluate_backtest_gate(metrics)
+    score_gate = _evaluate_score_gate(score=item.get("score"), thresholds=gate_thresholds)
+    research_validation_gate = _evaluate_validation_gate(validation, thresholds=gate_thresholds)
+    backtest_gate = _evaluate_backtest_gate(metrics, thresholds=gate_thresholds)
     consistency_gate = _evaluate_consistency_gate(validation=validation, metrics=metrics, training_metrics=training_metrics)
-    dry_run_gate = _merge_gates(rule_gate, research_validation_gate, backtest_gate, consistency_gate)
+    dry_run_gate = _merge_gates(score_gate, rule_gate, research_validation_gate, backtest_gate, consistency_gate)
     allowed_to_dry_run = dry_run_gate["status"] == "passed"
+    live_gate = _evaluate_live_gate(
+        score=item.get("score"),
+        validation=validation,
+        metrics=metrics,
+        thresholds=gate_thresholds,
+        allowed_to_dry_run=allowed_to_dry_run,
+    )
+    allowed_to_live = live_gate["status"] == "passed"
     recommendation_context = _normalize_recommendation_context(item.get("recommendation_context"))
     recommendation_score = _build_recommendation_score(
         raw_score=_to_decimal(item.get("score")),
@@ -71,11 +93,14 @@ def _normalize_candidate(
         "score": _format_decimal(_to_decimal(item.get("score"))),
         "backtest": {"metrics": metrics},
         "rule_gate": rule_gate,
+        "score_gate": score_gate,
         "research_validation_gate": research_validation_gate,
         "backtest_gate": backtest_gate,
         "consistency_gate": consistency_gate,
         "dry_run_gate": dry_run_gate,
         "allowed_to_dry_run": allowed_to_dry_run,
+        "live_gate": live_gate,
+        "allowed_to_live": allowed_to_live,
         "forced_for_validation": False,
         "forced_reason": "",
         "review_status": "ready_for_dry_run" if allowed_to_dry_run else "needs_research_iteration",
@@ -100,6 +125,8 @@ def _apply_force_validation_override(items: list[dict[str, object]]) -> list[dic
     top_item["review_status"] = "forced_validation"
     top_item["next_action"] = "enter_dry_run"
     top_item["execution_priority"] = 0
+    top_item["allowed_to_live"] = False
+    top_item["live_gate"] = {"status": "failed", "reasons": ["force_validation_dry_run_first"]}
     return overridden
 
 
@@ -128,7 +155,7 @@ def _apply_recommendation_order(items: list[dict[str, object]]) -> list[dict[str
     return ordered
 
 
-def _evaluate_backtest_gate(metrics: dict[str, object]) -> dict[str, object]:
+def _evaluate_backtest_gate(metrics: dict[str, object], *, thresholds: dict[str, Decimal | int]) -> dict[str, object]:
     """根据最小回测指标判断是否允许进入 dry-run。"""
 
     total_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
@@ -140,11 +167,11 @@ def _evaluate_backtest_gate(metrics: dict[str, object]) -> dict[str, object]:
     max_loss_streak = _to_int_or_none(metrics.get("max_loss_streak"))
 
     failures: list[str] = []
-    if total_return_pct <= Decimal("0"):
+    if total_return_pct <= Decimal(str(thresholds["dry_run_min_net_return_pct"])):
         failures.append("non_positive_return")
-    if max_drawdown_pct < Decimal("-15"):
+    if max_drawdown_pct < -Decimal(str(thresholds["dry_run_max_drawdown_pct"])):
         failures.append("drawdown_too_large")
-    if sharpe < Decimal("0.5"):
+    if sharpe < Decimal(str(thresholds["dry_run_min_sharpe"])):
         failures.append("sharpe_too_low")
     if win_rate < Decimal("0.5"):
         failures.append("win_rate_too_low")
@@ -152,7 +179,7 @@ def _evaluate_backtest_gate(metrics: dict[str, object]) -> dict[str, object]:
         failures.append("turnover_too_high")
     if sample_count is None or sample_count < 20:
         failures.append("sample_count_too_low")
-    if max_loss_streak is not None and max_loss_streak > 3:
+    if max_loss_streak is not None and max_loss_streak > int(thresholds["dry_run_max_loss_streak"]):
         failures.append("loss_streak_too_long")
 
     if failures:
@@ -160,7 +187,7 @@ def _evaluate_backtest_gate(metrics: dict[str, object]) -> dict[str, object]:
     return {"status": "passed", "reasons": []}
 
 
-def _evaluate_validation_gate(validation: dict[str, object] | None) -> dict[str, object]:
+def _evaluate_validation_gate(validation: dict[str, object] | None, *, thresholds: dict[str, Decimal | int]) -> dict[str, object]:
     """根据训练阶段验证摘要判断研究结果是否足够稳定。"""
 
     payload = dict(validation or {})
@@ -174,11 +201,45 @@ def _evaluate_validation_gate(validation: dict[str, object] | None) -> dict[str,
     failures: list[str] = []
     if sample_count is None or sample_count < 12:
         failures.append("validation_sample_count_too_low")
-    if positive_rate < Decimal("0.45"):
+    if positive_rate < Decimal(str(thresholds["dry_run_min_positive_rate"])):
         failures.append("validation_positive_rate_too_low")
     if avg_future_return_pct < Decimal("-0.1"):
         failures.append("validation_future_return_not_positive")
 
+    if failures:
+        return {"status": "failed", "reasons": failures}
+    return {"status": "passed", "reasons": []}
+
+
+def _evaluate_score_gate(*, score: object, thresholds: dict[str, Decimal | int]) -> dict[str, object]:
+    """根据最小分数门判断是否允许进入 dry-run。"""
+
+    if _to_decimal(score) < Decimal(str(thresholds["dry_run_min_score"])):
+        return {"status": "failed", "reasons": ["score_too_low"]}
+    return {"status": "passed", "reasons": []}
+
+
+def _evaluate_live_gate(
+    *,
+    score: object,
+    validation: dict[str, object] | None,
+    metrics: dict[str, object],
+    thresholds: dict[str, Decimal | int],
+    allowed_to_dry_run: bool,
+) -> dict[str, object]:
+    """根据更严格的 live 门判断是否允许进入小额 live。"""
+
+    if not allowed_to_dry_run:
+        return {"status": "failed", "reasons": ["dry_run_gate_not_passed"]}
+    failures: list[str] = []
+    if _to_decimal(score) < Decimal(str(thresholds["live_min_score"])):
+        failures.append("live_score_too_low")
+    positive_rate = _to_decimal(dict(validation or {}).get("positive_rate"))
+    if positive_rate < Decimal(str(thresholds["live_min_positive_rate"])):
+        failures.append("live_validation_positive_rate_too_low")
+    net_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
+    if net_return_pct < Decimal(str(thresholds["live_min_net_return_pct"])):
+        failures.append("live_net_return_too_low")
     if failures:
         return {"status": "failed", "reasons": failures}
     return {"status": "passed", "reasons": []}
@@ -304,6 +365,31 @@ def _merge_gates(*gates: dict[str, object]) -> dict[str, object]:
         reasons.extend(list(gate.get("reasons") or []))
     return {"status": "failed", "reasons": reasons}
 
+
+def _resolve_thresholds(value: dict[str, object] | None, *, research_template: str = "single_asset_timing") -> dict[str, Decimal | int]:
+    """整理 dry-run 和 live 门槛。"""
+
+    payload = dict(value or {})
+    resolved = {
+        "dry_run_min_score": _to_decimal(payload.get("dry_run_min_score") or "0.55"),
+        "dry_run_min_positive_rate": _to_decimal(payload.get("dry_run_min_positive_rate") or "0.45"),
+        "dry_run_min_net_return_pct": _to_decimal(payload.get("dry_run_min_net_return_pct") or "0"),
+        "dry_run_min_sharpe": _to_decimal(payload.get("dry_run_min_sharpe") or "0.5"),
+        "dry_run_max_drawdown_pct": _to_decimal(payload.get("dry_run_max_drawdown_pct") or "15"),
+        "dry_run_max_loss_streak": _to_int_or_none(payload.get("dry_run_max_loss_streak")) or 3,
+        "live_min_score": _to_decimal(payload.get("live_min_score") or "0.65"),
+        "live_min_positive_rate": _to_decimal(payload.get("live_min_positive_rate") or "0.50"),
+        "live_min_net_return_pct": _to_decimal(payload.get("live_min_net_return_pct") or "0.20"),
+    }
+    if research_template == "single_asset_timing_strict":
+        resolved["dry_run_min_score"] = min(Decimal("1"), resolved["dry_run_min_score"] + Decimal("0.05"))
+        resolved["dry_run_min_positive_rate"] = min(Decimal("1"), resolved["dry_run_min_positive_rate"] + Decimal("0.05"))
+        resolved["dry_run_min_sharpe"] = resolved["dry_run_min_sharpe"] + Decimal("0.10")
+        resolved["dry_run_max_drawdown_pct"] = max(Decimal("5"), resolved["dry_run_max_drawdown_pct"] - Decimal("3"))
+        resolved["live_min_score"] = min(Decimal("1"), resolved["live_min_score"] + Decimal("0.05"))
+        resolved["live_min_positive_rate"] = min(Decimal("1"), resolved["live_min_positive_rate"] + Decimal("0.05"))
+        resolved["live_min_net_return_pct"] = resolved["live_min_net_return_pct"] + Decimal("0.10")
+    return resolved
 
 def _to_decimal(value: object) -> Decimal:
     """把输入统一转成十进制。"""

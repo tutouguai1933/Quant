@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from services.worker.qlib_config import QlibConfigurationError, load_qlib_config  # noqa: E402
 from services.worker.qlib_dataset import DatasetBundle  # noqa: E402
+from services.worker.qlib_features import AUXILIARY_FEATURE_COLUMNS, PRIMARY_FEATURE_COLUMNS  # noqa: E402
 from services.worker.qlib_features import FEATURE_COLUMNS, build_feature_rows  # noqa: E402
 from services.worker.qlib_labels import LABEL_COLUMNS, build_label_rows  # noqa: E402
 from services.worker.qlib_runner import QlibRunner  # noqa: E402
@@ -48,6 +49,65 @@ class QlibConfigTests(unittest.TestCase):
 
         self.assertEqual(str(config.backtest_fee_bps), "12")
         self.assertEqual(str(config.backtest_slippage_bps), "7")
+
+    def test_runtime_controls_can_be_overridden_from_env(self) -> None:
+        config = load_qlib_config(
+            env={
+                "QUANT_QLIB_RUNTIME_ROOT": "/tmp/quant-qlib-runtime",
+                "QUANT_QLIB_SELECTED_SYMBOLS": "ETHUSDT,DOGEUSDT",
+                "QUANT_QLIB_TIMEFRAMES": "4h",
+                "QUANT_QLIB_SAMPLE_LIMIT": "180",
+                "QUANT_QLIB_PRIMARY_FACTORS": "ema20_gap_pct,trend_gap_pct",
+                "QUANT_QLIB_AUXILIARY_FACTORS": "rsi14",
+                "QUANT_QLIB_RESEARCH_TEMPLATE": "single_asset_timing_strict",
+                "QUANT_QLIB_LABEL_TARGET_PCT": "1.5",
+                "QUANT_QLIB_LABEL_STOP_PCT": "-0.8",
+                "QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS": "2",
+                "QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS": "4",
+                "QUANT_QLIB_MODEL_KEY": "trend_bias_v2",
+                "QUANT_QLIB_DRY_RUN_MIN_SCORE": "0.60",
+                "QUANT_QLIB_LIVE_MIN_SCORE": "0.80",
+            },
+            require_explicit=True,
+        )
+
+        self.assertEqual(config.selected_symbols, ("ETHUSDT", "DOGEUSDT"))
+        self.assertEqual(config.selected_timeframes, ("4h",))
+        self.assertEqual(config.sample_limit, 180)
+        self.assertEqual(config.primary_feature_columns, ("ema20_gap_pct", "trend_gap_pct"))
+        self.assertEqual(config.auxiliary_feature_columns, ("rsi14",))
+        self.assertEqual(config.research_template, "single_asset_timing_strict")
+        self.assertEqual(config.label_mode, "earliest_hit")
+        self.assertEqual(str(config.label_target_pct), "1.5")
+        self.assertEqual(str(config.label_stop_pct), "-0.8")
+        self.assertEqual(config.holding_window_label, "2-4d")
+        self.assertEqual(config.model_key, "trend_bias_v2")
+        self.assertEqual(str(config.dry_run_min_score), "0.60")
+        self.assertEqual(str(config.live_min_score), "0.80")
+
+    def test_runtime_controls_include_label_mode_and_preprocessing_policies(self) -> None:
+        config = load_qlib_config(
+            env={
+                "QUANT_QLIB_RUNTIME_ROOT": "/tmp/quant-qlib-runtime",
+                "QUANT_QLIB_LABEL_MODE": "close_only",
+                "QUANT_QLIB_OUTLIER_POLICY": "raw",
+                "QUANT_QLIB_NORMALIZATION_POLICY": "zscore_by_symbol",
+            },
+            require_explicit=True,
+        )
+
+        self.assertEqual(config.label_mode, "close_only")
+        self.assertEqual(config.outlier_policy, "raw")
+        self.assertEqual(config.normalization_policy, "zscore_by_symbol")
+
+    def test_runtime_controls_use_default_factors_when_not_configured(self) -> None:
+        config = load_qlib_config(
+            env={"QUANT_QLIB_RUNTIME_ROOT": "/tmp/quant-qlib-runtime"},
+            require_explicit=True,
+        )
+
+        self.assertEqual(config.primary_feature_columns, PRIMARY_FEATURE_COLUMNS)
+        self.assertEqual(config.auxiliary_feature_columns, AUXILIARY_FEATURE_COLUMNS)
 
 
 class QlibFeatureTests(unittest.TestCase):
@@ -120,6 +180,17 @@ class QlibFeatureTests(unittest.TestCase):
         self.assertEqual(rows[0]["holding_window"], "1-3d")
         self.assertEqual(rows[0]["label"], "buy")
 
+    def test_label_builder_supports_close_only_mode(self) -> None:
+        rows = build_label_rows(
+            "BTCUSDT",
+            _sample_window_competing_hit_candles(),
+            label_mode="close_only",
+        )
+
+        self.assertTrue(rows[0]["is_trainable"])
+        self.assertEqual(rows[0]["holding_window"], "1-3d")
+        self.assertEqual(rows[0]["label"], "sell")
+
     def test_dirty_candle_is_filtered_consistently_for_features_and_labels(self) -> None:
         candles = _sample_candles()
         candles[1] = {
@@ -138,6 +209,47 @@ class QlibFeatureTests(unittest.TestCase):
 
 
 class QlibRunnerTests(unittest.TestCase):
+    def test_scoring_and_rule_gate_change_when_strict_template_is_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            base_env = {"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)}
+            relaxed_runner = QlibRunner(config=load_qlib_config(env=base_env, require_explicit=True))
+            strict_runner = QlibRunner(
+                config=load_qlib_config(
+                    env={**base_env, "QUANT_QLIB_RESEARCH_TEMPLATE": "single_asset_timing_strict"},
+                    require_explicit=True,
+                )
+            )
+            metrics = {
+                "feature_averages": {
+                    "trend_gap_pct": "0.8000",
+                    "ema20_gap_pct": "0.9000",
+                    "ema55_gap_pct": "1.4000",
+                    "atr_pct": "4.0000",
+                    "volume_ratio": "1.0000",
+                },
+                "avg_future_return_pct": "0.6000",
+                "positive_rate": "0.5200",
+            }
+            feature_row = {
+                "trend_gap_pct": "1.1000",
+                "ema20_gap_pct": "1.1000",
+                "ema55_gap_pct": "1.7000",
+                "atr_pct": "4.7000",
+                "volume_ratio": "1.0200",
+            }
+
+            relaxed_score = relaxed_runner._score_signal(feature_row, metrics)
+            strict_score = strict_runner._score_signal(feature_row, metrics)
+            relaxed_gate = relaxed_runner._build_rule_gate(feature_row)
+            strict_gate = strict_runner._build_rule_gate(feature_row)
+
+        self.assertGreater(relaxed_score, strict_score)
+        self.assertEqual(relaxed_gate["status"], "passed")
+        self.assertEqual(strict_gate["status"], "failed")
+        self.assertIn("strict_template_not_confirmed", strict_gate["reasons"])
+
     def test_training_exposes_data_states_and_backtest_snapshot_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)
@@ -220,7 +332,15 @@ class QlibRunnerTests(unittest.TestCase):
             symbol="BTCUSDT",
             candles_1h=candles_1h,
             candles_4h=candles_4h,
-        )
+                label_target_pct=config.label_target_pct,
+                label_stop_pct=config.label_stop_pct,
+                label_mode=config.label_mode,
+                outlier_policy=config.outlier_policy,
+                normalization_policy=config.normalization_policy,
+                min_window_days=config.holding_window_min_days,
+                max_window_days=config.holding_window_max_days,
+                holding_window_label=config.holding_window_label,
+            )
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["sample_count"], 3)
 
@@ -294,6 +414,43 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertEqual(second["dataset_snapshot"]["symbols"][0]["cache"]["status"], "hit")
         self.assertTrue(second["dataset_snapshot"]["symbols"][0]["cache"]["path"])
 
+    def test_training_invalidates_dataset_cache_when_label_parameters_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            dataset = {"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)}
+            first_runner = QlibRunner(
+                config=load_qlib_config(
+                    env={
+                        "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                        "QUANT_QLIB_LABEL_TARGET_PCT": "1.0",
+                        "QUANT_QLIB_LABEL_STOP_PCT": "-1.0",
+                    },
+                    require_explicit=True,
+                )
+            )
+            second_runner = QlibRunner(
+                config=load_qlib_config(
+                    env={
+                        "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                        "QUANT_QLIB_LABEL_TARGET_PCT": "1.8",
+                        "QUANT_QLIB_LABEL_STOP_PCT": "-0.5",
+                    },
+                    require_explicit=True,
+                )
+            )
+
+            first = first_runner.train(dataset=dataset)
+            second = second_runner.train(dataset=dataset)
+
+        self.assertEqual(first["dataset_snapshot"]["summary"]["cache"]["miss_count"], 2)
+        self.assertEqual(second["dataset_snapshot"]["summary"]["cache"]["miss_count"], 2)
+        self.assertEqual(second["dataset_snapshot"]["symbols"][0]["cache"]["status"], "miss")
+        self.assertNotEqual(
+            first["dataset_snapshot"]["symbols"][0]["cache"]["key"],
+            second["dataset_snapshot"]["symbols"][0]["cache"]["key"],
+        )
+
     def test_inference_returns_standardized_signal_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)
@@ -328,6 +485,26 @@ class QlibRunnerTests(unittest.TestCase):
                 "generated_at",
             },
         )
+
+    def test_inference_uses_research_template_to_select_strategy_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={
+                    "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                    "QUANT_QLIB_RESEARCH_TEMPLATE": "single_asset_timing_strict",
+                },
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            dataset = {"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)}
+            runner.train(dataset=dataset)
+
+            result = runner.infer(dataset=dataset)
+
+        self.assertTrue(result["candidates"]["items"])
+        self.assertTrue(all(item["strategy_template"] == "trend_pullback_timing" for item in result["candidates"]["items"]))
 
     def test_inference_returns_experiment_report(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

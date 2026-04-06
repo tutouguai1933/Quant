@@ -8,7 +8,11 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 
-def evaluate_rule_gate(feature_row: dict[str, object]) -> dict[str, object]:
+def evaluate_rule_gate(
+    feature_row: dict[str, object],
+    *,
+    research_template: str = "single_asset_timing",
+) -> dict[str, object]:
     """根据最小特征判断当前是否允许进入候选区。"""
 
     ema20_gap = _to_decimal(feature_row.get("ema20_gap_pct"))
@@ -18,6 +22,14 @@ def evaluate_rule_gate(feature_row: dict[str, object]) -> dict[str, object]:
 
     if ema20_gap <= 0 or ema55_gap <= 0:
         return {"allowed": False, "reason": "trend_broken"}
+    if research_template == "single_asset_timing_strict":
+        if ema20_gap < Decimal("1.2") or ema55_gap < Decimal("1.8"):
+            return {"allowed": False, "reason": "strict_template_not_confirmed"}
+        if atr_pct >= Decimal("4.5"):
+            return {"allowed": False, "reason": "strict_template_not_confirmed"}
+        if volume_ratio < Decimal("1.05"):
+            return {"allowed": False, "reason": "strict_template_not_confirmed"}
+        return {"allowed": True, "reason": "ready"}
     if atr_pct >= Decimal("5"):
         return {"allowed": False, "reason": "volatility_too_high"}
     if volume_ratio < Decimal("1"):

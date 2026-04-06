@@ -71,6 +71,66 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
+    def test_rank_candidates_respects_configured_min_score_threshold(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            thresholds={"dry_run_min_score": "0.80"},
+        )
+
+        self.assertEqual(result["items"][0]["score_gate"]["status"], "failed")
+        self.assertIn("score_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
+    def test_rank_candidates_uses_stricter_gate_for_strict_template(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "score": "0.5800",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            research_template="single_asset_timing_strict",
+        )
+
+        self.assertEqual(result["items"][0]["score_gate"]["status"], "failed")
+        self.assertIn("score_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+
+    def test_rank_candidates_exposes_live_gate_when_dry_run_passes_but_live_is_stricter(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7000",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            validation={
+                "sample_count": 24,
+                "positive_rate": "0.52",
+                "avg_future_return_pct": "0.70",
+            },
+            thresholds={
+                "live_min_score": "0.75",
+                "live_min_positive_rate": "0.60",
+                "live_min_net_return_pct": "0.50",
+            },
+        )
+
+        self.assertTrue(result["items"][0]["allowed_to_dry_run"])
+        self.assertFalse(result["items"][0]["allowed_to_live"])
+        self.assertEqual(result["items"][0]["live_gate"]["status"], "failed")
+        self.assertIn("live_score_too_low", result["items"][0]["live_gate"]["reasons"])
+
     def test_rank_candidates_blocks_dry_run_when_rule_gate_fails(self) -> None:
         result = rank_candidates(
             [

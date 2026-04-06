@@ -17,6 +17,7 @@ import services.api.app.routes.risk_events as risk_events_route  # noqa: E402
 import services.api.app.routes.signals as signals_route  # noqa: E402
 import services.api.app.routes.strategies as strategies_route  # noqa: E402
 import services.api.app.routes.tasks as tasks_route  # noqa: E402
+import services.api.app.routes.workbench_config as workbench_config_route  # noqa: E402
 import services.api.app.services.automation_service as automation_service_module  # noqa: E402
 import services.api.app.services.automation_workflow_service as automation_workflow_module  # noqa: E402
 import services.api.app.services.auth_service as auth_service_module  # noqa: E402
@@ -38,6 +39,7 @@ from services.api.app.routes.evaluation_workspace import get_evaluation_workspac
 from services.api.app.routes.feature_workspace import get_feature_workspace  # noqa: E402
 from services.api.app.routes.health import get_health, get_healthz  # noqa: E402
 from services.api.app.routes.research_workspace import get_research_workspace  # noqa: E402
+from services.api.app.routes.workbench_config import get_workbench_config, update_workbench_config  # noqa: E402
 from services.api.app.routes.risk_events import get_risk_event, list_risk_events  # noqa: E402
 from services.api.app.routes.signals import (  # noqa: E402
     get_signal,
@@ -92,6 +94,7 @@ class ApiSkeletonTests(unittest.TestCase):
         strategies_route.auth_service = new_auth_service
         tasks_route.auth_service = new_auth_service
         risk_events_route.auth_service = new_auth_service
+        workbench_config_route.auth_service = new_auth_service
 
         new_freqtrade_client = FreqtradeClient()
         freqtrade_client_module.freqtrade_client = new_freqtrade_client
@@ -184,6 +187,7 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("/api/v1/evaluation", router_prefixes)
         self.assertIn("/api/v1/features", router_prefixes)
         self.assertIn("/api/v1/research", router_prefixes)
+        self.assertIn("/api/v1/workbench", router_prefixes)
 
     def test_health_endpoints_return_success_envelope(self) -> None:
         self.assertEqual(get_health()["error"], None)
@@ -308,7 +312,21 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertEqual(set(response.keys()), {"data", "error", "meta"})
         self.assertIsNone(response["error"])
         self.assertIn("item", response["data"])
-        self.assertEqual(response["meta"]["source"], "research-workspace")
+
+    def test_workbench_config_routes_return_consistent_response_shape(self) -> None:
+        response = get_workbench_config()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        token = self._login_token()
+        updated = update_workbench_config(
+            {"section": "backtest", "values": {"fee_bps": "12", "slippage_bps": "6"}},
+            token=token,
+        )
+        self.assertIsNone(updated["error"])
+        self.assertEqual(updated["data"]["item"]["backtest"]["fee_bps"], "12")
+        self.assertEqual(response["meta"]["source"], "workbench-config")
 
     def test_research_routes_return_consistent_response_shape(self) -> None:
         token = self._login_token()

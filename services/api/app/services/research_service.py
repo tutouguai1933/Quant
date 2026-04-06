@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Callable
 
 from services.api.app.services.market_service import MarketService
 from services.api.app.services.strategy_catalog import strategy_catalog_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 from services.worker.qlib_config import QlibConfigurationError, load_qlib_config
 from services.worker.qlib_runner import QlibRunner
 
@@ -24,16 +26,20 @@ class ResearchService:
         config_loader: Callable[[], object] | None = None,
         market_reader: MarketService | None = None,
         whitelist_provider: Callable[[], list[str]] | None = None,
+        workbench_config_reader: Callable[[], dict[str, object]] | None = None,
+        runtime_override_provider: Callable[[], dict[str, str]] | None = None,
     ) -> None:
-        self._config_loader = config_loader or load_qlib_config
+        self._config_loader = config_loader
         self._market_reader = market_reader or MarketService()
         self._whitelist_provider = whitelist_provider or strategy_catalog_service.get_whitelist
+        self._workbench_config_reader = workbench_config_reader or workbench_config_service.get_config
+        self._runtime_override_provider = runtime_override_provider or workbench_config_service.get_research_runtime_overrides
         self._market_cache: dict[tuple[str, str, int, tuple[str, ...]], list[dict[str, object]]] = {}
 
     def get_latest_result(self) -> dict[str, object]:
         """返回最近一次研究结果。"""
 
-        config = self._config_loader()
+        config = self._load_runtime_config()
         if getattr(config, "status", "") != "ready":
             return self._build_unavailable_result(config)
 
@@ -51,6 +57,7 @@ class ResearchService:
                 "latest_inference": None,
                 "recent_runs": [],
                 "symbols": {},
+                "config_alignment": {"status": "unavailable", "stale_fields": [], "note": "研究结果文件暂不可读，无法校验当前配置是否对齐。"},
             }
         if not training_payload or not inference_payload:
             return {
@@ -65,12 +72,18 @@ class ResearchService:
                 "latest_inference": inference_payload,
                 "recent_runs": list((experiment_index or {}).get("items") or []),
                 "symbols": {},
+                "config_alignment": {"status": "unavailable", "stale_fields": [], "note": "研究结果还不完整，暂时无法对齐当前配置。"},
             }
         symbols = {
             str(item.get("symbol", "")): item
             for item in list((inference_payload or {}).get("signals", []))
             if str(item.get("symbol", "")).strip()
         }
+        config_alignment = self._build_config_alignment(
+            workbench_config=self._workbench_config_reader(),
+            training_payload=training_payload,
+            inference_payload=inference_payload,
+        )
         return {
             "status": "ready",
             "backend": config.backend,
@@ -80,12 +93,13 @@ class ResearchService:
             "latest_inference": inference_payload,
             "recent_runs": list((experiment_index or {}).get("items") or []),
             "symbols": symbols,
+            "config_alignment": config_alignment,
         }
 
     def run_training(self) -> dict[str, object]:
         """触发一次训练。"""
 
-        config = self._config_loader()
+        config = self._load_runtime_config()
         runner = QlibRunner(config=config)
         dataset, market_cache = self._prepare_dataset()
         result = runner.train(dataset)
@@ -95,7 +109,7 @@ class ResearchService:
     def run_inference(self) -> dict[str, object]:
         """触发一次推理。"""
 
-        config = self._config_loader()
+        config = self._load_runtime_config()
         runner = QlibRunner(config=config)
         dataset, market_cache = self._prepare_dataset()
         result = runner.infer(dataset)
@@ -145,10 +159,12 @@ class ResearchService:
             "symbol": str(recommendation.get("symbol", "")),
             "score": str(recommendation.get("score", "")),
             "allowed_to_dry_run": bool(recommendation.get("allowed_to_dry_run")),
+            "allowed_to_live": bool(recommendation.get("allowed_to_live")),
             "forced_for_validation": bool(recommendation.get("forced_for_validation")),
             "forced_reason": str(recommendation.get("forced_reason", "")),
             "strategy_template": str(recommendation.get("strategy_template", "")),
             "dry_run_gate": dry_run_gate,
+            "live_gate": dict(recommendation.get("live_gate") or {}),
             "next_action": str(recommendation.get("next_action", "")) or str(report.get("overview", {}).get("recommended_action", "")),
             "review_status": str(recommendation.get("review_status", "")),
             "execution_priority": int(recommendation.get("execution_priority", 999999) or 999999),
@@ -161,6 +177,19 @@ class ResearchService:
 
         dataset: dict[str, dict[str, list[dict[str, object]]]] = {}
         whitelist = list(self._whitelist_provider())
+        workbench_config = self._workbench_config_reader()
+        data_config = dict(workbench_config.get("data") or {})
+        selected_symbols = [
+            item
+            for item in [str(symbol).strip().upper() for symbol in list(data_config.get("selected_symbols") or [])]
+            if item in whitelist
+        ] or whitelist
+        selected_timeframes = [
+            item
+            for item in [str(interval).strip() for interval in list(data_config.get("timeframes") or [])]
+            if item in {"1h", "4h"}
+        ] or ["4h", "1h"]
+        sample_limit = int(data_config.get("sample_limit", 120) or 120)
         cache_summary = {
             "request_count": 0,
             "reused_count": 0,
@@ -168,24 +197,31 @@ class ResearchService:
             "scope": "service-instance",
             "refresh_rule": "service_restart",
         }
-        for symbol in whitelist:
-            chart_1h, reused_1h = self._read_market_chart_cached(
-                symbol=symbol,
-                interval="1h",
-                limit=120,
-                allowed_symbols=tuple(whitelist),
-            )
-            chart_4h, reused_4h = self._read_market_chart_cached(
-                symbol=symbol,
-                interval="4h",
-                limit=120,
-                allowed_symbols=tuple(whitelist),
-            )
-            cache_summary["request_count"] += 2
+        for symbol in selected_symbols:
+            candles_1h: list[dict[str, object]] = []
+            candles_4h: list[dict[str, object]] = []
+            reused_1h = False
+            reused_4h = False
+            if "1h" in selected_timeframes:
+                chart_1h, reused_1h = self._read_market_chart_cached(
+                    symbol=symbol,
+                    interval="1h",
+                    limit=sample_limit,
+                    allowed_symbols=tuple(whitelist),
+                )
+                candles_1h = list(chart_1h.get("items", []))
+                cache_summary["request_count"] += 1
+            if "4h" in selected_timeframes:
+                chart_4h, reused_4h = self._read_market_chart_cached(
+                    symbol=symbol,
+                    interval="4h",
+                    limit=sample_limit,
+                    allowed_symbols=tuple(whitelist),
+                )
+                candles_4h = list(chart_4h.get("items", []))
+                cache_summary["request_count"] += 1
             cache_summary["reused_count"] += int(reused_1h) + int(reused_4h)
-            cache_summary["fresh_count"] += int(not reused_1h) + int(not reused_4h)
-            candles_1h = list(chart_1h.get("items", []))
-            candles_4h = list(chart_4h.get("items", []))
+            cache_summary["fresh_count"] += int(("1h" in selected_timeframes) and not reused_1h) + int(("4h" in selected_timeframes) and not reused_4h)
             if candles_1h or candles_4h:
                 dataset[symbol] = {
                     "candles_1h": candles_1h,
@@ -194,6 +230,15 @@ class ResearchService:
         if not dataset:
             raise QlibConfigurationError("研究层没有拿到可用市场样本")
         return dataset, cache_summary
+
+    def _load_runtime_config(self):
+        """加载研究运行配置，并叠加工作台配置覆盖项。"""
+
+        if self._config_loader is not None:
+            return self._config_loader()
+        env = dict(os.environ)
+        env.update(self._runtime_override_provider())
+        return load_qlib_config(env=env)
 
     def _read_market_chart_cached(
         self,
@@ -248,6 +293,7 @@ class ResearchService:
             "latest_inference": None,
             "recent_runs": [],
             "symbols": {},
+            "config_alignment": {"status": "unavailable", "stale_fields": [], "note": "研究层未就绪，暂时无法校验配置对齐。"},
         }
 
     @staticmethod
@@ -259,6 +305,106 @@ class ResearchService:
         if has_inference and not has_training:
             return "研究层已有推理结果，但训练结果缺失"
         return "研究层还没有可用训练和推理结果"
+
+    @staticmethod
+    def _build_config_alignment(
+        *,
+        workbench_config: dict[str, object],
+        training_payload: dict[str, object],
+        inference_payload: dict[str, object],
+    ) -> dict[str, object]:
+        """比较当前工作台配置和最近一次研究结果是否还对齐。"""
+
+        data_config = dict(workbench_config.get("data") or {})
+        features_config = dict(workbench_config.get("features") or {})
+        research_config = dict(workbench_config.get("research") or {})
+        backtest_config = dict(workbench_config.get("backtest") or {})
+        thresholds_config = dict(workbench_config.get("thresholds") or {})
+
+        training_context = dict(training_payload.get("training_context") or {})
+        training_parameters = dict(training_context.get("parameters") or {})
+        inference_context = dict(inference_payload.get("inference_context") or {})
+        input_summary = dict(inference_context.get("input_summary") or {})
+
+        stale_fields: list[str] = []
+
+        if sorted(str(item) for item in list(data_config.get("selected_symbols") or [])) != sorted(
+            str(item) for item in list(training_context.get("symbols") or [])
+        ):
+            stale_fields.append("selected_symbols")
+        if sorted(str(item) for item in list(data_config.get("timeframes") or [])) != sorted(
+            str(item) for item in list(training_context.get("timeframes") or [])
+        ):
+            stale_fields.append("timeframes")
+
+        current_pairs = {
+            "research_template": str(research_config.get("research_template", "")),
+            "model_key": str(research_config.get("model_key", "")),
+            "label_mode": str(research_config.get("label_mode", "")),
+            "label_target_pct": str(research_config.get("label_target_pct", "")),
+            "label_stop_pct": str(research_config.get("label_stop_pct", "")),
+            "holding_window_min_days": str(research_config.get("min_holding_days", "")),
+            "holding_window_max_days": str(research_config.get("max_holding_days", "")),
+            "outlier_policy": str(features_config.get("outlier_policy", "")),
+            "normalization_policy": str(features_config.get("normalization_policy", "")),
+            "backtest_fee_bps": str(backtest_config.get("fee_bps", "")),
+            "backtest_slippage_bps": str(backtest_config.get("slippage_bps", "")),
+            "dry_run_min_score": str(thresholds_config.get("dry_run_min_score", "")),
+            "dry_run_min_positive_rate": str(thresholds_config.get("dry_run_min_positive_rate", "")),
+            "dry_run_min_net_return_pct": str(thresholds_config.get("dry_run_min_net_return_pct", "")),
+            "dry_run_min_sharpe": str(thresholds_config.get("dry_run_min_sharpe", "")),
+            "dry_run_max_drawdown_pct": str(thresholds_config.get("dry_run_max_drawdown_pct", "")),
+            "dry_run_max_loss_streak": str(thresholds_config.get("dry_run_max_loss_streak", "")),
+            "live_min_score": str(thresholds_config.get("live_min_score", "")),
+            "live_min_positive_rate": str(thresholds_config.get("live_min_positive_rate", "")),
+            "live_min_net_return_pct": str(thresholds_config.get("live_min_net_return_pct", "")),
+        }
+        runtime_pairs = {
+            "research_template": str(training_parameters.get("research_template", input_summary.get("research_template", ""))),
+            "model_key": str(training_parameters.get("model_key", input_summary.get("model_key", ""))),
+            "label_mode": str(training_parameters.get("label_mode", input_summary.get("label_mode", ""))),
+            "label_target_pct": str(training_parameters.get("label_target_pct", "")),
+            "label_stop_pct": str(training_parameters.get("label_stop_pct", "")),
+            "holding_window_min_days": str(training_parameters.get("holding_window_min_days", "")),
+            "holding_window_max_days": str(training_parameters.get("holding_window_max_days", "")),
+            "outlier_policy": str(training_parameters.get("outlier_policy", input_summary.get("outlier_policy", ""))),
+            "normalization_policy": str(training_parameters.get("normalization_policy", input_summary.get("normalization_policy", ""))),
+            "backtest_fee_bps": str(training_parameters.get("backtest_fee_bps", "")),
+            "backtest_slippage_bps": str(training_parameters.get("backtest_slippage_bps", "")),
+            "dry_run_min_score": str(input_summary.get("dry_run_min_score", "")),
+            "dry_run_min_positive_rate": str(input_summary.get("dry_run_min_positive_rate", "")),
+            "dry_run_min_net_return_pct": str(input_summary.get("dry_run_min_net_return_pct", "")),
+            "dry_run_min_sharpe": str(input_summary.get("dry_run_min_sharpe", "")),
+            "dry_run_max_drawdown_pct": str(input_summary.get("dry_run_max_drawdown_pct", "")),
+            "dry_run_max_loss_streak": str(input_summary.get("dry_run_max_loss_streak", "")),
+            "live_min_score": str(input_summary.get("live_min_score", "")),
+            "live_min_positive_rate": str(input_summary.get("live_min_positive_rate", "")),
+            "live_min_net_return_pct": str(input_summary.get("live_min_net_return_pct", "")),
+        }
+        if sorted(str(item) for item in list(features_config.get("primary_factors") or [])) != sorted(
+            str(item) for item in list(training_parameters.get("primary_factors") or [])
+        ):
+            stale_fields.append("primary_factors")
+        if sorted(str(item) for item in list(features_config.get("auxiliary_factors") or [])) != sorted(
+            str(item) for item in list(training_parameters.get("auxiliary_factors") or [])
+        ):
+            stale_fields.append("auxiliary_factors")
+
+        for key, current_value in current_pairs.items():
+            if current_value != runtime_pairs.get(key, ""):
+                stale_fields.append(key)
+
+        if stale_fields:
+            return {
+                "status": "stale",
+                "stale_fields": sorted(set(stale_fields)),
+                "note": "当前页面配置已经变化，现有研究结果仍然基于上一轮训练/推理配置。",
+            }
+        return {
+            "status": "aligned",
+            "stale_fields": [],
+            "note": "当前页面配置和最近一次研究结果已经对齐。",
+        }
 
 
 research_service = ResearchService()

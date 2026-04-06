@@ -11,10 +11,31 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from services.worker.qlib_features import AUXILIARY_FEATURE_COLUMNS, PRIMARY_FEATURE_COLUMNS
+
 
 DEFAULT_RUNTIME_ROOT = Path("/tmp/quant-qlib-runtime")
 DEFAULT_BACKTEST_FEE_BPS = Decimal("10")
 DEFAULT_BACKTEST_SLIPPAGE_BPS = Decimal("5")
+DEFAULT_LABEL_TARGET_PCT = Decimal("1")
+DEFAULT_LABEL_STOP_PCT = Decimal("-1")
+DEFAULT_DRY_RUN_MIN_SCORE = Decimal("0.55")
+DEFAULT_DRY_RUN_MIN_POSITIVE_RATE = Decimal("0.45")
+DEFAULT_DRY_RUN_MIN_NET_RETURN_PCT = Decimal("0")
+DEFAULT_DRY_RUN_MIN_SHARPE = Decimal("0.5")
+DEFAULT_DRY_RUN_MAX_DRAWDOWN_PCT = Decimal("15")
+DEFAULT_DRY_RUN_MAX_LOSS_STREAK = 3
+DEFAULT_LIVE_MIN_SCORE = Decimal("0.65")
+DEFAULT_LIVE_MIN_POSITIVE_RATE = Decimal("0.50")
+DEFAULT_LIVE_MIN_NET_RETURN_PCT = Decimal("0.20")
+DEFAULT_RESEARCH_TEMPLATE = "single_asset_timing"
+DEFAULT_LABEL_MODE = "earliest_hit"
+DEFAULT_OUTLIER_POLICY = "clip"
+DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
+SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
+SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only")
+SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
+SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
 
 
 class QlibConfigurationError(RuntimeError):
@@ -49,6 +70,30 @@ class QlibRuntimeConfig:
     backtest_slippage_bps: Decimal
     force_validation_top_candidate: bool
     research_data_layer: str
+    selected_symbols: tuple[str, ...]
+    selected_timeframes: tuple[str, ...]
+    sample_limit: int
+    research_template: str
+    primary_feature_columns: tuple[str, ...]
+    auxiliary_feature_columns: tuple[str, ...]
+    outlier_policy: str
+    normalization_policy: str
+    label_mode: str
+    label_target_pct: Decimal
+    label_stop_pct: Decimal
+    holding_window_min_days: int
+    holding_window_max_days: int
+    holding_window_label: str
+    model_key: str
+    dry_run_min_score: Decimal
+    dry_run_min_positive_rate: Decimal
+    dry_run_min_net_return_pct: Decimal
+    dry_run_min_sharpe: Decimal
+    dry_run_max_drawdown_pct: Decimal
+    dry_run_max_loss_streak: int
+    live_min_score: Decimal
+    live_min_positive_rate: Decimal
+    live_min_net_return_pct: Decimal
     paths: QlibRuntimePaths
 
     def ensure_ready(self) -> None:
@@ -76,13 +121,128 @@ def load_qlib_config(
         values.get("QUANT_QLIB_BACKTEST_FEE_BPS"),
         default=DEFAULT_BACKTEST_FEE_BPS,
         env_name="QUANT_QLIB_BACKTEST_FEE_BPS",
+        minimum=Decimal("0"),
     )
     backtest_slippage_bps = _read_decimal(
         values.get("QUANT_QLIB_BACKTEST_SLIPPAGE_BPS"),
         default=DEFAULT_BACKTEST_SLIPPAGE_BPS,
         env_name="QUANT_QLIB_BACKTEST_SLIPPAGE_BPS",
+        minimum=Decimal("0"),
     )
     force_validation_top_candidate = str(values.get("QUANT_QLIB_FORCE_TOP_CANDIDATE", "")).strip().lower() == "true"
+    selected_symbols = _read_symbol_list(values.get("QUANT_QLIB_SELECTED_SYMBOLS"))
+    selected_timeframes = _read_timeframe_list(values.get("QUANT_QLIB_TIMEFRAMES"))
+    sample_limit = _read_int(values.get("QUANT_QLIB_SAMPLE_LIMIT"), default=120, env_name="QUANT_QLIB_SAMPLE_LIMIT", minimum=60)
+    research_template = _read_research_template(values.get("QUANT_QLIB_RESEARCH_TEMPLATE"))
+    primary_feature_columns = _read_name_list(
+        values.get("QUANT_QLIB_PRIMARY_FACTORS"),
+        default=PRIMARY_FEATURE_COLUMNS,
+    )
+    auxiliary_feature_columns = _read_name_list(
+        values.get("QUANT_QLIB_AUXILIARY_FACTORS"),
+        default=AUXILIARY_FEATURE_COLUMNS,
+    )
+    outlier_policy = _read_choice(
+        values.get("QUANT_QLIB_OUTLIER_POLICY"),
+        default=DEFAULT_OUTLIER_POLICY,
+        allowed=SUPPORTED_OUTLIER_POLICIES,
+    )
+    normalization_policy = _read_choice(
+        values.get("QUANT_QLIB_NORMALIZATION_POLICY"),
+        default=DEFAULT_NORMALIZATION_POLICY,
+        allowed=SUPPORTED_NORMALIZATION_POLICIES,
+    )
+    label_mode = _read_choice(
+        values.get("QUANT_QLIB_LABEL_MODE"),
+        default=DEFAULT_LABEL_MODE,
+        allowed=SUPPORTED_LABEL_MODES,
+    )
+    label_target_pct = _read_decimal(
+        values.get("QUANT_QLIB_LABEL_TARGET_PCT"),
+        default=DEFAULT_LABEL_TARGET_PCT,
+        env_name="QUANT_QLIB_LABEL_TARGET_PCT",
+        minimum=Decimal("0.1"),
+    )
+    label_stop_pct = _read_decimal(
+        values.get("QUANT_QLIB_LABEL_STOP_PCT"),
+        default=DEFAULT_LABEL_STOP_PCT,
+        env_name="QUANT_QLIB_LABEL_STOP_PCT",
+        maximum=Decimal("-0.1"),
+    )
+    holding_window_min_days = _read_int(
+        values.get("QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS"),
+        default=1,
+        env_name="QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS",
+        minimum=1,
+    )
+    holding_window_max_days = _read_int(
+        values.get("QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS"),
+        default=3,
+        env_name="QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS",
+        minimum=1,
+    )
+    if holding_window_min_days > holding_window_max_days:
+        holding_window_min_days, holding_window_max_days = holding_window_max_days, holding_window_min_days
+    holding_window_label = (
+        str(values.get("QUANT_QLIB_HOLDING_WINDOW_LABEL") or "").strip()
+        or f"{holding_window_min_days}-{holding_window_max_days}d"
+    )
+    model_key = str(values.get("QUANT_QLIB_MODEL_KEY") or "").strip() or "heuristic_v1"
+    dry_run_min_score = _read_decimal(
+        values.get("QUANT_QLIB_DRY_RUN_MIN_SCORE"),
+        default=DEFAULT_DRY_RUN_MIN_SCORE,
+        env_name="QUANT_QLIB_DRY_RUN_MIN_SCORE",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    dry_run_min_positive_rate = _read_decimal(
+        values.get("QUANT_QLIB_DRY_RUN_MIN_POSITIVE_RATE"),
+        default=DEFAULT_DRY_RUN_MIN_POSITIVE_RATE,
+        env_name="QUANT_QLIB_DRY_RUN_MIN_POSITIVE_RATE",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    dry_run_min_net_return_pct = _read_decimal(
+        values.get("QUANT_QLIB_DRY_RUN_MIN_NET_RETURN_PCT"),
+        default=DEFAULT_DRY_RUN_MIN_NET_RETURN_PCT,
+        env_name="QUANT_QLIB_DRY_RUN_MIN_NET_RETURN_PCT",
+    )
+    dry_run_min_sharpe = _read_decimal(
+        values.get("QUANT_QLIB_DRY_RUN_MIN_SHARPE"),
+        default=DEFAULT_DRY_RUN_MIN_SHARPE,
+        env_name="QUANT_QLIB_DRY_RUN_MIN_SHARPE",
+    )
+    dry_run_max_drawdown_pct = _read_decimal(
+        values.get("QUANT_QLIB_DRY_RUN_MAX_DRAWDOWN_PCT"),
+        default=DEFAULT_DRY_RUN_MAX_DRAWDOWN_PCT,
+        env_name="QUANT_QLIB_DRY_RUN_MAX_DRAWDOWN_PCT",
+        minimum=Decimal("0"),
+    )
+    dry_run_max_loss_streak = _read_int(
+        values.get("QUANT_QLIB_DRY_RUN_MAX_LOSS_STREAK"),
+        default=DEFAULT_DRY_RUN_MAX_LOSS_STREAK,
+        env_name="QUANT_QLIB_DRY_RUN_MAX_LOSS_STREAK",
+        minimum=1,
+    )
+    live_min_score = _read_decimal(
+        values.get("QUANT_QLIB_LIVE_MIN_SCORE"),
+        default=DEFAULT_LIVE_MIN_SCORE,
+        env_name="QUANT_QLIB_LIVE_MIN_SCORE",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    live_min_positive_rate = _read_decimal(
+        values.get("QUANT_QLIB_LIVE_MIN_POSITIVE_RATE"),
+        default=DEFAULT_LIVE_MIN_POSITIVE_RATE,
+        env_name="QUANT_QLIB_LIVE_MIN_POSITIVE_RATE",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    live_min_net_return_pct = _read_decimal(
+        values.get("QUANT_QLIB_LIVE_MIN_NET_RETURN_PCT"),
+        default=DEFAULT_LIVE_MIN_NET_RETURN_PCT,
+        env_name="QUANT_QLIB_LIVE_MIN_NET_RETURN_PCT",
+    )
 
     if require_explicit and not runtime_root_raw and not session_id:
         return _build_config(
@@ -92,6 +252,30 @@ def load_qlib_config(
             backtest_fee_bps=backtest_fee_bps,
             backtest_slippage_bps=backtest_slippage_bps,
             force_validation_top_candidate=force_validation_top_candidate,
+            selected_symbols=selected_symbols,
+            selected_timeframes=selected_timeframes,
+            sample_limit=sample_limit,
+            research_template=research_template,
+            primary_feature_columns=primary_feature_columns,
+            auxiliary_feature_columns=auxiliary_feature_columns,
+            outlier_policy=outlier_policy,
+            normalization_policy=normalization_policy,
+            label_mode=label_mode,
+            label_target_pct=label_target_pct,
+            label_stop_pct=label_stop_pct,
+            holding_window_min_days=holding_window_min_days,
+            holding_window_max_days=holding_window_max_days,
+            holding_window_label=holding_window_label,
+            model_key=model_key,
+            dry_run_min_score=dry_run_min_score,
+            dry_run_min_positive_rate=dry_run_min_positive_rate,
+            dry_run_min_net_return_pct=dry_run_min_net_return_pct,
+            dry_run_min_sharpe=dry_run_min_sharpe,
+            dry_run_max_drawdown_pct=dry_run_max_drawdown_pct,
+            dry_run_max_loss_streak=dry_run_max_loss_streak,
+            live_min_score=live_min_score,
+            live_min_positive_rate=live_min_positive_rate,
+            live_min_net_return_pct=live_min_net_return_pct,
         )
 
     if runtime_root_raw:
@@ -107,6 +291,30 @@ def load_qlib_config(
         backtest_fee_bps=backtest_fee_bps,
         backtest_slippage_bps=backtest_slippage_bps,
         force_validation_top_candidate=force_validation_top_candidate,
+        selected_symbols=selected_symbols,
+        selected_timeframes=selected_timeframes,
+        sample_limit=sample_limit,
+        research_template=research_template,
+        primary_feature_columns=primary_feature_columns,
+        auxiliary_feature_columns=auxiliary_feature_columns,
+        outlier_policy=outlier_policy,
+        normalization_policy=normalization_policy,
+        label_mode=label_mode,
+        label_target_pct=label_target_pct,
+        label_stop_pct=label_stop_pct,
+        holding_window_min_days=holding_window_min_days,
+        holding_window_max_days=holding_window_max_days,
+        holding_window_label=holding_window_label,
+        model_key=model_key,
+        dry_run_min_score=dry_run_min_score,
+        dry_run_min_positive_rate=dry_run_min_positive_rate,
+        dry_run_min_net_return_pct=dry_run_min_net_return_pct,
+        dry_run_min_sharpe=dry_run_min_sharpe,
+        dry_run_max_drawdown_pct=dry_run_max_drawdown_pct,
+        dry_run_max_loss_streak=dry_run_max_loss_streak,
+        live_min_score=live_min_score,
+        live_min_positive_rate=live_min_positive_rate,
+        live_min_net_return_pct=live_min_net_return_pct,
     )
 
 
@@ -118,6 +326,30 @@ def _build_config(
     backtest_fee_bps: Decimal,
     backtest_slippage_bps: Decimal,
     force_validation_top_candidate: bool,
+    selected_symbols: tuple[str, ...],
+    selected_timeframes: tuple[str, ...],
+    sample_limit: int,
+    research_template: str,
+    primary_feature_columns: tuple[str, ...],
+    auxiliary_feature_columns: tuple[str, ...],
+    outlier_policy: str,
+    normalization_policy: str,
+    label_mode: str,
+    label_target_pct: Decimal,
+    label_stop_pct: Decimal,
+    holding_window_min_days: int,
+    holding_window_max_days: int,
+    holding_window_label: str,
+    model_key: str,
+    dry_run_min_score: Decimal,
+    dry_run_min_positive_rate: Decimal,
+    dry_run_min_net_return_pct: Decimal,
+    dry_run_min_sharpe: Decimal,
+    dry_run_max_drawdown_pct: Decimal,
+    dry_run_max_loss_streak: int,
+    live_min_score: Decimal,
+    live_min_positive_rate: Decimal,
+    live_min_net_return_pct: Decimal,
 ) -> QlibRuntimeConfig:
     """构造配置对象。"""
 
@@ -144,11 +376,42 @@ def _build_config(
         backtest_slippage_bps=backtest_slippage_bps,
         force_validation_top_candidate=force_validation_top_candidate,
         research_data_layer="feature-ready",
+        selected_symbols=selected_symbols,
+        selected_timeframes=selected_timeframes,
+        sample_limit=sample_limit,
+        research_template=research_template,
+        primary_feature_columns=primary_feature_columns,
+        auxiliary_feature_columns=auxiliary_feature_columns,
+        outlier_policy=outlier_policy,
+        normalization_policy=normalization_policy,
+        label_mode=label_mode,
+        label_target_pct=label_target_pct,
+        label_stop_pct=label_stop_pct,
+        holding_window_min_days=holding_window_min_days,
+        holding_window_max_days=holding_window_max_days,
+        holding_window_label=holding_window_label,
+        model_key=model_key,
+        dry_run_min_score=dry_run_min_score,
+        dry_run_min_positive_rate=dry_run_min_positive_rate,
+        dry_run_min_net_return_pct=dry_run_min_net_return_pct,
+        dry_run_min_sharpe=dry_run_min_sharpe,
+        dry_run_max_drawdown_pct=dry_run_max_drawdown_pct,
+        dry_run_max_loss_streak=dry_run_max_loss_streak,
+        live_min_score=live_min_score,
+        live_min_positive_rate=live_min_positive_rate,
+        live_min_net_return_pct=live_min_net_return_pct,
         paths=paths,
     )
 
 
-def _read_decimal(value: str | None, *, default: Decimal, env_name: str) -> Decimal:
+def _read_decimal(
+    value: str | None,
+    *,
+    default: Decimal,
+    env_name: str,
+    minimum: Decimal | None = None,
+    maximum: Decimal | None = None,
+) -> Decimal:
     """读取回测配置里的十进制值。"""
 
     raw = str(value or "").strip()
@@ -158,6 +421,91 @@ def _read_decimal(value: str | None, *, default: Decimal, env_name: str) -> Deci
         parsed = Decimal(raw)
     except InvalidOperation as exc:
         raise ValueError(f"{env_name} 必须是数字") from exc
-    if parsed < 0:
-        raise ValueError(f"{env_name} 不能小于 0")
+    if minimum is not None and parsed < minimum:
+        raise ValueError(f"{env_name} 不能小于 {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{env_name} 不能大于 {maximum}")
     return parsed
+
+
+def _read_int(value: str | None, *, default: int, env_name: str, minimum: int = 0) -> int:
+    """读取整型配置。"""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{env_name} 必须是整数") from exc
+    if parsed < minimum:
+        raise ValueError(f"{env_name} 不能小于 {minimum}")
+    return parsed
+
+
+def _read_symbol_list(value: str | None) -> tuple[str, ...]:
+    """读取标的列表。"""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return ()
+    items: list[str] = []
+    seen: set[str] = set()
+    for item in raw.split(","):
+        normalized = item.strip().upper()
+        if not normalized:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        items.append(normalized)
+    return tuple(items)
+
+
+def _read_research_template(value: str | None) -> str:
+    """读取研究模板。"""
+
+    normalized = str(value or "").strip() or DEFAULT_RESEARCH_TEMPLATE
+    if normalized not in SUPPORTED_RESEARCH_TEMPLATES:
+        return DEFAULT_RESEARCH_TEMPLATE
+    return normalized
+
+
+def _read_timeframe_list(value: str | None) -> tuple[str, ...]:
+    """读取研究周期列表。"""
+
+    if value is None:
+        return ("4h", "1h")
+    raw = str(value).strip()
+    if not raw:
+        return ()
+    items = [item.strip() for item in raw.split(",") if item.strip() in {"1h", "4h"}]
+    deduplicated: list[str] = []
+    for item in items:
+        if item not in deduplicated:
+            deduplicated.append(item)
+    return tuple(deduplicated)
+
+
+def _read_name_list(value: str | None, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    """读取名字列表。"""
+
+    if value is None:
+        return default
+    raw = str(value).strip()
+    if not raw:
+        return ()
+    items: list[str] = []
+    for item in raw.split(","):
+        normalized = item.strip()
+        if not normalized or normalized in items:
+            continue
+        items.append(normalized)
+    return tuple(items)
+
+
+def _read_choice(value: str | None, *, default: str, allowed: tuple[str, ...]) -> str:
+    """读取枚举配置。"""
+
+    normalized = str(value or "").strip()
+    return normalized if normalized in allowed else default

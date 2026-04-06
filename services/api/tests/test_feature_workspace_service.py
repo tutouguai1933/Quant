@@ -14,7 +14,7 @@ from services.api.app.services.feature_workspace_service import FeatureWorkspace
 
 class FeatureWorkspaceServiceTests(unittest.TestCase):
     def test_workspace_returns_factor_protocol_summary(self) -> None:
-        service = FeatureWorkspaceService(research_reader=_FakeResearchService())
+        service = FeatureWorkspaceService(research_reader=_FakeResearchService(), controls_builder=_fake_controls)
 
         item = service.get_workspace()
 
@@ -25,11 +25,16 @@ class FeatureWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("ema20_gap_pct", item["roles"]["primary"])
         self.assertIn("rsi14", item["roles"]["auxiliary"])
         self.assertEqual(item["preprocessing"]["missing_policy"], "坏行直接丢弃")
+        self.assertEqual(item["controls"]["outlier_policy"], "clip")
+        self.assertEqual(item["controls"]["normalization_policy"], "fixed_4dp")
+        self.assertIn("raw", item["controls"]["available_outlier_policies"])
+        self.assertIn("zscore_by_symbol", item["controls"]["available_normalization_policies"])
         self.assertIn("4h", item["timeframe_profiles"])
         self.assertEqual(item["factors"][0]["name"], "ema20_gap_pct")
+        self.assertIn("controls", item)
 
     def test_workspace_handles_missing_factor_protocol(self) -> None:
-        service = FeatureWorkspaceService(research_reader=_UnavailableResearchService())
+        service = FeatureWorkspaceService(research_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
 
         item = service.get_workspace()
 
@@ -39,7 +44,7 @@ class FeatureWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["categories"], {})
 
     def test_workspace_uses_factor_protocol_as_ready_signal(self) -> None:
-        service = FeatureWorkspaceService(research_reader=_ProtocolOnlyResearchService())
+        service = FeatureWorkspaceService(research_reader=_ProtocolOnlyResearchService(), controls_builder=_fake_controls)
 
         item = service.get_workspace()
 
@@ -105,6 +110,25 @@ class _ProtocolOnlyResearchService:
                 ],
             },
         }
+
+
+def _fake_controls() -> dict[str, object]:
+    return {
+        "config": {
+            "features": {
+                "primary_factors": ["ema20_gap_pct", "ema55_gap_pct"],
+                "auxiliary_factors": ["rsi14"],
+                "outlier_policy": "clip",
+                "normalization_policy": "fixed_4dp",
+            }
+        },
+        "options": {
+            "primary_factors": ["ema20_gap_pct", "ema55_gap_pct"],
+            "auxiliary_factors": ["rsi14", "atr_pct"],
+            "outlier_policies": ["clip", "raw"],
+            "normalization_policies": ["fixed_4dp", "zscore_by_symbol"],
+        },
+    }
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from services.api.app.routes.risk_events import router as risk_events_router
 from services.api.app.routes.signals import router as signals_router
 from services.api.app.routes.strategies import router as strategies_router
 from services.api.app.routes.tasks import router as tasks_router
+from services.api.app.routes.workbench_config import router as workbench_config_router
 
 
 app = FastAPI(
@@ -62,6 +63,8 @@ app.include_router(data_workspace_router)
 app.include_router(feature_workspace_router)
 app.routers.append(data_workspace_router)  # type: ignore[attr-defined]
 app.routers.append(feature_workspace_router)  # type: ignore[attr-defined]
+app.include_router(workbench_config_router)
+app.routers.append(workbench_config_router)  # type: ignore[attr-defined]
 app.include_router(research_workspace_router)
 app.routers.append(research_workspace_router)  # type: ignore[attr-defined]
 app.include_router(market_router)

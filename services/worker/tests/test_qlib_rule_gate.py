@@ -70,6 +70,20 @@ class QlibRuleGateTests(unittest.TestCase):
         self.assertTrue(decision["allowed"])
         self.assertEqual(decision["reason"], "ready")
 
+    def test_rule_gate_uses_stricter_thresholds_for_strict_template(self) -> None:
+        decision = evaluate_rule_gate(
+            {
+                "ema20_gap_pct": "1.1000",
+                "ema55_gap_pct": "1.7000",
+                "atr_pct": "4.7000",
+                "volume_ratio": "1.0200",
+            },
+            research_template="single_asset_timing_strict",
+        )
+
+        self.assertFalse(decision["allowed"])
+        self.assertEqual(decision["reason"], "strict_template_not_confirmed")
+
 
 if __name__ == "__main__":
     unittest.main()

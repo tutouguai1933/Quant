@@ -18,6 +18,7 @@ class DataWorkspaceServiceTests(unittest.TestCase):
             research_reader=_FakeResearchService(),
             market_reader=_FakeMarketService(),
             whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            controls_builder=_fake_controls,
         )
 
         item = service.get_workspace(symbol="ETHUSDT", interval="4h", limit=120)
@@ -33,12 +34,14 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("first_open_time", item["preview"])
         self.assertIn("last_close_time", item["preview"])
         self.assertEqual(item["symbols"][0]["symbol"], "BTCUSDT")
+        self.assertIn("controls", item)
 
     def test_workspace_degrades_cleanly_when_research_is_unavailable(self) -> None:
         service = DataWorkspaceService(
             research_reader=_UnavailableResearchService(),
             market_reader=_FakeMarketService(),
             whitelist_provider=lambda: ["BTCUSDT"],
+            controls_builder=_fake_controls,
         )
 
         item = service.get_workspace(symbol="BTCUSDT", interval="1h", limit=50)
@@ -52,6 +55,7 @@ class DataWorkspaceServiceTests(unittest.TestCase):
             research_reader=_FakeResearchService(),
             market_reader=_BrokenMarketService(),
             whitelist_provider=lambda: ["BTCUSDT"],
+            controls_builder=_fake_controls,
         )
 
         item = service.get_workspace(symbol="BTCUSDT", interval="4h", limit=80)
@@ -66,6 +70,7 @@ class DataWorkspaceServiceTests(unittest.TestCase):
             research_reader=_FakeResearchService(),
             market_reader=_FakeMarketService(),
             whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            controls_builder=_fake_controls,
         )
 
         item = service.get_workspace(symbol="DOGEUSDT", interval="12h", limit=10)
@@ -152,6 +157,19 @@ class _FakeMarketService:
 class _BrokenMarketService:
     def get_symbol_chart(self, symbol: str, interval: str, limit: int, allowed_symbols: tuple[str, ...]) -> dict[str, object]:
         raise RuntimeError("preview unavailable")
+
+
+def _fake_controls() -> dict[str, object]:
+    return {
+        "config": {
+            "data": {
+                "selected_symbols": ["BTCUSDT", "ETHUSDT"],
+                "primary_symbol": "BTCUSDT",
+                "timeframes": ["4h", "1h"],
+                "sample_limit": 120,
+            }
+        }
+    }
 
 
 if __name__ == "__main__":

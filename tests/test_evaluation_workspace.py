@@ -24,7 +24,13 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("推荐原因", content)
         self.assertIn("淘汰原因", content)
         self.assertIn("样本外稳定性", content)
+        self.assertIn("研究与执行对齐", content)
+        self.assertIn("实验对照", content)
+        self.assertIn("当前结果与配置对齐", content)
+        self.assertIn("工作台暂时不可用", content)
         self.assertIn("进入 dry-run", content)
+        self.assertIn("准入门槛配置", content)
+        self.assertIn("live_min_score", content)
 
 
 if __name__ == "__main__":

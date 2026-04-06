@@ -32,6 +32,14 @@ def build_dataset_bundle(
     symbol: str,
     candles_1h: list[dict[str, object]],
     candles_4h: list[dict[str, object]],
+    label_mode: str = "earliest_hit",
+    outlier_policy: str = "clip",
+    normalization_policy: str = "fixed_4dp",
+    label_target_pct=None,
+    label_stop_pct=None,
+    min_window_days: int = 1,
+    max_window_days: int = 3,
+    holding_window_label: str = "1-3d",
 ) -> DatasetBundle:
     """把输入 K 线整理成训练、验证、测试三段数据。"""
 
@@ -51,6 +59,14 @@ def build_dataset_bundle(
                 symbol=standardized_symbol,
                 timeframe=timeframe,
                 candles=candles,
+                label_mode=label_mode,
+                outlier_policy=outlier_policy,
+                normalization_policy=normalization_policy,
+                label_target_pct=label_target_pct,
+                label_stop_pct=label_stop_pct,
+                min_window_days=min_window_days,
+                max_window_days=max_window_days,
+                holding_window_label=holding_window_label,
             )
         except RuntimeError as exc:
             if str(exc) != "样本不足以切成训练/验证/测试三段":
@@ -67,11 +83,33 @@ def _build_dataset_bundle_for_candles(
     symbol: str,
     timeframe: str,
     candles: list[dict[str, object]],
+    label_mode: str = "earliest_hit",
+    outlier_policy: str = "clip",
+    normalization_policy: str = "fixed_4dp",
+    label_target_pct=None,
+    label_stop_pct=None,
+    min_window_days: int = 1,
+    max_window_days: int = 3,
+    holding_window_label: str = "1-3d",
 ) -> DatasetBundle:
     """把单个周期的 K 线整理成可切分的数据包。"""
 
-    feature_rows = build_feature_rows(symbol, candles)
-    label_rows = build_label_rows(symbol, candles)
+    feature_rows = build_feature_rows(
+        symbol,
+        candles,
+        outlier_policy=outlier_policy,
+        normalization_policy=normalization_policy,
+    )
+    label_rows = build_label_rows(
+        symbol,
+        candles,
+        label_mode=label_mode,
+        target_return_pct=label_target_pct,
+        stop_return_pct=label_stop_pct,
+        min_window_days=min_window_days,
+        max_window_days=max_window_days,
+        holding_window_label=holding_window_label,
+    )
     merged_rows = _merge_feature_and_label_rows(feature_rows, label_rows)
     if len(merged_rows) < 3:
         raise RuntimeError("样本不足以切成训练/验证/测试三段")

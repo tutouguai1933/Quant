@@ -186,6 +186,14 @@ export type DataWorkspaceModel = {
     research: string;
     market: string;
   };
+  controls: {
+    selected_symbols: string[];
+    primary_symbol: string;
+    timeframes: string[];
+    sample_limit: number;
+    available_symbols: string[];
+    available_timeframes: string[];
+  };
   snapshot: {
     snapshot_id: string;
     cache_signature: string;
@@ -313,6 +321,8 @@ export type ResearchCandidateItem = {
   backtest: { metrics: Record<string, string> };
   dry_run_gate: { status: string; reasons: string[] };
   allowed_to_dry_run: boolean;
+  live_gate?: { status: string; reasons: string[] };
+  allowed_to_live?: boolean;
   review_status: string;
   next_action: string;
   forced_for_validation: boolean;
@@ -339,8 +349,10 @@ export type ResearchRecommendation = {
   symbol: string;
   score: string;
   allowed_to_dry_run: boolean;
+  allowed_to_live?: boolean;
   strategy_template: string;
   dry_run_gate: { status: string; reasons: string[] };
+  live_gate?: { status: string; reasons: string[] };
   next_action: string;
 };
 
@@ -386,6 +398,7 @@ export type ResearchRuntimeStatusModel = {
 export type FeatureWorkspaceModel = {
   status: string;
   backend: string;
+  config_alignment?: Record<string, unknown>;
   overview: {
     feature_version: string;
     factor_count: number;
@@ -397,6 +410,16 @@ export type FeatureWorkspaceModel = {
   roles: {
     primary: string[];
     auxiliary: string[];
+  };
+  controls: {
+    primary_factors: string[];
+    auxiliary_factors: string[];
+    outlier_policy: string;
+    normalization_policy: string;
+    available_primary_factors: string[];
+    available_auxiliary_factors: string[];
+    available_outlier_policies: string[];
+    available_normalization_policies: string[];
   };
   preprocessing: {
     missing_policy: string;
@@ -415,6 +438,7 @@ export type FeatureWorkspaceModel = {
 export type ResearchWorkspaceModel = {
   status: string;
   backend: string;
+  config_alignment?: Record<string, unknown>;
   overview: {
     holding_window: string;
     candidate_count: number;
@@ -424,12 +448,26 @@ export type ResearchWorkspaceModel = {
   strategy_templates: string[];
   labeling: {
     label_columns: string[];
+    label_mode: string;
     definition: string;
   };
   sample_window: Record<string, Record<string, unknown>>;
   model: {
     model_version: string;
     backend: string;
+  };
+  controls: {
+    research_template: string;
+    model_key: string;
+    label_mode: string;
+    holding_window_label: string;
+    min_holding_days: number;
+    max_holding_days: number;
+    label_target_pct: string;
+    label_stop_pct: string;
+    available_models: string[];
+    available_research_templates: string[];
+    available_label_modes: string[];
   };
   parameters: Record<string, string>;
   selectors: {
@@ -447,6 +485,10 @@ export type BacktestWorkspaceModel = {
     recommended_symbol: string;
   };
   assumptions: Record<string, string>;
+  controls: {
+    fee_bps: string;
+    slippage_bps: string;
+  };
   training_backtest: {
     metrics: Record<string, string>;
   };
@@ -460,15 +502,29 @@ export type BacktestWorkspaceModel = {
 export type EvaluationWorkspaceModel = {
   status: string;
   backend: string;
+  config_alignment?: Record<string, unknown>;
   overview: {
     recommended_symbol: string;
     recommended_action: string;
     candidate_count: number;
   };
+  controls: {
+    dry_run_min_score: string;
+    dry_run_min_positive_rate: string;
+    dry_run_min_net_return_pct: string;
+    dry_run_min_sharpe: string;
+    dry_run_max_drawdown_pct: string;
+    dry_run_max_loss_streak: string;
+    live_min_score: string;
+    live_min_positive_rate: string;
+    live_min_net_return_pct: string;
+  };
   evaluation: Record<string, unknown>;
   reviews: Record<string, unknown>;
   leaderboard: Array<Record<string, unknown>>;
   recent_runs: Array<Record<string, unknown>>;
+  experiment_comparison: Array<Record<string, unknown>>;
+  execution_alignment: Record<string, unknown>;
 };
 
 export type ValidationReviewItem = {
@@ -514,17 +570,79 @@ export type LoginPageModel = {
   protectedPages: string[];
 };
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
-const API_BASE_URL = (process.env.QUANT_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
 const WEB_PROXY_BASE_URL = "/api/control";
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
 const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
+
+async function resolveControlPlaneBaseUrl(): Promise<string> {
+  if (typeof window !== "undefined") {
+    return WEB_PROXY_BASE_URL;
+  }
+
+  try {
+    const { headers } = await import("next/headers");
+    const requestHeaders = await headers();
+    const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "";
+    const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
+    if (host) {
+      return `${protocol}://${host}${WEB_PROXY_BASE_URL}`;
+    }
+  } catch {
+    // 服务端无法读取当前请求头时，回退到显式 API 基址。
+  }
+
+  return buildUpstreamApiUrl("/");
+}
+
+export async function resolveControlPlaneUrl(path: string): Promise<string> {
+  const baseUrl = await resolveControlPlaneBaseUrl();
+  return `${baseUrl}${path}`;
+}
+
+function deriveLocalApiBaseUrl(request?: Request): string | null {
+  if (!request) {
+    return null;
+  }
+
+  try {
+    const currentUrl = new URL(request.url);
+    if (!isLoopbackHost(currentUrl.hostname)) {
+      return null;
+    }
+    const webPort = Number(currentUrl.port || "0");
+    if (!Number.isFinite(webPort) || webPort <= 1) {
+      return null;
+    }
+    return `${currentUrl.protocol}//${currentUrl.hostname}:${webPort - 1}/api/v1`;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "::1";
+}
+
+/* 构建服务端直连控制面 API 地址。 */
+export function buildUpstreamApiUrl(path: string, request?: Request): string {
+  const configuredBaseUrl = (process.env.QUANT_API_BASE_URL ?? deriveLocalApiBaseUrl(request) ?? DEFAULT_API_BASE_URL).replace(
+    /\/$/,
+    "",
+  );
+  return `${configuredBaseUrl}${path}`;
+}
+
+/* 构建当前主机下的控制代理地址。 */
+export function buildProxyUrl(request: Request, path: string): string {
+  return new URL(`${WEB_PROXY_BASE_URL}${path}`, request.url).toString();
+}
 
 export function buildApiUrl(path: string): string {
   if (typeof window !== "undefined") {
     return `${WEB_PROXY_BASE_URL}${path}`;
   }
-  return `${API_BASE_URL}${path}`;
+  return buildUpstreamApiUrl(path);
 }
 
 export function buildAuthHeaders(token?: string): HeadersInit {
@@ -539,7 +657,7 @@ export function isProtectedRoute(path: string): boolean {
 }
 
 export async function fetchJson<T>(path: string, token?: string): Promise<ApiEnvelope<T>> {
-  const response = await fetch(buildApiUrl(path), {
+  const response = await fetch(await resolveControlPlaneUrl(path), {
     headers: buildAuthHeaders(token),
     cache: "no-store",
   });
@@ -551,7 +669,7 @@ export async function loginAdmin(
   username: string,
   password: string,
 ): Promise<ApiEnvelope<{ item: { token: string; username: string; scope: string } }>> {
-  const response = await fetch(buildApiUrl("/auth/login"), {
+  const response = await fetch(await resolveControlPlaneUrl("/auth/login"), {
     method: "POST",
     headers: {
       ...buildAuthHeaders(),
@@ -573,7 +691,7 @@ export async function getAdminSession(
 export async function logoutAdmin(
   token: string,
 ): Promise<ApiEnvelope<{ item: { token: string; status: string } }>> {
-  const response = await fetch(buildApiUrl(`/auth/logout?token=${token}`), {
+  const response = await fetch(await resolveControlPlaneUrl(`/auth/logout?token=${token}`), {
     method: "POST",
     headers: buildAuthHeaders(token),
     cache: "no-store",
@@ -1126,6 +1244,14 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
       available_symbols: [],
       available_intervals: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
     },
+    controls: {
+      selected_symbols: [String(symbol ?? "").trim() || "BTCUSDT"],
+      primary_symbol: String(symbol ?? "").trim() || "BTCUSDT",
+      timeframes: [String(interval ?? "").trim() || "4h", "1h"],
+      sample_limit: typeof limit === "number" && Number.isFinite(limit) ? limit : 200,
+      available_symbols: [],
+      available_timeframes: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
+    },
     sources: {
       research: "qlib-fallback",
       market: "binance",
@@ -1160,6 +1286,7 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
   return {
     status: "unavailable",
     backend: "qlib-fallback",
+    config_alignment: {},
     overview: {
       feature_version: "",
       factor_count: 0,
@@ -1171,6 +1298,16 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
     roles: {
       primary: [],
       auxiliary: [],
+    },
+    controls: {
+      primary_factors: [],
+      auxiliary_factors: [],
+      outlier_policy: "clip",
+      normalization_policy: "fixed_4dp",
+      available_primary_factors: [],
+      available_auxiliary_factors: [],
+      available_outlier_policies: ["clip", "raw"],
+      available_normalization_policies: ["fixed_4dp", "zscore_by_symbol"],
     },
     preprocessing: {
       missing_policy: "",
@@ -1186,6 +1323,7 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
   return {
     status: "unavailable",
     backend: "qlib-fallback",
+    config_alignment: {},
     overview: {
       holding_window: "",
       candidate_count: 0,
@@ -1195,12 +1333,26 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
     strategy_templates: [],
     labeling: {
       label_columns: [],
+      label_mode: "earliest_hit",
       definition: "",
     },
     sample_window: {},
     model: {
       model_version: "",
       backend: "qlib-fallback",
+    },
+    controls: {
+      research_template: "single_asset_timing",
+      model_key: "heuristic_v1",
+      label_mode: "earliest_hit",
+      holding_window_label: "1-3d",
+      min_holding_days: 1,
+      max_holding_days: 3,
+      label_target_pct: "1",
+      label_stop_pct: "-1",
+      available_models: ["heuristic_v1", "trend_bias_v2"],
+      available_research_templates: ["single_asset_timing", "single_asset_timing_strict"],
+      available_label_modes: ["earliest_hit", "close_only"],
     },
     parameters: {},
     selectors: {
@@ -1220,6 +1372,10 @@ export function getBacktestWorkspaceFallback(): BacktestWorkspaceModel {
       recommended_symbol: "",
     },
     assumptions: {},
+    controls: {
+      fee_bps: "10",
+      slippage_bps: "5",
+    },
     training_backtest: {
       metrics: {},
     },
@@ -1236,10 +1392,23 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       recommended_action: "",
       candidate_count: 0,
     },
+    controls: {
+      dry_run_min_score: "0.55",
+      dry_run_min_positive_rate: "0.45",
+      dry_run_min_net_return_pct: "0",
+      dry_run_min_sharpe: "0.5",
+      dry_run_max_drawdown_pct: "15",
+      dry_run_max_loss_streak: "3",
+      live_min_score: "0.65",
+      live_min_positive_rate: "0.50",
+      live_min_net_return_pct: "0.20",
+    },
     evaluation: {},
     reviews: {},
     leaderboard: [],
     recent_runs: [],
+    experiment_comparison: [],
+    execution_alignment: {},
   };
 }
 
@@ -1323,6 +1492,7 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const filters = isPlainObject(row.filters) ? row.filters : {};
   const sources = isPlainObject(row.sources) ? row.sources : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
   const snapshot = isPlainObject(row.snapshot) ? row.snapshot : {};
   const preview = isPlainObject(row.preview) ? row.preview : {};
   const trainingWindow = isPlainObject(row.training_window) ? row.training_window : {};
@@ -1337,6 +1507,14 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       limit: Number(filters.limit ?? 0),
       available_symbols: normalizeStringArray(filters.available_symbols, []),
       available_intervals: normalizeStringArray(filters.available_intervals, ["1h", "4h", "1d"]),
+    },
+    controls: {
+      selected_symbols: normalizeStringArray(controls.selected_symbols, []),
+      primary_symbol: String(controls.primary_symbol ?? ""),
+      timeframes: normalizeStringArray(controls.timeframes, []),
+      sample_limit: Number(controls.sample_limit ?? 120),
+      available_symbols: normalizeStringArray(controls.available_symbols, []),
+      available_timeframes: normalizeStringArray(controls.available_timeframes, []),
     },
     sources: {
       research: String(sources.research ?? "qlib-fallback"),
@@ -1379,6 +1557,7 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
 function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
   const roles = isPlainObject(row.roles) ? row.roles : {};
   const preprocessing = isPlainObject(row.preprocessing) ? row.preprocessing : {};
   const categories = isPlainObject(row.categories) ? row.categories : {};
@@ -1388,6 +1567,7 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
   return {
     status: String(row.status ?? "unavailable"),
     backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
     overview: {
       feature_version: String(overview.feature_version ?? ""),
       factor_count: Number(overview.factor_count ?? 0),
@@ -1401,6 +1581,16 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
     roles: {
       primary: normalizeStringArray(roles.primary, []),
       auxiliary: normalizeStringArray(roles.auxiliary, []),
+    },
+    controls: {
+      primary_factors: normalizeStringArray(controls.primary_factors, []),
+      auxiliary_factors: normalizeStringArray(controls.auxiliary_factors, []),
+      outlier_policy: String(controls.outlier_policy ?? ""),
+      normalization_policy: String(controls.normalization_policy ?? ""),
+      available_primary_factors: normalizeStringArray(controls.available_primary_factors, []),
+      available_auxiliary_factors: normalizeStringArray(controls.available_auxiliary_factors, []),
+      available_outlier_policies: normalizeStringArray(controls.available_outlier_policies, []),
+      available_normalization_policies: normalizeStringArray(controls.available_normalization_policies, []),
     },
     preprocessing: {
       missing_policy: String(preprocessing.missing_policy ?? ""),
@@ -1427,6 +1617,7 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
 function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
   const labeling = isPlainObject(row.labeling) ? row.labeling : {};
   const model = isPlainObject(row.model) ? row.model : {};
   const selectors = isPlainObject(row.selectors) ? row.selectors : {};
@@ -1436,6 +1627,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
   return {
     status: String(row.status ?? "unavailable"),
     backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
     overview: {
       holding_window: String(overview.holding_window ?? ""),
       candidate_count: Number(overview.candidate_count ?? 0),
@@ -1445,6 +1637,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
     strategy_templates: normalizeStringArray(row.strategy_templates, []),
     labeling: {
       label_columns: normalizeStringArray(labeling.label_columns, []),
+      label_mode: String(labeling.label_mode ?? ""),
       definition: String(labeling.definition ?? ""),
     },
     sample_window: Object.fromEntries(
@@ -1453,6 +1646,19 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
     model: {
       model_version: String(model.model_version ?? ""),
       backend: String(model.backend ?? "qlib-fallback"),
+    },
+    controls: {
+      research_template: String(controls.research_template ?? ""),
+      model_key: String(controls.model_key ?? ""),
+      label_mode: String(controls.label_mode ?? ""),
+      holding_window_label: String(controls.holding_window_label ?? ""),
+      min_holding_days: Number(controls.min_holding_days ?? 1),
+      max_holding_days: Number(controls.max_holding_days ?? 3),
+      label_target_pct: String(controls.label_target_pct ?? ""),
+      label_stop_pct: String(controls.label_stop_pct ?? ""),
+      available_models: normalizeStringArray(controls.available_models, []),
+      available_research_templates: normalizeStringArray(controls.available_research_templates, []),
+      available_label_modes: normalizeStringArray(controls.available_label_modes, []),
     },
     parameters: Object.fromEntries(
       Object.entries(parameters).map(([name, value]) => [String(name), String(value ?? "")]),
@@ -1467,6 +1673,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
 function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
   const assumptions = isPlainObject(row.assumptions) ? row.assumptions : {};
   const trainingBacktest = isPlainObject(row.training_backtest) ? row.training_backtest : {};
   const metrics = isPlainObject(trainingBacktest.metrics) ? trainingBacktest.metrics : {};
@@ -1483,6 +1690,10 @@ function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel 
     assumptions: Object.fromEntries(
       Object.entries(assumptions).map(([name, value]) => [String(name), String(value ?? "")]),
     ),
+    controls: {
+      fee_bps: String(controls.fee_bps ?? ""),
+      slippage_bps: String(controls.slippage_bps ?? ""),
+    },
     training_backtest: {
       metrics: Object.fromEntries(
         Object.entries(metrics).map(([name, value]) => [String(name), String(value ?? "")]),
@@ -1507,19 +1718,34 @@ function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel 
 function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceModel {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
 
   return {
     status: String(row.status ?? "unavailable"),
     backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
     overview: {
       recommended_symbol: String(overview.recommended_symbol ?? ""),
       recommended_action: String(overview.recommended_action ?? ""),
       candidate_count: Number(overview.candidate_count ?? 0),
     },
+    controls: {
+      dry_run_min_score: String(controls.dry_run_min_score ?? ""),
+      dry_run_min_positive_rate: String(controls.dry_run_min_positive_rate ?? ""),
+      dry_run_min_net_return_pct: String(controls.dry_run_min_net_return_pct ?? ""),
+      dry_run_min_sharpe: String(controls.dry_run_min_sharpe ?? ""),
+      dry_run_max_drawdown_pct: String(controls.dry_run_max_drawdown_pct ?? ""),
+      dry_run_max_loss_streak: String(controls.dry_run_max_loss_streak ?? ""),
+      live_min_score: String(controls.live_min_score ?? ""),
+      live_min_positive_rate: String(controls.live_min_positive_rate ?? ""),
+      live_min_net_return_pct: String(controls.live_min_net_return_pct ?? ""),
+    },
     evaluation: isPlainObject(row.evaluation) ? row.evaluation : {},
     reviews: isPlainObject(row.reviews) ? row.reviews : {},
     leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
     recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
+    experiment_comparison: Array.isArray(row.experiment_comparison) ? row.experiment_comparison.filter(isPlainObject) : [],
+    execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
   };
 }
 
@@ -1691,14 +1917,20 @@ function normalizeResearchRecommendation(item: unknown): ResearchRecommendation 
     return null;
   }
   const gateRow: Record<string, unknown> = isPlainObject(row.dry_run_gate) ? row.dry_run_gate : {};
+  const liveGateRow: Record<string, unknown> = isPlainObject(row.live_gate) ? row.live_gate : {};
   return {
     symbol,
     score: String(row.score ?? ""),
     allowed_to_dry_run: Boolean(row.allowed_to_dry_run),
+    allowed_to_live: Boolean(row.allowed_to_live),
     strategy_template: String(row.strategy_template ?? ""),
     dry_run_gate: {
       status: String(gateRow.status ?? "unavailable"),
       reasons: normalizeStringArray(gateRow.reasons, []),
+    },
+    live_gate: {
+      status: String(liveGateRow.status ?? "unavailable"),
+      reasons: normalizeStringArray(liveGateRow.reasons, []),
     },
     next_action: String(row.next_action ?? ""),
   };
@@ -1887,6 +2119,7 @@ function normalizeResearchCandidateItem(item: unknown): ResearchCandidateItem | 
   const backtestRow: Record<string, unknown> = isPlainObject(row.backtest) ? row.backtest : {};
   const metricsRow: Record<string, unknown> = isPlainObject(backtestRow.metrics) ? backtestRow.metrics : {};
   const gateRow: Record<string, unknown> = isPlainObject(row.dry_run_gate) ? row.dry_run_gate : {};
+  const liveGateRow: Record<string, unknown> = isPlainObject(row.live_gate) ? row.live_gate : {};
   return {
     rank: Number(row.rank ?? 0),
     symbol,
@@ -1900,6 +2133,11 @@ function normalizeResearchCandidateItem(item: unknown): ResearchCandidateItem | 
       reasons: normalizeStringArray(gateRow.reasons, []),
     },
     allowed_to_dry_run: Boolean(row.allowed_to_dry_run),
+    live_gate: {
+      status: String(liveGateRow.status ?? "unavailable"),
+      reasons: normalizeStringArray(liveGateRow.reasons, []),
+    },
+    allowed_to_live: Boolean(row.allowed_to_live),
     review_status: String(row.review_status ?? ""),
     next_action: String(row.next_action ?? ""),
     forced_for_validation: Boolean(row.forced_for_validation),

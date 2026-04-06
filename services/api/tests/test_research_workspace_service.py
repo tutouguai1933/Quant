@@ -14,7 +14,7 @@ from services.api.app.services.research_workspace_service import ResearchWorkspa
 
 class ResearchWorkspaceServiceTests(unittest.TestCase):
     def test_workspace_returns_research_context(self) -> None:
-        service = ResearchWorkspaceService(report_reader=_FakeResearchService())
+        service = ResearchWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
 
         item = service.get_workspace()
 
@@ -24,11 +24,13 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["model"]["model_version"], "qlib-minimal-1")
         self.assertIn("trend_breakout_timing", item["strategy_templates"])
         self.assertEqual(item["labeling"]["label_columns"][0], "symbol")
+        self.assertEqual(item["labeling"]["label_mode"], "earliest_hit")
         self.assertEqual(item["sample_window"]["training"]["count"], 120)
         self.assertEqual(item["parameters"]["backtest_fee_bps"], "10")
+        self.assertIn("controls", item)
 
     def test_workspace_handles_missing_report(self) -> None:
-        service = ResearchWorkspaceService(report_reader=_UnavailableResearchService())
+        service = ResearchWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
 
         item = service.get_workspace()
 
@@ -77,6 +79,28 @@ class _FakeResearchService:
 class _UnavailableResearchService:
     def get_factory_report(self) -> dict[str, object]:
         return {"status": "unavailable"}
+
+
+def _fake_controls() -> dict[str, object]:
+    return {
+        "config": {
+            "research": {
+                "research_template": "single_asset_timing",
+                "model_key": "heuristic_v1",
+                "label_mode": "earliest_hit",
+                "holding_window_label": "1-3d",
+                "min_holding_days": 1,
+                "max_holding_days": 3,
+                "label_target_pct": "1",
+                "label_stop_pct": "-1",
+            }
+        },
+        "options": {
+            "models": ["heuristic_v1", "trend_bias_v2"],
+            "research_templates": ["single_asset_timing", "single_asset_timing_strict"],
+            "label_modes": ["earliest_hit", "close_only"],
+        },
+    }
 
 
 if __name__ == "__main__":

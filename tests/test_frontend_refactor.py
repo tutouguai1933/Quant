@@ -57,12 +57,17 @@ class FrontendRefactorTests(unittest.TestCase):
         actions_content = (WEB_APP / "actions" / "route.ts").read_text(encoding="utf-8")
         logout_content = (WEB_APP / "logout" / "route.ts").read_text(encoding="utf-8")
         redirect_helper = (REPO_ROOT / "apps" / "web" / "lib" / "redirect.ts").read_text(encoding="utf-8")
+        proxy_route = (WEB_APP / "api" / "control" / "[...path]" / "route.ts").read_text(encoding="utf-8")
 
         self.assertIn("buildRedirectUrl", actions_content)
         self.assertIn("buildRedirectUrl", logout_content)
+        self.assertIn("buildProxyUrl", actions_content)
         self.assertIn("x-forwarded-host", redirect_helper)
         self.assertIn("automation_dry_run_only", actions_content)
         self.assertIn("automation_kill_switch", actions_content)
+        self.assertIn("export async function POST", proxy_route)
+        self.assertIn("Authorization", proxy_route)
+        self.assertIn("buildUpstreamApiUrl", proxy_route)
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {

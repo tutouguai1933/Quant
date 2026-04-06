@@ -6,6 +6,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -33,6 +34,8 @@ export default async function DataPage({ searchParams }: PageProps) {
 
   const stateSummary = formatDataStates(workspace.snapshot.data_states);
   const sampleRows = buildSampleRows(workspace.training_window.sample_window);
+  const configEditable = workspace.status !== "unavailable";
+  const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
   return (
     <AppShell
@@ -103,6 +106,48 @@ export default async function DataPage({ searchParams }: PageProps) {
         </div>
 
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="数据范围配置"
+            description="这里改的是研究主链真正会消费的数据范围：标的、周期和样本长度。"
+            scope="data"
+            returnTo="/data"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="研究标的" hint="只勾选这轮真正要纳入训练、推理和回测的币种。">
+              <ConfigCheckboxGrid
+                name="selected_symbols"
+                options={workspace.controls.available_symbols.map((item) => ({
+                  value: item,
+                  label: item,
+                  checked: workspace.controls.selected_symbols.includes(item),
+                }))}
+              />
+            </ConfigField>
+            <ConfigField label="主标的" hint="数据工作台和后续入口会优先聚焦这个币。">
+              <ConfigSelect
+                name="primary_symbol"
+                defaultValue={workspace.controls.primary_symbol || workspace.filters.selected_symbol}
+                options={workspace.controls.available_symbols.map((item) => ({ value: item, label: item }))}
+              />
+            </ConfigField>
+            <ConfigField label="研究周期" hint="当前先支持 4h 和 1h，可以同时保留两层样本。">
+              <ConfigCheckboxGrid
+                name="timeframes"
+                options={workspace.controls.available_timeframes
+                  .filter((item) => item === "4h" || item === "1h")
+                  .map((item) => ({
+                    value: item,
+                    label: item,
+                    checked: workspace.controls.timeframes.includes(item),
+                  }))}
+              />
+            </ConfigField>
+            <ConfigField label="样本长度" hint="这会影响训练、推理和回测一共读取多少根 K 线。">
+              <ConfigInput name="sample_limit" type="number" min={60} step={10} defaultValue={String(workspace.controls.sample_limit)} />
+            </ConfigField>
+          </WorkbenchConfigCard>
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>当前筛选条件</CardTitle>

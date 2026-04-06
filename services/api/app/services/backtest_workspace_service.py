@@ -6,13 +6,15 @@
 from __future__ import annotations
 
 from services.api.app.services.research_service import research_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 
 class BacktestWorkspaceService:
     """聚合当前回测上下文。"""
 
-    def __init__(self, *, report_reader: object | None = None) -> None:
+    def __init__(self, *, report_reader: object | None = None, controls_builder=None) -> None:
         self._report_reader = report_reader or research_service
+        self._controls_builder = controls_builder or workbench_config_service.build_workspace_controls
 
     def get_workspace(self) -> dict[str, object]:
         """返回回测工作台统一模型。"""
@@ -23,6 +25,8 @@ class BacktestWorkspaceService:
         training_backtest = dict(latest_training.get("backtest") or {})
         assumptions = dict(training_backtest.get("assumptions") or {})
         metrics = dict(training_backtest.get("metrics") or {})
+        controls = self._controls_builder()
+        configured_backtest = dict((controls.get("config") or {}).get("backtest") or {})
         leaderboard = [
             {
                 "symbol": str(item.get("symbol", "")),
@@ -48,6 +52,10 @@ class BacktestWorkspaceService:
             "assumptions": {
                 str(name): str(value)
                 for name, value in assumptions.items()
+            },
+            "controls": {
+                "fee_bps": str(configured_backtest.get("fee_bps", "")),
+                "slippage_bps": str(configured_backtest.get("slippage_bps", "")),
             },
             "training_backtest": {
                 "metrics": {

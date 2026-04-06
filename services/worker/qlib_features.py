@@ -6,6 +6,19 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from statistics import mean, pstdev
+
+
+DEFAULT_OUTLIER_POLICY = "clip"
+DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
+OUTLIER_POLICY_LABELS = {
+    "clip": "按因子预设范围裁剪极值",
+    "raw": "保留原始极值",
+}
+NORMALIZATION_POLICY_LABELS = {
+    "fixed_4dp": "统一输出四位小数字符串",
+    "zscore_by_symbol": "按单币样本做 z-score 标准化",
+}
 
 
 FACTOR_DEFINITIONS = (
@@ -174,8 +187,8 @@ FEATURE_PROTOCOL = {
     },
     "preprocessing": {
         "missing_policy": "坏行直接丢弃，窗口不足时用中性值补齐",
-        "outlier_policy": "按因子预设范围裁剪极值",
-        "normalization_policy": "统一输出四位小数字符串",
+        "outlier_policy": OUTLIER_POLICY_LABELS[DEFAULT_OUTLIER_POLICY],
+        "normalization_policy": NORMALIZATION_POLICY_LABELS[DEFAULT_NORMALIZATION_POLICY],
     },
     "timeframe_profiles": {key: dict(value) for key, value in TIMEFRAME_PROFILES.items()},
     "factors": [
@@ -191,7 +204,13 @@ FEATURE_PROTOCOL = {
 }
 
 
-def build_feature_rows(symbol: str, candles: list[dict[str, object]]) -> list[dict[str, object]]:
+def build_feature_rows(
+    symbol: str,
+    candles: list[dict[str, object]],
+    *,
+    outlier_policy: str = DEFAULT_OUTLIER_POLICY,
+    normalization_policy: str = DEFAULT_NORMALIZATION_POLICY,
+) -> list[dict[str, object]]:
     """把 K 线样本转成统一因子行。"""
 
     normalized = [_normalize_candle(item) for item in candles]
@@ -247,33 +266,63 @@ def build_feature_rows(symbol: str, candles: list[dict[str, object]]) -> list[di
             "cci20": cci20,
             "stoch_k14": stoch_k14,
         }
-        rows.append(_apply_feature_protocol(raw_row))
+        rows.append(raw_row)
         previous_close = candle["close"]
 
-    return rows
+    return _apply_feature_protocol(
+        rows,
+        outlier_policy=outlier_policy,
+        normalization_policy=normalization_policy,
+    )
 
 
-def _apply_feature_protocol(row: dict[str, object]) -> dict[str, object]:
-    """按统一协议格式化因子输出。"""
+def _apply_feature_protocol(
+    rows: list[dict[str, object]],
+    *,
+    outlier_policy: str,
+    normalization_policy: str,
+) -> list[dict[str, object]]:
+    """按统一协议格式化整批因子输出。"""
 
-    normalized: dict[str, object] = {
-        "symbol": row["symbol"],
-        "generated_at": row["generated_at"],
+    normalized_outlier_policy = outlier_policy if outlier_policy in OUTLIER_POLICY_LABELS else DEFAULT_OUTLIER_POLICY
+    normalized_normalization_policy = (
+        normalization_policy if normalization_policy in NORMALIZATION_POLICY_LABELS else DEFAULT_NORMALIZATION_POLICY
+    )
+    factor_values = {
+        column: [
+            _normalize_feature_decimal(column, row.get(column), outlier_policy=normalized_outlier_policy)
+            for row in rows
+        ]
+        for column in PRIMARY_FEATURE_COLUMNS + AUXILIARY_FEATURE_COLUMNS
     }
-    for column in PRIMARY_FEATURE_COLUMNS + AUXILIARY_FEATURE_COLUMNS:
-        normalized[column] = _format_feature_value(column, row.get(column))
-    return normalized
+    if normalized_normalization_policy == "zscore_by_symbol":
+        factor_values = {
+            column: _zscore_series(values)
+            for column, values in factor_values.items()
+        }
+
+    normalized_rows: list[dict[str, object]] = []
+    for index, row in enumerate(rows):
+        normalized: dict[str, object] = {
+            "symbol": row["symbol"],
+            "generated_at": row["generated_at"],
+        }
+        for column in PRIMARY_FEATURE_COLUMNS + AUXILIARY_FEATURE_COLUMNS:
+            normalized[column] = _format_decimal(factor_values[column][index])
+        normalized_rows.append(normalized)
+    return normalized_rows
 
 
-def _format_feature_value(name: str, value: object) -> str:
-    """按因子协议补齐缺失值并裁剪极值。"""
+def _normalize_feature_decimal(name: str, value: object, *, outlier_policy: str) -> Decimal:
+    """按因子协议补齐缺失值，并按策略处理极值。"""
 
     metadata = FACTOR_METADATA[name]
     parsed = _to_decimal(value, default=Decimal(str(metadata["neutral"])))
+    if outlier_policy == "raw":
+        return parsed
     lower = Decimal(str(metadata["clip"][0]))
     upper = Decimal(str(metadata["clip"][1]))
-    bounded = min(max(parsed, lower), upper)
-    return _format_decimal(bounded)
+    return min(max(parsed, lower), upper)
 
 
 def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int] | None:
@@ -341,6 +390,21 @@ def _format_decimal(value: Decimal) -> str:
 
     normalized = value.quantize(Decimal("0.0001"))
     return format(normalized, "f")
+
+
+def _zscore_series(values: list[Decimal]) -> list[Decimal]:
+    """按单币样本把一列值转成 z-score。"""
+
+    if not values:
+        return []
+    float_values = [float(item) for item in values]
+    if len(float_values) < 2:
+        return [Decimal("0") for _ in values]
+    std = pstdev(float_values)
+    if std == 0:
+        return [Decimal("0") for _ in values]
+    avg = mean(float_values)
+    return [Decimal(str((item - avg) / std)) for item in float_values]
 
 
 def _to_decimal(value: object, *, default: Decimal) -> Decimal:

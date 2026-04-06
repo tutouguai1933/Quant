@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { buildApiUrl, fetchJson, getAdminSession } from "../../lib/api";
+import { buildAuthHeaders, buildProxyUrl, fetchJson, getAdminSession } from "../../lib/api";
 import { buildRedirectUrl } from "../../lib/redirect";
 import { normalizeAppPath, SESSION_COOKIE_NAME } from "../../lib/session";
 
@@ -18,12 +18,17 @@ type ActionConfig = {
 
 /* 处理控制面动作提交。 */
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const action = String(formData.get("action") ?? "");
-  const strategyId = String(formData.get("strategyId") ?? "1");
-  const returnTo = normalizeAppPath(formData.get("returnTo")?.toString(), "/");
+  const params = new URLSearchParams(await request.text());
+  const action = String(params.get("action") ?? "");
+  const strategyId = String(params.get("strategyId") ?? "1");
+  const returnTo = normalizeAppPath(params.get("returnTo")?.toString(), "/");
   const cookieStore = await cookies();
   const token = String(cookieStore.get(SESSION_COOKIE_NAME)?.value ?? "");
+
+  if (action === "update_workbench_config") {
+    return handleWorkbenchConfigUpdate({ request, params, returnTo, token, cookieStore });
+  }
+
   const config = resolveActionConfig(action, strategyId);
 
   if (!config) {
@@ -48,7 +53,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const response = await fetch(buildApiUrl(config.path), {
+    const response = await fetch(buildProxyUrl(request, config.path), {
       method: config.method,
       headers: {
         Accept: "application/json",
@@ -93,6 +98,72 @@ export async function POST(request: Request) {
   }
 }
 
+async function handleWorkbenchConfigUpdate({
+  request,
+  params,
+  returnTo,
+  token,
+  cookieStore,
+}: {
+  request: Request;
+  params: URLSearchParams;
+  returnTo: string;
+  token: string;
+  cookieStore: Awaited<ReturnType<typeof cookies>>;
+}) {
+  if (!token) {
+    return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=请先登录后再保存工作台配置。`));
+  }
+
+  try {
+    const session = await getAdminSession(token);
+    if (session.error) {
+      cookieStore.delete(SESSION_COOKIE_NAME);
+      return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话已失效，请重新登录。`));
+    }
+  } catch {
+    cookieStore.delete(SESSION_COOKIE_NAME);
+    return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话校验失败，请重新登录。`));
+  }
+
+  const section = String(params.get("section") ?? "").trim();
+  const values = serializeWorkbenchValues(params);
+
+  try {
+    const response = await fetch(buildProxyUrl(request, "/workbench/config"), {
+      method: "POST",
+      headers: {
+        ...buildAuthHeaders(token),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ section, values }),
+      cache: "no-store",
+    });
+    const payload = (await response.json()) as Awaited<ReturnType<typeof fetchJson>>;
+    if (payload.error) {
+      return NextResponse.redirect(
+        buildRedirectUrl(
+          request,
+          `${returnTo}?tone=error&title=${encodeURIComponent("配置反馈")}&message=${encodeURIComponent(payload.error.message)}`,
+        ),
+      );
+    }
+    return NextResponse.redirect(
+      buildRedirectUrl(
+        request,
+        `${returnTo}?tone=success&title=${encodeURIComponent("配置反馈")}&message=${encodeURIComponent("工作台配置已更新，当前页面和后续研究链都会按新配置刷新。")}`,
+      ),
+    );
+  } catch {
+    return NextResponse.redirect(
+      buildRedirectUrl(
+        request,
+        `${returnTo}?tone=error&title=${encodeURIComponent("配置反馈")}&message=${encodeURIComponent("工作台配置暂时保存失败，请稍后重试。")}`,
+      ),
+    );
+  }
+}
+
 function resolveActionFeedback(
   action: string,
   payload: Awaited<ReturnType<typeof fetchJson>>,
@@ -127,6 +198,48 @@ function resolveActionFeedback(
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function serializeWorkbenchValues(params: URLSearchParams): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const explicitFields = new Set<string>();
+  const touchedFields = new Set<string>();
+  for (const [key, rawValue] of params.entries()) {
+    if (key === "action" || key === "section" || key === "returnTo") {
+      continue;
+    }
+    if (key.startsWith("__present__")) {
+      explicitFields.add(key.replace(/^__present__/, ""));
+      continue;
+    }
+    touchedFields.add(key);
+    const value = String(rawValue ?? "").trim();
+    if (!value) {
+      continue;
+    }
+    const current = result[key];
+    if (current === undefined) {
+      result[key] = value;
+      continue;
+    }
+    if (Array.isArray(current)) {
+      current.push(value);
+      result[key] = current;
+      continue;
+    }
+    result[key] = [String(current), value];
+  }
+  for (const key of explicitFields) {
+    if (result[key] === undefined) {
+      result[key] = [];
+    }
+  }
+  for (const key of touchedFields) {
+    if (result[key] === undefined) {
+      result[key] = "";
+    }
+  }
+  return result;
 }
 
 /* 将表单动作映射到控制平面 API。 */

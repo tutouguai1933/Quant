@@ -6,13 +6,20 @@
 from __future__ import annotations
 
 from services.api.app.services.research_service import research_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 
 class FeatureWorkspaceService:
     """聚合因子协议、分类、角色和周期参数。"""
 
-    def __init__(self, *, research_reader: object | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        research_reader: object | None = None,
+        controls_builder=None,
+    ) -> None:
         self._research_reader = research_reader or research_service
+        self._controls_builder = controls_builder or workbench_config_service.build_workspace_controls
 
     def get_workspace(self) -> dict[str, object]:
         """返回特征工作台统一模型。"""
@@ -22,6 +29,8 @@ class FeatureWorkspaceService:
         factors = list(factor_protocol.get("factors") or [])
         latest_training = dict(report.get("latest_training") or {})
         training_context = dict(latest_training.get("training_context") or {})
+        controls = self._controls_builder()
+        configured_features = dict((controls.get("config") or {}).get("features") or {})
 
         status = str(report.get("status", "unavailable") or "unavailable")
         if factors:
@@ -53,6 +62,16 @@ class FeatureWorkspaceService:
             "roles": {
                 "primary": [str(item) for item in primary],
                 "auxiliary": [str(item) for item in auxiliary],
+            },
+            "controls": {
+                "primary_factors": [str(item) for item in list(configured_features.get("primary_factors") or [])],
+                "auxiliary_factors": [str(item) for item in list(configured_features.get("auxiliary_factors") or [])],
+                "outlier_policy": str(configured_features.get("outlier_policy", "clip") or "clip"),
+                "normalization_policy": str(configured_features.get("normalization_policy", "fixed_4dp") or "fixed_4dp"),
+                "available_primary_factors": [str(item) for item in list((controls.get("options") or {}).get("primary_factors") or [])],
+                "available_auxiliary_factors": [str(item) for item in list((controls.get("options") or {}).get("auxiliary_factors") or [])],
+                "available_outlier_policies": [str(item) for item in list((controls.get("options") or {}).get("outlier_policies") or [])],
+                "available_normalization_policies": [str(item) for item in list((controls.get("options") or {}).get("normalization_policies") or [])],
             },
             "preprocessing": {
                 "missing_policy": str((factor_protocol.get("preprocessing") or {}).get("missing_policy", "")),
