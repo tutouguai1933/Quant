@@ -28,6 +28,8 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("实验对照", content)
         self.assertIn("门控分解", content)
         self.assertIn("实验一致性", content)
+        self.assertIn("最近两轮对比", content)
+        self.assertIn("参数与结果一起看", content)
         self.assertIn("当前结果与配置对齐", content)
         self.assertIn("工作台暂时不可用", content)
         self.assertIn("进入 dry-run", content)

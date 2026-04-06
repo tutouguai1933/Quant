@@ -573,6 +573,8 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertGreaterEqual(len(recent_runs), 2)
         self.assertEqual(recent_runs[0]["run_type"], "inference")
         self.assertEqual(recent_runs[1]["run_type"], "training")
+        self.assertIn("signal_count", recent_runs[0])
+        self.assertIn("backtest", recent_runs[0])
 
     def test_inference_exposes_input_output_context_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

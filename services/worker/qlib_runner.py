@@ -852,8 +852,10 @@ class QlibRunner:
             "status": str(payload.get("status", "")),
             "generated_at": str(payload.get("generated_at", "")),
             "model_version": str(payload.get("model_version", "")),
+            "signal_count": str(payload.get("signal_count", dict(payload.get("summary") or {}).get("signal_count", ""))),
             "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
             "dataset_snapshot": _build_dataset_snapshot_summary(payload),
+            "backtest": _build_experiment_backtest_snapshot(payload.get("backtest")),
             "artifact_path": str(payload.get("artifact_path", "")),
         }
 
@@ -894,6 +896,19 @@ def _utc_now() -> datetime:
     """返回 UTC 时间。"""
 
     return datetime.now(timezone.utc)
+
+
+def _build_experiment_backtest_snapshot(value: object) -> dict[str, str]:
+    """抽取实验账本需要的最小回测摘要。"""
+
+    payload = dict(value or {}) if isinstance(value, dict) else {}
+    metrics = dict(payload.get("metrics") or {})
+    return {
+        "net_return_pct": str(metrics.get("net_return_pct", metrics.get("total_return_pct", ""))),
+        "max_drawdown_pct": str(metrics.get("max_drawdown_pct", "")),
+        "sharpe": str(metrics.get("sharpe", "")),
+        "win_rate": str(metrics.get("win_rate", "")),
+    }
 
 
 def _classify_signal(score: float) -> str:

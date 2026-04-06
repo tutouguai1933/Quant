@@ -225,6 +225,39 @@ export default async function EvaluationPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>最近两轮对比</CardTitle>
+              <CardDescription>参数与结果一起看，先确认这一轮到底是模型变了、数据变了，还是结果本身变了。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {workspace.run_deltas.length ? (
+                <DataTable
+                  columns={["最近两轮对比", "模型变化", "数据变化", "净收益差", "Sharpe 差", "胜率差", "说明"]}
+                  rows={workspace.run_deltas.map((item, index) => {
+                    const row = asRecord(item);
+                    return {
+                      id: `${row.run_type ?? index}`,
+                      cells: [
+                        `${String(row.run_type ?? "run")} / ${String(row.previous_run_id ?? "n/a")} → ${String(row.current_run_id ?? "n/a")}`,
+                        String(row.model_changed ?? "否"),
+                        String(row.dataset_changed ?? "否"),
+                        String(row.net_return_delta ?? "n/a"),
+                        String(row.sharpe_delta ?? "n/a"),
+                        String(row.win_rate_delta ?? "n/a"),
+                        String(row.note ?? "当前还没有说明"),
+                      ],
+                    };
+                  })}
+                  emptyTitle="当前还没有最近两轮对比"
+                  emptyDetail="先积累至少两轮同类型训练或推理，系统才会自动给出差异。"
+                />
+              ) : (
+                <p className="text-sm leading-6 text-muted-foreground">当前还没有足够的实验账本，暂时无法比较最近两轮差异。</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <CardTitle>当前结果与配置对齐</CardTitle>
               <CardDescription>先确认当前评估结果是不是仍然基于这页右上角的最新门槛。</CardDescription>
             </CardHeader>

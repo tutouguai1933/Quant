@@ -73,6 +73,7 @@ class EvaluationWorkspaceService:
             "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)],
             "experiment_comparison": self._build_experiment_comparison(report),
             "gate_matrix": self._build_gate_matrix(report),
+            "run_deltas": self._build_run_deltas(report),
             "comparison_summary": self._build_comparison_summary(
                 report=report,
                 validation_reviews=validation_reviews,
@@ -282,6 +283,103 @@ class EvaluationWorkspaceService:
             "dataset_aligned": dataset_aligned,
             "note": " / ".join(note_parts),
         }
+
+    @staticmethod
+    def _build_run_deltas(report: dict[str, object]) -> list[dict[str, object]]:
+        """比较最近两轮训练和推理的主要差异。"""
+
+        experiments = dict(report.get("experiments") or {})
+        recent_runs = [dict(item) for item in list(experiments.get("recent_runs") or []) if isinstance(item, dict)]
+        latest_by_type = {
+            "training": dict(experiments.get("training") or report.get("latest_training") or {}),
+            "inference": dict(experiments.get("inference") or report.get("latest_inference") or {}),
+        }
+        rows: list[dict[str, object]] = []
+        for run_type in ("training", "inference"):
+            current = latest_by_type.get(run_type) or {}
+            if not current:
+                continue
+            previous = EvaluationWorkspaceService._find_previous_run(
+                recent_runs,
+                run_type=run_type,
+                current_run_id=str(current.get("run_id", "")),
+            )
+            if not previous:
+                continue
+            current_backtest = dict((current.get("backtest") or {}).get("metrics") or current.get("backtest") or {})
+            previous_backtest = dict((previous.get("backtest") or {}).get("metrics") or previous.get("backtest") or {})
+            current_snapshot = str(dict(current.get("dataset_snapshot") or {}).get("snapshot_id") or current.get("dataset_snapshot_id", ""))
+            previous_snapshot = str(dict(previous.get("dataset_snapshot") or {}).get("snapshot_id") or previous.get("dataset_snapshot_id", ""))
+            model_changed = str(current.get("model_version", "")) != str(previous.get("model_version", ""))
+            dataset_changed = current_snapshot != previous_snapshot
+            rows.append(
+                {
+                    "run_type": run_type,
+                    "current_run_id": str(current.get("run_id", "")),
+                    "previous_run_id": str(previous.get("run_id", "")),
+                    "model_changed": "是" if model_changed else "否",
+                    "dataset_changed": "是" if dataset_changed else "否",
+                    "signal_count_delta": EvaluationWorkspaceService._format_delta(
+                        current.get("signal_count", dict(current.get("summary") or {}).get("signal_count", "")),
+                        previous.get("signal_count", ""),
+                    ),
+                    "net_return_delta": EvaluationWorkspaceService._format_delta(
+                        current_backtest.get("net_return_pct", ""),
+                        previous_backtest.get("net_return_pct", ""),
+                    ),
+                    "sharpe_delta": EvaluationWorkspaceService._format_delta(
+                        current_backtest.get("sharpe", ""),
+                        previous_backtest.get("sharpe", ""),
+                    ),
+                    "win_rate_delta": EvaluationWorkspaceService._format_delta(
+                        current_backtest.get("win_rate", ""),
+                        previous_backtest.get("win_rate", ""),
+                    ),
+                    "note": EvaluationWorkspaceService._build_delta_note(
+                        run_type=run_type,
+                        model_changed=model_changed,
+                        dataset_changed=dataset_changed,
+                    ),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _find_previous_run(recent_runs: list[dict[str, object]], *, run_type: str, current_run_id: str) -> dict[str, object]:
+        """找到同类型的上一轮运行。"""
+
+        for item in recent_runs:
+            if str(item.get("run_type", "")) != run_type:
+                continue
+            if current_run_id and str(item.get("run_id", "")) == current_run_id:
+                continue
+            return dict(item)
+        return {}
+
+    @staticmethod
+    def _format_delta(current: object, previous: object) -> str:
+        """把当前值与上一轮差值格式化成稳定字符串。"""
+
+        try:
+            current_value = float(str(current or "0"))
+            previous_value = float(str(previous or "0"))
+        except ValueError:
+            return "n/a"
+        return f"{current_value - previous_value:+.4f}"
+
+    @staticmethod
+    def _build_delta_note(*, run_type: str, model_changed: bool, dataset_changed: bool) -> str:
+        """生成最近两轮对比说明。"""
+
+        prefix = "训练对比" if run_type == "training" else "推理对比"
+        notes: list[str] = []
+        if model_changed:
+            notes.append("模型已切换")
+        if dataset_changed:
+            notes.append("数据快照已变化")
+        if not notes:
+            notes.append("沿用上一轮模型和数据")
+        return f"{prefix}：{'，'.join(notes)}"
 
     @staticmethod
     def _resolve_blocking_gate(

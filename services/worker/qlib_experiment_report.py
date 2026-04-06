@@ -275,8 +275,10 @@ def _build_recent_runs(items: list[dict[str, object]] | None) -> list[dict[str, 
                 "status": str(payload.get("status", "")),
                 "generated_at": str(payload.get("generated_at", "")),
                 "model_version": str(payload.get("model_version", "")),
+                "signal_count": str(payload.get("signal_count", "")),
                 "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
                 "dataset_snapshot": dict(payload.get("dataset_snapshot") or {}),
+                "backtest": _build_backtest_snapshot(payload.get("backtest")),
                 "artifact_path": str(payload.get("artifact_path", "")),
             }
         )

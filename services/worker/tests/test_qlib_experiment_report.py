@@ -89,12 +89,14 @@ class QlibExperimentReportTests(unittest.TestCase):
                     "status": "completed",
                     "generated_at": "2026-04-04T09:00:00+00:00",
                     "model_version": "m2",
+                    "signal_count": "2",
                     "dataset_snapshot_path": "/tmp/dataset.json",
                     "dataset_snapshot": {
                         "snapshot_id": "dataset-inference",
                         "data_states": {"current": "feature-ready"},
                         "cache": {"hit_count": 1, "miss_count": 0},
                     },
+                    "backtest": {"metrics": {"net_return_pct": "6.80", "max_drawdown_pct": "-3.10"}},
                     "artifact_path": "/tmp/artifact.json",
                 }
             ],
@@ -116,6 +118,8 @@ class QlibExperimentReportTests(unittest.TestCase):
         self.assertEqual(report["experiments"]["training"]["backtest"]["net_return_pct"], "12.10")
         self.assertEqual(report["experiments"]["recent_runs"][0]["run_id"], "infer-1")
         self.assertEqual(report["experiments"]["recent_runs"][0]["dataset_snapshot"]["cache"]["hit_count"], 1)
+        self.assertEqual(report["experiments"]["recent_runs"][0]["signal_count"], "2")
+        self.assertEqual(report["experiments"]["recent_runs"][0]["backtest"]["net_return_pct"], "6.80")
 
     def test_build_experiment_report_marks_forced_validation_recommendation(self) -> None:
         report = build_experiment_report(

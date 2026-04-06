@@ -36,6 +36,10 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["comparison_summary"]["config_alignment_status"], "aligned")
         self.assertTrue(item["comparison_summary"]["model_aligned"])
         self.assertTrue(item["comparison_summary"]["dataset_aligned"])
+        self.assertEqual(item["run_deltas"][0]["run_type"], "training")
+        self.assertEqual(item["run_deltas"][0]["previous_run_id"], "train-previous")
+        self.assertEqual(item["run_deltas"][0]["model_changed"], "是")
+        self.assertEqual(item["run_deltas"][0]["dataset_changed"], "是")
         self.assertEqual(item["experiment_comparison"][0]["run_type"], "training")
         self.assertIn("controls", item)
         self.assertEqual(item["controls"]["dry_run_min_win_rate"], "0.50")
@@ -129,8 +133,36 @@ class _FakeResearchService:
             },
             "experiments": {
                 "recent_runs": [
-                    {"run_type": "training", "run_id": "train-1"},
-                    {"run_type": "inference", "run_id": "infer-1"},
+                    {
+                        "run_type": "training",
+                        "run_id": "train-1",
+                        "model_version": "model-a",
+                        "signal_count": "0",
+                        "backtest": {"net_return_pct": "8.10", "sharpe": "1.10", "win_rate": "0.58"},
+                        "dataset_snapshot": {"snapshot_id": "snapshot-1"},
+                    },
+                    {
+                        "run_type": "training",
+                        "run_id": "train-previous",
+                        "model_version": "model-prev",
+                        "signal_count": "0",
+                        "backtest": {"net_return_pct": "5.20", "sharpe": "0.90", "win_rate": "0.51"},
+                        "dataset_snapshot": {"snapshot_id": "snapshot-prev"},
+                    },
+                    {
+                        "run_type": "inference",
+                        "run_id": "infer-1",
+                        "model_version": "model-a",
+                        "signal_count": "2",
+                        "dataset_snapshot": {"snapshot_id": "snapshot-1"},
+                    },
+                    {
+                        "run_type": "inference",
+                        "run_id": "infer-previous",
+                        "model_version": "model-prev",
+                        "signal_count": "1",
+                        "dataset_snapshot": {"snapshot_id": "snapshot-prev"},
+                    },
                 ]
             },
         }

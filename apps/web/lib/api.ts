@@ -537,6 +537,7 @@ export type EvaluationWorkspaceModel = {
   recent_runs: Array<Record<string, unknown>>;
   experiment_comparison: Array<Record<string, unknown>>;
   gate_matrix: Array<Record<string, unknown>>;
+  run_deltas: Array<Record<string, unknown>>;
   comparison_summary: Record<string, unknown>;
   execution_alignment: Record<string, unknown>;
 };
@@ -1467,6 +1468,7 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     recent_runs: [],
     experiment_comparison: [],
     gate_matrix: [],
+    run_deltas: [],
     comparison_summary: {},
     execution_alignment: {},
   };
@@ -1818,6 +1820,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
     experiment_comparison: Array.isArray(row.experiment_comparison) ? row.experiment_comparison.filter(isPlainObject) : [],
     gate_matrix: Array.isArray(row.gate_matrix) ? row.gate_matrix.filter(isPlainObject) : [],
+    run_deltas: Array.isArray(row.run_deltas) ? row.run_deltas.filter(isPlainObject) : [],
     comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
     execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
   };
