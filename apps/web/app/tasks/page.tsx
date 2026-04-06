@@ -62,6 +62,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const dispatchOrder = asRecord(dispatchItem.order);
   const cycleMessage = readText(lastCycle.message, "当前还没有新的自动化判断。");
   const failureReason = readText(lastCycle.failure_reason, "当前没有新的失败原因。");
+  const executionState = asRecord(executionHealth.execution_state);
+  const executionStateName = readText(executionState.state, "unknown");
+  const executionStateDetail = readText(executionState.detail, "当前没有执行状态说明。");
+  const takeoverReason = readText(automation.pauseReason, "当前没有接管原因。");
+  const recoveryAction = readText(executionHealth.recovery_action, "healthy");
+  const takeoverStateLabel = describeTakeoverState(automation.mode, automation.manualTakeover, automation.pauseReason);
+  const recoveryActionLabel = formatRecoveryAction(recoveryAction);
 
   return (
     <AppShell
@@ -126,6 +133,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <CardContent className="grid gap-3 md:grid-cols-3">
                   <ActionCard action="automation_run_cycle" label="运行自动化工作流" detail="按当前模式推进一轮训练、推理、执行和复盘。" />
                   <ActionCard action="automation_pause" label="暂停自动化" detail="停止后续自动推进，切回人工接管。" danger />
+                  <ActionCard action="automation_manual_takeover" label="人工立即接管" detail="立刻触发全局暂停，并尽量暂停执行器，先人工确认再恢复。" danger />
                   <ActionCard action="automation_resume" label="恢复自动化" detail="恢复当前模式，让系统继续自动推进。" />
                   <ActionCard action="automation_dry_run_only" label="dry-run only" detail="只保留自动 dry-run，不再继续自动小额 live。" />
                   <ActionCard action="automation_kill_switch" label="Kill Switch" detail="一键停机，立即切回人工接管。" danger />
@@ -178,7 +186,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>当前模式：{formatMode(automation.mode)}，暂停：{automation.paused ? "是" : "否"}</p>
-                  <p>人工接管：{automation.manualTakeover ? "是" : "否"}</p>
+                  <p>人工介入：{automation.manualTakeover ? "是" : "否"}</p>
+                  <p>当前控制：{takeoverStateLabel}</p>
+                  <p>接管原因：{takeoverReason}</p>
+                  <p>执行器状态：{executionStateName}</p>
+                  <p>执行器状态说明：{executionStateDetail}</p>
+                  <p>下一步：{recoveryActionLabel}</p>
                   <p>最近 armed 候选：{automation.armedSymbol || "n/a"}</p>
                   <p>最近同步：{String(executionHealth.latest_sync_status ?? "unknown")}</p>
                   <p>最近复盘：{String(executionHealth.latest_review_status ?? "unknown")}</p>
@@ -356,6 +369,32 @@ function formatMode(mode: string) {
     return "自动小额 live";
   }
   return "手动";
+}
+
+function describeTakeoverState(mode: string, manualTakeover: boolean, pauseReason: string) {
+  if (!manualTakeover) {
+    return "未接管";
+  }
+  if (pauseReason === "kill_switch" || pauseReason === "manual_takeover") {
+    return "风险接管";
+  }
+  if (mode === "manual") {
+    return "手动模式";
+  }
+  return "人工暂停";
+}
+
+function formatRecoveryAction(action: string) {
+  const mapping: Record<string, string> = {
+    healthy: "当前无需处理",
+    reconnect_executor: "先恢复执行器连接",
+    retry_sync: "先重试同步",
+    review_dust: "先检查零头资产",
+    watch_pending_exit: "先等待平仓完成",
+    resume_after_review: "人工确认后再恢复",
+    manual_takeover: "保持人工接管",
+  };
+  return mapping[action] ?? action;
 }
 
 function readText(value: unknown, fallback: string): string {

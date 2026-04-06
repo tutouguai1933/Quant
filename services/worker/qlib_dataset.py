@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
 
 DATA_STATE_NAMES = ("raw", "cleaned", "feature-ready")
 
+from services.worker.qlib_config import get_runtime_hint
 from services.worker.qlib_features import build_feature_rows
 from services.worker.qlib_labels import build_label_rows
 
@@ -40,6 +42,10 @@ def build_dataset_bundle(
     min_window_days: int = 1,
     max_window_days: int = 3,
     holding_window_label: str = "1-3d",
+    lookback_days: int | None = None,
+    train_split_ratio: object | None = None,
+    validation_split_ratio: object | None = None,
+    test_split_ratio: object | None = None,
 ) -> DatasetBundle:
     """把输入 K 线整理成训练、验证、测试三段数据。"""
 
@@ -51,14 +57,21 @@ def build_dataset_bundle(
         candidates.append(("1h", candles_1h))
     if not candidates:
         raise RuntimeError("没有可用的研究 K 线样本")
+    split_ratios = _resolve_split_ratios(
+        train_split_ratio=train_split_ratio,
+        validation_split_ratio=validation_split_ratio,
+        test_split_ratio=test_split_ratio,
+    )
+    normalized_lookback_days = _resolve_lookback_days(lookback_days)
 
     last_error: RuntimeError | None = None
     for timeframe, candles in candidates:
+        filtered_candles = _filter_candles_by_lookback_days(candles, lookback_days=normalized_lookback_days)
         try:
             return _build_dataset_bundle_for_candles(
                 symbol=standardized_symbol,
                 timeframe=timeframe,
-                candles=candles,
+                candles=filtered_candles,
                 label_mode=label_mode,
                 outlier_policy=outlier_policy,
                 normalization_policy=normalization_policy,
@@ -67,6 +80,7 @@ def build_dataset_bundle(
                 min_window_days=min_window_days,
                 max_window_days=max_window_days,
                 holding_window_label=holding_window_label,
+                split_ratios=split_ratios,
             )
         except RuntimeError as exc:
             if str(exc) != "样本不足以切成训练/验证/测试三段":
@@ -91,6 +105,7 @@ def _build_dataset_bundle_for_candles(
     min_window_days: int = 1,
     max_window_days: int = 3,
     holding_window_label: str = "1-3d",
+    split_ratios: tuple[Decimal, Decimal, Decimal] = (Decimal("0.6"), Decimal("0.2"), Decimal("0.2")),
 ) -> DatasetBundle:
     """把单个周期的 K 线整理成可切分的数据包。"""
 
@@ -113,7 +128,7 @@ def _build_dataset_bundle_for_candles(
     merged_rows = _merge_feature_and_label_rows(feature_rows, label_rows)
     if len(merged_rows) < 3:
         raise RuntimeError("样本不足以切成训练/验证/测试三段")
-    training_rows, validation_rows, testing_rows = _split_rows(merged_rows)
+    training_rows, validation_rows, testing_rows = _split_rows(merged_rows, split_ratios=split_ratios)
     return DatasetBundle(
         symbol=symbol,
         timeframe=timeframe,
@@ -151,7 +166,11 @@ def _merge_feature_and_label_rows(
     return merged_rows
 
 
-def _split_rows(rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+def _split_rows(
+    rows: list[dict[str, object]],
+    *,
+    split_ratios: tuple[Decimal, Decimal, Decimal],
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     """把样本按时间顺序切成训练、验证和测试三段。"""
 
     if not rows:
@@ -159,11 +178,102 @@ def _split_rows(rows: list[dict[str, object]]) -> tuple[list[dict[str, object]],
     if len(rows) < 3:
         raise RuntimeError("样本不足以切成训练/验证/测试三段")
 
-    train_end = max(1, int(len(rows) * 0.6))
-    valid_end = max(train_end + 1, int(len(rows) * 0.8))
+    train_ratio, validation_ratio, _ = split_ratios
+    train_end = max(1, int(len(rows) * float(train_ratio)))
+    valid_end = max(train_end + 1, int(len(rows) * float(train_ratio + validation_ratio)))
     if valid_end >= len(rows):
         valid_end = len(rows) - 1
     return rows[:train_end], rows[train_end:valid_end], rows[valid_end:]
+
+
+def _resolve_split_ratios(
+    *,
+    train_split_ratio: object | None,
+    validation_split_ratio: object | None,
+    test_split_ratio: object | None,
+) -> tuple[Decimal, Decimal, Decimal]:
+    """解析训练/验证/测试切分比例，并统一归一化。"""
+
+    default_train = Decimal("0.6")
+    default_validation = Decimal("0.2")
+    default_test = Decimal("0.2")
+    train_ratio = _read_split_ratio(
+        direct_value=train_split_ratio,
+        runtime_name="train_split_ratio",
+        default=default_train,
+    )
+    validation_ratio = _read_split_ratio(
+        direct_value=validation_split_ratio,
+        runtime_name="validation_split_ratio",
+        default=default_validation,
+    )
+    test_ratio = _read_split_ratio(
+        direct_value=test_split_ratio,
+        runtime_name="test_split_ratio",
+        default=default_test,
+    )
+    total = train_ratio + validation_ratio + test_ratio
+    if total <= Decimal("0"):
+        return default_train, default_validation, default_test
+    return (
+        train_ratio / total,
+        validation_ratio / total,
+        test_ratio / total,
+    )
+
+
+def _resolve_lookback_days(direct_value: object | None) -> int:
+    """读取数据窗口天数。"""
+
+    raw_value: object | None = direct_value
+    if raw_value is None:
+        raw_value = get_runtime_hint("lookback_days", consume=True)
+    try:
+        parsed = int(str(raw_value))
+    except (TypeError, ValueError):
+        parsed = 30
+    return max(parsed, 7)
+
+
+def _filter_candles_by_lookback_days(candles: list[dict[str, object]], *, lookback_days: int) -> list[dict[str, object]]:
+    """按回看天数过滤 K 线样本。"""
+
+    if not candles:
+        return []
+    latest_close_time = _read_candle_timestamp(candles[-1], "close_time")
+    if latest_close_time <= 0:
+        return list(candles)
+    earliest_allowed_open = latest_close_time - (lookback_days * 24 * 60 * 60 * 1000)
+    filtered = [
+        candle
+        for candle in candles
+        if _read_candle_timestamp(candle, "open_time") >= earliest_allowed_open
+    ]
+    return filtered or list(candles)
+
+
+def _read_candle_timestamp(candle: dict[str, object], key: str) -> int:
+    """读取 K 线时间戳。"""
+
+    try:
+        return int(candle.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _read_split_ratio(*, direct_value: object | None, runtime_name: str, default: Decimal) -> Decimal:
+    """读取单个切分比例。"""
+
+    raw_value: object | None = direct_value
+    if raw_value is None:
+        raw_value = get_runtime_hint(runtime_name, consume=True)
+    try:
+        parsed = Decimal(str(raw_value))
+    except (InvalidOperation, TypeError, ValueError):
+        parsed = default
+    if parsed <= Decimal("0"):
+        return default
+    return parsed
 
 
 def _normalize_symbol(symbol: str) -> str:

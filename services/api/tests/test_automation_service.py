@@ -43,6 +43,38 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(paused["paused_reason"], "manual_stop")
         self.assertFalse(resumed["paused"])
 
+    def test_pause_manual_takeover_kill_and_resume_sync_global_pause_and_executor(self) -> None:
+        service = AutomationService()
+        with mock.patch("services.api.app.services.automation_service.risk_service") as fake_risk, mock.patch(
+            "services.api.app.services.automation_service.freqtrade_client"
+        ) as fake_executor:
+            service.pause("manual_stop", actor="tester")
+            service.manual_takeover(reason="risk_guard_triggered", actor="watchdog")
+            service.kill_switch(actor="tester")
+            service.resume(actor="tester")
+
+        self.assertEqual(
+            fake_risk.set_global_pause.call_args_list,
+            [mock.call(True), mock.call(True), mock.call(True), mock.call(False)],
+        )
+        self.assertEqual(
+            fake_executor.control_strategy.call_args_list,
+            [mock.call(1, "pause"), mock.call(1, "pause"), mock.call(1, "stop")],
+        )
+
+    def test_pause_uses_all_executor_strategy_ids_when_available(self) -> None:
+        service = AutomationService()
+        with mock.patch("services.api.app.services.automation_service.risk_service") as fake_risk, mock.patch(
+            "services.api.app.services.automation_service.freqtrade_client"
+        ) as fake_executor:
+            fake_executor.get_snapshot.return_value = mock.Mock(
+                strategies=[{"id": 2}, {"id": "3"}, {"id": 2}, {"id": "bad"}]
+            )
+            service.pause("manual_stop", actor="tester")
+
+        fake_risk.set_global_pause.assert_called_once_with(True)
+        self.assertEqual(fake_executor.control_strategy.call_args_list, [mock.call(2, "pause"), mock.call(3, "pause")])
+
     def test_auto_dry_run_cycle_dispatches_ready_candidate_and_arms_symbol(self) -> None:
         scheduler = _FakeScheduler()
         automation = AutomationService()
@@ -196,6 +228,69 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("failure_policy", status)
         self.assertEqual(status["failure_policy"]["research_train"], "stop")
 
+    def test_manual_takeover_entry_switches_to_manual_with_reason(self) -> None:
+        service = AutomationService()
+        service.configure_mode("auto_live", actor="tester")
+        with mock.patch("services.api.app.services.automation_service.risk_service") as fake_risk, mock.patch(
+            "services.api.app.services.automation_service.freqtrade_client"
+        ) as fake_executor:
+            result = service.manual_takeover(reason="risk_guard_triggered", actor="watchdog")
+
+        self.assertEqual(result["mode"], "manual")
+        self.assertTrue(result["paused"])
+        self.assertTrue(result["manual_takeover"])
+        self.assertEqual(result["paused_reason"], "risk_guard_triggered")
+        self.assertEqual(result["actor"], "watchdog")
+        fake_risk.set_global_pause.assert_called_once_with(True)
+        fake_executor.control_strategy.assert_called_once_with(1, "pause")
+
+    def test_failure_policy_stop_marks_attention_required(self) -> None:
+        scheduler = _TrainFailedScheduler()
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        automation.configure_mode("auto_dry_run", actor="tester")
+        result = workflow.run_cycle(source="watchdog")
+        state = automation.get_state()
+
+        self.assertEqual(result["status"], "attention_required")
+        self.assertEqual(result["next_action"], "stop")
+        self.assertEqual(result["failure_policy_action"], "stop")
+        self.assertTrue(state["manual_takeover"])
+        self.assertTrue(state["paused"])
+        self.assertEqual(state["paused_reason"], "workflow_train_failed")
+
+    def test_failure_policy_review_and_decide_marks_attention_required(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_DispatchFailedService(error_code="execution_failed"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        automation.configure_mode("auto_dry_run", actor="tester")
+        result = workflow.run_cycle(source="watchdog")
+        state = automation.get_state()
+
+        self.assertEqual(result["status"], "attention_required")
+        self.assertEqual(result["next_action"], "review_and_decide")
+        self.assertEqual(result["failure_reason"], "execution_failed")
+        self.assertEqual(result["failure_policy_action"], "review_and_decide")
+        self.assertTrue(state["manual_takeover"])
+        self.assertTrue(state["paused"])
+        self.assertEqual(state["paused_reason"], "dispatch_execution_failed")
+
 
 class _ReadyResearchService:
     def get_research_recommendation(self) -> dict[str, object]:
@@ -229,6 +324,23 @@ class _PassingDispatchService:
         }
 
 
+class _DispatchFailedService:
+    def __init__(self, *, error_code: str) -> None:
+        self._error_code = error_code
+        self.calls: list[dict[str, object]] = []
+
+    def dispatch_latest_signal(self, strategy_id: int, *, source: str = "system") -> dict[str, object]:
+        self.calls.append({"strategy_id": strategy_id, "source": source})
+        return {
+            "status": "failed",
+            "error_code": self._error_code,
+            "message": "自动派发失败，需要人工复核。",
+            "risk_task": {"id": 13, "status": "failed"},
+            "sync_task": None,
+            "meta": {"strategy_id": strategy_id, "source": source},
+        }
+
+
 class _FakeScheduler:
     def __init__(self) -> None:
         self.named_calls: list[tuple[str, dict[str, object]]] = []
@@ -251,6 +363,31 @@ class _FakeScheduler:
 
     def get_health_summary(self) -> dict[str, object]:
         return {"latest_status_by_type": {}, "latest_success_by_type": {}, "latest_failure_by_type": {}}
+
+
+class _TrainFailedScheduler(_FakeScheduler):
+    def run_named_task(
+        self,
+        task_type: str,
+        source: str,
+        target_type: str,
+        payload: dict[str, object] | None = None,
+        target_id=None,
+    ) -> dict[str, object]:
+        self.named_calls.append((task_type, dict(payload or {})))
+        if task_type == "research_train":
+            return {
+                "id": len(self.named_calls),
+                "task_type": task_type,
+                "status": "failed",
+                "error_message": "训练阶段失败",
+            }
+        return {
+            "id": len(self.named_calls),
+            "task_type": task_type,
+            "status": "succeeded",
+            "result": {"status": "completed"},
+        }
 
 
 class _FakeReviewer:

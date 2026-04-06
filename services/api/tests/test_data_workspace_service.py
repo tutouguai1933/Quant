@@ -24,9 +24,11 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         item = service.get_workspace(symbol="ETHUSDT", interval="4h", limit=120)
 
         self.assertEqual(item["status"], "ready")
+        self.assertEqual(item["config_alignment"]["status"], "aligned")
         self.assertEqual(item["filters"]["selected_symbol"], "ETHUSDT")
         self.assertEqual(item["filters"]["selected_interval"], "4h")
         self.assertEqual(item["filters"]["limit"], 120)
+        self.assertEqual(item["controls"]["lookback_days"], 30)
         self.assertEqual(item["snapshot"]["snapshot_id"], "dataset-abc123")
         self.assertEqual(item["snapshot"]["data_states"]["current"], "feature-ready")
         self.assertEqual(item["preview"]["symbol"], "ETHUSDT")
@@ -88,6 +90,11 @@ class _FakeResearchService:
         return {
             "status": "ready",
             "backend": "qlib-fallback",
+            "config_alignment": {
+                "status": "aligned",
+                "stale_fields": [],
+                "note": "当前页面配置和最近一次研究结果已经对齐。",
+            },
             "snapshots": {
                 "training": {
                     "snapshot_id": "dataset-abc123",
@@ -167,6 +174,7 @@ def _fake_controls() -> dict[str, object]:
                 "primary_symbol": "BTCUSDT",
                 "timeframes": ["4h", "1h"],
                 "sample_limit": 120,
+                "lookback_days": 30,
             }
         }
     }

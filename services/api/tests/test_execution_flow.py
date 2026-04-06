@@ -190,6 +190,26 @@ class ExecutionFlowTests(unittest.TestCase):
         self.assertEqual(summary["execution_state"]["state"], "paused")
         self.assertEqual(summary["recovery_action"], "resume_after_review")
 
+    def test_execution_health_summary_prioritizes_takeover_when_both_flags_are_present(self) -> None:
+        with patch.object(
+            SyncService,
+            "get_runtime_snapshot",
+            return_value={
+                "mode": "live",
+                "backend": "rest",
+                "connection_status": "connected",
+                "order_count": 0,
+                "position_count": 0,
+            },
+        ):
+            summary = SyncService().get_execution_health_summary(
+                task_health={"latest_status_by_type": {"sync": "succeeded"}},
+                automation_state={"paused": True, "manual_takeover": True},
+            )
+
+        self.assertEqual(summary["execution_state"]["state"], "takeover")
+        self.assertEqual(summary["recovery_action"], "manual_takeover")
+
     def test_demo_mode_still_uses_current_in_memory_fake_execution(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "demo"}, clear=False):
             client = FreqtradeClient()

@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   const nextPath = normalizeAppPath(formData.get("next")?.toString(), "/strategies");
 
   try {
-    const response = await loginAdmin(username, password);
+    const response = await loginAdmin(username, password, request);
     if (response.error) {
       return NextResponse.redirect(buildRedirectUrl(request, `/login?state=error&next=${encodeURIComponent(nextPath)}`), 303);
     }

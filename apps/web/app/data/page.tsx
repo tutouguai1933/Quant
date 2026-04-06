@@ -34,6 +34,7 @@ export default async function DataPage({ searchParams }: PageProps) {
 
   const stateSummary = formatDataStates(workspace.snapshot.data_states);
   const sampleRows = buildSampleRows(workspace.training_window.sample_window);
+  const configAlignment = asRecord(workspace.config_alignment);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
@@ -103,12 +104,31 @@ export default async function DataPage({ searchParams }: PageProps) {
             emptyTitle="时间范围暂不可用"
             emptyDetail="当前还没有训练窗口信息，先运行研究训练再回到这里。"
           />
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>当前结果与配置对齐</CardTitle>
+              <CardDescription>样本预览会立即按当前配置更新，但训练窗口仍来自最近一次研究结果，这里先确认两者是不是同一轮。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
+              <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
+              <InfoBlock
+                label="变更字段"
+                value={
+                  Array.isArray(configAlignment.stale_fields) && configAlignment.stale_fields.length
+                    ? configAlignment.stale_fields.map(String).join(" / ")
+                    : "当前没有发现配置漂移"
+                }
+              />
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-5">
           <WorkbenchConfigCard
             title="数据范围配置"
-            description="这里改的是研究主链真正会消费的数据范围：标的、周期和样本长度。"
+            description="这里改的是研究主链真正会消费的数据范围：标的、周期、样本长度和时间窗口。"
             scope="data"
             returnTo="/data"
             disabled={!configEditable}
@@ -146,6 +166,9 @@ export default async function DataPage({ searchParams }: PageProps) {
             <ConfigField label="样本长度" hint="这会影响训练、推理和回测一共读取多少根 K 线。">
               <ConfigInput name="sample_limit" type="number" min={60} step={10} defaultValue={String(workspace.controls.sample_limit)} />
             </ConfigField>
+            <ConfigField label="回看天数" hint="研究层会优先保留最近这段时间的数据，再在这段窗口里切训练、验证和回测。">
+              <ConfigInput name="lookback_days" type="number" min={7} step={1} defaultValue={String(workspace.controls.lookback_days)} />
+            </ConfigField>
           </WorkbenchConfigCard>
 
           <Card className="bg-card/90">
@@ -158,6 +181,15 @@ export default async function DataPage({ searchParams }: PageProps) {
               <InfoBlock label="周期" value={workspace.filters.selected_interval} />
               <InfoBlock label="时间范围" value={formatTimeRange(workspace.preview.first_open_time, workspace.preview.last_close_time)} />
               <InfoBlock label="样本数量" value={String(workspace.preview.total_rows)} />
+              <InfoBlock label="回看天数" value={String(workspace.controls.lookback_days)} />
+              <InfoBlock
+                label="配置检查"
+                value={
+                  workspace.controls.selected_symbols.length === 0 || workspace.controls.timeframes.length === 0
+                    ? "当前配置不完整，研究训练会被拦下"
+                    : "当前配置完整，可进入研究训练"
+                }
+              />
               <InfoBlock label="预览状态" value={workspace.preview.status === "ready" ? "样本预览正常" : workspace.preview.detail || "当前预览不可用"} />
             </CardContent>
           </Card>

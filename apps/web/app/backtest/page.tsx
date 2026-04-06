@@ -14,6 +14,7 @@ export default async function BacktestPage() {
   const response = await getBacktestWorkspace();
   const workspace = response.data.item;
   const metrics = workspace.training_backtest.metrics;
+  const gatePreview = asRecord(workspace.controls);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
@@ -114,6 +115,21 @@ export default async function BacktestPage() {
               <InfoBlock label="Sharpe" value={metric(metrics, "sharpe")} />
             </CardContent>
           </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>准入门槛预览</CardTitle>
+              <CardDescription>这些门槛会直接影响候选是否能从回测进入 dry-run 或 live。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="dry_run_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_win_rate))} />
+              <InfoBlock label="dry_run_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_turnover))} />
+              <InfoBlock label="dry_run_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_sample_count))} />
+              <InfoBlock label="live_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.live_min_win_rate))} />
+              <InfoBlock label="live_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.live_max_turnover))} />
+              <InfoBlock label="live_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.live_min_sample_count))} />
+            </CardContent>
+          </Card>
         </div>
       </section>
     </AppShell>
@@ -135,4 +151,15 @@ function metric(metrics: Record<string, string>, key: string) {
 
 function valueOrFallback(value: string | undefined) {
   return value && value.length > 0 ? value : "n/a";
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  return String(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

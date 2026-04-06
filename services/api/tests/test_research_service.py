@@ -179,10 +179,10 @@ class ResearchServiceTests(unittest.TestCase):
     def test_research_service_prepares_both_1h_and_4h_samples_for_runner(self) -> None:
         self.service.run_training()
 
-        self.assertIn(("BTCUSDT", "1h", 120), self.service._market_reader.calls)
-        self.assertIn(("BTCUSDT", "4h", 120), self.service._market_reader.calls)
-        self.assertIn(("ETHUSDT", "1h", 120), self.service._market_reader.calls)
-        self.assertIn(("ETHUSDT", "4h", 120), self.service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "1h", 720), self.service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "4h", 180), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "1h", 720), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "4h", 180), self.service._market_reader.calls)
 
     def test_research_service_reuses_cached_kline_batch_between_training_and_inference(self) -> None:
         training_result = self.service.run_training()
@@ -212,6 +212,65 @@ class ResearchServiceTests(unittest.TestCase):
 
         self.assertEqual(controlled_service._market_reader.calls, [("ETHUSDT", "4h", 180)])
 
+    def test_research_service_expands_fetch_limit_when_lookback_days_requires_more_rows(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["1h", "4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 20,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        controlled_service.run_training()
+
+        self.assertIn(("BTCUSDT", "1h", 480), controlled_service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "4h", 120), controlled_service._market_reader.calls)
+
+    def test_research_service_rejects_empty_symbol_selection_instead_of_falling_back(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": [],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaisesRegex(research_service_module.QlibConfigurationError, "没有选中研究标的"):
+            controlled_service.run_training()
+
+    def test_research_service_rejects_empty_timeframe_selection_instead_of_falling_back(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": [],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaisesRegex(research_service_module.QlibConfigurationError, "没有选中研究周期"):
+            controlled_service.run_training()
+
     def test_research_service_marks_report_stale_when_current_config_has_changed(self) -> None:
         self.service.run_training()
         self.service.run_inference()
@@ -224,6 +283,7 @@ class ResearchServiceTests(unittest.TestCase):
                     "selected_symbols": ["ETHUSDT"],
                     "timeframes": ["4h"],
                     "sample_limit": 120,
+                    "lookback_days": 14,
                 },
                 "features": {
                     "primary_factors": ["trend_gap_pct"],
@@ -261,6 +321,7 @@ class ResearchServiceTests(unittest.TestCase):
 
         self.assertEqual(latest["config_alignment"]["status"], "stale")
         self.assertIn("selected_symbols", latest["config_alignment"]["stale_fields"])
+        self.assertIn("lookback_days", latest["config_alignment"]["stale_fields"])
         self.assertIn("research_template", latest["config_alignment"]["stale_fields"])
 
     def test_research_report_uses_signal_list_when_summary_missing(self) -> None:
@@ -549,6 +610,7 @@ def _default_workbench_config() -> dict[str, object]:
             "selected_symbols": ["BTCUSDT", "ETHUSDT"],
             "timeframes": ["1h", "4h"],
             "sample_limit": 120,
+            "lookback_days": 30,
         }
     }
 

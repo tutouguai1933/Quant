@@ -172,16 +172,16 @@ class SyncService:
     def _build_execution_state(*, runtime: dict[str, object], automation_state: dict[str, object]) -> dict[str, object]:
         """把当前执行链压成固定状态机。"""
 
-        if bool(automation_state.get("paused")):
-            return {
-                "state": "paused",
-                "detail": "当前执行链已暂停，等待人工恢复",
-                "allowed_transitions": ["manual", "dry-run", "live"],
-            }
         if bool(automation_state.get("manual_takeover")):
             return {
                 "state": "takeover",
                 "detail": "当前处于人工接管状态，自动化不会继续推进",
+                "allowed_transitions": ["manual", "dry-run", "live"],
+            }
+        if bool(automation_state.get("paused")):
+            return {
+                "state": "paused",
+                "detail": "当前执行链已暂停，等待人工恢复",
                 "allowed_transitions": ["manual", "dry-run", "live"],
             }
         runtime_mode = str(runtime.get("mode", ""))

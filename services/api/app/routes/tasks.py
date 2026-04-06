@@ -224,6 +224,21 @@ def trigger_kill_switch(actor: str = "user", token: str = "", authorization: str
     return _success({"item": item}, {"source": "automation-service", "action": "kill-switch"})
 
 
+@router.post("/automation/manual-takeover")
+def trigger_manual_takeover(
+    reason: str = "manual_takeover",
+    actor: str = "user",
+    token: str = "",
+    authorization: str = Header(""),
+) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.manual_takeover(reason=reason, actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "manual-takeover"})
+
+
 @router.post("/automation/run")
 def run_automation_cycle(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
     try:

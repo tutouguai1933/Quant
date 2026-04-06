@@ -10,7 +10,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.core.settings import Settings
+from services.api.app.services.risk_service import risk_service
 
 
 AUTOMATION_MODES = {"manual", "auto_dry_run", "auto_live"}
@@ -122,6 +124,7 @@ class AutomationService:
         self._paused_reason = "kill_switch"
         self._manual_takeover = True
         self.clear_armed_symbol()
+        self._apply_execution_guard(paused=True, stop_executor=True)
         self._updated_at = _utc_now()
         self.record_alert(level="error", code="kill_switch_enabled", message="Kill Switch 已触发，自动化已停机", source=actor)
         self._persist_state()
@@ -136,8 +139,32 @@ class AutomationService:
         self._paused = True
         self._paused_reason = reason.strip() or "manual_pause"
         self._manual_takeover = True
+        self._apply_execution_guard(paused=True, stop_executor=False)
         self._updated_at = _utc_now()
         self.record_alert(level="warning", code="automation_paused", message="自动化已暂停", source=actor)
+        self._persist_state()
+        return {
+            **self.get_state(),
+            "actor": actor,
+        }
+
+    def manual_takeover(self, reason: str = "manual_takeover", *, actor: str = "user") -> dict[str, object]:
+        """显式进入人工接管。"""
+
+        self._mode = "manual"
+        self._paused = True
+        self._paused_reason = reason.strip() or "manual_takeover"
+        self._manual_takeover = True
+        self.clear_armed_symbol()
+        self._apply_execution_guard(paused=True, stop_executor=False)
+        self._updated_at = _utc_now()
+        self.record_alert(
+            level="warning",
+            code="manual_takeover_enabled",
+            message="已进入人工接管，自动执行链已暂停",
+            source=actor,
+            detail=self._paused_reason,
+        )
         self._persist_state()
         return {
             **self.get_state(),
@@ -150,6 +177,7 @@ class AutomationService:
         self._paused = False
         self._paused_reason = ""
         self._manual_takeover = self._mode == "manual"
+        self._apply_execution_guard(paused=False, stop_executor=False)
         self._updated_at = _utc_now()
         self.record_alert(level="info", code="automation_resumed", message="自动化已恢复", source=actor)
         self._persist_state()
@@ -309,6 +337,49 @@ class AutomationService:
         }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _apply_execution_guard(self, *, paused: bool, stop_executor: bool) -> None:
+        """同步全局风控开关，并尽量把执行器状态收口。"""
+
+        risk_service.set_global_pause(paused)
+        if not paused:
+            return
+        action = "stop" if stop_executor else "pause"
+        strategy_ids = self._resolve_executor_strategy_ids()
+        for strategy_id in strategy_ids:
+            try:
+                freqtrade_client.control_strategy(strategy_id, action)
+            except Exception:
+                self.record_alert(
+                    level="warning",
+                    code="executor_control_failed",
+                    message="自动化已暂停，但执行器状态确认失败",
+                    source="automation-service",
+                    detail=f"{action}:{strategy_id}",
+                )
+
+    @staticmethod
+    def _resolve_executor_strategy_ids() -> list[int]:
+        """尽量解析执行器里可控制的策略列表。"""
+
+        try:
+            snapshot = freqtrade_client.get_snapshot()
+            raw_strategies = getattr(snapshot, "strategies", None)
+        except Exception:
+            return [1]
+        if not isinstance(raw_strategies, list):
+            return [1]
+        strategy_ids: list[int] = []
+        for item in raw_strategies:
+            if not isinstance(item, dict):
+                continue
+            raw_id = item.get("id")
+            if isinstance(raw_id, int) and raw_id > 0:
+                strategy_ids.append(raw_id)
+                continue
+            if isinstance(raw_id, str) and raw_id.isdigit():
+                strategy_ids.append(int(raw_id))
+        return sorted(set(strategy_ids)) if strategy_ids else [1]
 
     @staticmethod
     def _new_daily_summary() -> dict[str, object]:

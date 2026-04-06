@@ -30,7 +30,11 @@ class DataWorkspaceTests(unittest.TestCase):
         self.assertIn("预览状态", content)
         self.assertIn("还没有数据状态", content)
         self.assertIn("数据范围配置", content)
+        self.assertIn("lookback_days", content)
+        self.assertIn("回看天数", content)
         self.assertIn("selected_symbols", content)
+        self.assertIn("当前结果与配置对齐", content)
+        self.assertIn("配置检查", content)
 
 
 if __name__ == "__main__":

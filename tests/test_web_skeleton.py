@@ -101,6 +101,18 @@ class WebSkeletonTests(unittest.TestCase):
         self.assertIn("configEditable", evaluation)
         self.assertIn("disabled={!configEditable}", evaluation)
 
+    def test_research_and_evaluation_pages_keep_new_config_input_names(self) -> None:
+        research = (WEB_APP / "research" / "page.tsx").read_text(encoding="utf-8")
+        evaluation = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn('name="train_split_ratio"', research)
+        self.assertIn('name="validation_split_ratio"', research)
+        self.assertIn('name="test_split_ratio"', research)
+        self.assertIn('name="dry_run_min_win_rate"', evaluation)
+        self.assertIn('name="dry_run_max_turnover"', evaluation)
+        self.assertIn('name="dry_run_min_sample_count"', evaluation)
+        self.assertIn('name="validation_min_sample_count"', evaluation)
+
 
 if __name__ == "__main__":
     unittest.main()

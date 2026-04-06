@@ -22,11 +22,7 @@ class EvaluationWorkspaceService:
         """返回评估与实验中心统一模型。"""
 
         report = self._read_factory_report()
-        leaderboard = [
-            dict(item)
-            for item in list(report.get("leaderboard") or [])
-            if isinstance(item, dict)
-        ]
+        leaderboard = self._build_leaderboard(report)
         evaluation = dict(report.get("evaluation") or {})
         reviews = dict(report.get("reviews") or {})
         overview = dict(report.get("overview") or {})
@@ -57,9 +53,16 @@ class EvaluationWorkspaceService:
                 "dry_run_min_sharpe": str(configured_thresholds.get("dry_run_min_sharpe", "")),
                 "dry_run_max_drawdown_pct": str(configured_thresholds.get("dry_run_max_drawdown_pct", "")),
                 "dry_run_max_loss_streak": str(configured_thresholds.get("dry_run_max_loss_streak", "")),
+                "dry_run_min_win_rate": str(configured_thresholds.get("dry_run_min_win_rate", "0.5")),
+                "dry_run_max_turnover": str(configured_thresholds.get("dry_run_max_turnover", "0.6")),
+                "dry_run_min_sample_count": str(configured_thresholds.get("dry_run_min_sample_count", "20")),
+                "validation_min_sample_count": str(configured_thresholds.get("validation_min_sample_count", "12")),
                 "live_min_score": str(configured_thresholds.get("live_min_score", "")),
                 "live_min_positive_rate": str(configured_thresholds.get("live_min_positive_rate", "")),
                 "live_min_net_return_pct": str(configured_thresholds.get("live_min_net_return_pct", "")),
+                "live_min_win_rate": str(configured_thresholds.get("live_min_win_rate", "0.55")),
+                "live_max_turnover": str(configured_thresholds.get("live_max_turnover", "0.45")),
+                "live_min_sample_count": str(configured_thresholds.get("live_min_sample_count", "24")),
             },
             "evaluation": evaluation,
             "reviews": {
@@ -69,6 +72,12 @@ class EvaluationWorkspaceService:
             "leaderboard": leaderboard,
             "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)],
             "experiment_comparison": self._build_experiment_comparison(report),
+            "gate_matrix": self._build_gate_matrix(report),
+            "comparison_summary": self._build_comparison_summary(
+                report=report,
+                validation_reviews=validation_reviews,
+                execution_alignment=execution_alignment,
+            ),
             "execution_alignment": execution_alignment,
         }
 
@@ -93,12 +102,49 @@ class EvaluationWorkspaceService:
         return {}
 
     @staticmethod
+    def _build_leaderboard(report: dict[str, object]) -> list[dict[str, object]]:
+        """把实验排行整理成可直接展示推荐原因和淘汰原因的结构。"""
+
+        rows: list[dict[str, object]] = []
+        for item in list(report.get("leaderboard") or []):
+            if not isinstance(item, dict):
+                continue
+            row = dict(item)
+            failure_reasons = [
+                str(reason).strip()
+                for reason in list(row.get("failure_reasons") or [])
+                if str(reason).strip()
+            ]
+            elimination_reason = EvaluationWorkspaceService._resolve_elimination_reason(row=row, failure_reasons=failure_reasons)
+            row["failure_reasons"] = failure_reasons
+            row["recommendation_reason"] = str(row.get("recommendation_reason", "")).strip()
+            row["elimination_reason"] = elimination_reason
+            rows.append(row)
+        return rows
+
+    @staticmethod
+    def _resolve_elimination_reason(*, row: dict[str, object], failure_reasons: list[str]) -> str:
+        """统一淘汰原因展示口径。"""
+
+        if failure_reasons:
+            return " / ".join(failure_reasons)
+        dry_run_gate = dict(row.get("dry_run_gate") or {})
+        dry_reasons = [str(reason).strip() for reason in list(dry_run_gate.get("reasons") or []) if str(reason).strip()]
+        if dry_reasons:
+            return " / ".join(dry_reasons)
+        live_gate = dict(row.get("live_gate") or {})
+        live_reasons = [str(reason).strip() for reason in list(live_gate.get("reasons") or []) if str(reason).strip()]
+        if live_reasons:
+            return " / ".join(live_reasons)
+        return "已通过"
+
+    @staticmethod
     def _build_experiment_comparison(report: dict[str, object]) -> list[dict[str, object]]:
         """把训练、推理和最近运行压成统一对照表。"""
 
         experiments = dict(report.get("experiments") or {})
-        training = dict(experiments.get("training") or {})
-        inference = dict(experiments.get("inference") or {})
+        training = dict(experiments.get("training") or report.get("latest_training") or {})
+        inference = dict(experiments.get("inference") or report.get("latest_inference") or {})
         recent_runs = [dict(item) for item in list(experiments.get("recent_runs") or []) if isinstance(item, dict)]
         rows: list[dict[str, object]] = []
         if training:
@@ -161,6 +207,124 @@ class EvaluationWorkspaceService:
                 }
             )
         return rows
+
+    @staticmethod
+    def _build_gate_matrix(report: dict[str, object]) -> list[dict[str, object]]:
+        """把候选在各个门控的状态整理成表格。"""
+
+        rows: list[dict[str, object]] = []
+        for item in list(report.get("candidates") or []):
+            if not isinstance(item, dict):
+                continue
+            rule_gate = dict(item.get("rule_gate") or {})
+            validation_gate = dict(item.get("research_validation_gate") or {})
+            backtest_gate = dict(item.get("backtest_gate") or {})
+            consistency_gate = dict(item.get("consistency_gate") or {})
+            blocking_gate, primary_reason = EvaluationWorkspaceService._resolve_blocking_gate(
+                rule_gate=rule_gate,
+                validation_gate=validation_gate,
+                backtest_gate=backtest_gate,
+                consistency_gate=consistency_gate,
+                dry_run_gate=dict(item.get("dry_run_gate") or {}),
+            )
+            rows.append(
+                {
+                    "symbol": str(item.get("symbol", "")),
+                    "allowed_to_dry_run": bool(item.get("allowed_to_dry_run")),
+                    "allowed_to_live": bool(item.get("allowed_to_live")),
+                    "blocking_gate": blocking_gate,
+                    "primary_reason": primary_reason,
+                    "rule_gate": EvaluationWorkspaceService._format_gate_status(rule_gate),
+                    "validation_gate": EvaluationWorkspaceService._format_gate_status(validation_gate),
+                    "backtest_gate": EvaluationWorkspaceService._format_gate_status(backtest_gate),
+                    "consistency_gate": EvaluationWorkspaceService._format_gate_status(consistency_gate),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _build_comparison_summary(
+        *,
+        report: dict[str, object],
+        validation_reviews: dict[str, object],
+        execution_alignment: dict[str, object],
+    ) -> dict[str, object]:
+        """把训练、推理、配置和执行的一致性压成摘要。"""
+
+        experiments = dict(report.get("experiments") or {})
+        training = dict(experiments.get("training") or report.get("latest_training") or {})
+        inference = dict(experiments.get("inference") or report.get("latest_inference") or {})
+        config_alignment = dict(report.get("config_alignment") or {})
+        research_review = dict(validation_reviews.get("research") or report.get("reviews", {}).get("research") or {})
+        training_model = str(training.get("model_version", ""))
+        inference_model = str(inference.get("model_version", ""))
+        training_snapshot = str(training.get("dataset_snapshot_id", ""))
+        inference_snapshot = str(inference.get("dataset_snapshot_id", ""))
+        model_aligned = bool(training_model and inference_model and training_model == inference_model)
+        dataset_aligned = bool(training_snapshot and inference_snapshot and training_snapshot == inference_snapshot)
+
+        note_parts = [
+            f"配置对齐：{str(config_alignment.get('status', 'unavailable')) or 'unavailable'}",
+            f"研究复盘：{str(research_review.get('result', 'n/a')) or 'n/a'}",
+            f"执行对齐：{str(execution_alignment.get('status', 'n/a')) or 'n/a'}",
+        ]
+
+        return {
+            "training_run_id": str(training.get("run_id", "")),
+            "inference_run_id": str(inference.get("run_id", "")),
+            "training_status": str(training.get("status", "")),
+            "inference_status": str(inference.get("status", "")),
+            "config_alignment_status": str(config_alignment.get("status", "unavailable") or "unavailable"),
+            "execution_alignment_status": str(execution_alignment.get("status", "unavailable") or "unavailable"),
+            "review_result": str(research_review.get("result", "") or ""),
+            "next_action": str(research_review.get("next_action", report.get("overview", {}).get("recommended_action", "")) or ""),
+            "model_aligned": model_aligned,
+            "dataset_aligned": dataset_aligned,
+            "note": " / ".join(note_parts),
+        }
+
+    @staticmethod
+    def _resolve_blocking_gate(
+        *,
+        rule_gate: dict[str, object],
+        validation_gate: dict[str, object],
+        backtest_gate: dict[str, object],
+        consistency_gate: dict[str, object],
+        dry_run_gate: dict[str, object],
+    ) -> tuple[str, str]:
+        """找出候选当前最主要卡住的门。"""
+
+        ordered_gates = [
+            ("rule_gate", rule_gate),
+            ("validation_gate", validation_gate),
+            ("backtest_gate", backtest_gate),
+            ("consistency_gate", consistency_gate),
+        ]
+        for gate_name, gate_payload in ordered_gates:
+            if EvaluationWorkspaceService._gate_passed(gate_payload):
+                continue
+            reasons = [str(reason).strip() for reason in list(gate_payload.get("reasons") or []) if str(reason).strip()]
+            return gate_name, " / ".join(reasons) if reasons else "未通过"
+        dry_run_reasons = [str(reason).strip() for reason in list(dry_run_gate.get("reasons") or []) if str(reason).strip()]
+        if dry_run_reasons:
+            return "dry_run_gate", " / ".join(dry_run_reasons)
+        return "passed", "已通过"
+
+    @staticmethod
+    def _format_gate_status(gate: dict[str, object]) -> str:
+        """统一门控状态文案。"""
+
+        if not gate:
+            return "n/a"
+        return "通过" if EvaluationWorkspaceService._gate_passed(gate) else "拦下"
+
+    @staticmethod
+    def _gate_passed(gate: dict[str, object]) -> bool:
+        """判断单个门控是否通过。"""
+
+        if not gate:
+            return False
+        return bool(gate.get("passed"))
 
 
 evaluation_workspace_service = EvaluationWorkspaceService()

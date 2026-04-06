@@ -74,7 +74,15 @@ class AutomationWorkflowService:
                 source=source,
                 detail=str(train_task.get("error_message") or ""),
             )
-            return self._finalize_failed_cycle(mode=mode, next_action="stop", review_limit=review_limit, tasks={"train": train_task})
+            return self._finalize_failed_cycle(
+                mode=mode,
+                next_action="stop",
+                review_limit=review_limit,
+                tasks={"train": train_task},
+                failure_policy_action="stop",
+                takeover_reason="workflow_train_failed",
+                source=source,
+            )
 
         infer_task = self._scheduler.run_named_task(task_type="research_infer", source=source, target_type="system")
         if infer_task["status"] != "succeeded":
@@ -85,7 +93,15 @@ class AutomationWorkflowService:
                 source=source,
                 detail=str(infer_task.get("error_message") or ""),
             )
-            return self._finalize_failed_cycle(mode=mode, next_action="stop", review_limit=review_limit, tasks={"train": train_task, "infer": infer_task})
+            return self._finalize_failed_cycle(
+                mode=mode,
+                next_action="stop",
+                review_limit=review_limit,
+                tasks={"train": train_task, "infer": infer_task},
+                failure_policy_action="stop",
+                takeover_reason="workflow_infer_failed",
+                source=source,
+            )
 
         signal_task = self._scheduler.run_named_task(task_type="signal_output", source=source, target_type="system")
         if signal_task["status"] != "succeeded":
@@ -101,6 +117,9 @@ class AutomationWorkflowService:
                 next_action="stop",
                 review_limit=review_limit,
                 tasks={"train": train_task, "infer": infer_task, "signal_output": signal_task},
+                failure_policy_action="stop",
+                takeover_reason="workflow_signal_output_failed",
+                source=source,
             )
 
         recommendation = self._research.get_research_recommendation() or {}
@@ -177,10 +196,12 @@ class AutomationWorkflowService:
                     source=source,
                     detail=recommended_symbol,
                 )
-                next_action = "continue_research" if dispatch_result["error_code"] == "signal_not_ready" else "stop"
+                next_action = "continue_research" if dispatch_result["error_code"] == "signal_not_ready" else "review_and_decide"
                 dispatch_status = dispatch_result["status"]
                 cycle_message = str(dispatch_result.get("message") or "")
                 failure_reason = str(dispatch_result.get("error_code") or "")
+                if dispatch_result["error_code"] not in {"signal_not_ready", "risk_blocked"}:
+                    self._automation.manual_takeover(reason=f"dispatch_{failure_reason}", actor=source)
             else:
                 dispatch_status = "succeeded"
                 if mode == "auto_live":
@@ -212,6 +233,7 @@ class AutomationWorkflowService:
             "next_action": next_action,
             "message": cycle_message,
             "failure_reason": failure_reason,
+            "failure_policy_action": next_action if dispatch_status == "failed" else "",
             "armed_symbol": str(self._automation.get_state().get("armed_symbol", "")),
             "train_task": train_task,
             "infer_task": infer_task,
@@ -230,9 +252,13 @@ class AutomationWorkflowService:
         next_action: str,
         review_limit: int,
         tasks: dict[str, object],
+        failure_policy_action: str,
+        takeover_reason: str,
+        source: str,
     ) -> dict[str, object]:
         """在训练或推理失败时统一收口工作流。"""
 
+        self._automation.manual_takeover(reason=takeover_reason, actor=source)
         review_task = self._scheduler.run_named_task(
             task_type="review",
             source="automation",
@@ -247,6 +273,7 @@ class AutomationWorkflowService:
             "next_action": next_action,
             "message": "自动化本轮在训练或推理阶段失败，请先看统一复盘。",
             "failure_reason": "workflow_failed",
+            "failure_policy_action": failure_policy_action,
             "review_task": review_task,
             "review_overview": dict(report.get("overview") or {}),
             **tasks,

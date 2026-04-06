@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
   if (token) {
     try {
-      await logoutAdmin(token);
+    await logoutAdmin(token, request);
     } catch {
       // 即使 API 退出失败，也优先清掉本地会话。
     }

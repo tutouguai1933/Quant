@@ -26,11 +26,20 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("样本外稳定性", content)
         self.assertIn("研究与执行对齐", content)
         self.assertIn("实验对照", content)
+        self.assertIn("门控分解", content)
+        self.assertIn("实验一致性", content)
         self.assertIn("当前结果与配置对齐", content)
         self.assertIn("工作台暂时不可用", content)
         self.assertIn("进入 dry-run", content)
         self.assertIn("准入门槛配置", content)
         self.assertIn("live_min_score", content)
+        self.assertIn("dry_run_min_win_rate", content)
+        self.assertIn("dry_run_max_turnover", content)
+        self.assertIn("dry_run_min_sample_count", content)
+        self.assertIn("live_min_win_rate", content)
+        self.assertIn("live_max_turnover", content)
+        self.assertIn("live_min_sample_count", content)
+        self.assertIn("淘汰原因说明", content)
 
 
 if __name__ == "__main__":

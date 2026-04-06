@@ -57,6 +57,7 @@ class QlibConfigTests(unittest.TestCase):
                 "QUANT_QLIB_SELECTED_SYMBOLS": "ETHUSDT,DOGEUSDT",
                 "QUANT_QLIB_TIMEFRAMES": "4h",
                 "QUANT_QLIB_SAMPLE_LIMIT": "180",
+                "QUANT_QLIB_LOOKBACK_DAYS": "21",
                 "QUANT_QLIB_PRIMARY_FACTORS": "ema20_gap_pct,trend_gap_pct",
                 "QUANT_QLIB_AUXILIARY_FACTORS": "rsi14",
                 "QUANT_QLIB_RESEARCH_TEMPLATE": "single_asset_timing_strict",
@@ -74,6 +75,7 @@ class QlibConfigTests(unittest.TestCase):
         self.assertEqual(config.selected_symbols, ("ETHUSDT", "DOGEUSDT"))
         self.assertEqual(config.selected_timeframes, ("4h",))
         self.assertEqual(config.sample_limit, 180)
+        self.assertEqual(config.lookback_days, 21)
         self.assertEqual(config.primary_feature_columns, ("ema20_gap_pct", "trend_gap_pct"))
         self.assertEqual(config.auxiliary_feature_columns, ("rsi14",))
         self.assertEqual(config.research_template, "single_asset_timing_strict")
@@ -332,14 +334,18 @@ class QlibRunnerTests(unittest.TestCase):
             symbol="BTCUSDT",
             candles_1h=candles_1h,
             candles_4h=candles_4h,
-                label_target_pct=config.label_target_pct,
-                label_stop_pct=config.label_stop_pct,
-                label_mode=config.label_mode,
+            lookback_days=config.lookback_days,
+            label_target_pct=config.label_target_pct,
+            label_stop_pct=config.label_stop_pct,
+            label_mode=config.label_mode,
                 outlier_policy=config.outlier_policy,
                 normalization_policy=config.normalization_policy,
                 min_window_days=config.holding_window_min_days,
                 max_window_days=config.holding_window_max_days,
                 holding_window_label=config.holding_window_label,
+                train_split_ratio=config.train_split_ratio,
+                validation_split_ratio=config.validation_split_ratio,
+                test_split_ratio=config.test_split_ratio,
             )
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["sample_count"], 3)

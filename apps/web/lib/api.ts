@@ -175,6 +175,7 @@ export type AutomationStatusModel = {
 export type DataWorkspaceModel = {
   status: string;
   backend: string;
+  config_alignment?: Record<string, unknown>;
   filters: {
     selected_symbol: string;
     selected_interval: string;
@@ -191,6 +192,7 @@ export type DataWorkspaceModel = {
     primary_symbol: string;
     timeframes: string[];
     sample_limit: number;
+    lookback_days: number;
     available_symbols: string[];
     available_timeframes: string[];
   };
@@ -465,6 +467,9 @@ export type ResearchWorkspaceModel = {
     max_holding_days: number;
     label_target_pct: string;
     label_stop_pct: string;
+    train_split_ratio: string;
+    validation_split_ratio: string;
+    test_split_ratio: string;
     available_models: string[];
     available_research_templates: string[];
     available_label_modes: string[];
@@ -515,15 +520,24 @@ export type EvaluationWorkspaceModel = {
     dry_run_min_sharpe: string;
     dry_run_max_drawdown_pct: string;
     dry_run_max_loss_streak: string;
+    dry_run_min_win_rate: string;
+    dry_run_max_turnover: string;
+    dry_run_min_sample_count: string;
+    validation_min_sample_count: string;
     live_min_score: string;
     live_min_positive_rate: string;
     live_min_net_return_pct: string;
+    live_min_win_rate: string;
+    live_max_turnover: string;
+    live_min_sample_count: string;
   };
   evaluation: Record<string, unknown>;
   reviews: Record<string, unknown>;
   leaderboard: Array<Record<string, unknown>>;
   recent_runs: Array<Record<string, unknown>>;
   experiment_comparison: Array<Record<string, unknown>>;
+  gate_matrix: Array<Record<string, unknown>>;
+  comparison_summary: Record<string, unknown>;
   execution_alignment: Record<string, unknown>;
 };
 
@@ -575,9 +589,14 @@ const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
 const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
 
-async function resolveControlPlaneBaseUrl(): Promise<string> {
+async function resolveControlPlaneBaseUrl(request?: Request): Promise<string> {
   if (typeof window !== "undefined") {
     return WEB_PROXY_BASE_URL;
+  }
+
+  const localDebugBaseUrl = deriveLocalApiBaseUrl(request);
+  if (localDebugBaseUrl) {
+    return localDebugBaseUrl;
   }
 
   try {
@@ -595,8 +614,8 @@ async function resolveControlPlaneBaseUrl(): Promise<string> {
   return buildUpstreamApiUrl("/");
 }
 
-export async function resolveControlPlaneUrl(path: string): Promise<string> {
-  const baseUrl = await resolveControlPlaneBaseUrl();
+export async function resolveControlPlaneUrl(path: string, request?: Request): Promise<string> {
+  const baseUrl = await resolveControlPlaneBaseUrl(request);
   return `${baseUrl}${path}`;
 }
 
@@ -607,26 +626,51 @@ function deriveLocalApiBaseUrl(request?: Request): string | null {
 
   try {
     const currentUrl = new URL(request.url);
-    if (!isLoopbackHost(currentUrl.hostname)) {
+    const forwardedHost = request.headers.get("x-forwarded-host")?.trim() ?? "";
+    const directHost = request.headers.get("host")?.trim() ?? "";
+    const hostPort = (forwardedHost || directHost || currentUrl.host).trim();
+    const [hostnamePart, portPart] = splitHostPort(hostPort);
+    const hostname = hostnamePart || currentUrl.hostname;
+    if (!isLoopbackHost(hostname)) {
       return null;
     }
-    const webPort = Number(currentUrl.port || "0");
+    const webPort = Number(portPart || currentUrl.port || "0");
     if (!Number.isFinite(webPort) || webPort <= 1) {
       return null;
     }
-    return `${currentUrl.protocol}//${currentUrl.hostname}:${webPort - 1}/api/v1`;
+    return `${currentUrl.protocol}//${hostname}:${webPort - 1}/api/v1`;
   } catch {
     return null;
   }
 }
 
+function splitHostPort(hostPort: string): [string, string] {
+  if (!hostPort) {
+    return ["", ""];
+  }
+  if (hostPort.startsWith("[")) {
+    const closingIndex = hostPort.indexOf("]");
+    if (closingIndex === -1) {
+      return [hostPort, ""];
+    }
+    const hostname = hostPort.slice(0, closingIndex + 1);
+    const port = hostPort.slice(closingIndex + 2);
+    return [hostname, port];
+  }
+  const separatorIndex = hostPort.lastIndexOf(":");
+  if (separatorIndex === -1) {
+    return [hostPort, ""];
+  }
+  return [hostPort.slice(0, separatorIndex), hostPort.slice(separatorIndex + 1)];
+}
+
 function isLoopbackHost(hostname: string): boolean {
-  return hostname === "127.0.0.1" || hostname === "::1";
+  return hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
 }
 
 /* 构建服务端直连控制面 API 地址。 */
 export function buildUpstreamApiUrl(path: string, request?: Request): string {
-  const configuredBaseUrl = (process.env.QUANT_API_BASE_URL ?? deriveLocalApiBaseUrl(request) ?? DEFAULT_API_BASE_URL).replace(
+  const configuredBaseUrl = (deriveLocalApiBaseUrl(request) ?? process.env.QUANT_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(
     /\/$/,
     "",
   );
@@ -668,8 +712,9 @@ export async function fetchJson<T>(path: string, token?: string): Promise<ApiEnv
 export async function loginAdmin(
   username: string,
   password: string,
+  request?: Request,
 ): Promise<ApiEnvelope<{ item: { token: string; username: string; scope: string } }>> {
-  const response = await fetch(await resolveControlPlaneUrl("/auth/login"), {
+  const response = await fetch(await resolveControlPlaneUrl("/auth/login", request), {
     method: "POST",
     headers: {
       ...buildAuthHeaders(),
@@ -690,8 +735,9 @@ export async function getAdminSession(
 
 export async function logoutAdmin(
   token: string,
+  request?: Request,
 ): Promise<ApiEnvelope<{ item: { token: string; status: string } }>> {
-  const response = await fetch(await resolveControlPlaneUrl(`/auth/logout?token=${token}`), {
+  const response = await fetch(await resolveControlPlaneUrl(`/auth/logout?token=${token}`, request), {
     method: "POST",
     headers: buildAuthHeaders(token),
     cache: "no-store",
@@ -1237,6 +1283,7 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
   return {
     status: "unavailable",
     backend: "qlib-fallback",
+    config_alignment: {},
     filters: {
       selected_symbol: String(symbol ?? "").trim() || "BTCUSDT",
       selected_interval: String(interval ?? "").trim() || "4h",
@@ -1249,6 +1296,7 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
       primary_symbol: String(symbol ?? "").trim() || "BTCUSDT",
       timeframes: [String(interval ?? "").trim() || "4h", "1h"],
       sample_limit: typeof limit === "number" && Number.isFinite(limit) ? limit : 200,
+      lookback_days: 30,
       available_symbols: [],
       available_timeframes: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
     },
@@ -1350,6 +1398,9 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       max_holding_days: 3,
       label_target_pct: "1",
       label_stop_pct: "-1",
+      train_split_ratio: "0.6",
+      validation_split_ratio: "0.2",
+      test_split_ratio: "0.2",
       available_models: ["heuristic_v1", "trend_bias_v2"],
       available_research_templates: ["single_asset_timing", "single_asset_timing_strict"],
       available_label_modes: ["earliest_hit", "close_only"],
@@ -1399,15 +1450,24 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       dry_run_min_sharpe: "0.5",
       dry_run_max_drawdown_pct: "15",
       dry_run_max_loss_streak: "3",
+      dry_run_min_win_rate: "0.5",
+      dry_run_max_turnover: "0.6",
+      dry_run_min_sample_count: "20",
+      validation_min_sample_count: "12",
       live_min_score: "0.65",
       live_min_positive_rate: "0.50",
       live_min_net_return_pct: "0.20",
+      live_min_win_rate: "0.55",
+      live_max_turnover: "0.45",
+      live_min_sample_count: "24",
     },
     evaluation: {},
     reviews: {},
     leaderboard: [],
     recent_runs: [],
     experiment_comparison: [],
+    gate_matrix: [],
+    comparison_summary: {},
     execution_alignment: {},
   };
 }
@@ -1501,6 +1561,7 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
   return {
     status: String(row.status ?? "unavailable"),
     backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
     filters: {
       selected_symbol: String(filters.selected_symbol ?? ""),
       selected_interval: String(filters.selected_interval ?? "4h"),
@@ -1513,6 +1574,7 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       primary_symbol: String(controls.primary_symbol ?? ""),
       timeframes: normalizeStringArray(controls.timeframes, []),
       sample_limit: Number(controls.sample_limit ?? 120),
+      lookback_days: Number(controls.lookback_days ?? 30),
       available_symbols: normalizeStringArray(controls.available_symbols, []),
       available_timeframes: normalizeStringArray(controls.available_timeframes, []),
     },
@@ -1656,6 +1718,9 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       max_holding_days: Number(controls.max_holding_days ?? 3),
       label_target_pct: String(controls.label_target_pct ?? ""),
       label_stop_pct: String(controls.label_stop_pct ?? ""),
+      train_split_ratio: String(controls.train_split_ratio ?? "0.6"),
+      validation_split_ratio: String(controls.validation_split_ratio ?? "0.2"),
+      test_split_ratio: String(controls.test_split_ratio ?? "0.2"),
       available_models: normalizeStringArray(controls.available_models, []),
       available_research_templates: normalizeStringArray(controls.available_research_templates, []),
       available_label_modes: normalizeStringArray(controls.available_label_modes, []),
@@ -1736,15 +1801,24 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       dry_run_min_sharpe: String(controls.dry_run_min_sharpe ?? ""),
       dry_run_max_drawdown_pct: String(controls.dry_run_max_drawdown_pct ?? ""),
       dry_run_max_loss_streak: String(controls.dry_run_max_loss_streak ?? ""),
+      dry_run_min_win_rate: String(controls.dry_run_min_win_rate ?? "0.5"),
+      dry_run_max_turnover: String(controls.dry_run_max_turnover ?? "0.6"),
+      dry_run_min_sample_count: String(controls.dry_run_min_sample_count ?? "20"),
+      validation_min_sample_count: String(controls.validation_min_sample_count ?? "12"),
       live_min_score: String(controls.live_min_score ?? ""),
       live_min_positive_rate: String(controls.live_min_positive_rate ?? ""),
       live_min_net_return_pct: String(controls.live_min_net_return_pct ?? ""),
+      live_min_win_rate: String(controls.live_min_win_rate ?? "0.55"),
+      live_max_turnover: String(controls.live_max_turnover ?? "0.45"),
+      live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
     },
     evaluation: isPlainObject(row.evaluation) ? row.evaluation : {},
     reviews: isPlainObject(row.reviews) ? row.reviews : {},
     leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
     recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
     experiment_comparison: Array.isArray(row.experiment_comparison) ? row.experiment_comparison.filter(isPlainObject) : [],
+    gate_matrix: Array.isArray(row.gate_matrix) ? row.gate_matrix.filter(isPlainObject) : [],
+    comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
     execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
   };
 }

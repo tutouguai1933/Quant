@@ -24,6 +24,7 @@ export default async function ResearchPage() {
       ? runtimeResponse.value.data.item
       : getResearchRuntimeStatusFallback();
   const configAlignment = asRecord(workspace.config_alignment);
+  const controls = asRecord(workspace.controls);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
@@ -140,6 +141,13 @@ export default async function ResearchPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <ConfigInput name="min_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.min_holding_days)} />
                 <ConfigInput name="max_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.max_holding_days)} />
+              </div>
+            </ConfigField>
+            <ConfigField label="训练/验证/测试切分比例" hint="保存后下一轮研究会按这个比例切训练集、验证集和测试集。">
+              <div className="grid gap-3 md:grid-cols-3">
+                <ConfigInput name="train_split_ratio" defaultValue={String(controls.train_split_ratio ?? "0.6")} placeholder="训练比例" />
+                <ConfigInput name="validation_split_ratio" defaultValue={String(controls.validation_split_ratio ?? "0.2")} placeholder="验证比例" />
+                <ConfigInput name="test_split_ratio" defaultValue={String(controls.test_split_ratio ?? "0.2")} placeholder="测试比例" />
               </div>
             </ConfigField>
           </WorkbenchConfigCard>

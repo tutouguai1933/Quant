@@ -179,17 +179,10 @@ class ResearchService:
         whitelist = list(self._whitelist_provider())
         workbench_config = self._workbench_config_reader()
         data_config = dict(workbench_config.get("data") or {})
-        selected_symbols = [
-            item
-            for item in [str(symbol).strip().upper() for symbol in list(data_config.get("selected_symbols") or [])]
-            if item in whitelist
-        ] or whitelist
-        selected_timeframes = [
-            item
-            for item in [str(interval).strip() for interval in list(data_config.get("timeframes") or [])]
-            if item in {"1h", "4h"}
-        ] or ["4h", "1h"]
+        selected_symbols = self._resolve_selected_symbols(data_config=data_config, whitelist=whitelist)
+        selected_timeframes = self._resolve_selected_timeframes(data_config=data_config)
         sample_limit = int(data_config.get("sample_limit", 120) or 120)
+        lookback_days = int(data_config.get("lookback_days", 30) or 30)
         cache_summary = {
             "request_count": 0,
             "reused_count": 0,
@@ -203,19 +196,21 @@ class ResearchService:
             reused_1h = False
             reused_4h = False
             if "1h" in selected_timeframes:
+                limit_1h = _resolve_research_fetch_limit(timeframe="1h", sample_limit=sample_limit, lookback_days=lookback_days)
                 chart_1h, reused_1h = self._read_market_chart_cached(
                     symbol=symbol,
                     interval="1h",
-                    limit=sample_limit,
+                    limit=limit_1h,
                     allowed_symbols=tuple(whitelist),
                 )
                 candles_1h = list(chart_1h.get("items", []))
                 cache_summary["request_count"] += 1
             if "4h" in selected_timeframes:
+                limit_4h = _resolve_research_fetch_limit(timeframe="4h", sample_limit=sample_limit, lookback_days=lookback_days)
                 chart_4h, reused_4h = self._read_market_chart_cached(
                     symbol=symbol,
                     interval="4h",
-                    limit=sample_limit,
+                    limit=limit_4h,
                     allowed_symbols=tuple(whitelist),
                 )
                 candles_4h = list(chart_4h.get("items", []))
@@ -230,6 +225,38 @@ class ResearchService:
         if not dataset:
             raise QlibConfigurationError("研究层没有拿到可用市场样本")
         return dataset, cache_summary
+
+    @staticmethod
+    def _resolve_selected_symbols(*, data_config: dict[str, object], whitelist: list[str]) -> list[str]:
+        """解析研究层要消费的标的列表。"""
+
+        raw_symbols = data_config.get("selected_symbols")
+        if raw_symbols is None:
+            return whitelist
+        selected_symbols = [
+            item
+            for item in [str(symbol).strip().upper() for symbol in list(raw_symbols or [])]
+            if item in whitelist
+        ]
+        if not selected_symbols:
+            raise QlibConfigurationError("数据工作台当前没有选中研究标的，请先至少勾选一个币种。")
+        return selected_symbols
+
+    @staticmethod
+    def _resolve_selected_timeframes(*, data_config: dict[str, object]) -> list[str]:
+        """解析研究层要消费的周期列表。"""
+
+        raw_timeframes = data_config.get("timeframes")
+        if raw_timeframes is None:
+            return ["4h", "1h"]
+        selected_timeframes = [
+            item
+            for item in [str(interval).strip() for interval in list(raw_timeframes or [])]
+            if item in {"1h", "4h"}
+        ]
+        if not selected_timeframes:
+            raise QlibConfigurationError("数据工作台当前没有选中研究周期，请先至少勾选一个周期。")
+        return selected_timeframes
 
     def _load_runtime_config(self):
         """加载研究运行配置，并叠加工作台配置覆盖项。"""
@@ -336,6 +363,10 @@ class ResearchService:
             str(item) for item in list(training_context.get("timeframes") or [])
         ):
             stale_fields.append("timeframes")
+        if str(data_config.get("sample_limit", "")) != str(training_parameters.get("sample_limit", "")):
+            stale_fields.append("sample_limit")
+        if str(data_config.get("lookback_days", "")) != str(training_parameters.get("lookback_days", input_summary.get("lookback_days", ""))):
+            stale_fields.append("lookback_days")
 
         current_pairs = {
             "research_template": str(research_config.get("research_template", "")),
@@ -347,6 +378,8 @@ class ResearchService:
             "holding_window_max_days": str(research_config.get("max_holding_days", "")),
             "outlier_policy": str(features_config.get("outlier_policy", "")),
             "normalization_policy": str(features_config.get("normalization_policy", "")),
+            "sample_limit": str(data_config.get("sample_limit", "")),
+            "lookback_days": str(data_config.get("lookback_days", "")),
             "backtest_fee_bps": str(backtest_config.get("fee_bps", "")),
             "backtest_slippage_bps": str(backtest_config.get("slippage_bps", "")),
             "dry_run_min_score": str(thresholds_config.get("dry_run_min_score", "")),
@@ -369,6 +402,8 @@ class ResearchService:
             "holding_window_max_days": str(training_parameters.get("holding_window_max_days", "")),
             "outlier_policy": str(training_parameters.get("outlier_policy", input_summary.get("outlier_policy", ""))),
             "normalization_policy": str(training_parameters.get("normalization_policy", input_summary.get("normalization_policy", ""))),
+            "sample_limit": str(training_parameters.get("sample_limit", input_summary.get("sample_limit", ""))),
+            "lookback_days": str(training_parameters.get("lookback_days", input_summary.get("lookback_days", ""))),
             "backtest_fee_bps": str(training_parameters.get("backtest_fee_bps", "")),
             "backtest_slippage_bps": str(training_parameters.get("backtest_slippage_bps", "")),
             "dry_run_min_score": str(input_summary.get("dry_run_min_score", "")),
@@ -408,6 +443,16 @@ class ResearchService:
 
 
 research_service = ResearchService()
+
+
+def _resolve_research_fetch_limit(*, timeframe: str, sample_limit: int, lookback_days: int) -> int:
+    """按时间窗口换算研究拉数长度。"""
+
+    normalized_limit = max(int(sample_limit or 0), 1)
+    normalized_days = max(int(lookback_days or 0), 1)
+    bars_per_day = 24 if timeframe == "1h" else 6 if timeframe == "4h" else 1
+    required_bars = normalized_days * bars_per_day
+    return max(normalized_limit, required_bars)
 
 
 def _candidate_sort_key(item: dict[str, object]) -> tuple[int, str]:

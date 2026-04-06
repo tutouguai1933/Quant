@@ -28,6 +28,9 @@ class BacktestWorkspaceTests(unittest.TestCase):
         self.assertIn("交易明细", content)
         self.assertIn("回测参数配置", content)
         self.assertIn("fee_bps", content)
+        self.assertIn("准入门槛预览", content)
+        self.assertIn("dry_run_min_win_rate", content)
+        self.assertIn("live_min_win_rate", content)
 
 
 if __name__ == "__main__":

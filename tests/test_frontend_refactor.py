@@ -52,6 +52,7 @@ class FrontendRefactorTests(unittest.TestCase):
         content = (WEB_APP / "login" / "submit" / "route.ts").read_text(encoding="utf-8")
         self.assertIn("buildRedirectUrl", content)
         self.assertIn('from "../../../lib/redirect"', content)
+        self.assertIn("loginAdmin(username, password, request)", content)
 
     def test_frontend_redirect_routes_share_same_host_helper(self) -> None:
         actions_content = (WEB_APP / "actions" / "route.ts").read_text(encoding="utf-8")
@@ -65,9 +66,34 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("x-forwarded-host", redirect_helper)
         self.assertIn("automation_dry_run_only", actions_content)
         self.assertIn("automation_kill_switch", actions_content)
+        self.assertIn("automation_manual_takeover", actions_content)
         self.assertIn("export async function POST", proxy_route)
         self.assertIn("Authorization", proxy_route)
         self.assertIn("buildUpstreamApiUrl", proxy_route)
+
+    def test_frontend_debug_loopback_prefers_request_port(self) -> None:
+        content = (REPO_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(encoding="utf-8")
+
+        marker = "const configuredBaseUrl = ("
+        start = content.index(marker)
+        end = content.index(").replace(", start)
+        expression = content[start:end]
+
+        self.assertLess(
+            expression.index("deriveLocalApiBaseUrl(request)"),
+            expression.index("process.env.QUANT_API_BASE_URL"),
+        )
+
+    def test_frontend_debug_loopback_reads_request_host_headers(self) -> None:
+        content = (REPO_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(encoding="utf-8")
+
+        helper_section = content.split("function deriveLocalApiBaseUrl(request?: Request): string | null {", 1)[1].split(
+            "function isLoopbackHost(",
+            1,
+        )[0]
+
+        self.assertIn('request.headers.get("x-forwarded-host")', helper_section)
+        self.assertIn('request.headers.get("host")', helper_section)
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
@@ -79,6 +105,8 @@ class FrontendRefactorTests(unittest.TestCase):
             content = file_path.read_text(encoding="utf-8")
             for pattern in patterns:
                 self.assertIn(pattern, content)
+        tasks_content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")
+        self.assertIn('action="automation_manual_takeover"', tasks_content)
 
     def test_protected_forms_no_longer_expose_token_inputs(self) -> None:
         page_files = [
@@ -196,6 +224,19 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("supportive_but_not_triggering", content)
         self.assertIn("支持但未触发", content)
         self.assertIn("replaceAll(\"_\", \" \")", content)
+
+    def test_research_and_evaluation_pages_expose_split_and_threshold_fields(self) -> None:
+        research_content = (WEB_APP / "research" / "page.tsx").read_text(encoding="utf-8")
+        evaluation_content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("训练/验证/测试切分比例", research_content)
+        self.assertIn("name=\"train_split_ratio\"", research_content)
+        self.assertIn("name=\"validation_split_ratio\"", research_content)
+        self.assertIn("name=\"test_split_ratio\"", research_content)
+        self.assertIn("name=\"dry_run_min_win_rate\"", evaluation_content)
+        self.assertIn("name=\"dry_run_max_turnover\"", evaluation_content)
+        self.assertIn("name=\"dry_run_min_sample_count\"", evaluation_content)
+        self.assertIn("name=\"validation_min_sample_count\"", evaluation_content)
 
 
 if __name__ == "__main__":

@@ -19,15 +19,26 @@ DEFAULT_BACKTEST_FEE_BPS = Decimal("10")
 DEFAULT_BACKTEST_SLIPPAGE_BPS = Decimal("5")
 DEFAULT_LABEL_TARGET_PCT = Decimal("1")
 DEFAULT_LABEL_STOP_PCT = Decimal("-1")
+DEFAULT_LOOKBACK_DAYS = 30
+DEFAULT_TRAIN_SPLIT_RATIO = Decimal("0.6")
+DEFAULT_VALIDATION_SPLIT_RATIO = Decimal("0.2")
+DEFAULT_TEST_SPLIT_RATIO = Decimal("0.2")
 DEFAULT_DRY_RUN_MIN_SCORE = Decimal("0.55")
 DEFAULT_DRY_RUN_MIN_POSITIVE_RATE = Decimal("0.45")
 DEFAULT_DRY_RUN_MIN_NET_RETURN_PCT = Decimal("0")
 DEFAULT_DRY_RUN_MIN_SHARPE = Decimal("0.5")
 DEFAULT_DRY_RUN_MAX_DRAWDOWN_PCT = Decimal("15")
 DEFAULT_DRY_RUN_MAX_LOSS_STREAK = 3
+DEFAULT_DRY_RUN_MIN_WIN_RATE = Decimal("0.5")
+DEFAULT_DRY_RUN_MAX_TURNOVER = Decimal("0.6")
+DEFAULT_DRY_RUN_MIN_SAMPLE_COUNT = 20
+DEFAULT_VALIDATION_MIN_SAMPLE_COUNT = 12
 DEFAULT_LIVE_MIN_SCORE = Decimal("0.65")
 DEFAULT_LIVE_MIN_POSITIVE_RATE = Decimal("0.50")
 DEFAULT_LIVE_MIN_NET_RETURN_PCT = Decimal("0.20")
+DEFAULT_LIVE_MIN_WIN_RATE = Decimal("0.55")
+DEFAULT_LIVE_MAX_TURNOVER = Decimal("0.45")
+DEFAULT_LIVE_MIN_SAMPLE_COUNT = 24
 DEFAULT_RESEARCH_TEMPLATE = "single_asset_timing"
 DEFAULT_LABEL_MODE = "earliest_hit"
 DEFAULT_OUTLIER_POLICY = "clip"
@@ -36,6 +47,7 @@ SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_stri
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
+_RUNTIME_HINTS: dict[str, str] = {}
 
 
 class QlibConfigurationError(RuntimeError):
@@ -73,6 +85,7 @@ class QlibRuntimeConfig:
     selected_symbols: tuple[str, ...]
     selected_timeframes: tuple[str, ...]
     sample_limit: int
+    lookback_days: int
     research_template: str
     primary_feature_columns: tuple[str, ...]
     auxiliary_feature_columns: tuple[str, ...]
@@ -85,15 +98,25 @@ class QlibRuntimeConfig:
     holding_window_max_days: int
     holding_window_label: str
     model_key: str
+    train_split_ratio: Decimal
+    validation_split_ratio: Decimal
+    test_split_ratio: Decimal
     dry_run_min_score: Decimal
     dry_run_min_positive_rate: Decimal
     dry_run_min_net_return_pct: Decimal
     dry_run_min_sharpe: Decimal
     dry_run_max_drawdown_pct: Decimal
     dry_run_max_loss_streak: int
+    dry_run_min_win_rate: Decimal
+    dry_run_max_turnover: Decimal
+    dry_run_min_sample_count: int
+    validation_min_sample_count: int
     live_min_score: Decimal
     live_min_positive_rate: Decimal
     live_min_net_return_pct: Decimal
+    live_min_win_rate: Decimal
+    live_max_turnover: Decimal
+    live_min_sample_count: int
     paths: QlibRuntimePaths
 
     def ensure_ready(self) -> None:
@@ -133,6 +156,7 @@ def load_qlib_config(
     selected_symbols = _read_symbol_list(values.get("QUANT_QLIB_SELECTED_SYMBOLS"))
     selected_timeframes = _read_timeframe_list(values.get("QUANT_QLIB_TIMEFRAMES"))
     sample_limit = _read_int(values.get("QUANT_QLIB_SAMPLE_LIMIT"), default=120, env_name="QUANT_QLIB_SAMPLE_LIMIT", minimum=60)
+    lookback_days = _read_int(values.get("QUANT_QLIB_LOOKBACK_DAYS"), default=DEFAULT_LOOKBACK_DAYS, env_name="QUANT_QLIB_LOOKBACK_DAYS", minimum=7)
     research_template = _read_research_template(values.get("QUANT_QLIB_RESEARCH_TEMPLATE"))
     primary_feature_columns = _read_name_list(
         values.get("QUANT_QLIB_PRIMARY_FACTORS"),
@@ -188,6 +212,27 @@ def load_qlib_config(
         or f"{holding_window_min_days}-{holding_window_max_days}d"
     )
     model_key = str(values.get("QUANT_QLIB_MODEL_KEY") or "").strip() or "heuristic_v1"
+    train_split_ratio = _read_decimal(
+        values.get("QUANT_QLIB_TRAIN_SPLIT_RATIO"),
+        default=DEFAULT_TRAIN_SPLIT_RATIO,
+        env_name="QUANT_QLIB_TRAIN_SPLIT_RATIO",
+        minimum=Decimal("0.05"),
+        maximum=Decimal("0.9"),
+    )
+    validation_split_ratio = _read_decimal(
+        values.get("QUANT_QLIB_VALIDATION_SPLIT_RATIO"),
+        default=DEFAULT_VALIDATION_SPLIT_RATIO,
+        env_name="QUANT_QLIB_VALIDATION_SPLIT_RATIO",
+        minimum=Decimal("0.05"),
+        maximum=Decimal("0.8"),
+    )
+    test_split_ratio = _read_decimal(
+        values.get("QUANT_QLIB_TEST_SPLIT_RATIO"),
+        default=DEFAULT_TEST_SPLIT_RATIO,
+        env_name="QUANT_QLIB_TEST_SPLIT_RATIO",
+        minimum=Decimal("0.05"),
+        maximum=Decimal("0.8"),
+    )
     dry_run_min_score = _read_decimal(
         values.get("QUANT_QLIB_DRY_RUN_MIN_SCORE"),
         default=DEFAULT_DRY_RUN_MIN_SCORE,
@@ -224,6 +269,31 @@ def load_qlib_config(
         env_name="QUANT_QLIB_DRY_RUN_MAX_LOSS_STREAK",
         minimum=1,
     )
+    dry_run_min_win_rate = _read_decimal(
+        values.get("QUANT_QLIB_DRY_RUN_MIN_WIN_RATE"),
+        default=DEFAULT_DRY_RUN_MIN_WIN_RATE,
+        env_name="QUANT_QLIB_DRY_RUN_MIN_WIN_RATE",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    dry_run_max_turnover = _read_decimal(
+        values.get("QUANT_QLIB_DRY_RUN_MAX_TURNOVER"),
+        default=DEFAULT_DRY_RUN_MAX_TURNOVER,
+        env_name="QUANT_QLIB_DRY_RUN_MAX_TURNOVER",
+        minimum=Decimal("0"),
+    )
+    dry_run_min_sample_count = _read_int(
+        values.get("QUANT_QLIB_DRY_RUN_MIN_SAMPLE_COUNT"),
+        default=DEFAULT_DRY_RUN_MIN_SAMPLE_COUNT,
+        env_name="QUANT_QLIB_DRY_RUN_MIN_SAMPLE_COUNT",
+        minimum=3,
+    )
+    validation_min_sample_count = _read_int(
+        values.get("QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT"),
+        default=DEFAULT_VALIDATION_MIN_SAMPLE_COUNT,
+        env_name="QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT",
+        minimum=3,
+    )
     live_min_score = _read_decimal(
         values.get("QUANT_QLIB_LIVE_MIN_SCORE"),
         default=DEFAULT_LIVE_MIN_SCORE,
@@ -243,6 +313,41 @@ def load_qlib_config(
         default=DEFAULT_LIVE_MIN_NET_RETURN_PCT,
         env_name="QUANT_QLIB_LIVE_MIN_NET_RETURN_PCT",
     )
+    live_min_win_rate = _read_decimal(
+        values.get("QUANT_QLIB_LIVE_MIN_WIN_RATE"),
+        default=DEFAULT_LIVE_MIN_WIN_RATE,
+        env_name="QUANT_QLIB_LIVE_MIN_WIN_RATE",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    live_max_turnover = _read_decimal(
+        values.get("QUANT_QLIB_LIVE_MAX_TURNOVER"),
+        default=DEFAULT_LIVE_MAX_TURNOVER,
+        env_name="QUANT_QLIB_LIVE_MAX_TURNOVER",
+        minimum=Decimal("0"),
+    )
+    live_min_sample_count = _read_int(
+        values.get("QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT"),
+        default=DEFAULT_LIVE_MIN_SAMPLE_COUNT,
+        env_name="QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT",
+        minimum=3,
+    )
+
+    _publish_runtime_hints(
+        {
+            "train_split_ratio": format(train_split_ratio.normalize(), "f"),
+            "validation_split_ratio": format(validation_split_ratio.normalize(), "f"),
+            "test_split_ratio": format(test_split_ratio.normalize(), "f"),
+            "dry_run_min_win_rate": format(dry_run_min_win_rate.normalize(), "f"),
+            "dry_run_max_turnover": format(dry_run_max_turnover.normalize(), "f"),
+            "dry_run_min_sample_count": str(dry_run_min_sample_count),
+            "validation_min_sample_count": str(validation_min_sample_count),
+            "live_min_win_rate": format(live_min_win_rate.normalize(), "f"),
+            "live_max_turnover": format(live_max_turnover.normalize(), "f"),
+            "live_min_sample_count": str(live_min_sample_count),
+            "lookback_days": str(lookback_days),
+        }
+    )
 
     if require_explicit and not runtime_root_raw and not session_id:
         return _build_config(
@@ -255,6 +360,7 @@ def load_qlib_config(
             selected_symbols=selected_symbols,
             selected_timeframes=selected_timeframes,
             sample_limit=sample_limit,
+            lookback_days=lookback_days,
             research_template=research_template,
             primary_feature_columns=primary_feature_columns,
             auxiliary_feature_columns=auxiliary_feature_columns,
@@ -267,15 +373,25 @@ def load_qlib_config(
             holding_window_max_days=holding_window_max_days,
             holding_window_label=holding_window_label,
             model_key=model_key,
+            train_split_ratio=train_split_ratio,
+            validation_split_ratio=validation_split_ratio,
+            test_split_ratio=test_split_ratio,
             dry_run_min_score=dry_run_min_score,
             dry_run_min_positive_rate=dry_run_min_positive_rate,
             dry_run_min_net_return_pct=dry_run_min_net_return_pct,
             dry_run_min_sharpe=dry_run_min_sharpe,
             dry_run_max_drawdown_pct=dry_run_max_drawdown_pct,
             dry_run_max_loss_streak=dry_run_max_loss_streak,
+            dry_run_min_win_rate=dry_run_min_win_rate,
+            dry_run_max_turnover=dry_run_max_turnover,
+            dry_run_min_sample_count=dry_run_min_sample_count,
+            validation_min_sample_count=validation_min_sample_count,
             live_min_score=live_min_score,
             live_min_positive_rate=live_min_positive_rate,
             live_min_net_return_pct=live_min_net_return_pct,
+            live_min_win_rate=live_min_win_rate,
+            live_max_turnover=live_max_turnover,
+            live_min_sample_count=live_min_sample_count,
         )
 
     if runtime_root_raw:
@@ -294,6 +410,7 @@ def load_qlib_config(
         selected_symbols=selected_symbols,
         selected_timeframes=selected_timeframes,
         sample_limit=sample_limit,
+        lookback_days=lookback_days,
         research_template=research_template,
         primary_feature_columns=primary_feature_columns,
         auxiliary_feature_columns=auxiliary_feature_columns,
@@ -306,15 +423,25 @@ def load_qlib_config(
         holding_window_max_days=holding_window_max_days,
         holding_window_label=holding_window_label,
         model_key=model_key,
+        train_split_ratio=train_split_ratio,
+        validation_split_ratio=validation_split_ratio,
+        test_split_ratio=test_split_ratio,
         dry_run_min_score=dry_run_min_score,
         dry_run_min_positive_rate=dry_run_min_positive_rate,
         dry_run_min_net_return_pct=dry_run_min_net_return_pct,
         dry_run_min_sharpe=dry_run_min_sharpe,
         dry_run_max_drawdown_pct=dry_run_max_drawdown_pct,
         dry_run_max_loss_streak=dry_run_max_loss_streak,
+        dry_run_min_win_rate=dry_run_min_win_rate,
+        dry_run_max_turnover=dry_run_max_turnover,
+        dry_run_min_sample_count=dry_run_min_sample_count,
+        validation_min_sample_count=validation_min_sample_count,
         live_min_score=live_min_score,
         live_min_positive_rate=live_min_positive_rate,
         live_min_net_return_pct=live_min_net_return_pct,
+        live_min_win_rate=live_min_win_rate,
+        live_max_turnover=live_max_turnover,
+        live_min_sample_count=live_min_sample_count,
     )
 
 
@@ -329,6 +456,7 @@ def _build_config(
     selected_symbols: tuple[str, ...],
     selected_timeframes: tuple[str, ...],
     sample_limit: int,
+    lookback_days: int,
     research_template: str,
     primary_feature_columns: tuple[str, ...],
     auxiliary_feature_columns: tuple[str, ...],
@@ -341,15 +469,25 @@ def _build_config(
     holding_window_max_days: int,
     holding_window_label: str,
     model_key: str,
+    train_split_ratio: Decimal,
+    validation_split_ratio: Decimal,
+    test_split_ratio: Decimal,
     dry_run_min_score: Decimal,
     dry_run_min_positive_rate: Decimal,
     dry_run_min_net_return_pct: Decimal,
     dry_run_min_sharpe: Decimal,
     dry_run_max_drawdown_pct: Decimal,
     dry_run_max_loss_streak: int,
+    dry_run_min_win_rate: Decimal,
+    dry_run_max_turnover: Decimal,
+    dry_run_min_sample_count: int,
+    validation_min_sample_count: int,
     live_min_score: Decimal,
     live_min_positive_rate: Decimal,
     live_min_net_return_pct: Decimal,
+    live_min_win_rate: Decimal,
+    live_max_turnover: Decimal,
+    live_min_sample_count: int,
 ) -> QlibRuntimeConfig:
     """构造配置对象。"""
 
@@ -379,6 +517,7 @@ def _build_config(
         selected_symbols=selected_symbols,
         selected_timeframes=selected_timeframes,
         sample_limit=sample_limit,
+        lookback_days=lookback_days,
         research_template=research_template,
         primary_feature_columns=primary_feature_columns,
         auxiliary_feature_columns=auxiliary_feature_columns,
@@ -391,15 +530,25 @@ def _build_config(
         holding_window_max_days=holding_window_max_days,
         holding_window_label=holding_window_label,
         model_key=model_key,
+        train_split_ratio=train_split_ratio,
+        validation_split_ratio=validation_split_ratio,
+        test_split_ratio=test_split_ratio,
         dry_run_min_score=dry_run_min_score,
         dry_run_min_positive_rate=dry_run_min_positive_rate,
         dry_run_min_net_return_pct=dry_run_min_net_return_pct,
         dry_run_min_sharpe=dry_run_min_sharpe,
         dry_run_max_drawdown_pct=dry_run_max_drawdown_pct,
         dry_run_max_loss_streak=dry_run_max_loss_streak,
+        dry_run_min_win_rate=dry_run_min_win_rate,
+        dry_run_max_turnover=dry_run_max_turnover,
+        dry_run_min_sample_count=dry_run_min_sample_count,
+        validation_min_sample_count=validation_min_sample_count,
         live_min_score=live_min_score,
         live_min_positive_rate=live_min_positive_rate,
         live_min_net_return_pct=live_min_net_return_pct,
+        live_min_win_rate=live_min_win_rate,
+        live_max_turnover=live_max_turnover,
+        live_min_sample_count=live_min_sample_count,
         paths=paths,
     )
 
@@ -509,3 +658,17 @@ def _read_choice(value: str | None, *, default: str, allowed: tuple[str, ...]) -
 
     normalized = str(value or "").strip()
     return normalized if normalized in allowed else default
+
+
+def _publish_runtime_hints(values: dict[str, str]) -> None:
+    """更新本进程可复用的运行时提示。"""
+
+    _RUNTIME_HINTS.update({key: str(value) for key, value in values.items()})
+
+
+def get_runtime_hint(name: str, default: str | None = None, *, consume: bool = False) -> str | None:
+    """读取运行时提示。"""
+
+    if consume:
+        return _RUNTIME_HINTS.pop(name, default)
+    return _RUNTIME_HINTS.get(name, default)

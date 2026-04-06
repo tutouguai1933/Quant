@@ -266,6 +266,30 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["review_status"], "needs_research_iteration")
         self.assertEqual(result["items"][0]["next_action"], "continue_research")
 
+    def test_rank_candidates_respects_configured_validation_sample_threshold(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            validation={
+                "sample_count": 12,
+                "positive_rate": "0.62",
+                "avg_future_return_pct": "0.40",
+            },
+            thresholds={
+                "validation_min_sample_count": "16",
+            },
+        )
+
+        self.assertEqual(result["items"][0]["research_validation_gate"]["status"], "failed")
+        self.assertIn("validation_sample_count_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
     def test_rank_candidates_blocks_dry_run_when_net_return_turns_negative_after_costs(self) -> None:
         metrics = _passing_metrics()
         metrics["gross_return_pct"] = "1.2000"
@@ -422,6 +446,53 @@ class QlibRankingTests(unittest.TestCase):
         self.assertGreater(float(eth["recommendation_score"]), float(btc["recommendation_score"]))
         self.assertIn("trend", eth["recommendation_reason"])
         self.assertEqual(eth["next_action"], "enter_dry_run")
+
+    def test_rank_candidates_respects_configured_backtest_win_rate_threshold(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "score": "0.7600",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            thresholds={
+                "dry_run_min_win_rate": "0.60",
+            },
+        )
+
+        self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
+        self.assertIn("win_rate_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        self.assertFalse(result["items"][0]["allowed_to_dry_run"])
+
+    def test_rank_candidates_respects_configured_live_backtest_thresholds(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.8200",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            validation={
+                "sample_count": 24,
+                "positive_rate": "0.70",
+                "avg_future_return_pct": "0.80",
+            },
+            thresholds={
+                "live_min_score": "0.80",
+                "live_min_positive_rate": "0.60",
+                "live_min_net_return_pct": "0.20",
+                "live_min_win_rate": "0.65",
+            },
+        )
+
+        self.assertTrue(result["items"][0]["allowed_to_dry_run"])
+        self.assertFalse(result["items"][0]["allowed_to_live"])
+        self.assertEqual(result["items"][0]["live_gate"]["status"], "failed")
+        self.assertIn("live_win_rate_too_low", result["items"][0]["live_gate"]["reasons"])
 
 
 def _passing_metrics() -> dict[str, str]:

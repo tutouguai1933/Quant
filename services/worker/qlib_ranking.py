@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
+from services.worker.qlib_config import get_runtime_hint
+
 
 def rank_candidates(
     items: list[dict[str, object]],
@@ -173,11 +175,11 @@ def _evaluate_backtest_gate(metrics: dict[str, object], *, thresholds: dict[str,
         failures.append("drawdown_too_large")
     if sharpe < Decimal(str(thresholds["dry_run_min_sharpe"])):
         failures.append("sharpe_too_low")
-    if win_rate < Decimal("0.5"):
+    if win_rate < Decimal(str(thresholds["dry_run_min_win_rate"])):
         failures.append("win_rate_too_low")
-    if turnover > Decimal("0.6"):
+    if turnover > Decimal(str(thresholds["dry_run_max_turnover"])):
         failures.append("turnover_too_high")
-    if sample_count is None or sample_count < 20:
+    if sample_count is None or sample_count < int(thresholds["dry_run_min_sample_count"]):
         failures.append("sample_count_too_low")
     if max_loss_streak is not None and max_loss_streak > int(thresholds["dry_run_max_loss_streak"]):
         failures.append("loss_streak_too_long")
@@ -199,7 +201,7 @@ def _evaluate_validation_gate(validation: dict[str, object] | None, *, threshold
     avg_future_return_pct = _to_decimal(payload.get("avg_future_return_pct"))
 
     failures: list[str] = []
-    if sample_count is None or sample_count < 12:
+    if sample_count is None or sample_count < int(thresholds["validation_min_sample_count"]):
         failures.append("validation_sample_count_too_low")
     if positive_rate < Decimal(str(thresholds["dry_run_min_positive_rate"])):
         failures.append("validation_positive_rate_too_low")
@@ -240,6 +242,15 @@ def _evaluate_live_gate(
     net_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
     if net_return_pct < Decimal(str(thresholds["live_min_net_return_pct"])):
         failures.append("live_net_return_too_low")
+    win_rate = _to_decimal(metrics.get("win_rate"))
+    if win_rate < Decimal(str(thresholds["live_min_win_rate"])):
+        failures.append("live_win_rate_too_low")
+    turnover = _to_decimal(metrics.get("turnover"))
+    if turnover > Decimal(str(thresholds["live_max_turnover"])):
+        failures.append("live_turnover_too_high")
+    sample_count = _to_int_or_none(metrics.get("sample_count"))
+    if sample_count is None or sample_count < int(thresholds["live_min_sample_count"]):
+        failures.append("live_sample_count_too_low")
     if failures:
         return {"status": "failed", "reasons": failures}
     return {"status": "passed", "reasons": []}
@@ -371,25 +382,52 @@ def _resolve_thresholds(value: dict[str, object] | None, *, research_template: s
 
     payload = dict(value or {})
     resolved = {
-        "dry_run_min_score": _to_decimal(payload.get("dry_run_min_score") or "0.55"),
-        "dry_run_min_positive_rate": _to_decimal(payload.get("dry_run_min_positive_rate") or "0.45"),
-        "dry_run_min_net_return_pct": _to_decimal(payload.get("dry_run_min_net_return_pct") or "0"),
-        "dry_run_min_sharpe": _to_decimal(payload.get("dry_run_min_sharpe") or "0.5"),
-        "dry_run_max_drawdown_pct": _to_decimal(payload.get("dry_run_max_drawdown_pct") or "15"),
-        "dry_run_max_loss_streak": _to_int_or_none(payload.get("dry_run_max_loss_streak")) or 3,
-        "live_min_score": _to_decimal(payload.get("live_min_score") or "0.65"),
-        "live_min_positive_rate": _to_decimal(payload.get("live_min_positive_rate") or "0.50"),
-        "live_min_net_return_pct": _to_decimal(payload.get("live_min_net_return_pct") or "0.20"),
+        "dry_run_min_score": _to_decimal(payload.get("dry_run_min_score") or _runtime_decimal("dry_run_min_score", "0.55")),
+        "dry_run_min_positive_rate": _to_decimal(payload.get("dry_run_min_positive_rate") or _runtime_decimal("dry_run_min_positive_rate", "0.45")),
+        "dry_run_min_net_return_pct": _to_decimal(payload.get("dry_run_min_net_return_pct") or _runtime_decimal("dry_run_min_net_return_pct", "0")),
+        "dry_run_min_sharpe": _to_decimal(payload.get("dry_run_min_sharpe") or _runtime_decimal("dry_run_min_sharpe", "0.5")),
+        "dry_run_max_drawdown_pct": _to_decimal(payload.get("dry_run_max_drawdown_pct") or _runtime_decimal("dry_run_max_drawdown_pct", "15")),
+        "dry_run_max_loss_streak": _to_int_or_none(payload.get("dry_run_max_loss_streak") or _runtime_int("dry_run_max_loss_streak", "3")) or 3,
+        "dry_run_min_win_rate": _to_decimal(payload.get("dry_run_min_win_rate") or _runtime_decimal("dry_run_min_win_rate", "0.5")),
+        "dry_run_max_turnover": _to_decimal(payload.get("dry_run_max_turnover") or _runtime_decimal("dry_run_max_turnover", "0.6")),
+        "dry_run_min_sample_count": _to_int_or_none(payload.get("dry_run_min_sample_count") or _runtime_int("dry_run_min_sample_count", "20")) or 20,
+        "validation_min_sample_count": _to_int_or_none(payload.get("validation_min_sample_count") or _runtime_int("validation_min_sample_count", "12")) or 12,
+        "live_min_score": _to_decimal(payload.get("live_min_score") or _runtime_decimal("live_min_score", "0.65")),
+        "live_min_positive_rate": _to_decimal(payload.get("live_min_positive_rate") or _runtime_decimal("live_min_positive_rate", "0.50")),
+        "live_min_net_return_pct": _to_decimal(payload.get("live_min_net_return_pct") or _runtime_decimal("live_min_net_return_pct", "0.20")),
+        "live_min_win_rate": _to_decimal(payload.get("live_min_win_rate") or _runtime_decimal("live_min_win_rate", "0.55")),
+        "live_max_turnover": _to_decimal(payload.get("live_max_turnover") or _runtime_decimal("live_max_turnover", "0.45")),
+        "live_min_sample_count": _to_int_or_none(payload.get("live_min_sample_count") or _runtime_int("live_min_sample_count", "24")) or 24,
     }
     if research_template == "single_asset_timing_strict":
         resolved["dry_run_min_score"] = min(Decimal("1"), resolved["dry_run_min_score"] + Decimal("0.05"))
         resolved["dry_run_min_positive_rate"] = min(Decimal("1"), resolved["dry_run_min_positive_rate"] + Decimal("0.05"))
         resolved["dry_run_min_sharpe"] = resolved["dry_run_min_sharpe"] + Decimal("0.10")
         resolved["dry_run_max_drawdown_pct"] = max(Decimal("5"), resolved["dry_run_max_drawdown_pct"] - Decimal("3"))
+        resolved["dry_run_min_win_rate"] = min(Decimal("1"), resolved["dry_run_min_win_rate"] + Decimal("0.03"))
+        resolved["dry_run_max_turnover"] = max(Decimal("0"), resolved["dry_run_max_turnover"] - Decimal("0.05"))
+        resolved["dry_run_min_sample_count"] = int(resolved["dry_run_min_sample_count"]) + 4
+        resolved["validation_min_sample_count"] = int(resolved["validation_min_sample_count"]) + 2
         resolved["live_min_score"] = min(Decimal("1"), resolved["live_min_score"] + Decimal("0.05"))
         resolved["live_min_positive_rate"] = min(Decimal("1"), resolved["live_min_positive_rate"] + Decimal("0.05"))
         resolved["live_min_net_return_pct"] = resolved["live_min_net_return_pct"] + Decimal("0.10")
+        resolved["live_min_win_rate"] = min(Decimal("1"), resolved["live_min_win_rate"] + Decimal("0.03"))
+        resolved["live_max_turnover"] = max(Decimal("0"), resolved["live_max_turnover"] - Decimal("0.05"))
+        resolved["live_min_sample_count"] = int(resolved["live_min_sample_count"]) + 4
     return resolved
+
+
+def _runtime_decimal(name: str, default: str) -> str:
+    """读取运行时十进制提示。"""
+
+    return str(get_runtime_hint(name, default) or default)
+
+
+def _runtime_int(name: str, default: str) -> str:
+    """读取运行时整型提示。"""
+
+    return str(get_runtime_hint(name, default) or default)
+
 
 def _to_decimal(value: object) -> Decimal:
     """把输入统一转成十进制。"""

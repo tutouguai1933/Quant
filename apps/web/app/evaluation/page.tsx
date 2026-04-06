@@ -19,7 +19,9 @@ export default async function EvaluationPage() {
   const recommendedCandidate = asRecord(evaluation.recommended_candidate);
   const researchReview = asRecord(asRecord(workspace.reviews).research);
   const executionAlignment = asRecord(workspace.execution_alignment);
+  const comparisonSummary = asRecord(workspace.comparison_summary);
   const configAlignment = asRecord(workspace.config_alignment);
+  const controls = asRecord(workspace.controls);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
 
@@ -63,6 +65,10 @@ export default async function EvaluationPage() {
                 <ConfigInput name="dry_run_min_sharpe" defaultValue={workspace.controls.dry_run_min_sharpe} placeholder="最低 Sharpe" />
                 <ConfigInput name="dry_run_max_drawdown_pct" defaultValue={workspace.controls.dry_run_max_drawdown_pct} placeholder="最大回撤 %" />
                 <ConfigInput name="dry_run_max_loss_streak" defaultValue={workspace.controls.dry_run_max_loss_streak} placeholder="最大连续亏损段" />
+                <ConfigInput name="dry_run_min_win_rate" defaultValue={String(controls.dry_run_min_win_rate ?? "0.5")} placeholder="最低胜率" />
+                <ConfigInput name="dry_run_max_turnover" defaultValue={String(controls.dry_run_max_turnover ?? "0.6")} placeholder="最高换手" />
+                <ConfigInput name="dry_run_min_sample_count" defaultValue={String(controls.dry_run_min_sample_count ?? "20")} placeholder="最低样本数" />
+                <ConfigInput name="validation_min_sample_count" defaultValue={String(controls.validation_min_sample_count ?? "12")} placeholder="验证最少样本数" />
               </div>
             </ConfigField>
             <ConfigField label="live 门槛" hint="这里更严格，自动小额 live 会额外检查这些条件。">
@@ -70,6 +76,9 @@ export default async function EvaluationPage() {
                 <ConfigInput name="live_min_score" defaultValue={workspace.controls.live_min_score} placeholder="最低 live 分数" />
                 <ConfigInput name="live_min_positive_rate" defaultValue={workspace.controls.live_min_positive_rate} placeholder="最低 live 正收益比例" />
                 <ConfigInput name="live_min_net_return_pct" defaultValue={workspace.controls.live_min_net_return_pct} placeholder="最低 live 净收益 %" />
+                <ConfigInput name="live_min_win_rate" defaultValue={String(controls.live_min_win_rate ?? "0.55")} placeholder="最低 live 胜率" />
+                <ConfigInput name="live_max_turnover" defaultValue={String(controls.live_max_turnover ?? "0.45")} placeholder="最高 live 换手" />
+                <ConfigInput name="live_min_sample_count" defaultValue={String(controls.live_min_sample_count ?? "24")} placeholder="最低 live 样本数" />
               </div>
             </ConfigField>
           </WorkbenchConfigCard>
@@ -78,12 +87,12 @@ export default async function EvaluationPage() {
             columns={["实验排行榜", "推荐原因", "下一步动作", "淘汰原因"]}
             rows={workspace.leaderboard.map((item, index) => {
               const row = asRecord(item);
-              const reasons = Array.isArray(row.failure_reasons) ? row.failure_reasons.map(String).join(" / ") : "已通过"
+              const reasons = String(row.elimination_reason ?? "已通过");
               return {
                 id: `${row.symbol ?? index}`,
                 cells: [
                   String(row.symbol ?? "n/a"),
-                  String(row.score ?? row.review_status ?? "n/a"),
+                  String(row.recommendation_reason ?? row.score ?? row.review_status ?? "n/a"),
                   String(row.next_action ?? "continue_research"),
                   reasons,
                 ],
@@ -114,6 +123,27 @@ export default async function EvaluationPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>实验一致性</CardTitle>
+              <CardDescription>先确认训练、推理、配置和执行是不是还站在同一轮，再决定要不要继续放行。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="训练运行 ID" value={String(comparisonSummary.training_run_id ?? "n/a")} />
+              <InfoBlock label="推理运行 ID" value={String(comparisonSummary.inference_run_id ?? "n/a")} />
+              <InfoBlock label="配置对齐" value={String(comparisonSummary.config_alignment_status ?? "unavailable")} />
+              <InfoBlock label="执行对齐" value={String(comparisonSummary.execution_alignment_status ?? "unavailable")} />
+              <InfoBlock label="模型一致" value={toYesNo(comparisonSummary.model_aligned)} />
+              <InfoBlock label="数据快照一致" value={toYesNo(comparisonSummary.dataset_aligned)} />
+              <InfoBlock label="研究复盘" value={String(comparisonSummary.review_result ?? "n/a")} />
+              <InfoBlock label="下一步动作" value={String(comparisonSummary.next_action ?? "continue_research")} />
+              <InfoBlock
+                label="一致性说明"
+                value={String(comparisonSummary.note ?? "当前还没有可展示的一致性说明")}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <CardTitle>推荐原因</CardTitle>
               <CardDescription>这里直接展示系统为什么推荐这个币继续进入下一步。</CardDescription>
             </CardHeader>
@@ -138,6 +168,43 @@ export default async function EvaluationPage() {
               )) : <p>当前没有淘汰原因，说明候选还没生成或都已通过。</p>}
             </CardContent>
           </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>淘汰原因说明</CardTitle>
+              <CardDescription>这里直接解释被拦住的候选最主要卡在哪个门槛。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {workspace.leaderboard.length ? workspace.leaderboard.map((item, index) => {
+                const row = asRecord(item);
+                return (
+                  <p key={`${row.symbol ?? index}`}>
+                    {String(row.symbol ?? "n/a")}：{String(row.elimination_reason ?? "已通过")}
+                  </p>
+                );
+              }) : <p>当前还没有可解释的候选淘汰记录。</p>}
+            </CardContent>
+          </Card>
+
+          <DataTable
+            columns={["门控分解", "规则门", "验证门", "回测门", "一致性门", "当前卡点"]}
+            rows={workspace.gate_matrix.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${row.symbol ?? index}`,
+                cells: [
+                  String(row.symbol ?? "n/a"),
+                  String(row.rule_gate ?? "n/a"),
+                  String(row.validation_gate ?? "n/a"),
+                  String(row.backtest_gate ?? "n/a"),
+                  String(row.consistency_gate ?? "n/a"),
+                  String(row.primary_reason ?? row.blocking_gate ?? "n/a"),
+                ],
+              };
+            })}
+            emptyTitle="当前还没有门控分解"
+            emptyDetail="先完成训练和推理，系统才会把每个候选卡在哪一层门槛拆开给你看。"
+          />
 
           <Card className="bg-card/90">
             <CardHeader>
@@ -197,4 +264,8 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function toYesNo(value: unknown): string {
+  return value ? "是" : "否";
 }

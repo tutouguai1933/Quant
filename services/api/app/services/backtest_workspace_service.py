@@ -27,6 +27,7 @@ class BacktestWorkspaceService:
         metrics = dict(training_backtest.get("metrics") or {})
         controls = self._controls_builder()
         configured_backtest = dict((controls.get("config") or {}).get("backtest") or {})
+        configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
         leaderboard = [
             {
                 "symbol": str(item.get("symbol", "")),
@@ -56,6 +57,12 @@ class BacktestWorkspaceService:
             "controls": {
                 "fee_bps": str(configured_backtest.get("fee_bps", "")),
                 "slippage_bps": str(configured_backtest.get("slippage_bps", "")),
+                "dry_run_min_win_rate": str(configured_thresholds.get("dry_run_min_win_rate", "0.5")),
+                "dry_run_max_turnover": str(configured_thresholds.get("dry_run_max_turnover", "0.6")),
+                "dry_run_min_sample_count": str(configured_thresholds.get("dry_run_min_sample_count", "20")),
+                "live_min_win_rate": str(configured_thresholds.get("live_min_win_rate", "0.55")),
+                "live_max_turnover": str(configured_thresholds.get("live_max_turnover", "0.45")),
+                "live_min_sample_count": str(configured_thresholds.get("live_min_sample_count", "24")),
             },
             "training_backtest": {
                 "metrics": {

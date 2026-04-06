@@ -50,6 +50,7 @@ class DataWorkspaceService:
         configured_intervals = [str(item) for item in list(configured_data.get("timeframes") or [])]
         normalized_interval = normalize_market_interval(requested_interval or (configured_intervals[0] if configured_intervals else "4h"))
         normalized_limit = max(int(limit or configured_data.get("sample_limit", 200) or 200), 1)
+        lookback_days = max(int(configured_data.get("lookback_days", 30) or 30), 1)
 
         research_report = self._read_factory_report()
         training_snapshot = self._extract_training_snapshot(research_report)
@@ -57,6 +58,7 @@ class DataWorkspaceService:
             symbol=selected_symbol,
             interval=normalized_interval,
             limit=normalized_limit,
+            lookback_days=lookback_days,
             whitelist=tuple(whitelist),
         )
         research_status = str(research_report.get("status", "unavailable") or "unavailable")
@@ -67,6 +69,7 @@ class DataWorkspaceService:
         return {
             "status": status,
             "backend": str(research_report.get("backend", "qlib-fallback")),
+            "config_alignment": dict(research_report.get("config_alignment") or {}),
             "filters": {
                 "selected_symbol": selected_symbol,
                 "selected_interval": normalized_interval,
@@ -83,6 +86,7 @@ class DataWorkspaceService:
                 "primary_symbol": str(configured_data.get("primary_symbol", "")),
                 "timeframes": list(configured_data.get("timeframes") or []),
                 "sample_limit": int(configured_data.get("sample_limit", normalized_limit) or normalized_limit),
+                "lookback_days": lookback_days,
                 "available_symbols": whitelist,
                 "available_timeframes": list(get_supported_market_intervals()),
             },
@@ -137,15 +141,17 @@ class DataWorkspaceService:
         symbol: str,
         interval: str,
         limit: int,
+        lookback_days: int,
         whitelist: tuple[str, ...],
     ) -> dict[str, object]:
         """构造图表样本预览。"""
 
+        fetch_limit = _resolve_preview_fetch_limit(interval=interval, limit=limit, lookback_days=lookback_days)
         try:
             chart = self._market_reader.get_symbol_chart(
                 symbol=symbol,
                 interval=interval,
-                limit=limit,
+                limit=fetch_limit,
                 allowed_symbols=whitelist,
             )
         except Exception as exc:
@@ -160,7 +166,7 @@ class DataWorkspaceService:
                 "status": "unavailable",
                 "detail": str(exc),
             }
-        items = list(chart.get("items") or [])
+        items = _filter_items_by_lookback_days(list(chart.get("items") or []), lookback_days=lookback_days)
         first_item = items[0] if items else {}
         last_item = items[-1] if items else {}
         return {
@@ -201,3 +207,32 @@ def _format_timestamp(value: object) -> str:
 
 
 data_workspace_service = DataWorkspaceService()
+
+
+def _resolve_preview_fetch_limit(*, interval: str, limit: int, lookback_days: int) -> int:
+    """按时间窗口换算预览拉数长度。"""
+
+    bars_per_day = 24 if interval == "1h" else 6 if interval == "4h" else 1
+    return max(int(limit or 0), max(int(lookback_days or 0), 1) * bars_per_day)
+
+
+def _filter_items_by_lookback_days(items: list[dict[str, object]], *, lookback_days: int) -> list[dict[str, object]]:
+    """按回看天数裁剪预览样本。"""
+
+    if not items:
+        return []
+    latest_close_time = _read_timestamp(items[-1], "close_time")
+    if latest_close_time <= 0:
+        return items
+    earliest_allowed_open = latest_close_time - (max(int(lookback_days or 0), 1) * 24 * 60 * 60 * 1000)
+    filtered = [item for item in items if _read_timestamp(item, "open_time") >= earliest_allowed_open]
+    return filtered or items
+
+
+def _read_timestamp(item: dict[str, object], key: str) -> int:
+    """读取样本时间戳。"""
+
+    try:
+        return int(item.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0

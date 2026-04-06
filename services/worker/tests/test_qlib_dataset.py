@@ -16,9 +16,20 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from services.worker.qlib_dataset import DatasetBundle, build_dataset_bundle  # noqa: E402
+from services.worker.qlib_config import load_qlib_config  # noqa: E402
 
 
 class QlibDatasetTests(unittest.TestCase):
+    def setUp(self) -> None:
+        load_qlib_config(
+            env={
+                "QUANT_QLIB_RUNTIME_ROOT": "/tmp/quant-qlib-runtime-tests",
+                "QUANT_QLIB_TRAIN_SPLIT_RATIO": "0.6",
+                "QUANT_QLIB_VALIDATION_SPLIT_RATIO": "0.2",
+                "QUANT_QLIB_TEST_SPLIT_RATIO": "0.2",
+            },
+        )
+
     def test_build_dataset_bundle_returns_train_valid_test_splits(self) -> None:
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
@@ -115,6 +126,44 @@ class QlibDatasetTests(unittest.TestCase):
         )
         self.assertEqual(bundle.symbol, "ETHUSDT")
         self.assertEqual(bundle.timeframe, "4h")
+
+    def test_build_dataset_bundle_respects_runtime_split_ratio_config(self) -> None:
+        load_qlib_config(
+            env={
+                "QUANT_QLIB_RUNTIME_ROOT": "/tmp/quant-qlib-runtime-tests",
+                "QUANT_QLIB_TRAIN_SPLIT_RATIO": "0.5",
+                "QUANT_QLIB_VALIDATION_SPLIT_RATIO": "0.3",
+                "QUANT_QLIB_TEST_SPLIT_RATIO": "0.2",
+            },
+        )
+
+        bundle = build_dataset_bundle(
+            symbol="BTCUSDT",
+            candles_1h=_sample_candles(96),
+            candles_4h=_sample_candles(72, step_hours=4),
+        )
+
+        self.assertEqual(len(bundle.training_rows), 27)
+        self.assertEqual(len(bundle.validation_rows), 16)
+        self.assertEqual(len(bundle.testing_rows), 11)
+
+    def test_build_dataset_bundle_filters_rows_by_lookback_days(self) -> None:
+        candles_4h = _sample_candles(120, step_hours=4)
+
+        bundle = build_dataset_bundle(
+            symbol="BTCUSDT",
+            candles_1h=[],
+            candles_4h=candles_4h,
+            lookback_days=10,
+        )
+
+        latest_close = candles_4h[-1]["close_time"]
+        earliest_allowed_open = latest_close - 10 * 24 * 60 * 60 * 1000
+        merged_rows = [*bundle.training_rows, *bundle.validation_rows, *bundle.testing_rows]
+
+        self.assertTrue(merged_rows)
+        self.assertGreaterEqual(min(int(item["generated_at"]) for item in merged_rows), earliest_allowed_open)
+        self.assertLess(len(merged_rows), len(candles_4h))
 
 
 def _sample_candles(count: int, *, step_hours: int = 1) -> list[dict[str, object]]:

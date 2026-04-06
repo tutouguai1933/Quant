@@ -25,6 +25,12 @@ class BacktestWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["leaderboard"][0]["symbol"], "ETHUSDT")
         self.assertEqual(item["leaderboard"][0]["backtest"]["net_return_pct"], "2.3000")
         self.assertIn("controls", item)
+        self.assertEqual(item["controls"]["dry_run_min_win_rate"], "0.50")
+        self.assertEqual(item["controls"]["dry_run_max_turnover"], "0.60")
+        self.assertEqual(item["controls"]["dry_run_min_sample_count"], "20")
+        self.assertEqual(item["controls"]["live_min_win_rate"], "0.55")
+        self.assertEqual(item["controls"]["live_max_turnover"], "0.45")
+        self.assertEqual(item["controls"]["live_min_sample_count"], "24")
 
     def test_workspace_handles_missing_backtest(self) -> None:
         service = BacktestWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
@@ -84,7 +90,15 @@ def _fake_controls() -> dict[str, object]:
             "backtest": {
                 "fee_bps": "10",
                 "slippage_bps": "5",
-            }
+            },
+            "thresholds": {
+                "dry_run_min_win_rate": "0.50",
+                "dry_run_max_turnover": "0.60",
+                "dry_run_min_sample_count": "20",
+                "live_min_win_rate": "0.55",
+                "live_max_turnover": "0.45",
+                "live_min_sample_count": "24",
+            },
         }
     }
 

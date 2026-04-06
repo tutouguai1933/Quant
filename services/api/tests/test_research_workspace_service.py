@@ -28,6 +28,9 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["sample_window"]["training"]["count"], 120)
         self.assertEqual(item["parameters"]["backtest_fee_bps"], "10")
         self.assertIn("controls", item)
+        self.assertEqual(item["controls"]["train_split_ratio"], "0.6")
+        self.assertEqual(item["controls"]["validation_split_ratio"], "0.2")
+        self.assertEqual(item["controls"]["test_split_ratio"], "0.2")
 
     def test_workspace_handles_missing_report(self) -> None:
         service = ResearchWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
@@ -93,6 +96,9 @@ def _fake_controls() -> dict[str, object]:
                 "max_holding_days": 3,
                 "label_target_pct": "1",
                 "label_stop_pct": "-1",
+                "train_split_ratio": "0.6",
+                "validation_split_ratio": "0.2",
+                "test_split_ratio": "0.2",
             }
         },
         "options": {

@@ -37,6 +37,7 @@ def _default_config() -> dict[str, object]:
             "primary_symbol": DEFAULT_MARKET_SYMBOLS[0],
             "timeframes": list(SUPPORTED_TIMEFRAMES),
             "sample_limit": 120,
+            "lookback_days": 30,
         },
         "features": {
             "primary_factors": list(PRIMARY_FEATURE_COLUMNS),
@@ -53,6 +54,9 @@ def _default_config() -> dict[str, object]:
             "max_holding_days": 3,
             "label_target_pct": "1",
             "label_stop_pct": "-1",
+            "train_split_ratio": "0.6",
+            "validation_split_ratio": "0.2",
+            "test_split_ratio": "0.2",
         },
         "backtest": {
             "fee_bps": "10",
@@ -65,9 +69,16 @@ def _default_config() -> dict[str, object]:
             "dry_run_min_sharpe": "0.5",
             "dry_run_max_drawdown_pct": "15",
             "dry_run_max_loss_streak": "3",
+            "dry_run_min_win_rate": "0.5",
+            "dry_run_max_turnover": "0.6",
+            "dry_run_min_sample_count": "20",
+            "validation_min_sample_count": "12",
             "live_min_score": "0.65",
             "live_min_positive_rate": "0.50",
             "live_min_net_return_pct": "0.20",
+            "live_min_win_rate": "0.55",
+            "live_max_turnover": "0.45",
+            "live_min_sample_count": "24",
         },
     }
 
@@ -161,6 +172,7 @@ class WorkbenchConfigService:
             "QUANT_QLIB_SELECTED_SYMBOLS": ",".join(str(item) for item in list(data.get("selected_symbols") or [])),
             "QUANT_QLIB_TIMEFRAMES": ",".join(str(item) for item in list(data.get("timeframes") or [])),
             "QUANT_QLIB_SAMPLE_LIMIT": str(data.get("sample_limit", 120)),
+            "QUANT_QLIB_LOOKBACK_DAYS": str(data.get("lookback_days", 30)),
             "QUANT_QLIB_PRIMARY_FACTORS": ",".join(str(item) for item in list(features.get("primary_factors") or [])),
             "QUANT_QLIB_AUXILIARY_FACTORS": ",".join(str(item) for item in list(features.get("auxiliary_factors") or [])),
             "QUANT_QLIB_OUTLIER_POLICY": str(features.get("outlier_policy", "clip")),
@@ -173,6 +185,9 @@ class WorkbenchConfigService:
             "QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS": str(research.get("max_holding_days", 3)),
             "QUANT_QLIB_HOLDING_WINDOW_LABEL": str(research.get("holding_window_label", "1-3d")),
             "QUANT_QLIB_MODEL_KEY": str(research.get("model_key", "heuristic_v1")),
+            "QUANT_QLIB_TRAIN_SPLIT_RATIO": str(research.get("train_split_ratio", "0.6")),
+            "QUANT_QLIB_VALIDATION_SPLIT_RATIO": str(research.get("validation_split_ratio", "0.2")),
+            "QUANT_QLIB_TEST_SPLIT_RATIO": str(research.get("test_split_ratio", "0.2")),
             "QUANT_QLIB_BACKTEST_FEE_BPS": str(backtest.get("fee_bps", "10")),
             "QUANT_QLIB_BACKTEST_SLIPPAGE_BPS": str(backtest.get("slippage_bps", "5")),
             "QUANT_QLIB_DRY_RUN_MIN_SCORE": str(thresholds.get("dry_run_min_score", "0.55")),
@@ -181,9 +196,16 @@ class WorkbenchConfigService:
             "QUANT_QLIB_DRY_RUN_MIN_SHARPE": str(thresholds.get("dry_run_min_sharpe", "0.5")),
             "QUANT_QLIB_DRY_RUN_MAX_DRAWDOWN_PCT": str(thresholds.get("dry_run_max_drawdown_pct", "15")),
             "QUANT_QLIB_DRY_RUN_MAX_LOSS_STREAK": str(thresholds.get("dry_run_max_loss_streak", "3")),
+            "QUANT_QLIB_DRY_RUN_MIN_WIN_RATE": str(thresholds.get("dry_run_min_win_rate", "0.5")),
+            "QUANT_QLIB_DRY_RUN_MAX_TURNOVER": str(thresholds.get("dry_run_max_turnover", "0.6")),
+            "QUANT_QLIB_DRY_RUN_MIN_SAMPLE_COUNT": str(thresholds.get("dry_run_min_sample_count", "20")),
+            "QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT": str(thresholds.get("validation_min_sample_count", "12")),
             "QUANT_QLIB_LIVE_MIN_SCORE": str(thresholds.get("live_min_score", "0.65")),
             "QUANT_QLIB_LIVE_MIN_POSITIVE_RATE": str(thresholds.get("live_min_positive_rate", "0.50")),
             "QUANT_QLIB_LIVE_MIN_NET_RETURN_PCT": str(thresholds.get("live_min_net_return_pct", "0.20")),
+            "QUANT_QLIB_LIVE_MIN_WIN_RATE": str(thresholds.get("live_min_win_rate", "0.55")),
+            "QUANT_QLIB_LIVE_MAX_TURNOVER": str(thresholds.get("live_max_turnover", "0.45")),
+            "QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT": str(thresholds.get("live_min_sample_count", "24")),
         }
 
     def _normalize_config(self, payload: dict[str, object] | None) -> dict[str, object]:
@@ -213,11 +235,13 @@ class WorkbenchConfigService:
             primary_symbol = selected_symbols[0] if selected_symbols else ""
         timeframes = self._normalize_timeframes(payload.get("timeframes"), allow_empty=True)
         sample_limit = self._normalize_int(payload.get("sample_limit"), default=120, minimum=60, maximum=1000)
+        lookback_days = self._normalize_int(payload.get("lookback_days"), default=30, minimum=7, maximum=365)
         return {
             "selected_symbols": list(selected_symbols),
             "primary_symbol": primary_symbol,
             "timeframes": list(timeframes),
             "sample_limit": sample_limit,
+            "lookback_days": lookback_days,
         }
 
     def _normalize_features_section(self, value: object) -> dict[str, object]:
@@ -270,6 +294,20 @@ class WorkbenchConfigService:
         max_days = self._normalize_int(payload.get("max_holding_days"), default=3, minimum=1, maximum=7)
         if min_days > max_days:
             min_days, max_days = max_days, min_days
+        train_ratio = Decimal(
+            self._normalize_decimal(payload.get("train_split_ratio"), default=Decimal("0.6"), minimum=Decimal("0.1"), maximum=Decimal("0.9"))
+        )
+        validation_ratio = Decimal(
+            self._normalize_decimal(payload.get("validation_split_ratio"), default=Decimal("0.2"), minimum=Decimal("0.05"), maximum=Decimal("0.8"))
+        )
+        test_ratio = Decimal(
+            self._normalize_decimal(payload.get("test_split_ratio"), default=Decimal("0.2"), minimum=Decimal("0.05"), maximum=Decimal("0.8"))
+        )
+        normalized_ratios = self._normalize_split_ratios(
+            train_ratio=train_ratio,
+            validation_ratio=validation_ratio,
+            test_ratio=test_ratio,
+        )
         return {
             "research_template": research_template,
             "model_key": model_key,
@@ -279,6 +317,9 @@ class WorkbenchConfigService:
             "max_holding_days": max_days,
             "label_target_pct": self._normalize_decimal(payload.get("label_target_pct"), default=Decimal("1"), minimum=Decimal("0.1")),
             "label_stop_pct": self._normalize_decimal(payload.get("label_stop_pct"), default=Decimal("-1"), maximum=Decimal("-0.1")),
+            "train_split_ratio": normalized_ratios["train_split_ratio"],
+            "validation_split_ratio": normalized_ratios["validation_split_ratio"],
+            "test_split_ratio": normalized_ratios["test_split_ratio"],
         }
 
     def _normalize_backtest_section(self, value: object) -> dict[str, object]:
@@ -301,9 +342,16 @@ class WorkbenchConfigService:
             "dry_run_min_sharpe": self._normalize_decimal(payload.get("dry_run_min_sharpe"), default=Decimal("0.5")),
             "dry_run_max_drawdown_pct": self._normalize_decimal(payload.get("dry_run_max_drawdown_pct"), default=Decimal("15"), minimum=Decimal("0")),
             "dry_run_max_loss_streak": str(self._normalize_int(payload.get("dry_run_max_loss_streak"), default=3, minimum=1, maximum=20)),
+            "dry_run_min_win_rate": self._normalize_decimal(payload.get("dry_run_min_win_rate"), default=Decimal("0.5"), minimum=Decimal("0"), maximum=Decimal("1")),
+            "dry_run_max_turnover": self._normalize_decimal(payload.get("dry_run_max_turnover"), default=Decimal("0.6"), minimum=Decimal("0")),
+            "dry_run_min_sample_count": str(self._normalize_int(payload.get("dry_run_min_sample_count"), default=20, minimum=3, maximum=500)),
+            "validation_min_sample_count": str(self._normalize_int(payload.get("validation_min_sample_count"), default=12, minimum=3, maximum=500)),
             "live_min_score": self._normalize_decimal(payload.get("live_min_score"), default=Decimal("0.65"), minimum=Decimal("0"), maximum=Decimal("1")),
             "live_min_positive_rate": self._normalize_decimal(payload.get("live_min_positive_rate"), default=Decimal("0.50"), minimum=Decimal("0"), maximum=Decimal("1")),
             "live_min_net_return_pct": self._normalize_decimal(payload.get("live_min_net_return_pct"), default=Decimal("0.20")),
+            "live_min_win_rate": self._normalize_decimal(payload.get("live_min_win_rate"), default=Decimal("0.55"), minimum=Decimal("0"), maximum=Decimal("1")),
+            "live_max_turnover": self._normalize_decimal(payload.get("live_max_turnover"), default=Decimal("0.45"), minimum=Decimal("0")),
+            "live_min_sample_count": str(self._normalize_int(payload.get("live_min_sample_count"), default=24, minimum=3, maximum=500)),
         }
 
     def _normalize_symbol_list(
@@ -435,6 +483,28 @@ class WorkbenchConfigService:
         except (TypeError, ValueError):
             parsed = default
         return max(minimum, min(maximum, parsed))
+
+    @staticmethod
+    def _normalize_split_ratios(
+        *,
+        train_ratio: Decimal,
+        validation_ratio: Decimal,
+        test_ratio: Decimal,
+    ) -> dict[str, str]:
+        """把切分比例归一化成总和为 1 的稳定值。"""
+
+        total = train_ratio + validation_ratio + test_ratio
+        if total <= 0:
+            train_ratio = Decimal("0.6")
+            validation_ratio = Decimal("0.2")
+            test_ratio = Decimal("0.2")
+            total = Decimal("1")
+        normalized = {
+            "train_split_ratio": format((train_ratio / total).quantize(Decimal("0.0001")).normalize(), "f"),
+            "validation_split_ratio": format((validation_ratio / total).quantize(Decimal("0.0001")).normalize(), "f"),
+            "test_split_ratio": format((test_ratio / total).quantize(Decimal("0.0001")).normalize(), "f"),
+        }
+        return normalized
 
     def _read_config_file(self) -> dict[str, object]:
         """读取配置文件。"""

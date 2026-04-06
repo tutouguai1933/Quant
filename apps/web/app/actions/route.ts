@@ -357,6 +357,13 @@ function resolveActionConfig(action: string, strategyId: string): ActionConfig |
       successTitle: "自动化反馈",
       successMessage: "自动化已暂停，后续不会再自动推进。",
     },
+    automation_manual_takeover: {
+      path: "/tasks/automation/manual-takeover?reason=manual_takeover",
+      method: "POST",
+      requiresToken: true,
+      successTitle: "自动化反馈",
+      successMessage: "系统已进入人工接管，自动执行链已暂停。",
+    },
     automation_resume: {
       path: "/tasks/automation/resume",
       method: "POST",

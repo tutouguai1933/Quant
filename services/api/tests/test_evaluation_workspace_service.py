@@ -28,9 +28,23 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("net_return_pct", item["evaluation"]["metrics_catalog"])
         self.assertEqual(item["reviews"]["research"]["result"], "candidate_ready")
         self.assertEqual(item["leaderboard"][0]["symbol"], "ETHUSDT")
+        self.assertEqual(item["leaderboard"][0]["recommendation_reason"], "trend 行情下优先参考 trend+momentum")
+        self.assertEqual(item["leaderboard"][1]["elimination_reason"], "sample_count_too_low")
         self.assertEqual(item["execution_alignment"]["status"], "matched")
+        self.assertEqual(item["gate_matrix"][0]["blocking_gate"], "passed")
+        self.assertEqual(item["gate_matrix"][1]["blocking_gate"], "validation_gate")
+        self.assertEqual(item["comparison_summary"]["config_alignment_status"], "aligned")
+        self.assertTrue(item["comparison_summary"]["model_aligned"])
+        self.assertTrue(item["comparison_summary"]["dataset_aligned"])
         self.assertEqual(item["experiment_comparison"][0]["run_type"], "training")
         self.assertIn("controls", item)
+        self.assertEqual(item["controls"]["dry_run_min_win_rate"], "0.50")
+        self.assertEqual(item["controls"]["dry_run_max_turnover"], "0.60")
+        self.assertEqual(item["controls"]["dry_run_min_sample_count"], "20")
+        self.assertEqual(item["controls"]["validation_min_sample_count"], "12")
+        self.assertEqual(item["controls"]["live_min_win_rate"], "0.55")
+        self.assertEqual(item["controls"]["live_max_turnover"], "0.45")
+        self.assertEqual(item["controls"]["live_min_sample_count"], "24")
 
     def test_workspace_handles_missing_evaluation(self) -> None:
         service = EvaluationWorkspaceService(
@@ -50,16 +64,56 @@ class _FakeResearchService:
     def get_factory_report(self) -> dict[str, object]:
         return {
             "status": "ready",
+            "config_alignment": {
+                "status": "aligned",
+                "stale_fields": [],
+                "note": "当前结果与配置一致",
+            },
             "overview": {
                 "recommended_symbol": "ETHUSDT",
                 "recommended_action": "enter_dry_run",
             },
+            "latest_training": {
+                "run_id": "train-1",
+                "model_version": "model-a",
+                "dataset_snapshot_id": "snapshot-1",
+            },
+            "latest_inference": {
+                "run_id": "infer-1",
+                "model_version": "model-a",
+                "dataset_snapshot_id": "snapshot-1",
+            },
+            "candidates": [
+                {
+                    "symbol": "ETHUSDT",
+                    "allowed_to_dry_run": True,
+                    "rule_gate": {"passed": True, "reasons": []},
+                    "research_validation_gate": {"passed": True, "reasons": []},
+                    "backtest_gate": {"passed": True, "reasons": []},
+                    "consistency_gate": {"passed": True, "reasons": []},
+                },
+                {
+                    "symbol": "BTCUSDT",
+                    "allowed_to_dry_run": False,
+                    "rule_gate": {"passed": True, "reasons": []},
+                    "research_validation_gate": {"passed": False, "reasons": ["sample_count_too_low"]},
+                    "backtest_gate": {"passed": True, "reasons": []},
+                    "consistency_gate": {"passed": True, "reasons": []},
+                },
+            ],
             "leaderboard": [
                 {
                     "symbol": "ETHUSDT",
                     "score": "0.8300",
                     "next_action": "enter_dry_run",
                     "failure_reasons": [],
+                    "recommendation_reason": "trend 行情下优先参考 trend+momentum",
+                },
+                {
+                    "symbol": "BTCUSDT",
+                    "score": "0.6200",
+                    "next_action": "continue_research",
+                    "failure_reasons": ["sample_count_too_low"],
                 }
             ],
             "evaluation": {
@@ -127,9 +181,16 @@ def _fake_controls() -> dict[str, object]:
                 "dry_run_min_sharpe": "0.5",
                 "dry_run_max_drawdown_pct": "15",
                 "dry_run_max_loss_streak": "3",
+                "dry_run_min_win_rate": "0.50",
+                "dry_run_max_turnover": "0.60",
+                "dry_run_min_sample_count": "20",
+                "validation_min_sample_count": "12",
                 "live_min_score": "0.65",
                 "live_min_positive_rate": "0.50",
                 "live_min_net_return_pct": "0.20",
+                "live_min_win_rate": "0.55",
+                "live_max_turnover": "0.45",
+                "live_min_sample_count": "24",
             }
         }
     }

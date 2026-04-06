@@ -384,6 +384,7 @@ class ApiSkeletonTests(unittest.TestCase):
         status = get_automation_status(token=token)
         switched = set_automation_mode(mode="auto_dry_run", token=token)
         dry_run_only = enable_dry_run_only(token=token)
+        takeover = tasks_route.trigger_manual_takeover(reason="risk_guard_triggered", token=token)
         halted = halt_automation(reason="manual", token=token)
         resumed = resume_automation(mode="manual", token=token)
         killed = trigger_kill_switch(token=token)
@@ -394,7 +395,7 @@ class ApiSkeletonTests(unittest.TestCase):
         ):
             cycled = run_automation_cycle(token=token)
 
-        for response in (status, switched, dry_run_only, halted, resumed, killed, cycled):
+        for response in (status, switched, dry_run_only, takeover, halted, resumed, killed, cycled):
             self.assertEqual(set(response.keys()), {"data", "error", "meta"})
             self.assertIsNone(response["error"])
             self.assertIn("item", response["data"])
@@ -402,7 +403,20 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("health", status["data"]["item"])
         self.assertIn("daily_summary", status["data"]["item"])
         self.assertIn("scheduler_plan", status["data"]["item"])
+        self.assertIn("failure_policy", status["data"]["item"])
         self.assertIn("status", cycled["data"]["item"])
+
+    def test_manual_takeover_route_updates_automation_state(self) -> None:
+        token = self._login_token()
+        set_automation_mode(mode="auto_live", token=token)
+
+        response = tasks_route.trigger_manual_takeover(reason="risk_guard_triggered", actor="watchdog", token=token)
+
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["data"]["item"]["mode"], "manual")
+        self.assertTrue(response["data"]["item"]["paused"])
+        self.assertTrue(response["data"]["item"]["manual_takeover"])
+        self.assertEqual(response["data"]["item"]["paused_reason"], "risk_guard_triggered")
 
     def test_validation_review_http_route_is_not_shadowed_by_task_id_route(self) -> None:
         token = self._login_token()
