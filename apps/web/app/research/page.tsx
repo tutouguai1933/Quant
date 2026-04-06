@@ -4,16 +4,24 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
 import { FormSubmitButton } from "../../components/form-submit-button";
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { getResearchWorkspace } from "../../lib/api";
+import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearchWorkspace, getResearchWorkspaceFallback } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
 export default async function ResearchPage() {
   const session = await getControlSessionState();
-  const response = await getResearchWorkspace();
-  const workspace = response.data.item;
+  const [workspaceResponse, runtimeResponse] = await Promise.allSettled([getResearchWorkspace(), getResearchRuntimeStatus()]);
+  const workspace =
+    workspaceResponse.status === "fulfilled" && !workspaceResponse.value.error
+      ? workspaceResponse.value.data.item
+      : getResearchWorkspaceFallback();
+  const runtimeStatus =
+    runtimeResponse.status === "fulfilled" && !runtimeResponse.value.error
+      ? runtimeResponse.value.data.item
+      : getResearchRuntimeStatusFallback();
 
   return (
     <AppShell
@@ -36,6 +44,8 @@ export default async function ResearchPage() {
           { label: "下一步", value: workspace.overview.recommended_action || "先运行研究训练", detail: "研究结果会决定接下来是继续研究还是进入验证" },
         ]}
       />
+
+      <ResearchRuntimePanel initialStatus={runtimeStatus} />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
         <div className="space-y-5">

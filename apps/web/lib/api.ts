@@ -367,6 +367,22 @@ export type ResearchReportItem = {
   };
 };
 
+export type ResearchRuntimeStatusModel = {
+  status: string;
+  action: string;
+  current_stage: string;
+  progress_pct: number;
+  started_at: string;
+  finished_at: string;
+  message: string;
+  last_completed_action: string;
+  last_finished_at: string;
+  result_paths: string[];
+  history: Record<string, unknown>;
+  estimated_seconds: Record<string, number>;
+  current_estimate_seconds: number;
+};
+
 export type FeatureWorkspaceModel = {
   status: string;
   backend: string;
@@ -684,6 +700,24 @@ export async function getResearchReport(): Promise<ApiEnvelope<{ item: ResearchR
     ...response,
     data: {
       item: normalizeResearchReportItem(response.data.item),
+    },
+  };
+}
+
+export async function getResearchRuntimeStatus(): Promise<ApiEnvelope<{ item: ResearchRuntimeStatusModel }>> {
+  const response = await fetchJson<{ item: Record<string, unknown> }>("/signals/research/runtime");
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getResearchRuntimeStatusFallback(),
+      },
+    };
+  }
+  return {
+    ...response,
+    data: {
+      item: normalizeResearchRuntimeStatus(response.data.item),
     },
   };
 }
@@ -1913,6 +1947,30 @@ function normalizeResearchReportItem(item: unknown): ResearchReportItem {
   };
 }
 
+function normalizeResearchRuntimeStatus(item: unknown): ResearchRuntimeStatusModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const estimatedRow: Record<string, unknown> = isPlainObject(row.estimated_seconds) ? row.estimated_seconds : {};
+  return {
+    status: String(row.status ?? "idle"),
+    action: String(row.action ?? ""),
+    current_stage: String(row.current_stage ?? "idle"),
+    progress_pct: Number(row.progress_pct ?? 0),
+    started_at: String(row.started_at ?? ""),
+    finished_at: String(row.finished_at ?? ""),
+    message: String(row.message ?? "当前没有研究任务在运行。"),
+    last_completed_action: String(row.last_completed_action ?? ""),
+    last_finished_at: String(row.last_finished_at ?? ""),
+    result_paths: normalizeStringArray(row.result_paths, ["/research", "/evaluation", "/signals"]),
+    history: isPlainObject(row.history) ? row.history : {},
+    estimated_seconds: {
+      training: Number(estimatedRow.training ?? 25),
+      inference: Number(estimatedRow.inference ?? 12),
+      pipeline: Number(estimatedRow.pipeline ?? 40),
+    },
+    current_estimate_seconds: Number(row.current_estimate_seconds ?? 0),
+  };
+}
+
 function normalizeResearchSymbolMap(value: unknown): Record<string, ResearchSymbolSummary> {
   if (!isPlainObject(value)) {
     return {};
@@ -2133,6 +2191,28 @@ export function getResearchReportFallback(): { item: ResearchReportItem } {
       },
     }),
   };
+}
+
+export function getResearchRuntimeStatusFallback(): ResearchRuntimeStatusModel {
+  return normalizeResearchRuntimeStatus({
+    status: "idle",
+    action: "",
+    current_stage: "idle",
+    progress_pct: 0,
+    started_at: "",
+    finished_at: "",
+    message: "当前没有研究任务在运行。",
+    last_completed_action: "",
+    last_finished_at: "",
+    result_paths: ["/research", "/evaluation", "/signals"],
+    history: {},
+    estimated_seconds: {
+      training: 25,
+      inference: 12,
+      pipeline: 40,
+    },
+    current_estimate_seconds: 0,
+  });
 }
 
 export function getPositionsPageModel(): PositionsPageModel {

@@ -44,6 +44,7 @@ from services.api.app.routes.signals import (  # noqa: E402
     get_research_candidate,
     get_research_candidates,
     get_research_report,
+    get_research_runtime,
     ingest_signal,
     list_signals,
     get_latest_research,
@@ -312,10 +313,11 @@ class ApiSkeletonTests(unittest.TestCase):
     def test_research_routes_return_consistent_response_shape(self) -> None:
         token = self._login_token()
         latest = get_latest_research()
+        runtime = get_research_runtime()
         training = run_research_training(token=token)
         inference = run_research_inference(token=token)
 
-        for response in (latest, training, inference):
+        for response in (latest, runtime, training, inference):
             self.assertEqual(set(response.keys()), {"data", "error", "meta"})
 
     def test_research_candidate_routes_return_consistent_response_shape(self) -> None:

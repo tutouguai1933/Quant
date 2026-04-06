@@ -137,7 +137,7 @@ function resolveActionConfig(action: string, strategyId: string): ActionConfig |
       method: "POST",
       requiresToken: true,
       successTitle: "动作反馈",
-      successMessage: "Qlib 信号流水线已运行，页面已刷新为最新结果。",
+      successMessage: "Qlib 信号流水线已进入后台，可在信号页、研究页和评估页查看进度与结果。",
     },
     run_mock_pipeline: {
       path: "/signals/pipeline/run?source=mock",
@@ -179,14 +179,14 @@ function resolveActionConfig(action: string, strategyId: string): ActionConfig |
       method: "POST",
       requiresToken: true,
       successTitle: "研究反馈",
-      successMessage: "研究训练已提交，最近研究结果会更新。",
+      successMessage: "研究训练已进入后台，可在研究页查看进度，完成后再去评估页看结果。",
     },
     run_research_inference: {
       path: "/signals/research/infer",
       method: "POST",
       requiresToken: true,
       successTitle: "研究反馈",
-      successMessage: "研究推理已提交，最近研究结果会更新。",
+      successMessage: "研究推理已进入后台，可在研究页查看进度，完成后再去信号页和评估页看结果。",
     },
     trigger_train: {
       path: "/tasks/train",

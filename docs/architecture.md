@@ -765,3 +765,11 @@
 - 站内路径管理：`apps/web/lib/session.ts`
 - 浏览器测试入口：`apps/web/tests/test-urls.cjs`
 - 收口方式：策略页和任务页都直接补上回到研究链、回测工作台和评估中心的入口，不再让研究链和执行链断开
+
+研究动作这轮还补上了后台运行状态：
+
+- 后端运行状态服务：`services/api/app/services/research_runtime_service.py`
+- 研究运行状态接口：`GET /api/v1/signals/research/runtime`
+- 研究运行状态前端面板：`apps/web/components/research-runtime-panel.tsx`
+- 页面接入位置：`apps/web/app/signals/page.tsx`、`apps/web/app/research/page.tsx`
+- 作用：把“研究训练 / 研究推理 / Qlib 信号流水线”改成后台任务，并在页面上实时显示阶段、预计时长和结果去向

@@ -19,6 +19,7 @@ class ResearchWorkspaceTests(unittest.TestCase):
 
     def test_research_workspace_page_mentions_key_sections(self) -> None:
         content = (WEB_APP / "research" / "page.tsx").read_text(encoding="utf-8")
+        runtime_content = (WEB_COMPONENTS / "research-runtime-panel.tsx").read_text(encoding="utf-8")
         self.assertIn("策略研究工作台", content)
         self.assertIn("研究模板", content)
         self.assertIn("标签定义", content)
@@ -27,6 +28,10 @@ class ResearchWorkspaceTests(unittest.TestCase):
         self.assertIn("实验参数", content)
         self.assertIn("研究训练", content)
         self.assertIn("研究推理", content)
+        self.assertIn("ResearchRuntimePanel", content)
+        self.assertIn("研究运行状态", runtime_content)
+        self.assertIn("预计时长", runtime_content)
+        self.assertIn("完成后去哪里看", runtime_content)
 
 
 if __name__ == "__main__":

@@ -13,8 +13,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import services.api.app.routes.signals as signals_route  # noqa: E402
+import services.api.app.services.research_runtime_service as research_runtime_module  # noqa: E402
 import services.api.app.services.research_service as research_service_module  # noqa: E402
 from services.api.app.services.auth_service import auth_service  # noqa: E402
+from services.api.app.services.research_runtime_service import ResearchRuntimeService  # noqa: E402
 from services.api.app.services.research_service import ResearchService  # noqa: E402
 
 
@@ -31,6 +33,14 @@ class ResearchServiceTests(unittest.TestCase):
         )
         research_service_module.research_service = self.service
         signals_route.research_service = self.service
+        runtime_service = ResearchRuntimeService(
+            config_loader=self._load_config,
+            research_service_instance=self.service,
+            signal_service_instance=signals_route.signal_service,
+            async_runner=lambda fn: fn(),
+        )
+        research_runtime_module.research_runtime_service = runtime_service
+        signals_route.research_runtime_service = runtime_service
 
     def tearDown(self) -> None:
         self._temp_dir.cleanup()
@@ -403,9 +413,10 @@ class ResearchServiceTests(unittest.TestCase):
 
         self.assertIsNone(training_response["error"])
         self.assertIsNone(inference_response["error"])
-        self.assertEqual(training_response["data"]["item"]["status"], "completed")
-        self.assertEqual(inference_response["data"]["item"]["status"], "completed")
-        self.assertTrue(inference_response["data"]["item"]["signals"])
+        self.assertEqual(training_response["data"]["item"]["status"], "succeeded")
+        self.assertEqual(inference_response["data"]["item"]["status"], "succeeded")
+        runtime_response = signals_route.get_research_runtime()
+        self.assertEqual(runtime_response["data"]["item"]["status"], "succeeded")
 
     def test_research_routes_require_login_for_write_actions(self) -> None:
         training_response = signals_route.run_research_training()
