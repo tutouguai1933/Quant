@@ -263,6 +263,20 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("恢复自动化", [item["label"] for item in health["operator_actions"]])
         self.assertIn("查看执行器", [item["label"] for item in health["operator_actions"]])
 
+    def test_health_summary_tracks_failure_streak_and_escalation_level(self) -> None:
+        service = AutomationService()
+        service.record_cycle({"status": "attention_required", "next_action": "manual_takeover"})
+        service.record_cycle({"status": "attention_required", "next_action": "manual_takeover"})
+        service.record_alert(level="error", code="sync_failed", message="同步失败", source="watchdog")
+
+        health = service.build_health_summary(
+            task_health={"latest_status_by_type": {"sync": "failed", "review": "waiting"}}
+        )
+
+        self.assertEqual(health["run_health"]["consecutive_failure_count"], 2)
+        self.assertEqual(health["run_health"]["stale_sync_state"], "stale")
+        self.assertEqual(health["run_health"]["escalation_level"], "critical")
+
     def test_manual_takeover_entry_switches_to_manual_with_reason(self) -> None:
         service = AutomationService()
         service.configure_mode("auto_live", actor="tester")

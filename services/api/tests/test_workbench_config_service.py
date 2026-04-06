@@ -29,6 +29,12 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["research"]["train_split_ratio"], "0.6")
         self.assertEqual(config["research"]["validation_split_ratio"], "0.2")
         self.assertEqual(config["research"]["test_split_ratio"], "0.2")
+        self.assertEqual(config["research"]["signal_confidence_floor"], "0.55")
+        self.assertEqual(config["research"]["trend_weight"], "1.3")
+        self.assertEqual(config["research"]["volume_weight"], "1.1")
+        self.assertEqual(config["research"]["oscillator_weight"], "0.7")
+        self.assertEqual(config["research"]["volatility_weight"], "0.9")
+        self.assertEqual(config["research"]["strict_penalty_weight"], "1")
         self.assertEqual(config["backtest"]["fee_bps"], "10")
         self.assertEqual(config["features"]["outlier_policy"], "clip")
         self.assertEqual(config["features"]["normalization_policy"], "fixed_4dp")
@@ -82,6 +88,12 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "train_split_ratio": "0.5",
                     "validation_split_ratio": "0.3",
                     "test_split_ratio": "0.2",
+                    "signal_confidence_floor": "0.62",
+                    "trend_weight": "1.8",
+                    "volume_weight": "1.4",
+                    "oscillator_weight": "0.5",
+                    "volatility_weight": "0.6",
+                    "strict_penalty_weight": "1.4",
                 },
             )
             service.update_section(
@@ -125,6 +137,12 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_TRAIN_SPLIT_RATIO"], "0.5")
         self.assertEqual(overrides["QUANT_QLIB_VALIDATION_SPLIT_RATIO"], "0.3")
         self.assertEqual(overrides["QUANT_QLIB_TEST_SPLIT_RATIO"], "0.2")
+        self.assertEqual(overrides["QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR"], "0.62")
+        self.assertEqual(overrides["QUANT_QLIB_TREND_WEIGHT"], "1.8")
+        self.assertEqual(overrides["QUANT_QLIB_VOLUME_WEIGHT"], "1.4")
+        self.assertEqual(overrides["QUANT_QLIB_OSCILLATOR_WEIGHT"], "0.5")
+        self.assertEqual(overrides["QUANT_QLIB_VOLATILITY_WEIGHT"], "0.6")
+        self.assertEqual(overrides["QUANT_QLIB_STRICT_PENALTY_WEIGHT"], "1.4")
         self.assertEqual(overrides["QUANT_QLIB_OUTLIER_POLICY"], "raw")
         self.assertEqual(overrides["QUANT_QLIB_NORMALIZATION_POLICY"], "zscore_by_symbol")
         self.assertEqual(overrides["QUANT_QLIB_BACKTEST_FEE_BPS"], "12")

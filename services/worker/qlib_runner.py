@@ -152,8 +152,8 @@ class QlibRunner:
                 continue
             score = self._score_signal(latest, dict(training_payload.get("metrics") or {}))
             confidence = max(score, 1 - score)
-            signal = _classify_signal(score)
-            target_weight = _target_weight(signal, score)
+            signal = self._classify_signal(score)
+            target_weight = self._target_weight(signal, score)
             rule_gate = self._build_rule_gate(latest)
             recommendation_context = self._build_recommendation_context(feature_row=latest)
             strategy_template = self._resolve_strategy_template(feature_row=latest)
@@ -467,13 +467,14 @@ class QlibRunner:
             raw_score += _to_float(metrics.get("positive_rate")) * 0.8
         else:
             for key in primary_columns:
-                raw_score += _to_float(feature_row.get(key)) - _to_float(averages.get(key))
+                raw_score += (_to_float(feature_row.get(key)) - _to_float(averages.get(key))) * self._feature_weight(key)
             raw_score += _to_float(metrics.get("avg_future_return_pct"))
         if self._config.research_template == "single_asset_timing_strict":
-            raw_score -= max(0.0, 1.2 - _to_float(feature_row.get("ema20_gap_pct"))) * 0.8
-            raw_score -= max(0.0, 1.8 - _to_float(feature_row.get("ema55_gap_pct"))) * 0.8
-            raw_score -= max(0.0, _to_float(feature_row.get("atr_pct")) - 4.5) * 0.5
-            raw_score -= max(0.0, 1.05 - _to_float(feature_row.get("volume_ratio"))) * 1.0
+            penalty_weight = float(self._config.strict_penalty_weight)
+            raw_score -= max(0.0, 1.2 - _to_float(feature_row.get("ema20_gap_pct"))) * 0.8 * penalty_weight
+            raw_score -= max(0.0, 1.8 - _to_float(feature_row.get("ema55_gap_pct"))) * 0.8 * penalty_weight
+            raw_score -= max(0.0, _to_float(feature_row.get("atr_pct")) - 4.5) * 0.5 * penalty_weight
+            raw_score -= max(0.0, 1.05 - _to_float(feature_row.get("volume_ratio"))) * 1.0 * penalty_weight
         normalized = 1 / (1 + math.exp(-(raw_score / 8)))
         return max(0.0, min(normalized, 1.0))
 
@@ -511,6 +512,12 @@ class QlibRunner:
                 "normalization_policy": str(self._config.normalization_policy),
                 "sample_limit": self._config.sample_limit,
                 "lookback_days": self._config.lookback_days,
+                "signal_confidence_floor": str(self._config.signal_confidence_floor),
+                "trend_weight": str(self._config.trend_weight),
+                "volume_weight": str(self._config.volume_weight),
+                "oscillator_weight": str(self._config.oscillator_weight),
+                "volatility_weight": str(self._config.volatility_weight),
+                "strict_penalty_weight": str(self._config.strict_penalty_weight),
                 "primary_factors": list(self._config.primary_feature_columns),
                 "auxiliary_factors": list(self._config.auxiliary_feature_columns),
             },
@@ -562,6 +569,12 @@ class QlibRunner:
                 "live_min_win_rate": str(self._config.live_min_win_rate),
                 "live_max_turnover": str(self._config.live_max_turnover),
                 "live_min_sample_count": str(self._config.live_min_sample_count),
+                "signal_confidence_floor": str(self._config.signal_confidence_floor),
+                "trend_weight": str(self._config.trend_weight),
+                "volume_weight": str(self._config.volume_weight),
+                "oscillator_weight": str(self._config.oscillator_weight),
+                "volatility_weight": str(self._config.volatility_weight),
+                "strict_penalty_weight": str(self._config.strict_penalty_weight),
             },
             "output_summary": {
                 "signal_count": len(signals),
@@ -662,20 +675,39 @@ class QlibRunner:
             "factors": factors,
         }
 
-    @staticmethod
-    def _feature_weight(name: str) -> float:
+    def _feature_weight(self, name: str) -> float:
         """按因子类别给简单权重。"""
 
         category = str((FACTOR_METADATA.get(name) or {}).get("category", ""))
         if category == "trend":
-            return 1.3
+            return float(self._config.trend_weight)
         if category == "volume":
-            return 1.1
+            return float(self._config.volume_weight)
         if category == "oscillator":
-            return 0.7
+            return float(self._config.oscillator_weight)
         if category == "volatility":
-            return 0.9
+            return float(self._config.volatility_weight)
         return 1.0
+
+    def _classify_signal(self, score: float) -> str:
+        """按当前置信度门槛把分数转成信号方向。"""
+
+        floor = float(self._config.signal_confidence_floor)
+        if score >= floor:
+            return "long"
+        if score <= (1 - floor):
+            return "short"
+        return "flat"
+
+    def _target_weight(self, signal: str, score: float) -> float:
+        """根据方向给出最小目标权重。"""
+
+        floor = float(self._config.signal_confidence_floor)
+        if signal == "long":
+            return min(0.35, max(0.1, score - max(0.2, floor - 0.15)))
+        if signal == "short":
+            return max(-0.35, min(-0.1, -((1 - max(0.2, floor - 0.15)) - score)))
+        return 0.0
 
     def _ensure_runtime_directories(self) -> None:
         """在已存在根目录下补齐子目录。"""

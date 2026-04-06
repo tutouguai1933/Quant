@@ -19,11 +19,22 @@ export default async function EvaluationPage() {
   const recommendedCandidate = asRecord(evaluation.recommended_candidate);
   const researchReview = asRecord(asRecord(workspace.reviews).research);
   const executionAlignment = asRecord(workspace.execution_alignment);
+  const alignmentDetails = asRecord(workspace.alignment_details);
   const comparisonSummary = asRecord(workspace.comparison_summary);
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
+  const executionMetrics = asRecord(executionAlignment.execution);
+  const executionBacktest = asRecord(executionAlignment.backtest);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
+  const executionAlignmentNarrative = buildExecutionAlignmentNarrative({
+    executionAlignment,
+    executionMetrics,
+    executionBacktest,
+    researchReview,
+    overview: workspace.overview,
+    comparisonSummary,
+  });
 
   return (
     <AppShell
@@ -270,14 +281,30 @@ export default async function EvaluationPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
-              <CardTitle>研究与执行对齐</CardTitle>
-              <CardDescription>这里直接说明当前研究推荐和真实执行结果是不是站在同一边。</CardDescription>
+              <p className="eyebrow">研究与执行对齐</p>
+              <CardTitle>研究结果 vs 执行结果</CardTitle>
+              <CardDescription>这里不只显示 matched / unmatched，而是把对齐结论、对齐解释、最近执行摘要和建议动作直接讲清楚。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="对齐结论" value={executionAlignmentNarrative.result} />
+              <InfoBlock label="研究结论" value={executionAlignmentNarrative.researchSummary} />
+              <InfoBlock label="执行现状" value={executionAlignmentNarrative.executionSummary} />
+              <InfoBlock label="建议动作" value={executionAlignmentNarrative.nextStep} />
+              <InfoBlock label="对齐解释 / 差异说明" value={executionAlignmentNarrative.detail} />
+              <InfoBlock label="最近执行摘要" value={executionAlignmentNarrative.executionCounts} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>执行对齐明细</CardTitle>
+              <CardDescription>把研究标的、最近订单标的和最近持仓标的直接摆出来，避免只看到 matched 却不知道具体对齐到了什么。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
-              <InfoBlock label="状态" value={String(executionAlignment.status ?? "当前没有对齐结果")} />
-              <InfoBlock label="标的" value={String(executionAlignment.symbol ?? "未对齐")} />
-              <InfoBlock label="推荐动作" value={String(executionAlignment.recommended_action ?? "继续研究")} />
-              <InfoBlock label="说明" value={String(executionAlignment.note ?? "当前还没有可展示的研究与执行对齐结果")} />
+              <InfoBlock label="对齐状态" value={String(alignmentDetails.alignment_state ?? "当前没有执行对齐明细")} />
+              <InfoBlock label="研究标的" value={String(alignmentDetails.research_symbol ?? "n/a")} />
+              <InfoBlock label="最近订单标的" value={String(alignmentDetails.last_order_symbol ?? "n/a")} />
+              <InfoBlock label="最近持仓标的" value={String(alignmentDetails.last_position_symbol ?? "n/a")} />
             </CardContent>
           </Card>
         </div>
@@ -297,6 +324,144 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function buildExecutionAlignmentNarrative({
+  executionAlignment,
+  executionMetrics,
+  executionBacktest,
+  researchReview,
+  overview,
+  comparisonSummary,
+}: {
+  executionAlignment: Record<string, unknown>;
+  executionMetrics: Record<string, unknown>;
+  executionBacktest: Record<string, unknown>;
+  researchReview: Record<string, unknown>;
+  overview: {
+    recommended_symbol: string;
+    recommended_action: string;
+    candidate_count: number;
+  };
+  comparisonSummary: Record<string, unknown>;
+}) {
+  const status = readText(executionAlignment.status, "unavailable");
+  const researchSymbol = overview.recommended_symbol || readText(executionAlignment.symbol, "未推荐");
+  const researchAction = readText(researchReview.next_action, overview.recommended_action || "继续研究");
+  const reviewResult = readText(researchReview.result, readText(comparisonSummary.review_result, "未生成"));
+  const runtimeMode = readText(executionMetrics.runtime_mode, "unknown");
+  const latestSyncStatus = readText(executionMetrics.latest_sync_status, "unknown");
+  const matchedOrderCount = Number(executionMetrics.matched_order_count ?? 0);
+  const matchedPositionCount = Number(executionMetrics.matched_position_count ?? 0);
+  const executionNote = readText(executionAlignment.note, "当前还没有可展示的研究与执行对齐结果");
+  const netReturn = readText(executionBacktest.net_return_pct, "");
+  const drawdown = readText(executionBacktest.max_drawdown_pct, "");
+
+  if (status === "matched") {
+    return {
+      result: "研究建议和执行结果已经对上",
+      researchSummary: `${researchSymbol} / ${researchAction} / ${reviewResult}`,
+      executionSummary: `${formatRuntimeMode(runtimeMode)} / 同步 ${formatSyncStatus(latestSyncStatus)}`,
+      nextStep: runtimeMode === "live" ? "保留小额 live，继续看复盘结果。" : "继续观察 dry-run，再决定是否进入 live。",
+      detail: executionNote,
+      executionCounts: buildExecutionCountsSummary({ matchedOrderCount, matchedPositionCount, latestSyncStatus, netReturn, drawdown }),
+    };
+  }
+
+  if (status === "waiting_research") {
+    return {
+      result: "研究还没放行到执行",
+      researchSummary: `${researchSymbol} / ${researchAction} / ${reviewResult}`,
+      executionSummary: `${formatRuntimeMode(runtimeMode)} / 同步 ${formatSyncStatus(latestSyncStatus)}`,
+      nextStep: "先回到研究、回测和评估链补强候选，再决定是否放行。",
+      detail: executionNote,
+      executionCounts: buildExecutionCountsSummary({ matchedOrderCount, matchedPositionCount, latestSyncStatus, netReturn, drawdown }),
+    };
+  }
+
+  if (status === "attention_required") {
+    return {
+      result: "研究允许执行，但执行链需要先排障",
+      researchSummary: `${researchSymbol} / ${researchAction} / ${reviewResult}`,
+      executionSummary: `${formatRuntimeMode(runtimeMode)} / 同步 ${formatSyncStatus(latestSyncStatus)}`,
+      nextStep: "先恢复执行器和同步，再重新核对研究结论。",
+      detail: executionNote,
+      executionCounts: buildExecutionCountsSummary({ matchedOrderCount, matchedPositionCount, latestSyncStatus, netReturn, drawdown }),
+    };
+  }
+
+  if (status === "no_execution") {
+    return {
+      result: "研究已有候选，但执行侧还没跟上",
+      researchSummary: `${researchSymbol} / ${researchAction} / ${reviewResult}`,
+      executionSummary: `${formatRuntimeMode(runtimeMode)} / 同步 ${formatSyncStatus(latestSyncStatus)}`,
+      nextStep: "先去任务页和策略页确认是否已派发、是否被人工暂停。",
+      detail: executionNote,
+      executionCounts: buildExecutionCountsSummary({ matchedOrderCount, matchedPositionCount, latestSyncStatus, netReturn, drawdown }),
+    };
+  }
+
+  return {
+    result: "当前还没有足够结果可对齐",
+    researchSummary: `${researchSymbol || "未推荐"} / ${researchAction} / ${reviewResult}`,
+    executionSummary: `${formatRuntimeMode(runtimeMode)} / 同步 ${formatSyncStatus(latestSyncStatus)}`,
+    nextStep: "先补研究结果、执行同步或 dry-run，再回来复核。",
+    detail: executionNote,
+    executionCounts: buildExecutionCountsSummary({ matchedOrderCount, matchedPositionCount, latestSyncStatus, netReturn, drawdown }),
+  };
+}
+
+function buildExecutionCountsSummary({
+  matchedOrderCount,
+  matchedPositionCount,
+  latestSyncStatus,
+  netReturn,
+  drawdown,
+}: {
+  matchedOrderCount: number;
+  matchedPositionCount: number;
+  latestSyncStatus: string;
+  netReturn: string;
+  drawdown: string;
+}) {
+  const parts = [
+    `同步 ${formatSyncStatus(latestSyncStatus)}`,
+    `订单 ${matchedOrderCount}`,
+    `持仓 ${matchedPositionCount}`,
+  ];
+  if (netReturn) {
+    parts.push(`净收益 ${netReturn}`);
+  }
+  if (drawdown) {
+    parts.push(`最大回撤 ${drawdown}`);
+  }
+  return parts.join(" / ");
+}
+
+function formatRuntimeMode(mode: string) {
+  const mapping: Record<string, string> = {
+    live: "当前在小额 live",
+    dry_run: "当前在 dry-run",
+    manual: "当前在手动模式",
+    unavailable: "当前还没有执行模式",
+    unknown: "当前执行模式未知",
+  };
+  return mapping[mode] ?? mode;
+}
+
+function formatSyncStatus(status: string) {
+  const mapping: Record<string, string> = {
+    succeeded: "已同步",
+    failed: "同步失败",
+    waiting: "等待同步",
+    unknown: "同步状态未知",
+  };
+  return mapping[status] ?? status;
+}
+
+function readText(value: unknown, fallback: string): string {
+  const text = String(value ?? "").trim();
+  return text.length > 0 ? text : fallback;
 }
 
 function toYesNo(value: unknown): string {

@@ -34,6 +34,12 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("工作台暂时不可用", content)
         self.assertIn("进入 dry-run", content)
         self.assertIn("准入门槛配置", content)
+        self.assertIn("研究结果 vs 执行结果", content)
+        self.assertIn("对齐解释", content)
+        self.assertIn("最近执行摘要", content)
+        self.assertIn("执行对齐明细", content)
+        self.assertIn("最近订单标的", content)
+        self.assertIn("最近持仓标的", content)
         self.assertIn("live_min_score", content)
         self.assertIn("dry_run_min_win_rate", content)
         self.assertIn("dry_run_max_turnover", content)
@@ -42,6 +48,11 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("live_max_turnover", content)
         self.assertIn("live_min_sample_count", content)
         self.assertIn("淘汰原因说明", content)
+        self.assertIn("研究结果 vs 执行结果", content)
+        self.assertIn("对齐结论", content)
+        self.assertIn("执行现状", content)
+        self.assertIn("差异说明", content)
+        self.assertIn("建议动作", content)
 
 
 if __name__ == "__main__":

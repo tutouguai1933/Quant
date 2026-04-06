@@ -57,6 +57,12 @@ def _default_config() -> dict[str, object]:
             "train_split_ratio": "0.6",
             "validation_split_ratio": "0.2",
             "test_split_ratio": "0.2",
+            "signal_confidence_floor": "0.55",
+            "trend_weight": "1.3",
+            "volume_weight": "1.1",
+            "oscillator_weight": "0.7",
+            "volatility_weight": "0.9",
+            "strict_penalty_weight": "1",
         },
         "backtest": {
             "fee_bps": "10",
@@ -188,6 +194,12 @@ class WorkbenchConfigService:
             "QUANT_QLIB_TRAIN_SPLIT_RATIO": str(research.get("train_split_ratio", "0.6")),
             "QUANT_QLIB_VALIDATION_SPLIT_RATIO": str(research.get("validation_split_ratio", "0.2")),
             "QUANT_QLIB_TEST_SPLIT_RATIO": str(research.get("test_split_ratio", "0.2")),
+            "QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR": str(research.get("signal_confidence_floor", "0.55")),
+            "QUANT_QLIB_TREND_WEIGHT": str(research.get("trend_weight", "1.3")),
+            "QUANT_QLIB_VOLUME_WEIGHT": str(research.get("volume_weight", "1.1")),
+            "QUANT_QLIB_OSCILLATOR_WEIGHT": str(research.get("oscillator_weight", "0.7")),
+            "QUANT_QLIB_VOLATILITY_WEIGHT": str(research.get("volatility_weight", "0.9")),
+            "QUANT_QLIB_STRICT_PENALTY_WEIGHT": str(research.get("strict_penalty_weight", "1")),
             "QUANT_QLIB_BACKTEST_FEE_BPS": str(backtest.get("fee_bps", "10")),
             "QUANT_QLIB_BACKTEST_SLIPPAGE_BPS": str(backtest.get("slippage_bps", "5")),
             "QUANT_QLIB_DRY_RUN_MIN_SCORE": str(thresholds.get("dry_run_min_score", "0.55")),
@@ -320,6 +332,42 @@ class WorkbenchConfigService:
             "train_split_ratio": normalized_ratios["train_split_ratio"],
             "validation_split_ratio": normalized_ratios["validation_split_ratio"],
             "test_split_ratio": normalized_ratios["test_split_ratio"],
+            "signal_confidence_floor": self._normalize_decimal(
+                payload.get("signal_confidence_floor"),
+                default=Decimal("0.55"),
+                minimum=Decimal("0"),
+                maximum=Decimal("1"),
+            ),
+            "trend_weight": self._normalize_decimal(
+                payload.get("trend_weight"),
+                default=Decimal("1.3"),
+                minimum=Decimal("0"),
+                maximum=Decimal("5"),
+            ),
+            "volume_weight": self._normalize_decimal(
+                payload.get("volume_weight"),
+                default=Decimal("1.1"),
+                minimum=Decimal("0"),
+                maximum=Decimal("5"),
+            ),
+            "oscillator_weight": self._normalize_decimal(
+                payload.get("oscillator_weight"),
+                default=Decimal("0.7"),
+                minimum=Decimal("0"),
+                maximum=Decimal("5"),
+            ),
+            "volatility_weight": self._normalize_decimal(
+                payload.get("volatility_weight"),
+                default=Decimal("0.9"),
+                minimum=Decimal("0"),
+                maximum=Decimal("5"),
+            ),
+            "strict_penalty_weight": self._normalize_decimal(
+                payload.get("strict_penalty_weight"),
+                default=Decimal("1"),
+                minimum=Decimal("0"),
+                maximum=Decimal("5"),
+            ),
         }
 
     def _normalize_backtest_section(self, value: object) -> dict[str, object]:

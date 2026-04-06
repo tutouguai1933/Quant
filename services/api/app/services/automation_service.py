@@ -40,6 +40,8 @@ class AutomationService:
         self._armed_symbol = ""
         self._armed_at = ""
         self._daily_summary = self._new_daily_summary()
+        self._consecutive_failure_count = 0
+        self._last_success_at = ""
         self._load_state()
 
     def get_state(self) -> dict[str, object]:
@@ -60,6 +62,8 @@ class AutomationService:
             "last_cycle": last_cycle,
             "alerts": list(self._alerts),
             "daily_summary": dict(self._daily_summary),
+            "consecutive_failure_count": self._consecutive_failure_count,
+            "last_success_at": self._last_success_at,
         }
 
     def get_status(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
@@ -219,6 +223,11 @@ class AutomationService:
             "recorded_at": _utc_now(),
         }
         status = str(payload.get("status", "")).strip() or "unknown"
+        if status == "succeeded":
+            self._consecutive_failure_count = 0
+            self._last_success_at = _utc_now()
+        elif status == "attention_required":
+            self._consecutive_failure_count += 1
         self._daily_summary["cycle_count"] = int(self._daily_summary.get("cycle_count", 0)) + 1
         status_counts = dict(self._daily_summary.get("status_counts") or {})
         status_counts[status] = int(status_counts.get(status, 0) or 0) + 1
@@ -282,6 +291,7 @@ class AutomationService:
             "active_blockers": active_blockers,
             "operator_actions": operator_actions,
             "alert_summary": alert_summary,
+            "run_health": self._build_run_health(latest_status=latest_status, last_alert=last_alert),
         }
 
     def _build_alert_summary(self) -> dict[str, object]:
@@ -436,6 +446,32 @@ class AutomationService:
             )
         return actions
 
+    def _build_run_health(
+        self,
+        *,
+        latest_status: dict[str, object],
+        last_alert: dict[str, object] | None,
+    ) -> dict[str, object]:
+        """补充长期运行最关心的失败连续性和升级级别。"""
+
+        latest_sync_status = str(latest_status.get("sync", "unknown"))
+        stale_sync_state = "stale" if latest_sync_status not in {"succeeded", "unknown"} else "fresh"
+        escalation_level = "normal"
+        if self._paused_reason == "kill_switch":
+            escalation_level = "critical"
+        elif self._manual_takeover or self._paused:
+            escalation_level = "high"
+        if self._consecutive_failure_count >= 2 or stale_sync_state == "stale":
+            escalation_level = "critical"
+        if last_alert and str(last_alert.get("level", "")).lower() == "error":
+            escalation_level = "critical"
+        return {
+            "consecutive_failure_count": self._consecutive_failure_count,
+            "last_success_at": self._last_success_at,
+            "stale_sync_state": stale_sync_state,
+            "escalation_level": escalation_level,
+        }
+
     def run_cycle(self, *, actor: str = "user") -> dict[str, object]:
         """兼容路由层的统一自动化周期入口。"""
 
@@ -482,6 +518,8 @@ class AutomationService:
         self._armed_at = str(payload.get("armed_at", ""))
         daily_summary = dict(payload.get("daily_summary") or {})
         self._daily_summary = daily_summary if daily_summary else self._new_daily_summary()
+        self._consecutive_failure_count = int(payload.get("consecutive_failure_count", 0) or 0)
+        self._last_success_at = str(payload.get("last_success_at", ""))
         self._ensure_daily_summary()
 
     def _persist_state(self) -> None:
@@ -499,6 +537,8 @@ class AutomationService:
             "armed_symbol": self._armed_symbol,
             "armed_at": self._armed_at,
             "daily_summary": self._daily_summary,
+            "consecutive_failure_count": self._consecutive_failure_count,
+            "last_success_at": self._last_success_at,
         }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

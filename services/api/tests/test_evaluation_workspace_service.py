@@ -36,6 +36,10 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["comparison_summary"]["config_alignment_status"], "aligned")
         self.assertTrue(item["comparison_summary"]["model_aligned"])
         self.assertTrue(item["comparison_summary"]["dataset_aligned"])
+        self.assertEqual(item["alignment_details"]["research_symbol"], "ETHUSDT")
+        self.assertEqual(item["alignment_details"]["last_order_symbol"], "ETHUSDT")
+        self.assertEqual(item["alignment_details"]["last_position_symbol"], "ETHUSDT")
+        self.assertEqual(item["alignment_details"]["alignment_state"], "研究和执行已对齐")
         self.assertEqual(item["run_deltas"][0]["run_type"], "training")
         self.assertEqual(item["run_deltas"][0]["previous_run_id"], "train-previous")
         self.assertEqual(item["run_deltas"][0]["model_changed"], "是")
@@ -177,8 +181,12 @@ class _FakeValidationReviewService:
                 "recommended_action": "enter_dry_run",
                 "note": "研究结果和执行结果已经对上",
                 "execution": {
+                    "runtime_mode": "dry-run",
+                    "latest_sync_status": "succeeded",
                     "matched_order_count": 1,
                     "matched_position_count": 1,
+                    "orders": [{"symbol": "ETHUSDT", "status": "filled"}],
+                    "positions": [{"symbol": "ETHUSDT", "side": "long"}],
                 },
             },
             "reviews": {

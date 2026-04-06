@@ -80,6 +80,10 @@ class EvaluationWorkspaceService:
                 execution_alignment=execution_alignment,
             ),
             "execution_alignment": execution_alignment,
+            "alignment_details": self._build_alignment_details(
+                overview=overview,
+                execution_alignment=execution_alignment,
+            ),
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -343,6 +347,40 @@ class EvaluationWorkspaceService:
                 }
             )
         return rows
+
+    @staticmethod
+    def _build_alignment_details(
+        *,
+        overview: dict[str, object],
+        execution_alignment: dict[str, object],
+    ) -> dict[str, str]:
+        """把研究和执行的最近标的对齐成更直白的明细。"""
+
+        execution = dict(execution_alignment.get("execution") or {})
+        orders = [dict(item) for item in list(execution.get("orders") or []) if isinstance(item, dict)]
+        positions = [dict(item) for item in list(execution.get("positions") or []) if isinstance(item, dict)]
+        research_symbol = str(
+            execution_alignment.get("symbol")
+            or overview.get("recommended_symbol")
+            or ""
+        )
+        last_order_symbol = str(orders[0].get("symbol", "")) if orders else ""
+        last_position_symbol = str(positions[0].get("symbol", "")) if positions else ""
+        status = str(execution_alignment.get("status", "") or "unavailable")
+        if status == "matched":
+            alignment_state = "研究和执行已对齐"
+        elif status == "waiting":
+            alignment_state = "研究已生成，等待执行收口"
+        elif status == "unavailable":
+            alignment_state = "当前还没有执行对齐结果"
+        else:
+            alignment_state = "研究和执行暂未对齐"
+        return {
+            "research_symbol": research_symbol,
+            "last_order_symbol": last_order_symbol,
+            "last_position_symbol": last_position_symbol,
+            "alignment_state": alignment_state,
+        }
 
     @staticmethod
     def _find_previous_run(recent_runs: list[dict[str, object]], *, run_type: str, current_run_id: str) -> dict[str, object]:

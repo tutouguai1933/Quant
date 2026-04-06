@@ -55,20 +55,57 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const reviewOverview = asRecord(review.overview);
   const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
   const executionHealth = asRecord(automation.executionHealth);
+  const automationHealth = asRecord(automation.health);
   const lastCycle = asRecord(automation.lastCycle);
   const dispatch = asRecord(lastCycle.dispatch);
   const dispatchMeta = asRecord(dispatch.meta);
   const dispatchItem = asRecord(dispatch.item);
   const dispatchOrder = asRecord(dispatchItem.order);
-  const cycleMessage = readText(lastCycle.message, "当前还没有新的自动化判断。");
-  const failureReason = readText(lastCycle.failure_reason, "当前没有新的失败原因。");
+  const cycleMessageRaw = readText(lastCycle.message, "");
+  const failureReasonRaw = readText(lastCycle.failure_reason, "");
+  const cycleMessage = cycleMessageRaw || "当前还没有新的自动化判断。";
+  const failureReason = failureReasonRaw || "当前没有新的失败原因。";
   const executionState = asRecord(executionHealth.execution_state);
   const executionStateName = readText(executionState.state, "unknown");
   const executionStateDetail = readText(executionState.detail, "当前没有执行状态说明。");
-  const takeoverReason = readText(automation.pauseReason, "当前没有接管原因。");
+  const activeBlockers = Array.isArray(automationHealth.active_blockers)
+    ? automationHealth.active_blockers.filter((item) => item && typeof item === "object")
+    : [];
+  const operatorActions = Array.isArray(automationHealth.operator_actions)
+    ? automationHealth.operator_actions.filter((item) => item && typeof item === "object")
+    : [];
+  const takeoverSummary = asRecord(automationHealth.takeover_summary);
+  const alertSummary = asRecord(automationHealth.alert_summary);
+  const runHealth = asRecord(automationHealth.run_health);
+  const pauseReasonRaw = readText(automation.pauseReason, "");
+  const takeoverReason = pauseReasonRaw || "当前没有接管原因。";
   const recoveryAction = readText(executionHealth.recovery_action, "healthy");
   const takeoverStateLabel = describeTakeoverState(automation.mode, automation.manualTakeover, automation.pauseReason);
   const recoveryActionLabel = formatRecoveryAction(recoveryAction);
+  const primaryBlocker = asRecord(activeBlockers[0]);
+  const guidanceCurrentBlock = buildCurrentBlockSummary({
+    primaryBlocker,
+    cycleMessage: cycleMessageRaw,
+    executionStateDetail,
+    cycleCount: Number(automation.dailySummary.cycle_count ?? 0),
+  });
+  const guidanceTakeover = buildTakeoverGuidanceSummary({
+    takeoverSummary,
+    takeoverStateLabel,
+    pauseReason: pauseReasonRaw,
+    failureReason: failureReasonRaw,
+  });
+  const guidanceRecovery = buildRecoverySummary({
+    operatorActions,
+    recoveryActionLabel,
+    recoveryAction,
+  });
+  const guidanceAlert = buildAlertSummaryCard({
+    alertSummary,
+    latestAlert,
+    cycleCount: Number(automation.dailySummary.cycle_count ?? 0),
+    latestSyncStatus: String(executionHealth.latest_sync_status ?? "unknown"),
+  });
 
   return (
     <AppShell
@@ -182,19 +219,73 @@ export default async function TasksPage({ searchParams }: PageProps) {
               <Card>
                 <CardHeader>
                   <p className="eyebrow">健康摘要</p>
-                  <CardTitle>先看自动化是不是健康</CardTitle>
+                  <CardTitle>长期运行与人工接管</CardTitle>
+                  <CardDescription>把为什么停下、是否该人工接管、恢复前先做什么和最近告警压成一块，避免长期运行时来回找信息。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <GuidanceBlock label="当前阻塞" value={guidanceCurrentBlock.value} detail={guidanceCurrentBlock.detail} />
+                    <GuidanceBlock label="接管建议" value={guidanceTakeover.value} detail={guidanceTakeover.detail} />
+                    <GuidanceBlock label="恢复步骤" value={guidanceRecovery.value} detail={guidanceRecovery.detail} />
+                    <GuidanceBlock label="告警摘要" value={guidanceAlert.value} detail={guidanceAlert.detail} />
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4 text-sm leading-6 text-muted-foreground">
+                    <p>当前模式：{formatMode(automation.mode)}，暂停：{automation.paused ? "是" : "否"}，人工介入：{automation.manualTakeover ? "是" : "否"}</p>
+                    <p>当前控制：{takeoverStateLabel}，接管原因：{takeoverReason}</p>
+                    <p>执行器状态：{executionStateName}，说明：{executionStateDetail}</p>
+                    <p>最近 armed 候选：{automation.armedSymbol || "n/a"}，最近复盘：{String(executionHealth.latest_review_status ?? "unknown")}</p>
+                    <p>连续失败：{String(runHealth.consecutive_failure_count ?? 0)}，升级级别：{String(runHealth.escalation_level ?? "normal")}</p>
+                    <p>同步新鲜度：{String(runHealth.stale_sync_state ?? "fresh")}，最后成功时间：{readText(runHealth.last_success_at, "当前还没有成功记录")}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">当前阻塞</p>
+                  <CardTitle>先处理卡住自动化的那几个点</CardTitle>
+                  <CardDescription>这里直接列出当前最影响自动化继续推进的阻塞项，不用自己猜系统为什么停着。</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p>当前模式：{formatMode(automation.mode)}，暂停：{automation.paused ? "是" : "否"}</p>
-                  <p>人工介入：{automation.manualTakeover ? "是" : "否"}</p>
-                  <p>当前控制：{takeoverStateLabel}</p>
-                  <p>接管原因：{takeoverReason}</p>
-                  <p>执行器状态：{executionStateName}</p>
-                  <p>执行器状态说明：{executionStateDetail}</p>
-                  <p>下一步：{recoveryActionLabel}</p>
-                  <p>最近 armed 候选：{automation.armedSymbol || "n/a"}</p>
-                  <p>最近同步：{String(executionHealth.latest_sync_status ?? "unknown")}</p>
-                  <p>最近复盘：{String(executionHealth.latest_review_status ?? "unknown")}</p>
+                  {activeBlockers.length ? activeBlockers.map((item, index) => {
+                    const row = asRecord(item);
+                    return (
+                      <p key={`${String(row.code ?? index)}-${index}`}>
+                        {String(row.code ?? "blocker")}：{String(row.detail ?? "当前没有更多说明")}
+                      </p>
+                    );
+                  }) : <p>当前没有明显阻塞。</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">接管建议</p>
+                  <CardTitle>{readText(takeoverSummary.state_label, "当前无需接管")}</CardTitle>
+                  <CardDescription>{readText(takeoverSummary.note, "当前没有额外接管说明。")}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>当前模式：{formatMode(automation.mode)}</p>
+                  <p>建议模式：{formatMode(readText(takeoverSummary.suggested_mode, automation.mode))}</p>
+                  <p>接管原因：{readText(takeoverSummary.reason, takeoverReason)}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">恢复步骤</p>
+                  <CardTitle>按这个顺序恢复最稳妥</CardTitle>
+                  <CardDescription>这里是系统当前给出的最小恢复动作，不需要再自己翻日志找下一步。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  {operatorActions.length ? operatorActions.map((item, index) => {
+                    const row = asRecord(item);
+                    return (
+                      <p key={`${String(row.action ?? index)}-${index}`}>
+                        {index + 1}. {String(row.label ?? "继续处理")}：{String(row.detail ?? "")}
+                      </p>
+                    );
+                  }) : <p>当前没有额外恢复步骤，可以继续观察。</p>}
                 </CardContent>
               </Card>
 
@@ -209,6 +300,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     <span className="text-sm text-muted-foreground">告警级别</span>
                     <StatusBadge value={latestAlert?.level || "ok"} />
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">告警摘要</p>
+                  <CardTitle>先看最近异常有多严重</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>错误告警：{String(alertSummary.error_count ?? 0)}</p>
+                  <p>警告告警：{String(alertSummary.warning_count ?? 0)}</p>
+                  <p>信息提示：{String(alertSummary.info_count ?? 0)}</p>
+                  <p>最近错误：{readText(alertSummary.latest_code, "当前没有错误告警")}</p>
+                  <p>最近说明：{readText(alertSummary.latest_message, "当前没有额外说明")}</p>
                 </CardContent>
               </Card>
 
@@ -339,6 +444,16 @@ function ActionCard({
   );
 }
 
+function GuidanceBlock({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4">
+      <p className="eyebrow">{label}</p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-foreground">{value}</p>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
 function buildReviewSteps(review: Record<string, unknown>) {
   const rawSteps = Array.isArray(review.steps) ? review.steps : [];
   const labelMap: Record<string, string> = {
@@ -359,6 +474,125 @@ function buildReviewSteps(review: Record<string, unknown>) {
       detail: String(row.detail ?? ""),
     };
   });
+}
+
+function buildCurrentBlockSummary({
+  primaryBlocker,
+  cycleMessage,
+  executionStateDetail,
+  cycleCount,
+}: {
+  primaryBlocker: Record<string, unknown>;
+  cycleMessage: string;
+  executionStateDetail: string;
+  cycleCount: number;
+}) {
+  const label = readText(primaryBlocker.label, "");
+  const detail = readText(primaryBlocker.detail, "");
+  if (label || detail) {
+    return {
+      value: label || "当前有阻塞",
+      detail: detail || executionStateDetail,
+    };
+  }
+  if (cycleMessage) {
+    return {
+      value: cycleCount > 0 ? `今天已跑 ${cycleCount} 轮` : "等待下一轮",
+      detail: cycleMessage,
+    };
+  }
+  return {
+    value: "等待首轮工作流",
+    detail: executionStateDetail,
+  };
+}
+
+function buildTakeoverGuidanceSummary({
+  takeoverSummary,
+  takeoverStateLabel,
+  pauseReason,
+  failureReason,
+}: {
+  takeoverSummary: Record<string, unknown>;
+  takeoverStateLabel: string;
+  pauseReason: string;
+  failureReason: string;
+}) {
+  const stateLabel = readText(takeoverSummary.state_label, takeoverStateLabel);
+  const note = readText(takeoverSummary.note, "");
+  const nextStep = readText(takeoverSummary.next_step, "");
+  if (stateLabel === "人工接管中" || stateLabel === "已暂停" || takeoverStateLabel === "风险接管") {
+    return {
+      value: stateLabel,
+      detail: note || nextStep || (pauseReason ? `当前原因：${pauseReason}` : "问题没查清前先不要恢复自动化。"),
+    };
+  }
+  if (failureReason) {
+    return {
+      value: "建议人工复核",
+      detail: `先看失败原因：${failureReason}`,
+    };
+  }
+  return {
+    value: "暂不需要接管",
+    detail: note || nextStep || "当前没有明显风险，自动化可以继续按计划运行。",
+  };
+}
+
+function buildRecoverySummary({
+  operatorActions,
+  recoveryActionLabel,
+  recoveryAction,
+}: {
+  operatorActions: object[];
+  recoveryActionLabel: string;
+  recoveryAction: string;
+}) {
+  const steps = operatorActions
+    .map((item) => {
+      const row = asRecord(item);
+      const label = readText(row.label, "");
+      const detail = readText(row.detail, "");
+      return label ? `${label}${detail ? `：${detail}` : ""}` : "";
+    })
+    .filter((item) => item.length > 0);
+
+  if (steps.length > 0) {
+    return {
+      value: steps.length > 1 ? `先做前 ${steps.length} 步` : "先做这一步",
+      detail: steps.join(" / "),
+    };
+  }
+
+  return {
+    value: recoveryActionLabel,
+    detail: recoveryAction === "healthy" ? "当前没有额外恢复步骤，可以继续观察下一轮自动化结果。" : "先按当前恢复建议处理，再决定是否恢复自动化。",
+  };
+}
+
+function buildAlertSummaryCard({
+  alertSummary,
+  latestAlert,
+  cycleCount,
+  latestSyncStatus,
+}: {
+  alertSummary: Record<string, unknown>;
+  latestAlert: { level: string; code: string; message: string; createdAt: string } | undefined;
+  cycleCount: number;
+  latestSyncStatus: string;
+}) {
+  const latestCode = readText(alertSummary.latest_code, latestAlert?.code || "");
+  const latestLevel = readText(alertSummary.latest_level, latestAlert?.level || "");
+  const latestMessage = readText(alertSummary.latest_message, latestAlert?.message || "");
+  const errorCount = Number(alertSummary.error_count ?? 0);
+  const warningCount = Number(alertSummary.warning_count ?? 0);
+  const infoCount = Number(alertSummary.info_count ?? 0);
+  const value = latestCode ? `${formatAlertLevel(latestLevel)} / ${latestCode}` : "当前没有新告警";
+
+  return {
+    value,
+    detail: latestMessage || `今天已跑 ${cycleCount} 轮；错误 ${errorCount} 条，警告 ${warningCount} 条，提示 ${infoCount} 条；最近同步 ${latestSyncStatus}。`,
+  };
 }
 
 function formatMode(mode: string) {
@@ -395,6 +629,16 @@ function formatRecoveryAction(action: string) {
     manual_takeover: "保持人工接管",
   };
   return mapping[action] ?? action;
+}
+
+function formatAlertLevel(level: string) {
+  const mapping: Record<string, string> = {
+    error: "错误告警",
+    warning: "警告告警",
+    info: "提示告警",
+    ok: "正常",
+  };
+  return mapping[level] ?? (level || "告警");
 }
 
 function readText(value: unknown, fallback: string): string {

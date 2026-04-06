@@ -150,6 +150,16 @@ export default async function ResearchPage() {
                 <ConfigInput name="test_split_ratio" defaultValue={String(controls.test_split_ratio ?? "0.2")} placeholder="测试比例" />
               </div>
             </ConfigField>
+            <ConfigField label="研究分数与因子权重" hint="这里决定分数门槛和各类因子的权重分配，下一轮研究会按这里重新打分。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="signal_confidence_floor" defaultValue={String(controls.signal_confidence_floor ?? "0.55")} placeholder="最低置信度" />
+                <ConfigInput name="strict_penalty_weight" defaultValue={String(controls.strict_penalty_weight ?? "1")} placeholder="严格模板惩罚权重" />
+                <ConfigInput name="trend_weight" defaultValue={String(controls.trend_weight ?? "1.3")} placeholder="趋势权重" />
+                <ConfigInput name="volume_weight" defaultValue={String(controls.volume_weight ?? "1.1")} placeholder="量能权重" />
+                <ConfigInput name="oscillator_weight" defaultValue={String(controls.oscillator_weight ?? "0.7")} placeholder="震荡权重" />
+                <ConfigInput name="volatility_weight" defaultValue={String(controls.volatility_weight ?? "0.9")} placeholder="波动权重" />
+              </div>
+            </ConfigField>
           </WorkbenchConfigCard>
 
           <Card className="bg-card/90">

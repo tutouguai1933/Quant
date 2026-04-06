@@ -43,6 +43,12 @@ DEFAULT_RESEARCH_TEMPLATE = "single_asset_timing"
 DEFAULT_LABEL_MODE = "earliest_hit"
 DEFAULT_OUTLIER_POLICY = "clip"
 DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
+DEFAULT_SIGNAL_CONFIDENCE_FLOOR = Decimal("0.55")
+DEFAULT_TREND_WEIGHT = Decimal("1.3")
+DEFAULT_VOLUME_WEIGHT = Decimal("1.1")
+DEFAULT_OSCILLATOR_WEIGHT = Decimal("0.7")
+DEFAULT_VOLATILITY_WEIGHT = Decimal("0.9")
+DEFAULT_STRICT_PENALTY_WEIGHT = Decimal("1")
 SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
@@ -117,6 +123,12 @@ class QlibRuntimeConfig:
     live_min_win_rate: Decimal
     live_max_turnover: Decimal
     live_min_sample_count: int
+    signal_confidence_floor: Decimal
+    trend_weight: Decimal
+    volume_weight: Decimal
+    oscillator_weight: Decimal
+    volatility_weight: Decimal
+    strict_penalty_weight: Decimal
     paths: QlibRuntimePaths
 
     def ensure_ready(self) -> None:
@@ -332,6 +344,43 @@ def load_qlib_config(
         env_name="QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT",
         minimum=3,
     )
+    signal_confidence_floor = _read_decimal(
+        values.get("QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR"),
+        default=DEFAULT_SIGNAL_CONFIDENCE_FLOOR,
+        env_name="QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    trend_weight = _read_decimal(
+        values.get("QUANT_QLIB_TREND_WEIGHT"),
+        default=DEFAULT_TREND_WEIGHT,
+        env_name="QUANT_QLIB_TREND_WEIGHT",
+        minimum=Decimal("0"),
+    )
+    volume_weight = _read_decimal(
+        values.get("QUANT_QLIB_VOLUME_WEIGHT"),
+        default=DEFAULT_VOLUME_WEIGHT,
+        env_name="QUANT_QLIB_VOLUME_WEIGHT",
+        minimum=Decimal("0"),
+    )
+    oscillator_weight = _read_decimal(
+        values.get("QUANT_QLIB_OSCILLATOR_WEIGHT"),
+        default=DEFAULT_OSCILLATOR_WEIGHT,
+        env_name="QUANT_QLIB_OSCILLATOR_WEIGHT",
+        minimum=Decimal("0"),
+    )
+    volatility_weight = _read_decimal(
+        values.get("QUANT_QLIB_VOLATILITY_WEIGHT"),
+        default=DEFAULT_VOLATILITY_WEIGHT,
+        env_name="QUANT_QLIB_VOLATILITY_WEIGHT",
+        minimum=Decimal("0"),
+    )
+    strict_penalty_weight = _read_decimal(
+        values.get("QUANT_QLIB_STRICT_PENALTY_WEIGHT"),
+        default=DEFAULT_STRICT_PENALTY_WEIGHT,
+        env_name="QUANT_QLIB_STRICT_PENALTY_WEIGHT",
+        minimum=Decimal("0"),
+    )
 
     _publish_runtime_hints(
         {
@@ -346,6 +395,12 @@ def load_qlib_config(
             "live_max_turnover": format(live_max_turnover.normalize(), "f"),
             "live_min_sample_count": str(live_min_sample_count),
             "lookback_days": str(lookback_days),
+            "signal_confidence_floor": format(signal_confidence_floor.normalize(), "f"),
+            "trend_weight": format(trend_weight.normalize(), "f"),
+            "volume_weight": format(volume_weight.normalize(), "f"),
+            "oscillator_weight": format(oscillator_weight.normalize(), "f"),
+            "volatility_weight": format(volatility_weight.normalize(), "f"),
+            "strict_penalty_weight": format(strict_penalty_weight.normalize(), "f"),
         }
     )
 
@@ -392,6 +447,12 @@ def load_qlib_config(
             live_min_win_rate=live_min_win_rate,
             live_max_turnover=live_max_turnover,
             live_min_sample_count=live_min_sample_count,
+            signal_confidence_floor=signal_confidence_floor,
+            trend_weight=trend_weight,
+            volume_weight=volume_weight,
+            oscillator_weight=oscillator_weight,
+            volatility_weight=volatility_weight,
+            strict_penalty_weight=strict_penalty_weight,
         )
 
     if runtime_root_raw:
@@ -442,6 +503,12 @@ def load_qlib_config(
         live_min_win_rate=live_min_win_rate,
         live_max_turnover=live_max_turnover,
         live_min_sample_count=live_min_sample_count,
+        signal_confidence_floor=signal_confidence_floor,
+        trend_weight=trend_weight,
+        volume_weight=volume_weight,
+        oscillator_weight=oscillator_weight,
+        volatility_weight=volatility_weight,
+        strict_penalty_weight=strict_penalty_weight,
     )
 
 
@@ -488,6 +555,12 @@ def _build_config(
     live_min_win_rate: Decimal,
     live_max_turnover: Decimal,
     live_min_sample_count: int,
+    signal_confidence_floor: Decimal,
+    trend_weight: Decimal,
+    volume_weight: Decimal,
+    oscillator_weight: Decimal,
+    volatility_weight: Decimal,
+    strict_penalty_weight: Decimal,
 ) -> QlibRuntimeConfig:
     """构造配置对象。"""
 
@@ -549,6 +622,12 @@ def _build_config(
         live_min_win_rate=live_min_win_rate,
         live_max_turnover=live_max_turnover,
         live_min_sample_count=live_min_sample_count,
+        signal_confidence_floor=signal_confidence_floor,
+        trend_weight=trend_weight,
+        volume_weight=volume_weight,
+        oscillator_weight=oscillator_weight,
+        volatility_weight=volatility_weight,
+        strict_penalty_weight=strict_penalty_weight,
         paths=paths,
     )
 

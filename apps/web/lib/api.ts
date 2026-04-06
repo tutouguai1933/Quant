@@ -470,6 +470,12 @@ export type ResearchWorkspaceModel = {
     train_split_ratio: string;
     validation_split_ratio: string;
     test_split_ratio: string;
+    signal_confidence_floor: string;
+    trend_weight: string;
+    volume_weight: string;
+    oscillator_weight: string;
+    volatility_weight: string;
+    strict_penalty_weight: string;
     available_models: string[];
     available_research_templates: string[];
     available_label_modes: string[];
@@ -540,6 +546,7 @@ export type EvaluationWorkspaceModel = {
   run_deltas: Array<Record<string, unknown>>;
   comparison_summary: Record<string, unknown>;
   execution_alignment: Record<string, unknown>;
+  alignment_details: Record<string, unknown>;
 };
 
 export type ValidationReviewItem = {
@@ -1402,6 +1409,12 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       train_split_ratio: "0.6",
       validation_split_ratio: "0.2",
       test_split_ratio: "0.2",
+      signal_confidence_floor: "0.55",
+      trend_weight: "1.3",
+      volume_weight: "1.1",
+      oscillator_weight: "0.7",
+      volatility_weight: "0.9",
+      strict_penalty_weight: "1",
       available_models: ["heuristic_v1", "trend_bias_v2"],
       available_research_templates: ["single_asset_timing", "single_asset_timing_strict"],
       available_label_modes: ["earliest_hit", "close_only"],
@@ -1471,6 +1484,7 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     run_deltas: [],
     comparison_summary: {},
     execution_alignment: {},
+    alignment_details: {},
   };
 }
 
@@ -1723,6 +1737,12 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       train_split_ratio: String(controls.train_split_ratio ?? "0.6"),
       validation_split_ratio: String(controls.validation_split_ratio ?? "0.2"),
       test_split_ratio: String(controls.test_split_ratio ?? "0.2"),
+      signal_confidence_floor: String(controls.signal_confidence_floor ?? "0.55"),
+      trend_weight: String(controls.trend_weight ?? "1.3"),
+      volume_weight: String(controls.volume_weight ?? "1.1"),
+      oscillator_weight: String(controls.oscillator_weight ?? "0.7"),
+      volatility_weight: String(controls.volatility_weight ?? "0.9"),
+      strict_penalty_weight: String(controls.strict_penalty_weight ?? "1"),
       available_models: normalizeStringArray(controls.available_models, []),
       available_research_templates: normalizeStringArray(controls.available_research_templates, []),
       available_label_modes: normalizeStringArray(controls.available_label_modes, []),
@@ -1823,6 +1843,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     run_deltas: Array.isArray(row.run_deltas) ? row.run_deltas.filter(isPlainObject) : [],
     comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
     execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
+    alignment_details: isPlainObject(row.alignment_details) ? row.alignment_details : {},
   };
 }
 
@@ -2621,7 +2642,12 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       lastCycle: {},
       reviewOverview: {},
       researchOverview: {},
-      health: {},
+      health: {
+        active_blockers: [],
+        operator_actions: [],
+        takeover_summary: {},
+        alert_summary: {},
+      },
       executionHealth: {},
       dailySummary: {},
       schedulerPlan: [],

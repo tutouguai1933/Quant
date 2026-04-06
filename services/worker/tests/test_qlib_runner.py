@@ -94,6 +94,12 @@ class QlibConfigTests(unittest.TestCase):
                 "QUANT_QLIB_LABEL_MODE": "close_only",
                 "QUANT_QLIB_OUTLIER_POLICY": "raw",
                 "QUANT_QLIB_NORMALIZATION_POLICY": "zscore_by_symbol",
+                "QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR": "0.63",
+                "QUANT_QLIB_TREND_WEIGHT": "1.8",
+                "QUANT_QLIB_VOLUME_WEIGHT": "1.4",
+                "QUANT_QLIB_OSCILLATOR_WEIGHT": "0.5",
+                "QUANT_QLIB_VOLATILITY_WEIGHT": "0.6",
+                "QUANT_QLIB_STRICT_PENALTY_WEIGHT": "1.4",
             },
             require_explicit=True,
         )
@@ -101,6 +107,12 @@ class QlibConfigTests(unittest.TestCase):
         self.assertEqual(config.label_mode, "close_only")
         self.assertEqual(config.outlier_policy, "raw")
         self.assertEqual(config.normalization_policy, "zscore_by_symbol")
+        self.assertEqual(str(config.signal_confidence_floor), "0.63")
+        self.assertEqual(str(config.trend_weight), "1.8")
+        self.assertEqual(str(config.volume_weight), "1.4")
+        self.assertEqual(str(config.oscillator_weight), "0.5")
+        self.assertEqual(str(config.volatility_weight), "0.6")
+        self.assertEqual(str(config.strict_penalty_weight), "1.4")
 
     def test_runtime_controls_use_default_factors_when_not_configured(self) -> None:
         config = load_qlib_config(
@@ -251,6 +263,48 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertEqual(relaxed_gate["status"], "passed")
         self.assertEqual(strict_gate["status"], "failed")
         self.assertIn("strict_template_not_confirmed", strict_gate["reasons"])
+
+    def test_scoring_respects_configured_category_weights(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            low_weight_runner = QlibRunner(
+                config=load_qlib_config(
+                    env={
+                        "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                        "QUANT_QLIB_TREND_WEIGHT": "0.5",
+                    },
+                    require_explicit=True,
+                )
+            )
+            high_weight_runner = QlibRunner(
+                config=load_qlib_config(
+                    env={
+                        "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                        "QUANT_QLIB_TREND_WEIGHT": "2.2",
+                    },
+                    require_explicit=True,
+                )
+            )
+            metrics = {
+                "feature_averages": {
+                    "trend_gap_pct": "0.5000",
+                    "ema20_gap_pct": "0.9000",
+                    "ema55_gap_pct": "1.1000",
+                },
+                "avg_future_return_pct": "0.3000",
+                "positive_rate": "0.5200",
+            }
+            feature_row = {
+                "trend_gap_pct": "1.3000",
+                "ema20_gap_pct": "1.5000",
+                "ema55_gap_pct": "1.7000",
+            }
+
+            low_score = low_weight_runner._score_signal(feature_row, metrics)
+            high_score = high_weight_runner._score_signal(feature_row, metrics)
+
+        self.assertGreater(high_score, low_score)
 
     def test_training_exposes_data_states_and_backtest_snapshot_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
