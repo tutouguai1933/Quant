@@ -404,6 +404,14 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("daily_summary", status["data"]["item"])
         self.assertIn("scheduler_plan", status["data"]["item"])
         self.assertIn("failure_policy", status["data"]["item"])
+        self.assertIn("active_blockers", status["data"]["item"]["health"])
+        self.assertIn("operator_actions", status["data"]["item"]["health"])
+        self.assertIn("takeover_summary", status["data"]["item"]["health"])
+        self.assertIn("alert_summary", status["data"]["item"]["health"])
+        self.assertIn("active_blockers", status["data"]["item"])
+        self.assertIn("operator_actions", status["data"]["item"])
+        self.assertIn("takeover_summary", status["data"]["item"])
+        self.assertIn("alert_summary", status["data"]["item"])
         self.assertIn("status", cycled["data"]["item"])
 
     def test_manual_takeover_route_updates_automation_state(self) -> None:

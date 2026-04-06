@@ -227,6 +227,41 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["scheduler_plan"][0]["task_type"], "research_train")
         self.assertIn("failure_policy", status)
         self.assertEqual(status["failure_policy"]["research_train"], "stop")
+        self.assertIn("active_blockers", status["health"])
+        self.assertIn("operator_actions", status["health"])
+        self.assertIn("takeover_summary", status["health"])
+        self.assertIn("alert_summary", status["health"])
+        self.assertIn("active_blockers", status)
+        self.assertIn("operator_actions", status)
+        self.assertIn("takeover_summary", status)
+        self.assertIn("alert_summary", status)
+
+    def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
+        service = AutomationService()
+        service.configure_mode("auto_live", actor="tester")
+        service.arm_symbol("ETHUSDT")
+        service.pause("manual_stop", actor="tester")
+        service.record_alert(level="warning", code="sync_delayed", message="同步延迟", source="watchdog")
+        service.record_alert(level="error", code="executor_offline", message="执行器离线", source="watchdog")
+
+        health = service.build_health_summary(
+            task_health={
+                "latest_status_by_type": {
+                    "research_train": "succeeded",
+                    "research_infer": "succeeded",
+                    "sync": "failed",
+                    "review": "waiting",
+                }
+            }
+        )
+
+        self.assertEqual(health["takeover_summary"]["state_label"], "人工接管中")
+        self.assertEqual(health["alert_summary"]["latest_code"], "executor_offline")
+        self.assertEqual(health["alert_summary"]["error_count"], 1)
+        self.assertEqual(health["alert_summary"]["warning_count"], 2)
+        self.assertEqual(health["active_blockers"][0]["code"], "paused")
+        self.assertIn("恢复自动化", [item["label"] for item in health["operator_actions"]])
+        self.assertIn("查看执行器", [item["label"] for item in health["operator_actions"]])
 
     def test_manual_takeover_entry_switches_to_manual_with_reason(self) -> None:
         service = AutomationService()

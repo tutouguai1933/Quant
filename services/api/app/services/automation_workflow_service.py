@@ -34,9 +34,14 @@ class AutomationWorkflowService:
         task_health = self._scheduler.get_health_summary()
         state = self._automation.get_state()
         report = self._reviewer.build_report(limit=10)
+        health = self._automation.build_health_summary(task_health=task_health)
         return {
             "state": state,
-            "health": self._automation.build_health_summary(task_health=task_health),
+            "health": health,
+            "active_blockers": list(health.get("active_blockers") or []),
+            "operator_actions": list(health.get("operator_actions") or []),
+            "takeover_summary": dict(health.get("takeover_summary") or {}),
+            "alert_summary": dict(health.get("alert_summary") or {}),
             "review_overview": dict(report.get("overview") or {}),
             "execution_health": self._syncer.get_execution_health_summary(
                 task_health=task_health,
