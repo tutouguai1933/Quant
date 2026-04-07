@@ -103,6 +103,7 @@ def _default_config() -> dict[str, object]:
             "stale_sync_failure_threshold": "1",
             "auto_pause_on_error": True,
             "review_limit": "10",
+            "comparison_run_limit": "5",
             "cycle_cooldown_minutes": "15",
             "max_daily_cycle_count": "8",
         },
@@ -497,6 +498,9 @@ class WorkbenchConfigService:
             ),
             "auto_pause_on_error": self._normalize_bool(payload.get("auto_pause_on_error"), default=True),
             "review_limit": str(self._normalize_int(payload.get("review_limit"), default=10, minimum=1, maximum=100)),
+            "comparison_run_limit": str(
+                self._normalize_int(payload.get("comparison_run_limit"), default=5, minimum=1, maximum=20)
+            ),
             "cycle_cooldown_minutes": str(
                 self._normalize_int(payload.get("cycle_cooldown_minutes"), default=15, minimum=0, maximum=1440)
             ),

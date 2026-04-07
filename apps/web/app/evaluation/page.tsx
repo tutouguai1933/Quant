@@ -1,10 +1,13 @@
 /* 这个文件负责渲染评估与实验中心，让推荐原因、淘汰原因和实验账本直接可见。 */
 
+import Link from "next/link";
+
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/workbench-config-card";
+import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getEvaluationWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -27,8 +30,14 @@ export default async function EvaluationPage() {
   const deltaOverview = asRecord(workspace.delta_overview);
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
+  const operations = asRecord(workspace.operations);
+  const reviewLimit = readText(operations.review_limit, "10");
+  const comparisonRunLimit = readText(operations.comparison_run_limit, "5");
   const executionMetrics = asRecord(executionAlignment.execution);
   const executionBacktest = asRecord(executionAlignment.backtest);
+  const recentReviewTasks = Array.isArray(workspace.recent_review_tasks)
+    ? workspace.recent_review_tasks.filter((item) => item && typeof item === "object")
+    : [];
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
   const experimentAlignmentNote = readText(comparisonSummary.experiment_alignment_note, "当前还没有实验对比说明");
@@ -120,6 +129,42 @@ export default async function EvaluationPage() {
                 <ConfigInput name="live_max_turnover" defaultValue={String(controls.live_max_turnover ?? "0.45")} placeholder="最高 live 换手" />
                 <ConfigInput name="live_min_sample_count" defaultValue={String(controls.live_min_sample_count ?? "24")} placeholder="最低 live 样本数" />
               </div>
+            </ConfigField>
+          </WorkbenchConfigCard>
+
+          <WorkbenchConfigCard
+            title="实验对比与复盘窗口"
+            description="这里改的是评估中心一次展示多少轮实验和多少条复盘，保存后这页会按新的窗口重新整理。"
+            scope="operations"
+            returnTo="/evaluation"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="实验对比窗口" hint="这里决定评估中心会保留最近多少轮训练、推理和最近两轮变化记录。">
+              <ConfigInput name="comparison_run_limit" type="number" min={1} max={20} step={1} defaultValue={comparisonRunLimit} />
+            </ConfigField>
+            <ConfigField label="复盘窗口" hint="这里决定评估中心和任务页最多展示最近多少条统一复盘记录。">
+              <ConfigInput name="review_limit" type="number" min={1} max={100} step={1} defaultValue={reviewLimit} />
+            </ConfigField>
+          </WorkbenchConfigCard>
+
+          <WorkbenchConfigCard
+            title="实验对比与复盘窗口"
+            description="这里控制评估页和任务页默认展示多少条最近复盘。训练实验和推理实验快照不受这个窗口影响。"
+            scope="operations"
+            returnTo="/evaluation"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="复盘窗口" hint="这里只影响最近复盘记录和任务页里的统一复盘窗口，不会裁掉训练实验和推理实验快照。">
+              <ConfigInput
+                name="review_limit"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                defaultValue={String(operations.review_limit ?? "10")}
+              />
             </ConfigField>
           </WorkbenchConfigCard>
 
@@ -294,7 +339,7 @@ export default async function EvaluationPage() {
           </Card>
 
           <DataTable
-            columns={["最近训练实验", "模型", "数据快照", "持有窗口", "净收益 / Sharpe", "验证放行"]}
+            columns={["最近训练实验快照", "模型", "数据快照", "持有窗口", "净收益 / Sharpe", "验证放行"]}
             rows={workspace.recent_training_runs.map((item, index) => {
               const row = asRecord(item);
               return {
@@ -309,12 +354,12 @@ export default async function EvaluationPage() {
                 ],
               };
             })}
-            emptyTitle="当前还没有最近训练实验"
-            emptyDetail="先跑训练，系统才会把最近训练实验拆成单独列表。"
+            emptyTitle="当前还没有最近训练实验快照"
+            emptyDetail={`先跑训练，系统才会把最近 ${comparisonRunLimit} 轮训练快照整理到这里。`}
           />
 
           <DataTable
-            columns={["最近推理实验", "模型", "数据快照", "标签方式", "信号数 / 胜率", "验证放行"]}
+            columns={["最近推理实验快照", "模型", "数据快照", "标签方式", "信号数 / 胜率", "验证放行"]}
             rows={workspace.recent_inference_runs.map((item, index) => {
               const row = asRecord(item);
               return {
@@ -329,8 +374,8 @@ export default async function EvaluationPage() {
                 ],
               };
             })}
-            emptyTitle="当前还没有最近推理实验"
-            emptyDetail="先跑推理，系统才会把最近推理实验拆成单独列表。"
+            emptyTitle="当前还没有最近推理实验快照"
+            emptyDetail={`先跑推理，系统才会把最近 ${comparisonRunLimit} 轮推理快照整理到这里。`}
           />
 
           <DataTable
@@ -351,10 +396,28 @@ export default async function EvaluationPage() {
             emptyDetail="先跑一轮研究、执行和复盘，系统才会把最近时间线整理到这里。"
           />
 
+          <DataTable
+            columns={["最近复盘记录", "状态", "完成时间", "结果摘要"]}
+            rows={recentReviewTasks.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${row.task_type ?? index}-${row.finished_at ?? index}`,
+                cells: [
+                  String(row.task_type ?? "review"),
+                  String(row.status ?? "waiting"),
+                  String(row.finished_at ?? row.requested_at ?? "n/a"),
+                  String(row.result_summary ?? "当前没有结果摘要"),
+                ],
+              };
+            })}
+            emptyTitle="当前还没有最近复盘记录"
+            emptyDetail={`先积累几轮研究、执行和复盘，系统才会把最近 ${reviewLimit} 条记录整理到这里。`}
+          />
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>最近两轮对比</CardTitle>
-              <CardDescription>参数与结果一起看，再把关键变化、配置变化和不可直接比较原因拆开看，先确认这一轮到底能不能直接比。</CardDescription>
+              <CardDescription>{`参数与结果一起看，再把关键变化、配置变化和不可直接比较原因拆开看。这里最多展示最近 ${comparisonRunLimit} 组同类型变化。`}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {workspace.run_deltas.length ? (
@@ -478,6 +541,20 @@ export default async function EvaluationPage() {
                   </p>
                 );
               }) : <p>当前还没有明确下一步动作。</p>}
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Button asChild variant="outline">
+                  <Link href="/research">回到研究工作台</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/backtest">去回测工作台</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/strategies">去策略页看执行</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/tasks">去任务页看自动化</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

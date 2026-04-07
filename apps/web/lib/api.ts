@@ -586,8 +586,15 @@ export type EvaluationWorkspaceModel = {
     live_max_turnover: string;
     live_min_sample_count: string;
   };
+  operations: {
+    review_limit: string;
+    comparison_run_limit: string;
+    cycle_cooldown_minutes: string;
+    max_daily_cycle_count: string;
+  };
   evaluation: Record<string, unknown>;
   reviews: Record<string, unknown>;
+  recent_review_tasks: Array<Record<string, unknown>>;
   leaderboard: Array<Record<string, unknown>>;
   recent_runs: Array<Record<string, unknown>>;
   recent_training_runs: Array<Record<string, unknown>>;
@@ -1562,8 +1569,15 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       live_max_turnover: "0.45",
       live_min_sample_count: "24",
     },
+    operations: {
+      review_limit: "10",
+      comparison_run_limit: "5",
+      cycle_cooldown_minutes: "15",
+      max_daily_cycle_count: "8",
+    },
     evaluation: {},
     reviews: {},
+    recent_review_tasks: [],
     leaderboard: [],
     recent_runs: [],
     recent_training_runs: [],
@@ -1923,6 +1937,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const overview = isPlainObject(row.overview) ? row.overview : {};
   const controls = isPlainObject(row.controls) ? row.controls : {};
+  const operations = isPlainObject(row.operations) ? row.operations : {};
 
   return {
     status: String(row.status ?? "unavailable"),
@@ -1951,8 +1966,15 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       live_max_turnover: String(controls.live_max_turnover ?? "0.45"),
       live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
     },
+    operations: {
+      review_limit: String(operations.review_limit ?? "10"),
+      comparison_run_limit: String(operations.comparison_run_limit ?? "5"),
+      cycle_cooldown_minutes: String(operations.cycle_cooldown_minutes ?? "15"),
+      max_daily_cycle_count: String(operations.max_daily_cycle_count ?? "8"),
+    },
     evaluation: isPlainObject(row.evaluation) ? row.evaluation : {},
     reviews: isPlainObject(row.reviews) ? row.reviews : {},
+    recent_review_tasks: Array.isArray(row.recent_review_tasks) ? row.recent_review_tasks.filter(isPlainObject) : [],
     leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
     recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
     recent_training_runs: Array.isArray(row.recent_training_runs) ? row.recent_training_runs.filter(isPlainObject) : [],
@@ -2796,6 +2818,7 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
         stale_sync_failure_threshold: "1",
         auto_pause_on_error: true,
         review_limit: "10",
+        comparison_run_limit: "5",
         cycle_cooldown_minutes: "15",
         max_daily_cycle_count: "8",
       },

@@ -297,6 +297,9 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertEqual(set(response.keys()), {"data", "error", "meta"})
         self.assertIsNone(response["error"])
         self.assertIn("item", response["data"])
+        self.assertIn("operations", response["data"]["item"])
+        self.assertIn("comparison_run_limit", response["data"]["item"]["operations"])
+        self.assertIn("recent_review_tasks", response["data"]["item"])
         self.assertEqual(response["meta"]["source"], "evaluation-workspace")
 
     def test_feature_workspace_route_returns_consistent_response_shape(self) -> None:

@@ -9,6 +9,7 @@ import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
+import { ConfigCheckboxGrid, ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -82,6 +83,15 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   const automationCycle = asRecord(automation.lastCycle);
   const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
   const configuration = asRecord(workspace.configuration);
+  const executionPolicy = asRecord(automation.executionPolicy);
+  const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
+  const executionSymbolOptions = Array.from(
+    new Set([...workspace.whitelist, ...executionAllowedSymbols, "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"]),
+  ).map((item) => ({
+    value: item,
+    label: item,
+    checked: executionAllowedSymbols.includes(item),
+  }));
 
   return (
     <AppShell
@@ -144,6 +154,28 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
               { label: "最近执行", value: String(workspace.overview.order_count), detail: "方便快速确认链路有没有真正走通" },
             ]}
           />
+
+          {automation.paused || automation.manualTakeover ? (
+            <Card>
+              <CardHeader>
+                <p className="eyebrow">当前自动化状态</p>
+                <CardTitle>{automation.manualTakeover ? "当前已人工接管" : "当前已暂停自动化"}</CardTitle>
+                <CardDescription>
+                  {automation.manualTakeover
+                    ? "这意味着当前不应该继续自动推进，先去任务页看接管原因、恢复步骤和最近失败。"
+                    : "这意味着当前不应该继续自动推进，先去任务页确认为什么暂停、什么时候恢复。"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-3">
+                <AutomationInfo label="当前模式" value={readText(automation.mode, "manual")} />
+                <AutomationInfo label="暂停原因" value={readText(automation.pauseReason, "当前没有暂停原因")} />
+                <AutomationInfo label="最近失败时间" value={readText(automation.lastFailureAt, "当前没有失败记录")} />
+                <Button asChild variant="outline">
+                  <Link href="/tasks">去任务页处理接管与恢复</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
 
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)] xl:items-start">
             <section className="grid gap-5">
@@ -303,6 +335,36 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 </CardContent>
               </Card>
 
+              <WorkbenchConfigCard
+                title="执行安全门配置"
+                description="这里直接控制自动小额 live 的白名单、单笔金额和最大开仓数。保存后，执行页和自动化页会按这里的安全门放行。"
+                scope="execution"
+                returnTo={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}
+              >
+                <ConfigField label="live_allowed_symbols" hint="只有这里勾选的币，才允许继续自动小额 live。">
+                  <ConfigCheckboxGrid name="live_allowed_symbols" options={executionSymbolOptions} />
+                </ConfigField>
+                <ConfigField label="单笔 live 金额" hint="这里控制单次自动小额 live 最多能下多少 USDT。">
+                  <ConfigInput
+                    name="live_max_stake_usdt"
+                    type="number"
+                    min={0.1}
+                    step={0.1}
+                    defaultValue={readText(executionPolicy.live_max_stake_usdt, "6")}
+                  />
+                </ConfigField>
+                <ConfigField label="最大同时开仓数" hint="这里控制自动 live 同时最多保留多少个打开中的仓位。">
+                  <ConfigInput
+                    name="live_max_open_trades"
+                    type="number"
+                    min={1}
+                    max={20}
+                    step={1}
+                    defaultValue={readText(executionPolicy.live_max_open_trades, "1")}
+                  />
+                </ConfigField>
+              </WorkbenchConfigCard>
+
               <Card>
                 <CardHeader>
                   <p className="eyebrow">账户收口</p>
@@ -441,6 +503,13 @@ function asRecord(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item ?? "").trim()).filter(Boolean);
 }
 
 function AutomationInfo({ label, value }: { label: string; value: string }) {

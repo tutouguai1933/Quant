@@ -16,6 +16,7 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("stale_sync_failure_threshold", content)
         self.assertIn("auto_pause_on_error", content)
         self.assertIn("review_limit", content)
+        self.assertIn("comparison_run_limit", content)
         self.assertIn("长期运行参数", content)
         self.assertIn("失败后自动暂停", content)
         self.assertIn("告警强度", content)
@@ -50,6 +51,9 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("今日轮次", content)
         self.assertIn("冷却剩余", content)
         self.assertIn("最近告警历史", content)
+        self.assertIn("活跃告警", content)
+        self.assertIn("最近复盘记录", content)
+        self.assertIn("这里最多显示最近", content)
 
 
 if __name__ == "__main__":

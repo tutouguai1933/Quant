@@ -725,6 +725,8 @@ class AutomationService:
             "manual_stop": "人工暂停自动化",
             "manual_takeover": "人工主动接管",
             "risk_guard_triggered": "风控触发人工接管",
+            "consecutive_failure_guard_triggered": "连续失败阈值触发人工接管",
+            "stale_sync_guard_triggered": "同步陈旧阈值触发人工接管",
             "workflow_train_failed": "自动训练失败",
             "workflow_infer_failed": "自动推理失败",
             "workflow_signal_output_failed": "研究信号输出失败",

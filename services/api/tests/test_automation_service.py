@@ -458,6 +458,70 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("冷却", result["message"])
         self.assertEqual(scheduler.named_calls, [])
 
+    def test_run_cycle_stops_for_consecutive_failure_threshold(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation_workflow_module.workbench_config_service.update_section(
+            "operations",
+            {
+                "pause_after_consecutive_failures": "2",
+            },
+        )
+        automation.record_cycle({"status": "attention_required", "next_action": "manual_takeover"})
+        automation.record_cycle({"status": "attention_required", "next_action": "manual_takeover"})
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        result = workflow.run_cycle(source="tester")
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["failure_reason"], "consecutive_failure_guard_triggered")
+        self.assertEqual(result["next_action"], "manual_takeover")
+        self.assertIn("连续失败已达到阈值", result["message"])
+        self.assertEqual(scheduler.named_calls, [])
+        self.assertTrue(automation.get_state()["manual_takeover"])
+        self.assertEqual(automation.get_state()["paused_reason"], "consecutive_failure_guard_triggered")
+
+    def test_run_cycle_stops_for_stale_sync_threshold(self) -> None:
+        scheduler = _FakeScheduler(
+            health_summary={
+                "latest_status_by_type": {"sync": "failed"},
+                "latest_failure_by_type": {"sync": {"finished_at": "2026-04-08T10:00:00+00:00", "error_message": "timeout"}},
+                "consecutive_failure_count_by_type": {"sync": 1},
+            }
+        )
+        automation = AutomationService()
+        automation_workflow_module.workbench_config_service.update_section(
+            "operations",
+            {
+                "stale_sync_failure_threshold": "1",
+            },
+        )
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        result = workflow.run_cycle(source="tester")
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["failure_reason"], "stale_sync_guard_triggered")
+        self.assertEqual(result["next_action"], "manual_takeover")
+        self.assertIn("同步失败已达到陈旧阈值", result["message"])
+        self.assertEqual(scheduler.named_calls, [])
+        self.assertTrue(automation.get_state()["manual_takeover"])
+        self.assertEqual(automation.get_state()["paused_reason"], "stale_sync_guard_triggered")
+
     def test_manual_takeover_and_pause_expose_timeline_fields(self) -> None:
         service = AutomationService()
 
@@ -591,8 +655,13 @@ class _DispatchFailedService:
 
 
 class _FakeScheduler:
-    def __init__(self) -> None:
+    def __init__(self, *, health_summary: dict[str, object] | None = None) -> None:
         self.named_calls: list[tuple[str, dict[str, object]]] = []
+        self._health_summary = health_summary or {
+            "latest_status_by_type": {},
+            "latest_success_by_type": {},
+            "latest_failure_by_type": {},
+        }
 
     def run_named_task(
         self,
@@ -611,7 +680,7 @@ class _FakeScheduler:
         }
 
     def get_health_summary(self) -> dict[str, object]:
-        return {"latest_status_by_type": {}, "latest_success_by_type": {}, "latest_failure_by_type": {}}
+        return dict(self._health_summary)
 
 
 class _TrainFailedScheduler(_FakeScheduler):

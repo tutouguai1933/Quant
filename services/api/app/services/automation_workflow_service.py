@@ -69,6 +69,9 @@ class AutomationWorkflowService:
         operations = self._get_operations_config()
         review_limit = int(operations.get("review_limit", review_limit) or review_limit)
         auto_pause_on_error = bool(operations.get("auto_pause_on_error", True))
+        task_health = self._scheduler.get_health_summary()
+        automation_health = self._automation.build_health_summary(task_health=task_health)
+        run_health = dict(automation_health.get("run_health") or {})
         state = self._automation.get_state()
         mode = str(state.get("mode", "manual"))
         armed_symbol = str(state.get("armed_symbol", "")).strip().upper()
@@ -79,6 +82,57 @@ class AutomationWorkflowService:
                 "recommended_symbol": "",
                 "next_action": "manual_takeover",
                 "message": "自动化当前处于暂停状态",
+                "armed_symbol": armed_symbol,
+            }
+            self._automation.record_cycle(summary)
+            return summary
+
+        pause_after_failures = int(operations.get("pause_after_consecutive_failures", 2) or 2)
+        consecutive_failures = int(run_health.get("consecutive_failure_count", 0) or 0)
+        if consecutive_failures >= pause_after_failures:
+            if auto_pause_on_error:
+                self._automation.manual_takeover(reason="consecutive_failure_guard_triggered", actor=source)
+            self._automation.record_alert(
+                level="error" if auto_pause_on_error else "warning",
+                code="consecutive_failure_guard_triggered",
+                message="连续失败已达到阈值，先暂停下一轮自动化。",
+                source=source,
+                detail=str(consecutive_failures),
+            )
+            summary = {
+                "status": "waiting",
+                "mode": mode,
+                "recommended_symbol": "",
+                "next_action": "manual_takeover" if auto_pause_on_error else "review_before_retry",
+                "message": f"连续失败已达到阈值（{consecutive_failures}/{pause_after_failures}），先人工复核再继续。",
+                "failure_reason": "consecutive_failure_guard_triggered",
+                "failure_policy_action": "manual_takeover" if auto_pause_on_error else "review_before_retry",
+                "armed_symbol": armed_symbol,
+            }
+            self._automation.record_cycle(summary)
+            return summary
+
+        stale_sync_threshold = int(operations.get("stale_sync_failure_threshold", 1) or 1)
+        sync_failure_count = int(run_health.get("sync_failure_count", 0) or 0)
+        stale_sync_state = str(run_health.get("stale_sync_state", "fresh") or "fresh")
+        if stale_sync_state == "stale":
+            if auto_pause_on_error:
+                self._automation.manual_takeover(reason="stale_sync_guard_triggered", actor=source)
+            self._automation.record_alert(
+                level="error" if auto_pause_on_error else "warning",
+                code="stale_sync_guard_triggered",
+                message="同步失败已达到陈旧阈值，先暂停下一轮自动化。",
+                source=source,
+                detail=str(sync_failure_count),
+            )
+            summary = {
+                "status": "waiting",
+                "mode": mode,
+                "recommended_symbol": "",
+                "next_action": "manual_takeover" if auto_pause_on_error else "review_sync",
+                "message": f"同步失败已达到陈旧阈值（{sync_failure_count}/{stale_sync_threshold}），先恢复同步再继续。",
+                "failure_reason": "stale_sync_guard_triggered",
+                "failure_policy_action": "manual_takeover" if auto_pause_on_error else "review_sync",
                 "armed_symbol": armed_symbol,
             }
             self._automation.record_cycle(summary)

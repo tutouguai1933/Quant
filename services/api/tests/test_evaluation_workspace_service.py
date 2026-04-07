@@ -50,6 +50,7 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["run_deltas"][0]["comparison_readiness"], "limited")
         self.assertIn("模型版本", item["run_deltas"][0]["change_summary"])
         self.assertIn("数据快照", item["run_deltas"][0]["comparison_reason"])
+        self.assertIn("强制验证当前最优候选", item["run_deltas"][0]["comparison_reason"])
         self.assertEqual(item["delta_overview"]["status"], "limited")
         self.assertIn("当前先看", item["delta_overview"]["headline"])
         self.assertEqual(item["experiment_comparison"][0]["run_type"], "training")
@@ -61,6 +62,7 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["workflow_alignment_timeline"][0]["task_type"], "research_train")
         self.assertEqual(item["workflow_alignment_timeline"][0]["status"], "succeeded")
         self.assertIn("controls", item)
+        self.assertIn("operations", item)
         self.assertEqual(item["controls"]["dry_run_min_win_rate"], "0.50")
         self.assertEqual(item["controls"]["dry_run_max_turnover"], "0.60")
         self.assertEqual(item["controls"]["dry_run_min_sample_count"], "20")
@@ -68,6 +70,7 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["controls"]["live_min_win_rate"], "0.55")
         self.assertEqual(item["controls"]["live_max_turnover"], "0.45")
         self.assertEqual(item["controls"]["live_min_sample_count"], "24")
+        self.assertEqual(item["operations"]["review_limit"], "10")
         self.assertEqual(item["comparison_summary"]["training_model_version"], "model-a")
         self.assertEqual(item["comparison_summary"]["inference_model_version"], "model-a")
         self.assertEqual(item["comparison_summary"]["training_dataset_snapshot"], "snapshot-1")
@@ -76,6 +79,8 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["recent_training_runs"][0]["run_id"], "train-1")
         self.assertEqual(item["recent_training_runs"][0]["force_validation_top_candidate"], "否")
         self.assertEqual(item["recent_inference_runs"][0]["run_id"], "infer-1")
+        self.assertEqual(item["recent_review_tasks"][0]["task_type"], "research_train")
+        self.assertEqual(item["recent_review_tasks"][-1]["result_summary"], "复盘完成")
 
     def test_workspace_handles_missing_evaluation(self) -> None:
         service = EvaluationWorkspaceService(
@@ -120,6 +125,21 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         service.get_workspace()
 
         self.assertEqual(review_reader.last_limit, 3)
+
+    def test_workspace_limits_comparison_views_by_configured_window(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=lambda: _fake_controls(review_limit="10", comparison_run_limit="1"),
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["operations"]["comparison_run_limit"], "1")
+        self.assertEqual(len(item["recent_training_runs"]), 1)
+        self.assertEqual(len(item["recent_inference_runs"]), 1)
+        self.assertEqual(len(item["run_deltas"]), 1)
+        self.assertEqual(item["run_deltas"][0]["run_type"], "training")
 
     def test_workspace_builds_execution_gap_summary_when_research_and_execution_diverge(self) -> None:
         service = EvaluationWorkspaceService(
@@ -442,11 +462,12 @@ class _UnavailableAlignmentReviewService(_FakeValidationReviewService):
         return payload
 
 
-def _fake_controls(*, review_limit: str = "10") -> dict[str, object]:
+def _fake_controls(*, review_limit: str = "10", comparison_run_limit: str = "5") -> dict[str, object]:
     return {
         "config": {
             "operations": {
                 "review_limit": review_limit,
+                "comparison_run_limit": comparison_run_limit,
             },
             "thresholds": {
                 "dry_run_min_score": "0.55",

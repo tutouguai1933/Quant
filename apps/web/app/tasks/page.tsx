@@ -129,6 +129,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     staleSyncThreshold: readText(operations.stale_sync_failure_threshold, "1"),
     autoPauseOnError: String(operations.auto_pause_on_error ?? true) === "false" ? "false" : "true",
     reviewLimit: readText(operations.review_limit, "10"),
+    comparisonRunLimit: readText(operations.comparison_run_limit, "5"),
     cycleCooldownMinutes: readText(operations.cycle_cooldown_minutes, "15"),
     maxDailyCycleCount: readText(operations.max_daily_cycle_count, "8"),
   };
@@ -148,11 +149,22 @@ export default async function TasksPage({ searchParams }: PageProps) {
   };
   const executionPolicy = asRecord(automation.executionPolicy);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
-  const executionSymbolOptions = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"].map((item) => ({
+  const executionSymbolOptions = Array.from(new Set([...executionAllowedSymbols, "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])).map((item) => ({
     value: item,
     label: item,
     checked: executionAllowedSymbols.includes(item),
   }));
+  const activeAlerts = filterActiveAlerts(automation.alerts, automationConfigSummary.alertCleanupMinutes);
+  const takeoverTimelineRows = buildTakeoverTimelineRows({
+    lastFailureAt,
+    pausedSince,
+    takeoverSince,
+    pauseReason: pauseReasonRaw,
+    recoveryActionLabel,
+  });
+  const recentReviewTasks = Array.isArray(evaluation.recent_review_tasks)
+    ? evaluation.recent_review_tasks.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
   const executionConfig = {
     liveAllowedSymbols: executionAllowedSymbols,
     liveMaxStakeUsdt: readText(executionPolicy.live_max_stake_usdt, "6"),
@@ -267,7 +279,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 scope="operations"
                 returnTo="/tasks"
               >
-                <ConfigField label="连续失败阈值" hint="连续失败达到这里时，健康摘要会升级，必要时切到人工接管。">
+                <ConfigField label="连续失败阈值" hint="连续失败达到这里时，这一轮会先停在人工复核或人工接管，不会再继续自动推进。">
                   <ConfigInput
                     name="pause_after_consecutive_failures"
                     type="number"
@@ -277,7 +289,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     defaultValue={operationsConfig.pauseAfterFailures}
                   />
                 </ConfigField>
-                <ConfigField label="同步陈旧阈值" hint="连续多少次同步失败后，把系统标成 stale，并在健康摘要里提高风险等级。">
+                <ConfigField label="同步陈旧阈值" hint="连续同步失败达到这里时，下一轮会先停在同步复核，不会继续自动推进。">
                   <ConfigInput
                     name="stale_sync_failure_threshold"
                     type="number"
@@ -299,6 +311,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </ConfigField>
                 <ConfigField label="复盘条数" hint="统一复盘和自动化摘要最多展示最近多少条记录。">
                   <ConfigInput name="review_limit" type="number" min={1} max={100} step={1} defaultValue={operationsConfig.reviewLimit} />
+                </ConfigField>
+                <ConfigField label="实验对比窗口" hint="评估中心和研究页会按这里展示最近多少轮实验变化。">
+                  <ConfigInput name="comparison_run_limit" type="number" min={1} max={20} step={1} defaultValue={operationsConfig.comparisonRunLimit} />
                 </ConfigField>
                 <ConfigField label="自动化冷却时间" hint="每轮自动化之间至少间隔多久，避免短时间内连续重跑。">
                   <ConfigInput name="cycle_cooldown_minutes" type="number" min={0} max={1440} step={1} defaultValue={operationsConfig.cycleCooldownMinutes} />
@@ -371,6 +386,21 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   ))}
                 </CardContent>
               </Card>
+
+              <DataTable
+                columns={["最近复盘记录", "状态", "完成时间", "结果摘要"]}
+                rows={recentReviewTasks.map((item, index) => ({
+                  id: `${item.task_type ?? index}-${item.finished_at ?? index}`,
+                  cells: [
+                    String(item.task_type ?? "review"),
+                    String(item.status ?? "waiting"),
+                    String(item.finished_at ?? item.requested_at ?? "n/a"),
+                    String(item.result_summary ?? "当前没有结果摘要"),
+                  ],
+                }))}
+                emptyTitle="当前还没有最近复盘记录"
+                emptyDetail={`这里最多显示最近 ${operationsConfig.reviewLimit} 条复盘，先积累几轮研究、执行和复盘。`}
+              />
             </section>
 
             <aside className="grid gap-5">
@@ -585,6 +615,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <p>同步陈旧阈值：{operationsConfig.staleSyncThreshold}</p>
                   <p>失败后自动暂停：{operationsConfig.autoPauseOnError === "true" ? "开启" : "关闭"}</p>
                   <p>复盘条数：{operationsConfig.reviewLimit}</p>
+                  <p>实验对比窗口：{operationsConfig.comparisonRunLimit}</p>
                   <p>自动化冷却时间：{operationsConfig.cycleCooldownMinutes} 分钟</p>
                   <p>每日最大轮次：{operationsConfig.maxDailyCycleCount}</p>
                   <p>长时间接管阈值：{automationConfigSummary.longRunSeconds} 秒</p>
@@ -605,6 +636,31 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   )) : <p>当前还没有新的自动化告警。</p>}
                 </CardContent>
               </Card>
+
+              <DataTable
+                columns={["活跃告警", "级别", "时间", "说明"]}
+                rows={activeAlerts.map((item, index) => ({
+                  id: `${item.code}-${item.createdAt}-${index}`,
+                  cells: [
+                    item.code || "alert",
+                    item.level || "info",
+                    item.createdAt || "n/a",
+                    item.message || "当前没有额外说明",
+                  ],
+                }))}
+                emptyTitle="当前没有活跃告警"
+                emptyDetail={`这里按最近 ${automationConfigSummary.alertCleanupMinutes} 分钟窗口显示仍然算活跃的告警。`}
+              />
+
+              <DataTable
+                columns={["人工接管时间线", "时间", "当前说明"]}
+                rows={takeoverTimelineRows.map((item, index) => ({
+                  id: `${item.label}-${index}`,
+                  cells: [item.label, item.when, item.detail],
+                }))}
+                emptyTitle="当前没有人工接管时间线"
+                emptyDetail="还没有失败、暂停或人工接管记录时，这里会保持空白。"
+              />
 
               <Card>
                 <CardHeader>
@@ -982,6 +1038,59 @@ function formatAlertLevel(level: string) {
     ok: "正常",
   };
   return mapping[level] ?? (level || "告警");
+}
+
+function filterActiveAlerts(
+  alerts: Array<{ level: string; code: string; message: string; createdAt: string }>,
+  cleanupMinutes: string,
+) {
+  const minutes = Number.parseInt(cleanupMinutes, 10);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return alerts.slice(0, 5);
+  }
+  const cutoff = Date.now() - minutes * 60 * 1000;
+  return alerts.filter((item) => {
+    const timestamp = Date.parse(item.createdAt || "");
+    return Number.isFinite(timestamp) && timestamp >= cutoff;
+  }).slice(0, 5);
+}
+
+function buildTakeoverTimelineRows({
+  lastFailureAt,
+  pausedSince,
+  takeoverSince,
+  pauseReason,
+  recoveryActionLabel,
+}: {
+  lastFailureAt: string;
+  pausedSince: string;
+  takeoverSince: string;
+  pauseReason: string;
+  recoveryActionLabel: string;
+}) {
+  const rows: Array<{ label: string; when: string; detail: string }> = [];
+  if (lastFailureAt) {
+    rows.push({
+      label: "最近失败时间",
+      when: lastFailureAt,
+      detail: "先从这一次失败往回看任务、同步和告警。",
+    });
+  }
+  if (pausedSince) {
+    rows.push({
+      label: "开始暂停",
+      when: pausedSince,
+      detail: pauseReason ? `暂停原因：${pauseReason}` : "当前没有额外暂停原因。",
+    });
+  }
+  if (takeoverSince) {
+    rows.push({
+      label: "进入人工接管",
+      when: takeoverSince,
+      detail: `建议动作：${recoveryActionLabel}`,
+    });
+  }
+  return rows;
 }
 
 function formatRelativeMoment(value: string) {

@@ -23,6 +23,7 @@ class EvaluationWorkspaceService:
 
         controls = self._controls_builder()
         review_limit = self._resolve_review_limit(controls)
+        comparison_run_limit = self._resolve_comparison_run_limit(controls)
         report = self._read_factory_report()
         leaderboard = self._build_leaderboard(report)
         evaluation = dict(report.get("evaluation") or {})
@@ -30,9 +31,11 @@ class EvaluationWorkspaceService:
         overview = dict(report.get("overview") or {})
         recent_runs = list((report.get("experiments") or {}).get("recent_runs") or [])
         review_report = self._read_validation_review(limit=review_limit)
+        recent_review_tasks = [dict(item) for item in list(review_report.get("recent_tasks") or []) if isinstance(item, dict)]
         execution_alignment = dict(review_report.get("execution_comparison") or {})
         validation_reviews = dict(review_report.get("reviews") or {})
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
+        configured_operations = dict((controls.get("config") or {}).get("operations") or {})
 
         status = str(report.get("status", "unavailable") or "unavailable")
         if evaluation or leaderboard or reviews:
@@ -65,19 +68,26 @@ class EvaluationWorkspaceService:
                 "live_max_turnover": str(configured_thresholds.get("live_max_turnover", "0.45")),
                 "live_min_sample_count": str(configured_thresholds.get("live_min_sample_count", "24")),
             },
+            "operations": {
+                "review_limit": str(configured_operations.get("review_limit", "10")),
+                "comparison_run_limit": str(configured_operations.get("comparison_run_limit", "5")),
+                "cycle_cooldown_minutes": str(configured_operations.get("cycle_cooldown_minutes", "15")),
+                "max_daily_cycle_count": str(configured_operations.get("max_daily_cycle_count", "8")),
+            },
             "evaluation": evaluation,
             "reviews": {
                 **reviews,
                 **{key: dict(value or {}) for key, value in validation_reviews.items()},
             },
+            "recent_review_tasks": recent_review_tasks,
             "leaderboard": leaderboard,
-            "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)],
-            "recent_training_runs": self._build_recent_run_history(report=report, run_type="training"),
-            "recent_inference_runs": self._build_recent_run_history(report=report, run_type="inference"),
-            "experiment_comparison": self._build_experiment_comparison(report),
+            "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)][:comparison_run_limit],
+            "recent_training_runs": self._build_recent_run_history(report=report, run_type="training", limit=comparison_run_limit),
+            "recent_inference_runs": self._build_recent_run_history(report=report, run_type="inference", limit=comparison_run_limit),
+            "experiment_comparison": self._build_experiment_comparison(report, limit=comparison_run_limit),
             "gate_matrix": self._build_gate_matrix(report),
             "workflow_alignment_timeline": self._build_workflow_alignment_timeline(review_report),
-            "run_deltas": self._build_run_deltas(report),
+            "run_deltas": self._build_run_deltas(report, limit=comparison_run_limit),
             "delta_overview": self._build_delta_overview(report),
             "comparison_summary": self._build_comparison_summary(
                 report=report,
@@ -128,6 +138,17 @@ class EvaluationWorkspaceService:
         return max(value, 1)
 
     @staticmethod
+    def _resolve_comparison_run_limit(controls: dict[str, object]) -> int:
+        """从统一工作台配置中取实验对比窗口。"""
+
+        operations = dict((controls.get("config") or {}).get("operations") or {})
+        try:
+            value = int(str(operations.get("comparison_run_limit", "5") or "5"))
+        except (TypeError, ValueError):
+            return 5
+        return max(value, 1)
+
+    @staticmethod
     def _build_leaderboard(report: dict[str, object]) -> list[dict[str, object]]:
         """把实验排行整理成可直接展示推荐原因和淘汰原因的结构。"""
 
@@ -165,7 +186,7 @@ class EvaluationWorkspaceService:
         return "已通过"
 
     @staticmethod
-    def _build_experiment_comparison(report: dict[str, object]) -> list[dict[str, object]]:
+    def _build_experiment_comparison(report: dict[str, object], *, limit: int) -> list[dict[str, object]]:
         """把训练、推理和最近运行压成统一对照表。"""
 
         experiments = dict(report.get("experiments") or {})
@@ -232,10 +253,10 @@ class EvaluationWorkspaceService:
                     "signal_count": "",
                 }
             )
-        return rows
+        return rows[:limit]
 
     @staticmethod
-    def _build_recent_run_history(*, report: dict[str, object], run_type: str) -> list[dict[str, object]]:
+    def _build_recent_run_history(*, report: dict[str, object], run_type: str, limit: int) -> list[dict[str, object]]:
         """按训练或推理拆出最近运行历史。"""
 
         experiments = dict(report.get("experiments") or {})
@@ -272,7 +293,7 @@ class EvaluationWorkspaceService:
                     else "否",
                 }
             )
-        return rows[:5]
+        return rows[:limit]
 
     @staticmethod
     def _build_workflow_alignment_timeline(review_report: dict[str, object]) -> list[dict[str, object]]:
@@ -405,7 +426,7 @@ class EvaluationWorkspaceService:
         }
 
     @staticmethod
-    def _build_run_deltas(report: dict[str, object]) -> list[dict[str, object]]:
+    def _build_run_deltas(report: dict[str, object], *, limit: int = 5) -> list[dict[str, object]]:
         """比较最近两轮训练和推理的主要差异。"""
 
         experiments = dict(report.get("experiments") or {})
@@ -488,7 +509,7 @@ class EvaluationWorkspaceService:
                     ),
                 }
             )
-        return rows
+        return rows[:limit]
 
     @staticmethod
     def _resolve_changed_fields(*, current: dict[str, object], previous: dict[str, object]) -> dict[str, object]:
@@ -604,6 +625,7 @@ class EvaluationWorkspaceService:
             "research_template": "研究模板",
             "model_key": "模型选择",
             "label_mode": "标签口径",
+            "force_validation_top_candidate": "强制验证当前最优候选",
             "holding_window_min_days": "最短持有天数",
             "holding_window_max_days": "最长持有天数",
             "sample_limit": "样本长度",
