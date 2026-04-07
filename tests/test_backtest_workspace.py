@@ -42,6 +42,7 @@ class BacktestWorkspaceTests(unittest.TestCase):
         self.assertIn("live_min_positive_rate", content)
         self.assertIn("live_min_net_return_pct", content)
         self.assertIn("live_min_win_rate", content)
+        self.assertIn("WorkbenchConfigStatusCard", content)
 
 
 if __name__ == "__main__":

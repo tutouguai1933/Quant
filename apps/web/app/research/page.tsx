@@ -11,6 +11,7 @@ import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearchWorkspace, getResearchWorkspaceFallback } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
+import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 
 export default async function ResearchPage() {
   const session = await getControlSessionState();
@@ -45,6 +46,10 @@ export default async function ResearchPage() {
   const readinessNextStep = hasResearchResults
     ? (workspace.readiness.next_step || "继续观察当前研究状态")
     : "先保存右侧配置，再运行研究训练，首轮结果会自动进入评估中心。";
+  const researchStatus = String(configAlignment.status ?? (workspace.status || "unavailable"));
+  const researchNote =
+    String(configAlignment.note ?? "") || readinessNextStep || "当前还没有可用对齐说明。";
+  const researchStaleFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
 
   return (
     <AppShell
@@ -66,6 +71,14 @@ export default async function ResearchPage() {
           { label: "当前模型", value: workspace.model.model_version || "未生成", detail: workspace.model.backend },
           { label: "下一步", value: workspace.overview.recommended_action || "先运行研究训练", detail: "研究结果会决定接下来是继续研究还是进入验证" },
         ]}
+      />
+
+      <WorkbenchConfigStatusCard
+        scope="研究"
+        status={researchStatus}
+        note={researchNote}
+        staleFields={researchStaleFields}
+        editable={configEditable}
       />
 
       <ResearchRuntimePanel initialStatus={runtimeStatus} />
@@ -186,6 +199,16 @@ export default async function ResearchPage() {
                 <ConfigInput name="label_stop_pct" defaultValue={workspace.controls.label_stop_pct} placeholder="止损阈值 %" />
               </div>
             </ConfigField>
+            <ConfigField label="验证放行方式" hint="可以保持统一门控，也可以临时强制把当前最优候选送去验证。">
+              <ConfigSelect
+                name="force_validation_top_candidate"
+                defaultValue={workspace.controls.force_validation_top_candidate ? "true" : "false"}
+                options={[
+                  { value: "false", label: "按统一门控自然筛选" },
+                  { value: "true", label: "强制验证当前最优候选" },
+                ]}
+              />
+            </ConfigField>
             <ConfigField label="持有窗口" hint="这会决定标签在未来几天里寻找最早命中结果。">
               <div className="grid gap-3 md:grid-cols-2">
                 <ConfigInput name="min_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.min_holding_days)} />
@@ -222,6 +245,7 @@ export default async function ResearchPage() {
               <InfoBlock label="标签定义" value={workspace.execution_preview.label_scope || "当前没有标签定义摘要"} />
               <InfoBlock label="dry-run 门槛" value={workspace.execution_preview.dry_run_gate || "当前没有 dry-run 门槛摘要"} />
               <InfoBlock label="live 门槛" value={workspace.execution_preview.live_gate || "当前没有 live 门槛摘要"} />
+              <InfoBlock label="验证放行方式" value={workspace.execution_preview.validation_policy || "当前没有验证放行说明"} />
             </CardContent>
           </Card>
 

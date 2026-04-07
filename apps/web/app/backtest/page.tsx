@@ -8,11 +8,17 @@ import { ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getBacktestWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
+import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 
 export default async function BacktestPage() {
   const session = await getControlSessionState();
   const response = await getBacktestWorkspace();
   const workspace = response.data.item;
+  const backtestStatus = workspace.status || "unavailable";
+  const backtestNote =
+    workspace.training_backtest.metrics && Object.keys(workspace.training_backtest.metrics).length
+      ? `净收益 ${metric(workspace.training_backtest.metrics, "net_return_pct")} / Sharpe ${metric(workspace.training_backtest.metrics, "sharpe")}`
+      : "当前还没有回测结果";
   const metrics = workspace.training_backtest.metrics;
   const gatePreview = asRecord(workspace.controls);
   const configEditable = workspace.status !== "unavailable";
@@ -38,6 +44,13 @@ export default async function BacktestPage() {
           { label: "最大回撤", value: metric(metrics, "max_drawdown_pct"), detail: "亏损最深的那一段" },
           { label: "动作段统计", value: metric(metrics, "action_segment_count"), detail: `方向切换 ${metric(metrics, "direction_switch_count")}` },
         ]}
+      />
+
+      <WorkbenchConfigStatusCard
+        scope="回测"
+        status={backtestStatus}
+        note={backtestNote}
+        editable={configEditable}
       />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">

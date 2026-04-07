@@ -8,6 +8,7 @@ import { ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getEvaluationWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
+import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 
 export default async function EvaluationPage() {
   const session = await getControlSessionState();
@@ -53,6 +54,8 @@ export default async function EvaluationPage() {
   });
   const latestRunDelta = workspace.run_deltas.length ? asRecord(workspace.run_deltas[0]) : {};
   const configDiffSections = buildConfigDiffSections(latestRunDelta);
+  const evaluationStatus = String(configAlignment.status ?? workspace.status ?? "unavailable");
+  const evaluationStaleFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
 
   return (
     <AppShell
@@ -74,6 +77,14 @@ export default async function EvaluationPage() {
           { label: "推荐原因", value: String(researchReview.result ?? "未生成"), detail: String(researchReview.next_action ?? "继续研究") },
           { label: "样本外稳定性", value: String(candidateStatus.pass_rate_pct ?? "n/a"), detail: "当前按统一评估口径整理" },
         ]}
+      />
+
+      <WorkbenchConfigStatusCard
+        scope="评估"
+        status={evaluationStatus}
+        note={configAlignmentCallout}
+        staleFields={evaluationStaleFields}
+        editable={workspace.status !== "unavailable"}
       />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
@@ -281,6 +292,46 @@ export default async function EvaluationPage() {
               }) : <p>当前还没有实验账本。</p>}
             </CardContent>
           </Card>
+
+          <DataTable
+            columns={["最近训练实验", "模型", "数据快照", "持有窗口", "净收益 / Sharpe", "验证放行"]}
+            rows={workspace.recent_training_runs.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${row.run_id ?? index}`,
+                cells: [
+                  `${String(row.run_id ?? "n/a")} / ${String(row.status ?? "n/a")}`,
+                  `${String(row.model_key ?? "n/a")} / ${String(row.model_version ?? "n/a")}`,
+                  String(row.dataset_snapshot_id ?? "n/a"),
+                  String(row.holding_window ?? "n/a"),
+                  `${String(row.net_return_pct ?? "n/a")} / ${String(row.sharpe ?? "n/a")}`,
+                  String(row.force_validation_top_candidate ?? "否"),
+                ],
+              };
+            })}
+            emptyTitle="当前还没有最近训练实验"
+            emptyDetail="先跑训练，系统才会把最近训练实验拆成单独列表。"
+          />
+
+          <DataTable
+            columns={["最近推理实验", "模型", "数据快照", "标签方式", "信号数 / 胜率", "验证放行"]}
+            rows={workspace.recent_inference_runs.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${row.run_id ?? index}`,
+                cells: [
+                  `${String(row.run_id ?? "n/a")} / ${String(row.status ?? "n/a")}`,
+                  `${String(row.model_key ?? "n/a")} / ${String(row.model_version ?? "n/a")}`,
+                  String(row.dataset_snapshot_id ?? "n/a"),
+                  `${String(row.label_mode ?? "n/a")} / ${String(row.window_mode ?? "n/a")}`,
+                  `${String(row.signal_count ?? "n/a")} / ${String(row.win_rate ?? "n/a")}`,
+                  String(row.force_validation_top_candidate ?? "否"),
+                ],
+              };
+            })}
+            emptyTitle="当前还没有最近推理实验"
+            emptyDetail="先跑推理，系统才会把最近推理实验拆成单独列表。"
+          />
 
           <DataTable
             columns={["研究到执行时间线", "最近状态", "最近完成时间", "说明"]}

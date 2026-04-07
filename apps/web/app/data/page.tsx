@@ -10,6 +10,7 @@ import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchCo
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 import { getDataWorkspace, getDataWorkspaceFallback } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
@@ -37,6 +38,9 @@ export default async function DataPage({ searchParams }: PageProps) {
   const configAlignment = asRecord(workspace.config_alignment);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
+  const alignmentStatus = String(configAlignment.status ?? workspace.status ?? "unavailable");
+  const alignmentNote = String(configAlignment.note ?? "当前还没有可用对齐说明");
+  const alignmentFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
 
   return (
     <AppShell
@@ -68,6 +72,14 @@ export default async function DataPage({ searchParams }: PageProps) {
           { label: "样本数量", value: String(workspace.preview.total_rows), detail: `${workspace.preview.symbol} / ${workspace.preview.interval}` },
           { label: "当前状态", value: workspace.snapshot.active_data_state || workspace.status, detail: "raw / cleaned / feature-ready" },
         ]}
+      />
+
+      <WorkbenchConfigStatusCard
+        scope="数据"
+        status={alignmentStatus}
+        note={alignmentNote}
+        staleFields={alignmentFields}
+        editable={configEditable}
       />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">

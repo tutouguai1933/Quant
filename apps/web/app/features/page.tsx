@@ -7,6 +7,7 @@ import { PageHero } from "../../components/page-hero";
 import { ConfigCheckboxGrid, ConfigField, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 import { getFeatureWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 
@@ -16,6 +17,10 @@ export default async function FeaturePage() {
   const workspace = response.data.item;
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
+  const featureStatus = workspace.status || "unavailable";
+  const featureNote = workspace.overview.feature_version
+    ? `特征版本 ${workspace.overview.feature_version} / 持有周期 ${workspace.overview.holding_window || "n/a"}`
+    : "当前还没有生成特征版本";
 
   const categoryRows = Object.entries(workspace.categories).map(([name, items]) => ({
     id: name,
@@ -46,6 +51,13 @@ export default async function FeaturePage() {
           { label: "主判断因子", value: String(workspace.overview.primary_count), detail: "优先参与研究判断" },
           { label: "辅助确认因子", value: String(workspace.overview.auxiliary_count), detail: workspace.overview.holding_window || "当前持有周期未写入" },
         ]}
+      />
+
+      <WorkbenchConfigStatusCard
+        scope="特征"
+        status={featureStatus}
+        note={featureNote}
+        editable={configEditable}
       />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_380px]">

@@ -31,6 +31,8 @@ class ResearchWorkspaceTests(unittest.TestCase):
         self.assertIn("研究参数配置", content)
         self.assertIn("label_mode", content)
         self.assertIn("label_target_pct", content)
+        self.assertIn("验证放行方式", content)
+        self.assertIn("force_validation_top_candidate", content)
         self.assertIn("训练/验证/测试切分比例", content)
         self.assertIn("train_split_ratio", content)
         self.assertIn("validation_split_ratio", content)
@@ -44,6 +46,7 @@ class ResearchWorkspaceTests(unittest.TestCase):
         self.assertIn("因子组合", content)
         self.assertIn("dry-run 门槛", content)
         self.assertIn("live 门槛", content)
+        self.assertIn("验证放行方式", content)
         self.assertIn("当前配置快照", content)
         self.assertIn("数据快照", content)
         self.assertIn("特征快照", content)
@@ -55,6 +58,7 @@ class ResearchWorkspaceTests(unittest.TestCase):
         self.assertIn("研究运行状态", runtime_content)
         self.assertIn("预计时长", runtime_content)
         self.assertIn("完成后去哪里看", runtime_content)
+        self.assertIn("WorkbenchConfigStatusCard", content)
 
 
 if __name__ == "__main__":

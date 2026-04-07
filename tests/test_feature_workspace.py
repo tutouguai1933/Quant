@@ -32,6 +32,7 @@ class FeatureWorkspaceTests(unittest.TestCase):
         self.assertIn("primary_factors", content)
         self.assertIn("当前配置", content)
         self.assertIn("工作台暂时不可用", content)
+        self.assertIn("WorkbenchConfigStatusCard", content)
 
 
 if __name__ == "__main__":

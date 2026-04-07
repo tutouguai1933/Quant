@@ -171,12 +171,30 @@ export type AutomationStatusModel = {
   health: Record<string, unknown>;
   executionHealth: Record<string, unknown>;
   dailySummary: Record<string, unknown>;
+  runtimeWindow: Record<string, unknown>;
   schedulerPlan: Array<Record<string, unknown>>;
   failurePolicy: Record<string, unknown>;
   operations: Record<string, unknown>;
   executionPolicy: Record<string, unknown>;
   severitySummary: Record<string, unknown>;
   resumeChecklist: Array<Record<string, unknown>>;
+};
+
+export type WorkbenchControlOptions = {
+  timeframes?: string[];
+  models?: string[];
+  research_templates?: string[];
+  label_modes?: string[];
+  window_modes?: string[];
+  all_symbols?: string[];
+  factor_categories?: Record<string, string[]>;
+  all_factors?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+export type WorkbenchControlsModel = {
+  config: Record<string, Record<string, unknown>>;
+  options: WorkbenchControlOptions;
 };
 
 export type DataWorkspaceModel = {
@@ -476,6 +494,7 @@ export type ResearchWorkspaceModel = {
     model_key: string;
     label_mode: string;
     holding_window_label: string;
+    force_validation_top_candidate: boolean;
     min_holding_days: number;
     max_holding_days: number;
     label_target_pct: string;
@@ -511,6 +530,7 @@ export type ResearchWorkspaceModel = {
     label_scope: string;
     dry_run_gate: string;
     live_gate: string;
+    validation_policy: string;
   };
 };
 
@@ -568,6 +588,8 @@ export type EvaluationWorkspaceModel = {
   reviews: Record<string, unknown>;
   leaderboard: Array<Record<string, unknown>>;
   recent_runs: Array<Record<string, unknown>>;
+  recent_training_runs: Array<Record<string, unknown>>;
+  recent_inference_runs: Array<Record<string, unknown>>;
   experiment_comparison: Array<Record<string, unknown>>;
   gate_matrix: Array<Record<string, unknown>>;
   run_deltas: Array<Record<string, unknown>>;
@@ -577,6 +599,7 @@ export type EvaluationWorkspaceModel = {
   alignment_details: Record<string, unknown>;
   alignment_gaps: Array<Record<string, unknown>>;
   alignment_actions: Array<Record<string, unknown>>;
+  workflow_alignment_timeline: Array<Record<string, unknown>>;
 };
 
 export type ValidationReviewItem = {
@@ -1077,6 +1100,7 @@ export async function getAutomationStatus(
         health,
         executionHealth: isPlainObject(item.execution_health) ? item.execution_health : {},
         dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
+        runtimeWindow: isPlainObject(item.runtime_window) ? item.runtime_window : {},
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
         operations: isPlainObject(item.operations) ? item.operations : {},
@@ -1445,6 +1469,7 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       model_key: "heuristic_v1",
       label_mode: "earliest_hit",
       holding_window_label: "1-3d",
+      force_validation_top_candidate: false,
       min_holding_days: 1,
       max_holding_days: 3,
       label_target_pct: "1",
@@ -1480,6 +1505,7 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       label_scope: "",
       dry_run_gate: "",
       live_gate: "",
+      validation_policy: "",
     },
   };
 }
@@ -1536,8 +1562,11 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     reviews: {},
     leaderboard: [],
     recent_runs: [],
+    recent_training_runs: [],
+    recent_inference_runs: [],
     experiment_comparison: [],
     gate_matrix: [],
+    workflow_alignment_timeline: [],
     run_deltas: [],
     delta_overview: {},
     comparison_summary: {},
@@ -1798,6 +1827,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       model_key: String(controls.model_key ?? ""),
       label_mode: String(controls.label_mode ?? ""),
       holding_window_label: String(controls.holding_window_label ?? ""),
+      force_validation_top_candidate: Boolean(controls.force_validation_top_candidate),
       min_holding_days: Number(controls.min_holding_days ?? 1),
       max_holding_days: Number(controls.max_holding_days ?? 3),
       label_target_pct: String(controls.label_target_pct ?? ""),
@@ -1835,6 +1865,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       label_scope: String(executionPreview.label_scope ?? ""),
       dry_run_gate: String(executionPreview.dry_run_gate ?? ""),
       live_gate: String(executionPreview.live_gate ?? ""),
+      validation_policy: String(executionPreview.validation_policy ?? ""),
     },
   };
 }
@@ -1920,8 +1951,11 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     reviews: isPlainObject(row.reviews) ? row.reviews : {},
     leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
     recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
+    recent_training_runs: Array.isArray(row.recent_training_runs) ? row.recent_training_runs.filter(isPlainObject) : [],
+    recent_inference_runs: Array.isArray(row.recent_inference_runs) ? row.recent_inference_runs.filter(isPlainObject) : [],
     experiment_comparison: Array.isArray(row.experiment_comparison) ? row.experiment_comparison.filter(isPlainObject) : [],
     gate_matrix: Array.isArray(row.gate_matrix) ? row.gate_matrix.filter(isPlainObject) : [],
+    workflow_alignment_timeline: Array.isArray(row.workflow_alignment_timeline) ? row.workflow_alignment_timeline.filter(isPlainObject) : [],
     run_deltas: Array.isArray(row.run_deltas) ? row.run_deltas.filter(isPlainObject) : [],
     delta_overview: isPlainObject(row.delta_overview) ? row.delta_overview : {},
     comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
@@ -2738,6 +2772,7 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       },
       executionHealth: {},
       dailySummary: {},
+      runtimeWindow: {},
       schedulerPlan: [],
       failurePolicy: {},
       severitySummary: {},
@@ -2752,6 +2787,8 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
         stale_sync_failure_threshold: "1",
         auto_pause_on_error: true,
         review_limit: "10",
+        cycle_cooldown_minutes: "15",
+        max_daily_cycle_count: "8",
       },
     },
   };

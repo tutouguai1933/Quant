@@ -40,6 +40,7 @@ class DataWorkspaceTests(unittest.TestCase):
         self.assertIn("selected_symbols", content)
         self.assertIn("当前结果与配置对齐", content)
         self.assertIn("配置检查", content)
+        self.assertIn("WorkbenchConfigStatusCard", content)
 
 
 if __name__ == "__main__":
