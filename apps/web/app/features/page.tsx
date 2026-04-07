@@ -98,7 +98,15 @@ export default async function FeaturePage() {
               />
             </ConfigField>
             <ConfigField label="预处理规则" hint="这里改的是因子进入训练前的清洗方式，保存后下一轮训练和推理都会按这里重算。">
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
+                <ConfigSelect
+                  name="missing_policy"
+                  defaultValue={workspace.controls.missing_policy}
+                  options={workspace.controls.available_missing_policies.map((item) => ({
+                    value: item,
+                    label: item === "strict_drop" ? "严格丢弃缺失行" : "中性值补齐",
+                  }))}
+                />
                 <ConfigSelect
                   name="outlier_policy"
                   defaultValue={workspace.controls.outlier_policy}
@@ -146,6 +154,10 @@ export default async function FeaturePage() {
               <InfoBlock label="缺失处理" value={workspace.preprocessing.missing_policy || "未设置"} />
               <InfoBlock label="去极值" value={workspace.preprocessing.outlier_policy || "未设置"} />
               <InfoBlock label="标准化" value={workspace.preprocessing.normalization_policy || "未设置"} />
+              <InfoBlock
+                label="当前配置"
+                value={`缺失=${workspace.controls.missing_policy || "neutral_fill"} / 去极值=${workspace.controls.outlier_policy || "clip"} / 标准化=${workspace.controls.normalization_policy || "fixed_4dp"}`}
+              />
             </CardContent>
           </Card>
 

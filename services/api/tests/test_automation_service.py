@@ -226,7 +226,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("scheduler_plan", status)
         self.assertEqual(status["scheduler_plan"][0]["task_type"], "research_train")
         self.assertIn("failure_policy", status)
-        self.assertEqual(status["failure_policy"]["research_train"], "stop")
+        self.assertEqual(status["failure_policy"]["research_train"], "manual_takeover")
         self.assertIn("active_blockers", status["health"])
         self.assertIn("operator_actions", status["health"])
         self.assertIn("takeover_summary", status["health"])
@@ -235,6 +235,9 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("operator_actions", status)
         self.assertIn("takeover_summary", status)
         self.assertIn("alert_summary", status)
+        self.assertIn("operations", status)
+        self.assertEqual(status["operations"]["pause_after_consecutive_failures"], 2)
+        self.assertEqual(status["operations"]["review_limit"], 10)
 
     def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
         service = AutomationService()
@@ -311,7 +314,7 @@ class AutomationServiceTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "attention_required")
         self.assertEqual(result["next_action"], "stop")
-        self.assertEqual(result["failure_policy_action"], "stop")
+        self.assertEqual(result["failure_policy_action"], "manual_takeover")
         self.assertTrue(state["manual_takeover"])
         self.assertTrue(state["paused"])
         self.assertEqual(state["paused_reason"], "workflow_train_failed")

@@ -13,6 +13,7 @@ from services.api.app.services.strategy_catalog import strategy_catalog_service
 from services.api.app.services.sync_service import sync_service
 from services.api.app.services.strategy_dispatch_service import strategy_dispatch_service
 from services.api.app.services.validation_workflow_service import validation_workflow_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 from services.api.app.tasks.scheduler import task_scheduler
 
 
@@ -33,11 +34,14 @@ class AutomationWorkflowService:
 
         task_health = self._scheduler.get_health_summary()
         state = self._automation.get_state()
-        report = self._reviewer.build_report(limit=10)
+        operations = self._get_operations_config()
+        review_limit = int(operations.get("review_limit", 10) or 10)
+        report = self._reviewer.build_report(limit=review_limit)
         health = self._automation.build_health_summary(task_health=task_health)
         return {
             "state": state,
             "health": health,
+            "operations": operations,
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
             "takeover_summary": dict(health.get("takeover_summary") or {}),
@@ -48,13 +52,16 @@ class AutomationWorkflowService:
                 automation_state=state,
             ),
             "daily_summary": dict(self._automation.get_status(task_health=task_health).get("daily_summary") or {}),
-            "scheduler_plan": self._build_scheduler_plan(),
-            "failure_policy": self._build_failure_policy(),
+            "scheduler_plan": self._build_scheduler_plan(review_limit=review_limit),
+            "failure_policy": self._build_failure_policy(operations=operations),
         }
 
     def run_cycle(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:
         """执行一轮自动化工作流。"""
 
+        operations = self._get_operations_config()
+        review_limit = int(operations.get("review_limit", review_limit) or review_limit)
+        auto_pause_on_error = bool(operations.get("auto_pause_on_error", True))
         state = self._automation.get_state()
         mode = str(state.get("mode", "manual"))
         armed_symbol = str(state.get("armed_symbol", "")).strip().upper()
@@ -84,9 +91,10 @@ class AutomationWorkflowService:
                 next_action="stop",
                 review_limit=review_limit,
                 tasks={"train": train_task},
-                failure_policy_action="stop",
+                failure_policy_action="manual_takeover" if auto_pause_on_error else "review_before_retry",
                 takeover_reason="workflow_train_failed",
                 source=source,
+                auto_pause_on_error=auto_pause_on_error,
             )
 
         infer_task = self._scheduler.run_named_task(task_type="research_infer", source=source, target_type="system")
@@ -103,9 +111,10 @@ class AutomationWorkflowService:
                 next_action="stop",
                 review_limit=review_limit,
                 tasks={"train": train_task, "infer": infer_task},
-                failure_policy_action="stop",
+                failure_policy_action="manual_takeover" if auto_pause_on_error else "review_before_retry",
                 takeover_reason="workflow_infer_failed",
                 source=source,
+                auto_pause_on_error=auto_pause_on_error,
             )
 
         signal_task = self._scheduler.run_named_task(task_type="signal_output", source=source, target_type="system")
@@ -122,9 +131,10 @@ class AutomationWorkflowService:
                 next_action="stop",
                 review_limit=review_limit,
                 tasks={"train": train_task, "infer": infer_task, "signal_output": signal_task},
-                failure_policy_action="stop",
+                failure_policy_action="manual_takeover" if auto_pause_on_error else "review_before_retry",
                 takeover_reason="workflow_signal_output_failed",
                 source=source,
+                auto_pause_on_error=auto_pause_on_error,
             )
 
         recommendation = self._research.get_research_recommendation() or {}
@@ -205,7 +215,7 @@ class AutomationWorkflowService:
                 dispatch_status = dispatch_result["status"]
                 cycle_message = str(dispatch_result.get("message") or "")
                 failure_reason = str(dispatch_result.get("error_code") or "")
-                if dispatch_result["error_code"] not in {"signal_not_ready", "risk_blocked"}:
+                if dispatch_result["error_code"] not in {"signal_not_ready", "risk_blocked"} and auto_pause_on_error:
                     self._automation.manual_takeover(reason=f"dispatch_{failure_reason}", actor=source)
             else:
                 dispatch_status = "succeeded"
@@ -260,10 +270,12 @@ class AutomationWorkflowService:
         failure_policy_action: str,
         takeover_reason: str,
         source: str,
+        auto_pause_on_error: bool,
     ) -> dict[str, object]:
         """在训练或推理失败时统一收口工作流。"""
 
-        self._automation.manual_takeover(reason=takeover_reason, actor=source)
+        if auto_pause_on_error:
+            self._automation.manual_takeover(reason=takeover_reason, actor=source)
         review_task = self._scheduler.run_named_task(
             task_type="review",
             source="automation",
@@ -287,7 +299,7 @@ class AutomationWorkflowService:
         return summary
 
     @staticmethod
-    def _build_scheduler_plan() -> list[dict[str, str]]:
+    def _build_scheduler_plan(*, review_limit: int) -> list[dict[str, str]]:
         """返回固定自动化调度顺序。"""
 
         return [
@@ -295,19 +307,33 @@ class AutomationWorkflowService:
             {"task_type": "research_infer", "detail": "再推理，产出候选和推荐动作"},
             {"task_type": "signal_output", "detail": "把研究结果写成统一信号"},
             {"task_type": "dispatch", "detail": "按当前模式进入 dry-run 或小额 live"},
-            {"task_type": "review", "detail": "最后统一复盘和健康摘要"},
+            {"task_type": "review", "detail": f"最后统一复盘和健康摘要（最近 {review_limit} 条）"},
         ]
 
     @staticmethod
-    def _build_failure_policy() -> dict[str, str]:
+    def _build_failure_policy(*, operations: dict[str, object]) -> dict[str, str]:
         """返回失败后的固定处理规则。"""
 
+        manual_policy = "manual_takeover" if bool(operations.get("auto_pause_on_error", True)) else "review_before_retry"
         return {
-            "research_train": "stop",
-            "research_infer": "stop",
-            "signal_output": "stop",
+            "research_train": manual_policy,
+            "research_infer": manual_policy,
+            "signal_output": manual_policy,
             "dispatch": "review_and_decide",
             "sync": "retry_then_review",
+        }
+
+    @staticmethod
+    def _get_operations_config() -> dict[str, object]:
+        """读取长期运行配置。"""
+
+        config = workbench_config_service.get_config()
+        operations = dict(config.get("operations") or {})
+        return {
+            "pause_after_consecutive_failures": int(operations.get("pause_after_consecutive_failures", 2) or 2),
+            "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
+            "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
+            "review_limit": int(operations.get("review_limit", 10) or 10),
         }
 
 

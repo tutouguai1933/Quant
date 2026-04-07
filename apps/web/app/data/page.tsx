@@ -160,8 +160,24 @@ export default async function DataPage({ searchParams }: PageProps) {
                     value: item,
                     label: item,
                     checked: workspace.controls.timeframes.includes(item),
-                  }))}
+                }))}
               />
+            </ConfigField>
+            <ConfigField label="时间窗口模式" hint="滚动窗口会按最近 N 天取样；固定窗口会严格按起止日期截取样本。">
+              <ConfigSelect
+                name="window_mode"
+                defaultValue={workspace.controls.window_mode}
+                options={workspace.controls.available_window_modes.map((item) => ({
+                  value: item,
+                  label: item === "fixed" ? "固定日期窗口" : "滚动窗口",
+                }))}
+              />
+            </ConfigField>
+            <ConfigField label="固定日期窗口" hint="只在固定窗口模式下生效。这里直接决定训练、推理和回测会读取哪一段历史。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="start_date" type="date" defaultValue={workspace.controls.start_date} />
+                <ConfigInput name="end_date" type="date" defaultValue={workspace.controls.end_date} />
+              </div>
             </ConfigField>
             <ConfigField label="样本长度" hint="这会影响训练、推理和回测一共读取多少根 K 线。">
               <ConfigInput name="sample_limit" type="number" min={60} step={10} defaultValue={String(workspace.controls.sample_limit)} />
@@ -182,6 +198,15 @@ export default async function DataPage({ searchParams }: PageProps) {
               <InfoBlock label="时间范围" value={formatTimeRange(workspace.preview.first_open_time, workspace.preview.last_close_time)} />
               <InfoBlock label="样本数量" value={String(workspace.preview.total_rows)} />
               <InfoBlock label="回看天数" value={String(workspace.controls.lookback_days)} />
+              <InfoBlock label="窗口模式" value={workspace.controls.window_mode === "fixed" ? "固定日期窗口" : "滚动窗口"} />
+              <InfoBlock
+                label="固定日期"
+                value={
+                  workspace.controls.window_mode === "fixed"
+                    ? formatTimeRange(workspace.controls.start_date, workspace.controls.end_date)
+                    : "当前未启用固定日期窗口"
+                }
+              />
               <InfoBlock
                 label="配置检查"
                 value={

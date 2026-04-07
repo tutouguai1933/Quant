@@ -339,6 +339,10 @@ class EvaluationWorkspaceService:
                         current_backtest.get("win_rate", ""),
                         previous_backtest.get("win_rate", ""),
                     ),
+                    "changed_fields": EvaluationWorkspaceService._resolve_changed_fields(
+                        current=current,
+                        previous=previous,
+                    ),
                     "note": EvaluationWorkspaceService._build_delta_note(
                         run_type=run_type,
                         model_changed=model_changed,
@@ -347,6 +351,37 @@ class EvaluationWorkspaceService:
                 }
             )
         return rows
+
+    @staticmethod
+    def _resolve_changed_fields(*, current: dict[str, object], previous: dict[str, object]) -> list[str]:
+        """列出最近两轮最主要的配置变化。"""
+
+        current_context = dict(current.get("training_context") or current.get("inference_context") or {})
+        previous_context = dict(previous.get("training_context") or previous.get("inference_context") or {})
+        current_parameters = dict(current_context.get("parameters") or current_context.get("input_summary") or {})
+        previous_parameters = dict(previous_context.get("parameters") or previous_context.get("input_summary") or {})
+        watched_fields = (
+            "research_template",
+            "model_key",
+            "label_mode",
+            "holding_window_min_days",
+            "holding_window_max_days",
+            "sample_limit",
+            "lookback_days",
+            "window_mode",
+            "start_date",
+            "end_date",
+            "missing_policy",
+            "outlier_policy",
+            "normalization_policy",
+            "backtest_fee_bps",
+            "backtest_slippage_bps",
+        )
+        changed = []
+        for field in watched_fields:
+            if str(current_parameters.get(field, "")) != str(previous_parameters.get(field, "")):
+                changed.append(field)
+        return changed
 
     @staticmethod
     def _build_alignment_details(

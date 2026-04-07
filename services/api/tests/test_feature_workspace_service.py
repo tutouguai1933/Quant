@@ -25,8 +25,10 @@ class FeatureWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("ema20_gap_pct", item["roles"]["primary"])
         self.assertIn("rsi14", item["roles"]["auxiliary"])
         self.assertEqual(item["preprocessing"]["missing_policy"], "坏行直接丢弃")
+        self.assertEqual(item["controls"]["missing_policy"], "strict_drop")
         self.assertEqual(item["controls"]["outlier_policy"], "clip")
         self.assertEqual(item["controls"]["normalization_policy"], "fixed_4dp")
+        self.assertIn("neutral_fill", item["controls"]["available_missing_policies"])
         self.assertIn("raw", item["controls"]["available_outlier_policies"])
         self.assertIn("zscore_by_symbol", item["controls"]["available_normalization_policies"])
         self.assertIn("4h", item["timeframe_profiles"])
@@ -118,6 +120,7 @@ def _fake_controls() -> dict[str, object]:
             "features": {
                 "primary_factors": ["ema20_gap_pct", "ema55_gap_pct"],
                 "auxiliary_factors": ["rsi14"],
+                "missing_policy": "strict_drop",
                 "outlier_policy": "clip",
                 "normalization_policy": "fixed_4dp",
             }
@@ -125,6 +128,7 @@ def _fake_controls() -> dict[str, object]:
         "options": {
             "primary_factors": ["ema20_gap_pct", "ema55_gap_pct"],
             "auxiliary_factors": ["rsi14", "atr_pct"],
+            "missing_policies": ["neutral_fill", "strict_drop"],
             "outlier_policies": ["clip", "raw"],
             "normalization_policies": ["fixed_4dp", "zscore_by_symbol"],
         },

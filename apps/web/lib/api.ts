@@ -170,6 +170,7 @@ export type AutomationStatusModel = {
   dailySummary: Record<string, unknown>;
   schedulerPlan: Array<Record<string, unknown>>;
   failurePolicy: Record<string, unknown>;
+  operations: Record<string, unknown>;
 };
 
 export type DataWorkspaceModel = {
@@ -193,8 +194,12 @@ export type DataWorkspaceModel = {
     timeframes: string[];
     sample_limit: number;
     lookback_days: number;
+    window_mode: string;
+    start_date: string;
+    end_date: string;
     available_symbols: string[];
     available_timeframes: string[];
+    available_window_modes: string[];
   };
   snapshot: {
     snapshot_id: string;
@@ -416,10 +421,12 @@ export type FeatureWorkspaceModel = {
   controls: {
     primary_factors: string[];
     auxiliary_factors: string[];
+    missing_policy: string;
     outlier_policy: string;
     normalization_policy: string;
     available_primary_factors: string[];
     available_auxiliary_factors: string[];
+    available_missing_policies: string[];
     available_outlier_policies: string[];
     available_normalization_policies: string[];
   };
@@ -1046,6 +1053,7 @@ export async function getAutomationStatus(
         dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
+        operations: isPlainObject(item.operations) ? item.operations : {},
       },
     },
   };
@@ -1305,8 +1313,12 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
       timeframes: [String(interval ?? "").trim() || "4h", "1h"],
       sample_limit: typeof limit === "number" && Number.isFinite(limit) ? limit : 200,
       lookback_days: 30,
+      window_mode: "rolling",
+      start_date: "",
+      end_date: "",
       available_symbols: [],
       available_timeframes: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
+      available_window_modes: ["rolling", "fixed"],
     },
     sources: {
       research: "qlib-fallback",
@@ -1358,10 +1370,12 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
     controls: {
       primary_factors: [],
       auxiliary_factors: [],
+      missing_policy: "neutral_fill",
       outlier_policy: "clip",
       normalization_policy: "fixed_4dp",
       available_primary_factors: [],
       available_auxiliary_factors: [],
+      available_missing_policies: ["neutral_fill", "strict_drop"],
       available_outlier_policies: ["clip", "raw"],
       available_normalization_policies: ["fixed_4dp", "zscore_by_symbol"],
     },
@@ -1591,8 +1605,12 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       timeframes: normalizeStringArray(controls.timeframes, []),
       sample_limit: Number(controls.sample_limit ?? 120),
       lookback_days: Number(controls.lookback_days ?? 30),
+      window_mode: String(controls.window_mode ?? "rolling"),
+      start_date: String(controls.start_date ?? ""),
+      end_date: String(controls.end_date ?? ""),
       available_symbols: normalizeStringArray(controls.available_symbols, []),
       available_timeframes: normalizeStringArray(controls.available_timeframes, []),
+      available_window_modes: normalizeStringArray(controls.available_window_modes, ["rolling", "fixed"]),
     },
     sources: {
       research: String(sources.research ?? "qlib-fallback"),
@@ -1663,10 +1681,12 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
     controls: {
       primary_factors: normalizeStringArray(controls.primary_factors, []),
       auxiliary_factors: normalizeStringArray(controls.auxiliary_factors, []),
+      missing_policy: String(controls.missing_policy ?? "neutral_fill"),
       outlier_policy: String(controls.outlier_policy ?? ""),
       normalization_policy: String(controls.normalization_policy ?? ""),
       available_primary_factors: normalizeStringArray(controls.available_primary_factors, []),
       available_auxiliary_factors: normalizeStringArray(controls.available_auxiliary_factors, []),
+      available_missing_policies: normalizeStringArray(controls.available_missing_policies, ["neutral_fill", "strict_drop"]),
       available_outlier_policies: normalizeStringArray(controls.available_outlier_policies, []),
       available_normalization_policies: normalizeStringArray(controls.available_normalization_policies, []),
     },
@@ -2652,6 +2672,12 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       dailySummary: {},
       schedulerPlan: [],
       failurePolicy: {},
+      operations: {
+        pause_after_consecutive_failures: "2",
+        stale_sync_failure_threshold: "1",
+        auto_pause_on_error: true,
+        review_limit: "10",
+      },
     },
   };
 }

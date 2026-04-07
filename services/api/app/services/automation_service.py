@@ -13,6 +13,7 @@ from typing import Any
 from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.core.settings import Settings
 from services.api.app.services.risk_service import risk_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 
 AUTOMATION_MODES = {"manual", "auto_dry_run", "auto_live"}
@@ -77,6 +78,7 @@ class AutomationService:
         return {
             "state": self.get_state(),
             "health": health,
+            "operations": self._get_operations_config(),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
             "takeover_summary": dict(health.get("takeover_summary") or {}),
@@ -360,6 +362,7 @@ class AutomationService:
         """把当前真正阻塞自动化继续推进的原因整理成列表。"""
 
         blockers: list[dict[str, str]] = []
+        operations = self._get_operations_config()
         if self._paused:
             blockers.append(
                 {
@@ -379,7 +382,8 @@ class AutomationService:
                 }
             )
         latest_sync_status = str(latest_status.get("sync", "unknown"))
-        if latest_sync_status == "failed":
+        stale_sync_threshold = int(operations.get("stale_sync_failure_threshold", 1) or 1)
+        if latest_sync_status == "failed" and self._consecutive_failure_count >= stale_sync_threshold:
             blockers.append(
                 {
                     "code": "sync_failed",
@@ -454,14 +458,22 @@ class AutomationService:
     ) -> dict[str, object]:
         """补充长期运行最关心的失败连续性和升级级别。"""
 
+        operations = self._get_operations_config()
         latest_sync_status = str(latest_status.get("sync", "unknown"))
-        stale_sync_state = "stale" if latest_sync_status not in {"succeeded", "unknown"} else "fresh"
+        stale_sync_threshold = int(operations.get("stale_sync_failure_threshold", 1) or 1)
+        pause_after_failures = int(operations.get("pause_after_consecutive_failures", 2) or 2)
+        stale_sync_state = (
+            "stale"
+            if latest_sync_status not in {"succeeded", "unknown"}
+            and self._consecutive_failure_count >= stale_sync_threshold
+            else "fresh"
+        )
         escalation_level = "normal"
         if self._paused_reason == "kill_switch":
             escalation_level = "critical"
         elif self._manual_takeover or self._paused:
             escalation_level = "high"
-        if self._consecutive_failure_count >= 2 or stale_sync_state == "stale":
+        if self._consecutive_failure_count >= pause_after_failures or stale_sync_state == "stale":
             escalation_level = "critical"
         if last_alert and str(last_alert.get("level", "")).lower() == "error":
             escalation_level = "critical"
@@ -470,6 +482,23 @@ class AutomationService:
             "last_success_at": self._last_success_at,
             "stale_sync_state": stale_sync_state,
             "escalation_level": escalation_level,
+            "pause_after_consecutive_failures": pause_after_failures,
+            "stale_sync_failure_threshold": stale_sync_threshold,
+            "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
+            "review_limit": int(operations.get("review_limit", 10) or 10),
+        }
+
+    @staticmethod
+    def _get_operations_config() -> dict[str, object]:
+        """读取长期运行配置。"""
+
+        config = workbench_config_service.get_config()
+        operations = dict(config.get("operations") or {})
+        return {
+            "pause_after_consecutive_failures": int(operations.get("pause_after_consecutive_failures", 2) or 2),
+            "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
+            "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
+            "review_limit": int(operations.get("review_limit", 10) or 10),
         }
 
     def run_cycle(self, *, actor: str = "user") -> dict[str, object]:

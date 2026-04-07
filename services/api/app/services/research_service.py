@@ -183,6 +183,9 @@ class ResearchService:
         selected_timeframes = self._resolve_selected_timeframes(data_config=data_config)
         sample_limit = int(data_config.get("sample_limit", 120) or 120)
         lookback_days = int(data_config.get("lookback_days", 30) or 30)
+        window_mode = str(data_config.get("window_mode", "rolling") or "rolling")
+        start_date = str(data_config.get("start_date", "") or "")
+        end_date = str(data_config.get("end_date", "") or "")
         cache_summary = {
             "request_count": 0,
             "reused_count": 0,
@@ -196,7 +199,14 @@ class ResearchService:
             reused_1h = False
             reused_4h = False
             if "1h" in selected_timeframes:
-                limit_1h = _resolve_research_fetch_limit(timeframe="1h", sample_limit=sample_limit, lookback_days=lookback_days)
+                limit_1h = _resolve_research_fetch_limit(
+                    timeframe="1h",
+                    sample_limit=sample_limit,
+                    lookback_days=lookback_days,
+                    window_mode=window_mode,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
                 chart_1h, reused_1h = self._read_market_chart_cached(
                     symbol=symbol,
                     interval="1h",
@@ -206,7 +216,14 @@ class ResearchService:
                 candles_1h = list(chart_1h.get("items", []))
                 cache_summary["request_count"] += 1
             if "4h" in selected_timeframes:
-                limit_4h = _resolve_research_fetch_limit(timeframe="4h", sample_limit=sample_limit, lookback_days=lookback_days)
+                limit_4h = _resolve_research_fetch_limit(
+                    timeframe="4h",
+                    sample_limit=sample_limit,
+                    lookback_days=lookback_days,
+                    window_mode=window_mode,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
                 chart_4h, reused_4h = self._read_market_chart_cached(
                     symbol=symbol,
                     interval="4h",
@@ -367,6 +384,12 @@ class ResearchService:
             stale_fields.append("sample_limit")
         if str(data_config.get("lookback_days", "")) != str(training_parameters.get("lookback_days", input_summary.get("lookback_days", ""))):
             stale_fields.append("lookback_days")
+        if str(data_config.get("window_mode", "")) != str(training_parameters.get("window_mode", input_summary.get("window_mode", ""))):
+            stale_fields.append("window_mode")
+        if str(data_config.get("start_date", "")) != str(training_parameters.get("start_date", input_summary.get("start_date", ""))):
+            stale_fields.append("start_date")
+        if str(data_config.get("end_date", "")) != str(training_parameters.get("end_date", input_summary.get("end_date", ""))):
+            stale_fields.append("end_date")
 
         current_pairs = {
             "research_template": str(research_config.get("research_template", "")),
@@ -376,10 +399,14 @@ class ResearchService:
             "label_stop_pct": str(research_config.get("label_stop_pct", "")),
             "holding_window_min_days": str(research_config.get("min_holding_days", "")),
             "holding_window_max_days": str(research_config.get("max_holding_days", "")),
+            "missing_policy": str(features_config.get("missing_policy", "")),
             "outlier_policy": str(features_config.get("outlier_policy", "")),
             "normalization_policy": str(features_config.get("normalization_policy", "")),
             "sample_limit": str(data_config.get("sample_limit", "")),
             "lookback_days": str(data_config.get("lookback_days", "")),
+            "window_mode": str(data_config.get("window_mode", "")),
+            "start_date": str(data_config.get("start_date", "")),
+            "end_date": str(data_config.get("end_date", "")),
             "backtest_fee_bps": str(backtest_config.get("fee_bps", "")),
             "backtest_slippage_bps": str(backtest_config.get("slippage_bps", "")),
             "dry_run_min_score": str(thresholds_config.get("dry_run_min_score", "")),
@@ -400,10 +427,14 @@ class ResearchService:
             "label_stop_pct": str(training_parameters.get("label_stop_pct", "")),
             "holding_window_min_days": str(training_parameters.get("holding_window_min_days", "")),
             "holding_window_max_days": str(training_parameters.get("holding_window_max_days", "")),
+            "missing_policy": str(training_parameters.get("missing_policy", input_summary.get("missing_policy", ""))),
             "outlier_policy": str(training_parameters.get("outlier_policy", input_summary.get("outlier_policy", ""))),
             "normalization_policy": str(training_parameters.get("normalization_policy", input_summary.get("normalization_policy", ""))),
             "sample_limit": str(training_parameters.get("sample_limit", input_summary.get("sample_limit", ""))),
             "lookback_days": str(training_parameters.get("lookback_days", input_summary.get("lookback_days", ""))),
+            "window_mode": str(training_parameters.get("window_mode", input_summary.get("window_mode", ""))),
+            "start_date": str(training_parameters.get("start_date", input_summary.get("start_date", ""))),
+            "end_date": str(training_parameters.get("end_date", input_summary.get("end_date", ""))),
             "backtest_fee_bps": str(training_parameters.get("backtest_fee_bps", "")),
             "backtest_slippage_bps": str(training_parameters.get("backtest_slippage_bps", "")),
             "dry_run_min_score": str(input_summary.get("dry_run_min_score", "")),
@@ -445,14 +476,47 @@ class ResearchService:
 research_service = ResearchService()
 
 
-def _resolve_research_fetch_limit(*, timeframe: str, sample_limit: int, lookback_days: int) -> int:
+def _resolve_research_fetch_limit(
+    *,
+    timeframe: str,
+    sample_limit: int,
+    lookback_days: int,
+    window_mode: str,
+    start_date: str,
+    end_date: str,
+) -> int:
     """按时间窗口换算研究拉数长度。"""
 
     normalized_limit = max(int(sample_limit or 0), 1)
-    normalized_days = max(int(lookback_days or 0), 1)
+    if window_mode == "fixed":
+        normalized_days = _resolve_date_span(start_date=start_date, end_date=end_date)
+        if normalized_days <= 0:
+            normalized_days = max(int(lookback_days or 0), 1)
+    else:
+        normalized_days = max(int(lookback_days or 0), 1)
     bars_per_day = 24 if timeframe == "1h" else 6 if timeframe == "4h" else 1
     required_bars = normalized_days * bars_per_day
     return max(normalized_limit, required_bars)
+
+
+def _resolve_date_span(*, start_date: str, end_date: str) -> int:
+    """把固定窗口换成天数，供抓样本时估算数量。"""
+
+    from datetime import datetime
+
+    raw_start = str(start_date or "").strip()
+    raw_end = str(end_date or "").strip()
+    if not raw_start and not raw_end:
+        return 0
+    try:
+        start = datetime.strptime(raw_start or raw_end, "%Y-%m-%d")
+        end = datetime.strptime(raw_end or raw_start, "%Y-%m-%d")
+    except ValueError:
+        return 30
+    delta = (end - start).days
+    if delta < 0:
+        return 30
+    return max(delta + 1, 1)
 
 
 def _candidate_sort_key(item: dict[str, object]) -> tuple[int, str]:

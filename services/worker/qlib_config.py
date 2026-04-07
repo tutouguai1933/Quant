@@ -43,6 +43,8 @@ DEFAULT_RESEARCH_TEMPLATE = "single_asset_timing"
 DEFAULT_LABEL_MODE = "earliest_hit"
 DEFAULT_OUTLIER_POLICY = "clip"
 DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
+DEFAULT_MISSING_POLICY = "neutral_fill"
+DEFAULT_WINDOW_MODE = "rolling"
 DEFAULT_SIGNAL_CONFIDENCE_FLOOR = Decimal("0.55")
 DEFAULT_TREND_WEIGHT = Decimal("1.3")
 DEFAULT_VOLUME_WEIGHT = Decimal("1.1")
@@ -53,6 +55,8 @@ SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_stri
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
+SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
+SUPPORTED_WINDOW_MODES = ("rolling", "fixed")
 _RUNTIME_HINTS: dict[str, str] = {}
 
 
@@ -92,9 +96,13 @@ class QlibRuntimeConfig:
     selected_timeframes: tuple[str, ...]
     sample_limit: int
     lookback_days: int
+    window_mode: str
+    start_date: str
+    end_date: str
     research_template: str
     primary_feature_columns: tuple[str, ...]
     auxiliary_feature_columns: tuple[str, ...]
+    missing_policy: str
     outlier_policy: str
     normalization_policy: str
     label_mode: str
@@ -169,6 +177,13 @@ def load_qlib_config(
     selected_timeframes = _read_timeframe_list(values.get("QUANT_QLIB_TIMEFRAMES"))
     sample_limit = _read_int(values.get("QUANT_QLIB_SAMPLE_LIMIT"), default=120, env_name="QUANT_QLIB_SAMPLE_LIMIT", minimum=60)
     lookback_days = _read_int(values.get("QUANT_QLIB_LOOKBACK_DAYS"), default=DEFAULT_LOOKBACK_DAYS, env_name="QUANT_QLIB_LOOKBACK_DAYS", minimum=7)
+    window_mode = _read_choice(
+        values.get("QUANT_QLIB_WINDOW_MODE"),
+        default=DEFAULT_WINDOW_MODE,
+        allowed=SUPPORTED_WINDOW_MODES,
+    )
+    start_date = _read_date(values.get("QUANT_QLIB_START_DATE"))
+    end_date = _read_date(values.get("QUANT_QLIB_END_DATE"))
     research_template = _read_research_template(values.get("QUANT_QLIB_RESEARCH_TEMPLATE"))
     primary_feature_columns = _read_name_list(
         values.get("QUANT_QLIB_PRIMARY_FACTORS"),
@@ -177,6 +192,11 @@ def load_qlib_config(
     auxiliary_feature_columns = _read_name_list(
         values.get("QUANT_QLIB_AUXILIARY_FACTORS"),
         default=AUXILIARY_FEATURE_COLUMNS,
+    )
+    missing_policy = _read_choice(
+        values.get("QUANT_QLIB_MISSING_POLICY"),
+        default=DEFAULT_MISSING_POLICY,
+        allowed=SUPPORTED_MISSING_POLICIES,
     )
     outlier_policy = _read_choice(
         values.get("QUANT_QLIB_OUTLIER_POLICY"),
@@ -395,6 +415,10 @@ def load_qlib_config(
             "live_max_turnover": format(live_max_turnover.normalize(), "f"),
             "live_min_sample_count": str(live_min_sample_count),
             "lookback_days": str(lookback_days),
+            "window_mode": window_mode,
+            "start_date": start_date,
+            "end_date": end_date,
+            "missing_policy": missing_policy,
             "signal_confidence_floor": format(signal_confidence_floor.normalize(), "f"),
             "trend_weight": format(trend_weight.normalize(), "f"),
             "volume_weight": format(volume_weight.normalize(), "f"),
@@ -416,9 +440,13 @@ def load_qlib_config(
             selected_timeframes=selected_timeframes,
             sample_limit=sample_limit,
             lookback_days=lookback_days,
+            window_mode=window_mode,
+            start_date=start_date,
+            end_date=end_date,
             research_template=research_template,
             primary_feature_columns=primary_feature_columns,
             auxiliary_feature_columns=auxiliary_feature_columns,
+            missing_policy=missing_policy,
             outlier_policy=outlier_policy,
             normalization_policy=normalization_policy,
             label_mode=label_mode,
@@ -472,9 +500,13 @@ def load_qlib_config(
         selected_timeframes=selected_timeframes,
         sample_limit=sample_limit,
         lookback_days=lookback_days,
+        window_mode=window_mode,
+        start_date=start_date,
+        end_date=end_date,
         research_template=research_template,
         primary_feature_columns=primary_feature_columns,
         auxiliary_feature_columns=auxiliary_feature_columns,
+        missing_policy=missing_policy,
         outlier_policy=outlier_policy,
         normalization_policy=normalization_policy,
         label_mode=label_mode,
@@ -524,9 +556,13 @@ def _build_config(
     selected_timeframes: tuple[str, ...],
     sample_limit: int,
     lookback_days: int,
+    window_mode: str,
+    start_date: str,
+    end_date: str,
     research_template: str,
     primary_feature_columns: tuple[str, ...],
     auxiliary_feature_columns: tuple[str, ...],
+    missing_policy: str,
     outlier_policy: str,
     normalization_policy: str,
     label_mode: str,
@@ -591,9 +627,13 @@ def _build_config(
         selected_timeframes=selected_timeframes,
         sample_limit=sample_limit,
         lookback_days=lookback_days,
+        window_mode=window_mode,
+        start_date=start_date,
+        end_date=end_date,
         research_template=research_template,
         primary_feature_columns=primary_feature_columns,
         auxiliary_feature_columns=auxiliary_feature_columns,
+        missing_policy=missing_policy,
         outlier_policy=outlier_policy,
         normalization_policy=normalization_policy,
         label_mode=label_mode,
@@ -737,6 +777,21 @@ def _read_choice(value: str | None, *, default: str, allowed: tuple[str, ...]) -
 
     normalized = str(value or "").strip()
     return normalized if normalized in allowed else default
+
+
+def _read_date(value: str | None) -> str:
+    """读取固定日期窗口。"""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parts = raw.split("-")
+    if len(parts) != 3:
+        return ""
+    year, month, day = parts
+    if not (year.isdigit() and month.isdigit() and day.isdigit()):
+        return ""
+    return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
 
 
 def _publish_runtime_hints(values: dict[str, str]) -> None:

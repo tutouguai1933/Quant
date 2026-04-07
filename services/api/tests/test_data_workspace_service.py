@@ -29,6 +29,10 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["filters"]["selected_interval"], "4h")
         self.assertEqual(item["filters"]["limit"], 120)
         self.assertEqual(item["controls"]["lookback_days"], 30)
+        self.assertEqual(item["controls"]["window_mode"], "fixed")
+        self.assertEqual(item["controls"]["start_date"], "2026-01-01")
+        self.assertEqual(item["controls"]["end_date"], "2026-02-01")
+        self.assertIn("fixed", item["controls"]["available_window_modes"])
         self.assertEqual(item["snapshot"]["snapshot_id"], "dataset-abc123")
         self.assertEqual(item["snapshot"]["data_states"]["current"], "feature-ready")
         self.assertEqual(item["preview"]["symbol"], "ETHUSDT")
@@ -175,8 +179,12 @@ def _fake_controls() -> dict[str, object]:
                 "timeframes": ["4h", "1h"],
                 "sample_limit": 120,
                 "lookback_days": 30,
+                "window_mode": "fixed",
+                "start_date": "2026-01-01",
+                "end_date": "2026-02-01",
             }
-        }
+        },
+        "options": {"window_modes": ["rolling", "fixed"]},
     }
 
 

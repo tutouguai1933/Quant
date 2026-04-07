@@ -392,15 +392,19 @@ class QlibRunnerTests(unittest.TestCase):
             label_target_pct=config.label_target_pct,
             label_stop_pct=config.label_stop_pct,
             label_mode=config.label_mode,
-                outlier_policy=config.outlier_policy,
-                normalization_policy=config.normalization_policy,
-                min_window_days=config.holding_window_min_days,
-                max_window_days=config.holding_window_max_days,
-                holding_window_label=config.holding_window_label,
-                train_split_ratio=config.train_split_ratio,
-                validation_split_ratio=config.validation_split_ratio,
-                test_split_ratio=config.test_split_ratio,
-            )
+            missing_policy=config.missing_policy,
+            outlier_policy=config.outlier_policy,
+            normalization_policy=config.normalization_policy,
+            min_window_days=config.holding_window_min_days,
+            max_window_days=config.holding_window_max_days,
+            holding_window_label=config.holding_window_label,
+            window_mode=config.window_mode,
+            start_date=config.start_date,
+            end_date=config.end_date,
+            train_split_ratio=config.train_split_ratio,
+            validation_split_ratio=config.validation_split_ratio,
+            test_split_ratio=config.test_split_ratio,
+        )
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["sample_count"], 3)
 

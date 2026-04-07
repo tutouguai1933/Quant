@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from services.api.app.services.market_service import MarketService
@@ -51,6 +51,9 @@ class DataWorkspaceService:
         normalized_interval = normalize_market_interval(requested_interval or (configured_intervals[0] if configured_intervals else "4h"))
         normalized_limit = max(int(limit or configured_data.get("sample_limit", 200) or 200), 1)
         lookback_days = max(int(configured_data.get("lookback_days", 30) or 30), 1)
+        window_mode = str(configured_data.get("window_mode", "rolling") or "rolling")
+        start_date = str(configured_data.get("start_date", "") or "")
+        end_date = str(configured_data.get("end_date", "") or "")
 
         research_report = self._read_factory_report()
         training_snapshot = self._extract_training_snapshot(research_report)
@@ -59,6 +62,9 @@ class DataWorkspaceService:
             interval=normalized_interval,
             limit=normalized_limit,
             lookback_days=lookback_days,
+            window_mode=window_mode,
+            start_date=start_date,
+            end_date=end_date,
             whitelist=tuple(whitelist),
         )
         research_status = str(research_report.get("status", "unavailable") or "unavailable")
@@ -87,8 +93,12 @@ class DataWorkspaceService:
                 "timeframes": list(configured_data.get("timeframes") or []),
                 "sample_limit": int(configured_data.get("sample_limit", normalized_limit) or normalized_limit),
                 "lookback_days": lookback_days,
+                "window_mode": window_mode,
+                "start_date": start_date,
+                "end_date": end_date,
                 "available_symbols": whitelist,
                 "available_timeframes": list(get_supported_market_intervals()),
+                "available_window_modes": [str(item) for item in list((workbench_controls.get("options") or {}).get("window_modes") or [])],
             },
             "snapshot": training_snapshot,
             "preview": preview,
@@ -142,11 +152,21 @@ class DataWorkspaceService:
         interval: str,
         limit: int,
         lookback_days: int,
+        window_mode: str,
+        start_date: str,
+        end_date: str,
         whitelist: tuple[str, ...],
     ) -> dict[str, object]:
         """构造图表样本预览。"""
 
-        fetch_limit = _resolve_preview_fetch_limit(interval=interval, limit=limit, lookback_days=lookback_days)
+        fetch_limit = _resolve_preview_fetch_limit(
+            interval=interval,
+            limit=limit,
+            lookback_days=lookback_days,
+            window_mode=window_mode,
+            start_date=start_date,
+            end_date=end_date,
+        )
         try:
             chart = self._market_reader.get_symbol_chart(
                 symbol=symbol,
@@ -166,7 +186,13 @@ class DataWorkspaceService:
                 "status": "unavailable",
                 "detail": str(exc),
             }
-        items = _filter_items_by_lookback_days(list(chart.get("items") or []), lookback_days=lookback_days)
+        items = _filter_preview_items(
+            list(chart.get("items") or []),
+            lookback_days=lookback_days,
+            window_mode=window_mode,
+            start_date=start_date,
+            end_date=end_date,
+        )
         first_item = items[0] if items else {}
         last_item = items[-1] if items else {}
         return {
@@ -209,10 +235,22 @@ def _format_timestamp(value: object) -> str:
 data_workspace_service = DataWorkspaceService()
 
 
-def _resolve_preview_fetch_limit(*, interval: str, limit: int, lookback_days: int) -> int:
+def _resolve_preview_fetch_limit(
+    *,
+    interval: str,
+    limit: int,
+    lookback_days: int,
+    window_mode: str,
+    start_date: str,
+    end_date: str,
+) -> int:
     """按时间窗口换算预览拉数长度。"""
 
     bars_per_day = 24 if interval == "1h" else 6 if interval == "4h" else 1
+    if window_mode == "fixed":
+        day_span = _resolve_date_span(start_date=start_date, end_date=end_date)
+        if day_span:
+            return max(int(limit or 0), day_span * bars_per_day)
     return max(int(limit or 0), max(int(lookback_days or 0), 1) * bars_per_day)
 
 
@@ -227,6 +265,67 @@ def _filter_items_by_lookback_days(items: list[dict[str, object]], *, lookback_d
     earliest_allowed_open = latest_close_time - (max(int(lookback_days or 0), 1) * 24 * 60 * 60 * 1000)
     filtered = [item for item in items if _read_timestamp(item, "open_time") >= earliest_allowed_open]
     return filtered or items
+
+
+def _filter_preview_items(
+    items: list[dict[str, object]],
+    *,
+    lookback_days: int,
+    window_mode: str,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, object]]:
+    """按当前窗口模式裁剪预览样本。"""
+
+    if window_mode == "fixed" and (start_date or end_date):
+        return _filter_items_by_fixed_window(items, start_date=start_date, end_date=end_date)
+    return _filter_items_by_lookback_days(items, lookback_days=lookback_days)
+
+
+def _filter_items_by_fixed_window(items: list[dict[str, object]], *, start_date: str, end_date: str) -> list[dict[str, object]]:
+    """按固定日期窗口裁剪预览样本。"""
+
+    if not items:
+        return []
+    start_ms = _date_to_timestamp(start_date, end_of_day=False)
+    end_ms = _date_to_timestamp(end_date, end_of_day=True)
+    filtered = []
+    for item in items:
+        open_time = _read_timestamp(item, "open_time")
+        close_time = _read_timestamp(item, "close_time")
+        if start_ms and close_time < start_ms:
+            continue
+        if end_ms and open_time > end_ms:
+            continue
+        filtered.append(item)
+    return filtered or items
+
+
+def _date_to_timestamp(value: str, *, end_of_day: bool) -> int:
+    """把日期转成毫秒时间戳。"""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return 0
+    try:
+        base = datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return 0
+    if end_of_day:
+        base = base + timedelta(days=1) - timedelta(milliseconds=1)
+    return int(base.timestamp() * 1000)
+
+
+def _resolve_date_span(*, start_date: str, end_date: str) -> int:
+    """把固定日期窗口换成天数。"""
+
+    start_ms = _date_to_timestamp(start_date, end_of_day=False)
+    end_ms = _date_to_timestamp(end_date, end_of_day=False)
+    if not start_ms and not end_ms:
+        return 0
+    if start_ms and end_ms and end_ms >= start_ms:
+        return max(int((end_ms - start_ms) / (24 * 60 * 60 * 1000)) + 1, 1)
+    return 30
 
 
 def _read_timestamp(item: dict[str, object], key: str) -> int:

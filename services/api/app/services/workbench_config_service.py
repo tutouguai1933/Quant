@@ -25,6 +25,8 @@ SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_stri
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
+SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
+SUPPORTED_WINDOW_MODES = ("rolling", "fixed")
 
 
 def _default_config() -> dict[str, object]:
@@ -38,10 +40,14 @@ def _default_config() -> dict[str, object]:
             "timeframes": list(SUPPORTED_TIMEFRAMES),
             "sample_limit": 120,
             "lookback_days": 30,
+            "window_mode": "rolling",
+            "start_date": "",
+            "end_date": "",
         },
         "features": {
             "primary_factors": list(PRIMARY_FEATURE_COLUMNS),
             "auxiliary_factors": list(AUXILIARY_FEATURE_COLUMNS),
+            "missing_policy": "neutral_fill",
             "outlier_policy": "clip",
             "normalization_policy": "fixed_4dp",
         },
@@ -86,6 +92,12 @@ def _default_config() -> dict[str, object]:
             "live_max_turnover": "0.45",
             "live_min_sample_count": "24",
         },
+        "operations": {
+            "pause_after_consecutive_failures": "2",
+            "stale_sync_failure_threshold": "1",
+            "auto_pause_on_error": True,
+            "review_limit": "10",
+        },
     }
 
 
@@ -122,6 +134,8 @@ class WorkbenchConfigService:
             merged["backtest"] = self._normalize_backtest_section(next_section)
         elif normalized_section == "thresholds":
             merged["thresholds"] = self._normalize_thresholds_section(next_section)
+        elif normalized_section == "operations":
+            merged["operations"] = self._normalize_operations_section(next_section)
         else:
             raise ValueError("unsupported workbench config section")
 
@@ -159,6 +173,8 @@ class WorkbenchConfigService:
                 "auxiliary_factors": list(AUXILIARY_FEATURE_COLUMNS),
                 "outlier_policies": list(SUPPORTED_OUTLIER_POLICIES),
                 "normalization_policies": list(SUPPORTED_NORMALIZATION_POLICIES),
+                "missing_policies": list(SUPPORTED_MISSING_POLICIES),
+                "window_modes": list(SUPPORTED_WINDOW_MODES),
                 "factor_categories": feature_categories,
                 "all_factors": all_factors,
             },
@@ -179,8 +195,12 @@ class WorkbenchConfigService:
             "QUANT_QLIB_TIMEFRAMES": ",".join(str(item) for item in list(data.get("timeframes") or [])),
             "QUANT_QLIB_SAMPLE_LIMIT": str(data.get("sample_limit", 120)),
             "QUANT_QLIB_LOOKBACK_DAYS": str(data.get("lookback_days", 30)),
+            "QUANT_QLIB_WINDOW_MODE": str(data.get("window_mode", "rolling")),
+            "QUANT_QLIB_START_DATE": str(data.get("start_date", "")),
+            "QUANT_QLIB_END_DATE": str(data.get("end_date", "")),
             "QUANT_QLIB_PRIMARY_FACTORS": ",".join(str(item) for item in list(features.get("primary_factors") or [])),
             "QUANT_QLIB_AUXILIARY_FACTORS": ",".join(str(item) for item in list(features.get("auxiliary_factors") or [])),
+            "QUANT_QLIB_MISSING_POLICY": str(features.get("missing_policy", "neutral_fill")),
             "QUANT_QLIB_OUTLIER_POLICY": str(features.get("outlier_policy", "clip")),
             "QUANT_QLIB_NORMALIZATION_POLICY": str(features.get("normalization_policy", "fixed_4dp")),
             "QUANT_QLIB_RESEARCH_TEMPLATE": str(research.get("research_template", "single_asset_timing")),
@@ -231,6 +251,7 @@ class WorkbenchConfigService:
             "research": self._normalize_research_section(row.get("research")),
             "backtest": self._normalize_backtest_section(row.get("backtest")),
             "thresholds": self._normalize_thresholds_section(row.get("thresholds")),
+            "operations": self._normalize_operations_section(row.get("operations")),
         }
 
     def _normalize_data_section(self, value: object) -> dict[str, object]:
@@ -248,12 +269,22 @@ class WorkbenchConfigService:
         timeframes = self._normalize_timeframes(payload.get("timeframes"), allow_empty=True)
         sample_limit = self._normalize_int(payload.get("sample_limit"), default=120, minimum=60, maximum=1000)
         lookback_days = self._normalize_int(payload.get("lookback_days"), default=30, minimum=7, maximum=365)
+        window_mode = self._normalize_choice(
+            payload.get("window_mode"),
+            default="rolling",
+            allowed=SUPPORTED_WINDOW_MODES,
+        )
+        start_date = self._normalize_date(payload.get("start_date"))
+        end_date = self._normalize_date(payload.get("end_date"))
         return {
             "selected_symbols": list(selected_symbols),
             "primary_symbol": primary_symbol,
             "timeframes": list(timeframes),
             "sample_limit": sample_limit,
             "lookback_days": lookback_days,
+            "window_mode": window_mode,
+            "start_date": start_date,
+            "end_date": end_date,
         }
 
     def _normalize_features_section(self, value: object) -> dict[str, object]:
@@ -275,6 +306,11 @@ class WorkbenchConfigService:
         return {
             "primary_factors": list(primary_factors),
             "auxiliary_factors": list(auxiliary_factors),
+            "missing_policy": self._normalize_choice(
+                payload.get("missing_policy"),
+                default="neutral_fill",
+                allowed=SUPPORTED_MISSING_POLICIES,
+            ),
             "outlier_policy": self._normalize_choice(
                 payload.get("outlier_policy"),
                 default="clip",
@@ -402,6 +438,21 @@ class WorkbenchConfigService:
             "live_min_sample_count": str(self._normalize_int(payload.get("live_min_sample_count"), default=24, minimum=3, maximum=500)),
         }
 
+    def _normalize_operations_section(self, value: object) -> dict[str, object]:
+        """整理长期运行参数。"""
+
+        payload = dict(value or {}) if isinstance(value, dict) else {}
+        return {
+            "pause_after_consecutive_failures": str(
+                self._normalize_int(payload.get("pause_after_consecutive_failures"), default=2, minimum=1, maximum=20)
+            ),
+            "stale_sync_failure_threshold": str(
+                self._normalize_int(payload.get("stale_sync_failure_threshold"), default=1, minimum=1, maximum=20)
+            ),
+            "auto_pause_on_error": self._normalize_bool(payload.get("auto_pause_on_error"), default=True),
+            "review_limit": str(self._normalize_int(payload.get("review_limit"), default=10, minimum=1, maximum=100)),
+        }
+
     def _normalize_symbol_list(
         self,
         value: object,
@@ -501,6 +552,28 @@ class WorkbenchConfigService:
 
         normalized = str(value or "").strip()
         return normalized if normalized in set(str(item) for item in allowed) else default
+
+    @staticmethod
+    def _normalize_bool(value: object, *, default: bool) -> bool:
+        """整理布尔配置。"""
+
+        if isinstance(value, bool):
+            return value
+        normalized = str(value or "").strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+        return default
+
+    @staticmethod
+    def _normalize_date(value: object) -> str:
+        """整理日期字符串。"""
+
+        normalized = str(value or "").strip()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+            return normalized
+        return ""
 
     @staticmethod
     def _normalize_decimal(

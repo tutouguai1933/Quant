@@ -24,11 +24,13 @@ class FeatureWorkspaceTests(unittest.TestCase):
         self.assertIn("主判断因子", content)
         self.assertIn("辅助确认因子", content)
         self.assertIn("预处理规则", content)
+        self.assertIn("missing_policy", content)
         self.assertIn("outlier_policy", content)
         self.assertIn("normalization_policy", content)
         self.assertIn("特征版本", content)
         self.assertIn("因子组合配置", content)
         self.assertIn("primary_factors", content)
+        self.assertIn("当前配置", content)
         self.assertIn("工作台暂时不可用", content)
 
 

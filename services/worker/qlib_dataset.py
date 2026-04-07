@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
@@ -37,12 +38,16 @@ def build_dataset_bundle(
     label_mode: str = "earliest_hit",
     outlier_policy: str = "clip",
     normalization_policy: str = "fixed_4dp",
+    missing_policy: str = "neutral_fill",
     label_target_pct=None,
     label_stop_pct=None,
     min_window_days: int = 1,
     max_window_days: int = 3,
     holding_window_label: str = "1-3d",
     lookback_days: int | None = None,
+    window_mode: str = "rolling",
+    start_date: str = "",
+    end_date: str = "",
     train_split_ratio: object | None = None,
     validation_split_ratio: object | None = None,
     test_split_ratio: object | None = None,
@@ -66,7 +71,13 @@ def build_dataset_bundle(
 
     last_error: RuntimeError | None = None
     for timeframe, candles in candidates:
-        filtered_candles = _filter_candles_by_lookback_days(candles, lookback_days=normalized_lookback_days)
+        filtered_candles = _filter_candles(
+            candles,
+            lookback_days=normalized_lookback_days,
+            window_mode=window_mode,
+            start_date=start_date,
+            end_date=end_date,
+        )
         try:
             return _build_dataset_bundle_for_candles(
                 symbol=standardized_symbol,
@@ -75,6 +86,7 @@ def build_dataset_bundle(
                 label_mode=label_mode,
                 outlier_policy=outlier_policy,
                 normalization_policy=normalization_policy,
+                missing_policy=missing_policy,
                 label_target_pct=label_target_pct,
                 label_stop_pct=label_stop_pct,
                 min_window_days=min_window_days,
@@ -100,6 +112,7 @@ def _build_dataset_bundle_for_candles(
     label_mode: str = "earliest_hit",
     outlier_policy: str = "clip",
     normalization_policy: str = "fixed_4dp",
+    missing_policy: str = "neutral_fill",
     label_target_pct=None,
     label_stop_pct=None,
     min_window_days: int = 1,
@@ -114,6 +127,7 @@ def _build_dataset_bundle_for_candles(
         candles,
         outlier_policy=outlier_policy,
         normalization_policy=normalization_policy,
+        missing_policy=missing_policy,
     )
     label_rows = build_label_rows(
         symbol,
@@ -235,6 +249,21 @@ def _resolve_lookback_days(direct_value: object | None) -> int:
     return max(parsed, 7)
 
 
+def _filter_candles(
+    candles: list[dict[str, object]],
+    *,
+    lookback_days: int,
+    window_mode: str,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, object]]:
+    """按当前窗口模式裁剪 K 线样本。"""
+
+    if window_mode == "fixed" and (start_date or end_date):
+        return _filter_candles_by_fixed_window(candles, start_date=start_date, end_date=end_date)
+    return _filter_candles_by_lookback_days(candles, lookback_days=lookback_days)
+
+
 def _filter_candles_by_lookback_days(candles: list[dict[str, object]], *, lookback_days: int) -> list[dict[str, object]]:
     """按回看天数过滤 K 线样本。"""
 
@@ -250,6 +279,45 @@ def _filter_candles_by_lookback_days(candles: list[dict[str, object]], *, lookba
         if _read_candle_timestamp(candle, "open_time") >= earliest_allowed_open
     ]
     return filtered or list(candles)
+
+
+def _filter_candles_by_fixed_window(
+    candles: list[dict[str, object]],
+    *,
+    start_date: str,
+    end_date: str,
+) -> list[dict[str, object]]:
+    """按固定日期窗口裁剪 K 线样本。"""
+
+    if not candles:
+        return []
+    start_ms = _date_to_timestamp(start_date, end_of_day=False)
+    end_ms = _date_to_timestamp(end_date, end_of_day=True)
+    filtered = []
+    for candle in candles:
+        open_time = _read_candle_timestamp(candle, "open_time")
+        close_time = _read_candle_timestamp(candle, "close_time")
+        if start_ms and close_time < start_ms:
+            continue
+        if end_ms and open_time > end_ms:
+            continue
+        filtered.append(candle)
+    return filtered or list(candles)
+
+
+def _date_to_timestamp(value: str, *, end_of_day: bool) -> int:
+    """把 YYYY-MM-DD 转成毫秒时间戳。"""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return 0
+    try:
+        base = datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return 0
+    if end_of_day:
+        base = base + timedelta(days=1) - timedelta(milliseconds=1)
+    return int(base.timestamp() * 1000)
 
 
 def _read_candle_timestamp(candle: dict[str, object], key: str) -> int:

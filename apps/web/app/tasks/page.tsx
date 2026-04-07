@@ -9,6 +9,7 @@ import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
+import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { readFeedback } from "../../lib/feedback";
@@ -77,6 +78,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const takeoverSummary = asRecord(automationHealth.takeover_summary);
   const alertSummary = asRecord(automationHealth.alert_summary);
   const runHealth = asRecord(automationHealth.run_health);
+  const operations = asRecord(automation.operations);
   const pauseReasonRaw = readText(automation.pauseReason, "");
   const takeoverReason = pauseReasonRaw || "当前没有接管原因。";
   const recoveryAction = readText(executionHealth.recovery_action, "healthy");
@@ -106,6 +108,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
     cycleCount: Number(automation.dailySummary.cycle_count ?? 0),
     latestSyncStatus: String(executionHealth.latest_sync_status ?? "unknown"),
   });
+  const operationsConfig = {
+    pauseAfterFailures: readText(operations.pause_after_consecutive_failures, "2"),
+    staleSyncThreshold: readText(operations.stale_sync_failure_threshold, "1"),
+    autoPauseOnError: String(operations.auto_pause_on_error ?? true) === "false" ? "false" : "true",
+    reviewLimit: readText(operations.review_limit, "10"),
+  };
 
   return (
     <AppShell
@@ -176,6 +184,47 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <ActionCard action="automation_kill_switch" label="Kill Switch" detail="一键停机，立即切回人工接管。" danger />
                 </CardContent>
               </Card>
+
+              <WorkbenchConfigCard
+                title="长期运行配置"
+                description="这里改的是自动化长期运行时真正会消费的失败阈值、同步陈旧阈值、自动暂停和复盘条数。"
+                scope="operations"
+                returnTo="/tasks"
+              >
+                <ConfigField label="连续失败阈值" hint="连续失败达到这里时，健康摘要会升级，必要时切到人工接管。">
+                  <ConfigInput
+                    name="pause_after_consecutive_failures"
+                    type="number"
+                    min={1}
+                    max={20}
+                    step={1}
+                    defaultValue={operationsConfig.pauseAfterFailures}
+                  />
+                </ConfigField>
+                <ConfigField label="同步陈旧阈值" hint="连续多少次同步失败后，把系统标成 stale 并提高风险等级。">
+                  <ConfigInput
+                    name="stale_sync_failure_threshold"
+                    type="number"
+                    min={1}
+                    max={20}
+                    step={1}
+                    defaultValue={operationsConfig.staleSyncThreshold}
+                  />
+                </ConfigField>
+                <ConfigField label="失败后自动暂停" hint="打开后会在关键失败时自动切到人工接管；关闭后只给出复盘建议。">
+                  <ConfigSelect
+                    name="auto_pause_on_error"
+                    defaultValue={operationsConfig.autoPauseOnError}
+                    options={[
+                      { value: "true", label: "开启自动暂停" },
+                      { value: "false", label: "只给复盘建议" },
+                    ]}
+                  />
+                </ConfigField>
+                <ConfigField label="复盘条数" hint="统一复盘和自动化摘要最多展示最近多少条记录。">
+                  <ConfigInput name="review_limit" type="number" min={1} max={100} step={1} defaultValue={operationsConfig.reviewLimit} />
+                </ConfigField>
+              </WorkbenchConfigCard>
 
               <Card>
                 <CardHeader>
@@ -326,6 +375,19 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <p>日期：{String(automation.dailySummary.date ?? "n/a")}</p>
                   <p>轮数：{String(automation.dailySummary.cycle_count ?? 0)}</p>
                   <p>告警数：{String(automation.dailySummary.alert_count ?? 0)}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">长期运行参数</p>
+                  <CardTitle>当前自动化到底按什么阈值在跑</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>连续失败阈值：{operationsConfig.pauseAfterFailures}</p>
+                  <p>同步陈旧阈值：{operationsConfig.staleSyncThreshold}</p>
+                  <p>失败后自动暂停：{operationsConfig.autoPauseOnError === "true" ? "开启" : "关闭"}</p>
+                  <p>复盘条数：{operationsConfig.reviewLimit}</p>
                 </CardContent>
               </Card>
 

@@ -66,10 +66,12 @@ class FeatureWorkspaceService:
             "controls": {
                 "primary_factors": [str(item) for item in list(configured_features.get("primary_factors") or [])],
                 "auxiliary_factors": [str(item) for item in list(configured_features.get("auxiliary_factors") or [])],
+                "missing_policy": str(configured_features.get("missing_policy", "neutral_fill") or "neutral_fill"),
                 "outlier_policy": str(configured_features.get("outlier_policy", "clip") or "clip"),
                 "normalization_policy": str(configured_features.get("normalization_policy", "fixed_4dp") or "fixed_4dp"),
                 "available_primary_factors": [str(item) for item in list((controls.get("options") or {}).get("primary_factors") or [])],
                 "available_auxiliary_factors": [str(item) for item in list((controls.get("options") or {}).get("auxiliary_factors") or [])],
+                "available_missing_policies": [str(item) for item in list((controls.get("options") or {}).get("missing_policies") or [])],
                 "available_outlier_policies": [str(item) for item in list((controls.get("options") or {}).get("outlier_policies") or [])],
                 "available_normalization_policies": [str(item) for item in list((controls.get("options") or {}).get("normalization_policies") or [])],
             },

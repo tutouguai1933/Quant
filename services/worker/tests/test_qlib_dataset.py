@@ -111,6 +111,7 @@ class QlibDatasetTests(unittest.TestCase):
         mocked_features.assert_called_once_with(
             "ETHUSDT",
             _sample_candles(3, step_hours=4),
+            missing_policy="neutral_fill",
             outlier_policy="clip",
             normalization_policy="fixed_4dp",
         )
@@ -164,6 +165,23 @@ class QlibDatasetTests(unittest.TestCase):
         self.assertTrue(merged_rows)
         self.assertGreaterEqual(min(int(item["generated_at"]) for item in merged_rows), earliest_allowed_open)
         self.assertLess(len(merged_rows), len(candles_4h))
+
+    def test_build_dataset_bundle_respects_fixed_date_window(self) -> None:
+        candles_4h = _sample_candles(120, step_hours=4)
+
+        bundle = build_dataset_bundle(
+            symbol="BTCUSDT",
+            candles_1h=[],
+            candles_4h=candles_4h,
+            window_mode="fixed",
+            start_date="2024-04-10",
+            end_date="2024-04-20",
+        )
+
+        merged_rows = [*bundle.training_rows, *bundle.validation_rows, *bundle.testing_rows]
+        self.assertTrue(merged_rows)
+        self.assertGreaterEqual(min(int(item["generated_at"]) for item in merged_rows), 1712707200000)
+        self.assertLessEqual(max(int(item["generated_at"]) for item in merged_rows), 1713657599999)
 
 
 def _sample_candles(count: int, *, step_hours: int = 1) -> list[dict[str, object]]:

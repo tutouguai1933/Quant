@@ -24,6 +24,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["data"]["selected_symbols"][0], "BTCUSDT")
         self.assertEqual(config["data"]["timeframes"], ["4h", "1h"])
         self.assertEqual(config["data"]["lookback_days"], 30)
+        self.assertEqual(config["data"]["window_mode"], "rolling")
+        self.assertEqual(config["data"]["start_date"], "")
+        self.assertEqual(config["data"]["end_date"], "")
         self.assertEqual(config["research"]["model_key"], "heuristic_v1")
         self.assertEqual(config["research"]["label_mode"], "earliest_hit")
         self.assertEqual(config["research"]["train_split_ratio"], "0.6")
@@ -38,6 +41,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["backtest"]["fee_bps"], "10")
         self.assertEqual(config["features"]["outlier_policy"], "clip")
         self.assertEqual(config["features"]["normalization_policy"], "fixed_4dp")
+        self.assertEqual(config["features"]["missing_policy"], "neutral_fill")
         self.assertEqual(config["thresholds"]["live_min_score"], "0.65")
         self.assertEqual(config["thresholds"]["dry_run_min_win_rate"], "0.5")
         self.assertEqual(config["thresholds"]["dry_run_max_turnover"], "0.6")
@@ -46,6 +50,10 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["thresholds"]["live_min_win_rate"], "0.55")
         self.assertEqual(config["thresholds"]["live_max_turnover"], "0.45")
         self.assertEqual(config["thresholds"]["live_min_sample_count"], "24")
+        self.assertEqual(config["operations"]["pause_after_consecutive_failures"], "2")
+        self.assertEqual(config["operations"]["stale_sync_failure_threshold"], "1")
+        self.assertTrue(config["operations"]["auto_pause_on_error"])
+        self.assertEqual(config["operations"]["review_limit"], "10")
 
     def test_update_section_persists_and_normalizes_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -60,6 +68,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "timeframes": ["1h"],
                     "sample_limit": "20",
                     "lookback_days": "7",
+                    "window_mode": "fixed",
+                    "start_date": "2026-01-01",
+                    "end_date": "2026-02-01",
                 },
             )
 
@@ -70,6 +81,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["data"]["timeframes"], ["1h"])
         self.assertEqual(config["data"]["sample_limit"], 60)
         self.assertEqual(config["data"]["lookback_days"], 7)
+        self.assertEqual(config["data"]["window_mode"], "fixed")
+        self.assertEqual(config["data"]["start_date"], "2026-01-01")
+        self.assertEqual(config["data"]["end_date"], "2026-02-01")
         self.assertEqual(persisted["data"]["primary_symbol"], "DOGEUSDT")
 
     def test_runtime_overrides_include_all_research_controls(self) -> None:
@@ -101,6 +115,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                 {
                     "outlier_policy": "raw",
                     "normalization_policy": "zscore_by_symbol",
+                    "missing_policy": "strict_drop",
                 },
             )
             service.update_section(
@@ -145,6 +160,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_STRICT_PENALTY_WEIGHT"], "1.4")
         self.assertEqual(overrides["QUANT_QLIB_OUTLIER_POLICY"], "raw")
         self.assertEqual(overrides["QUANT_QLIB_NORMALIZATION_POLICY"], "zscore_by_symbol")
+        self.assertEqual(overrides["QUANT_QLIB_MISSING_POLICY"], "strict_drop")
         self.assertEqual(overrides["QUANT_QLIB_BACKTEST_FEE_BPS"], "12")
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MIN_SCORE"], "0.6")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_SCORE"], "0.8")
@@ -166,6 +182,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "timeframes": ["4h"],
                     "sample_limit": "180",
                     "lookback_days": "21",
+                    "window_mode": "fixed",
+                    "start_date": "2026-01-05",
+                    "end_date": "2026-02-07",
                 },
             )
 
@@ -173,6 +192,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
 
         self.assertEqual(overrides["QUANT_QLIB_SAMPLE_LIMIT"], "180")
         self.assertEqual(overrides["QUANT_QLIB_LOOKBACK_DAYS"], "21")
+        self.assertEqual(overrides["QUANT_QLIB_WINDOW_MODE"], "fixed")
+        self.assertEqual(overrides["QUANT_QLIB_START_DATE"], "2026-01-05")
+        self.assertEqual(overrides["QUANT_QLIB_END_DATE"], "2026-02-07")
 
     def test_update_section_preserves_existing_values_when_partial_payload_is_submitted(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -251,6 +273,25 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["research"]["train_split_ratio"], "0.6924")
         self.assertEqual(config["research"]["validation_split_ratio"], "0.1538")
         self.assertEqual(config["research"]["test_split_ratio"], "0.1538")
+
+    def test_update_operations_section_normalizes_thresholds_and_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            config = service.update_section(
+                "operations",
+                {
+                    "pause_after_consecutive_failures": "6",
+                    "stale_sync_failure_threshold": "4",
+                    "auto_pause_on_error": "false",
+                    "review_limit": "25",
+                },
+            )
+
+        self.assertEqual(config["operations"]["pause_after_consecutive_failures"], "6")
+        self.assertEqual(config["operations"]["stale_sync_failure_threshold"], "4")
+        self.assertFalse(config["operations"]["auto_pause_on_error"])
+        self.assertEqual(config["operations"]["review_limit"], "25")
 
 
 if __name__ == "__main__":

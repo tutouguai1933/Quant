@@ -11,6 +11,7 @@ from statistics import mean, pstdev
 
 DEFAULT_OUTLIER_POLICY = "clip"
 DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
+DEFAULT_MISSING_POLICY = "neutral_fill"
 OUTLIER_POLICY_LABELS = {
     "clip": "按因子预设范围裁剪极值",
     "raw": "保留原始极值",
@@ -18,6 +19,10 @@ OUTLIER_POLICY_LABELS = {
 NORMALIZATION_POLICY_LABELS = {
     "fixed_4dp": "统一输出四位小数字符串",
     "zscore_by_symbol": "按单币样本做 z-score 标准化",
+}
+MISSING_POLICY_LABELS = {
+    "neutral_fill": "窗口不足时用中性值补齐",
+    "strict_drop": "窗口不足时直接丢弃",
 }
 
 
@@ -186,7 +191,7 @@ FEATURE_PROTOCOL = {
         "auxiliary": list(AUXILIARY_FEATURE_COLUMNS),
     },
     "preprocessing": {
-        "missing_policy": "坏行直接丢弃，窗口不足时用中性值补齐",
+        "missing_policy": MISSING_POLICY_LABELS[DEFAULT_MISSING_POLICY],
         "outlier_policy": OUTLIER_POLICY_LABELS[DEFAULT_OUTLIER_POLICY],
         "normalization_policy": NORMALIZATION_POLICY_LABELS[DEFAULT_NORMALIZATION_POLICY],
     },
@@ -208,6 +213,7 @@ def build_feature_rows(
     symbol: str,
     candles: list[dict[str, object]],
     *,
+    missing_policy: str = DEFAULT_MISSING_POLICY,
     outlier_policy: str = DEFAULT_OUTLIER_POLICY,
     normalization_policy: str = DEFAULT_NORMALIZATION_POLICY,
 ) -> list[dict[str, object]]:
@@ -268,6 +274,10 @@ def build_feature_rows(
         }
         rows.append(raw_row)
         previous_close = candle["close"]
+
+    if missing_policy == "strict_drop":
+        warmup_bars = _resolve_warmup_bars(profile)
+        rows = rows[warmup_bars - 1 :] if len(rows) >= warmup_bars else []
 
     return _apply_feature_protocol(
         rows,
@@ -359,6 +369,13 @@ def _resolve_timeframe_profile(timeframe: str) -> dict[str, int | str]:
     """返回当前周期应该使用的因子参数。"""
 
     return dict(TIMEFRAME_PROFILES.get(timeframe, TIMEFRAME_PROFILES["4h"]))
+
+
+def _resolve_warmup_bars(profile: dict[str, int | str]) -> int:
+    """返回严格缺失处理需要预留的最小预热长度。"""
+
+    numeric_values = [int(value) for value in profile.values() if isinstance(value, int)]
+    return max([55, *numeric_values])
 
 
 def _safe_pct_change(base: Decimal, delta: Decimal) -> Decimal:

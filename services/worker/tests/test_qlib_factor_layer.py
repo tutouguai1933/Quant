@@ -35,7 +35,7 @@ class QlibFactorLayerTests(unittest.TestCase):
 
     def test_feature_protocol_exposes_preprocessing_and_timeframe_profiles(self) -> None:
         preprocessing = FEATURE_PROTOCOL["preprocessing"]
-        self.assertEqual(preprocessing["missing_policy"], "坏行直接丢弃，窗口不足时用中性值补齐")
+        self.assertEqual(preprocessing["missing_policy"], "窗口不足时用中性值补齐")
         self.assertEqual(preprocessing["outlier_policy"], "按因子预设范围裁剪极值")
         self.assertEqual(preprocessing["normalization_policy"], "统一输出四位小数字符串")
         profile_1h = FEATURE_PROTOCOL["timeframe_profiles"]["1h"]
@@ -69,6 +69,14 @@ class QlibFactorLayerTests(unittest.TestCase):
         self.assertNotEqual(clipped_rows[-1]["ema20_gap_pct"], normalized_rows[-1]["ema20_gap_pct"])
         self.assertNotEqual(clipped_rows[-1]["volume_ratio"], normalized_rows[-1]["volume_ratio"])
 
+    def test_feature_builder_drops_warmup_rows_in_strict_drop_mode(self) -> None:
+        candles = _sample_timing_candles(step_hours=4)
+
+        neutral_rows = build_feature_rows("ETHUSDT", candles, missing_policy="neutral_fill")
+        strict_rows = build_feature_rows("ETHUSDT", candles, missing_policy="strict_drop")
+
+        self.assertLess(len(strict_rows), len(neutral_rows))
+
     def test_training_and_inference_share_same_factor_protocol(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = load_qlib_config(
@@ -77,8 +85,8 @@ class QlibFactorLayerTests(unittest.TestCase):
             )
             runner = QlibRunner(config=config)
             dataset = {
-                "BTCUSDT": _sample_timing_candles(step_hours=4),
-                "ETHUSDT": _sample_timing_candles(step_hours=4),
+                "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
+                "ETHUSDT": _sample_timing_candles(step_hours=4, count=120),
             }
 
             training_result = runner.train(dataset)
@@ -102,6 +110,8 @@ class QlibFactorLayerTests(unittest.TestCase):
             config = load_qlib_config(
                 env={
                     "QUANT_QLIB_RUNTIME_ROOT": str(Path(temp_dir)),
+                    "QUANT_QLIB_WINDOW_MODE": "rolling",
+                    "QUANT_QLIB_MISSING_POLICY": "strict_drop",
                     "QUANT_QLIB_OUTLIER_POLICY": "raw",
                     "QUANT_QLIB_NORMALIZATION_POLICY": "zscore_by_symbol",
                 },
@@ -109,13 +119,14 @@ class QlibFactorLayerTests(unittest.TestCase):
             )
             runner = QlibRunner(config=config)
             dataset = {
-                "BTCUSDT": _sample_timing_candles(step_hours=4),
-                "ETHUSDT": _sample_timing_candles(step_hours=4),
+                "BTCUSDT": _sample_timing_candles(step_hours=4, count=240),
+                "ETHUSDT": _sample_timing_candles(step_hours=4, count=240),
             }
 
             training_result = runner.train(dataset)
             inference_result = runner.infer(dataset)
 
+        self.assertEqual(training_result["factor_protocol"]["preprocessing"]["missing_policy"], "窗口不足时直接丢弃")
         self.assertEqual(training_result["factor_protocol"]["preprocessing"]["outlier_policy"], "保留原始极值")
         self.assertEqual(training_result["factor_protocol"]["preprocessing"]["normalization_policy"], "按单币样本做 z-score 标准化")
         self.assertEqual(
@@ -124,12 +135,12 @@ class QlibFactorLayerTests(unittest.TestCase):
         )
 
 
-def _sample_timing_candles(*, step_hours: int) -> list[dict[str, object]]:
+def _sample_timing_candles(*, step_hours: int, count: int = 72) -> list[dict[str, object]]:
     candles: list[dict[str, object]] = []
     base_open_time = 1712016000000
     step_ms = step_hours * 60 * 60 * 1000
     previous_close = 100.0
-    for index in range(72):
+    for index in range(count):
         close_price = previous_close + 0.8
         candles.append(
             {

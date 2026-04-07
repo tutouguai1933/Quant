@@ -9,7 +9,7 @@ import { Input } from "./ui/input";
 type WorkbenchConfigCardProps = {
   title: string;
   description: string;
-  scope: "data" | "features" | "research" | "backtest" | "thresholds";
+  scope: "data" | "features" | "research" | "backtest" | "thresholds" | "operations";
   returnTo: string;
   children: ReactNode;
   disabled?: boolean;

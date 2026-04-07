@@ -242,15 +242,19 @@ export default async function EvaluationPage() {
             <CardContent className="space-y-3">
               {workspace.run_deltas.length ? (
                 <DataTable
-                  columns={["最近两轮对比", "模型变化", "数据变化", "净收益差", "Sharpe 差", "胜率差", "说明"]}
+                  columns={["最近两轮对比", "模型变化", "数据变化", "配置变化", "净收益差", "Sharpe 差", "胜率差", "说明"]}
                   rows={workspace.run_deltas.map((item, index) => {
                     const row = asRecord(item);
+                    const changedFields = Array.isArray(row.changed_fields)
+                      ? row.changed_fields.map(String).filter(Boolean).join(" / ")
+                      : "";
                     return {
                       id: `${row.run_type ?? index}`,
                       cells: [
                         `${String(row.run_type ?? "run")} / ${String(row.previous_run_id ?? "n/a")} → ${String(row.current_run_id ?? "n/a")}`,
                         String(row.model_changed ?? "否"),
                         String(row.dataset_changed ?? "否"),
+                        changedFields || "当前没有配置变化",
                         String(row.net_return_delta ?? "n/a"),
                         String(row.sharpe_delta ?? "n/a"),
                         String(row.win_rate_delta ?? "n/a"),
