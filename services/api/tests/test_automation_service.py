@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -247,6 +248,10 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["scheduler_plan"][0]["task_type"], "research_train")
         self.assertIn("failure_policy", status)
         self.assertEqual(status["failure_policy"]["research_train"], "manual_takeover")
+        self.assertIn("runtime_window", status)
+        self.assertEqual(status["runtime_window"]["daily_limit"], 8)
+        self.assertEqual(status["runtime_window"]["remaining_daily_cycle_count"], 8)
+        self.assertEqual(status["runtime_window"]["next_action"], "run_next_cycle")
         self.assertIn("active_blockers", status["health"])
         self.assertIn("operator_actions", status["health"])
         self.assertIn("takeover_summary", status["health"])
@@ -260,6 +265,9 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["operations"]["review_limit"], 10)
         self.assertEqual(status["operations"]["cycle_cooldown_minutes"], 15)
         self.assertEqual(status["operations"]["max_daily_cycle_count"], 8)
+        self.assertIn("automation_config", status)
+        self.assertEqual(status["automation_config"]["long_run_seconds"], 300)
+        self.assertEqual(status["automation_config"]["alert_cleanup_minutes"], 15)
         self.assertIn("execution_policy", status)
         self.assertEqual(status["execution_policy"]["live_allowed_symbols"], ["ETHUSDT", "DOGEUSDT"])
         self.assertEqual(status["execution_policy"]["live_max_stake_usdt"], "8")
@@ -269,6 +277,57 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("last_failure_at", status["state"])
         self.assertIn("paused_at", status["state"])
         self.assertIn("manual_takeover_at", status["state"])
+
+    def test_status_exposes_runtime_window_when_cooldown_or_daily_limit_is_active(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
+        automation.record_cycle({"status": "succeeded", "next_action": "continue_dry_run"})
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["runtime_window"]["cooldown_remaining_minutes"], 15)
+        self.assertEqual(status["runtime_window"]["current_cycle_count"], 1)
+        self.assertEqual(status["runtime_window"]["remaining_daily_cycle_count"], 7)
+        self.assertEqual(status["runtime_window"]["next_action"], "wait_cooldown")
+
+    def test_runtime_window_requests_takeover_review_after_long_manual_takeover(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation_workflow_module.workbench_config_service.update_section(
+            "automation",
+            {
+                "long_run_seconds": "60",
+            },
+        )
+        automation.manual_takeover(reason="manual_review", actor="tester")
+        automation._manual_takeover_at = "2026-04-08T00:00:00+00:00"  # noqa: SLF001
+        automation._paused_at = "2026-04-08T00:00:00+00:00"  # noqa: SLF001
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        with mock.patch.object(automation_workflow_module, "datetime") as fake_datetime:
+            fake_datetime.now.return_value = datetime.fromisoformat("2026-04-08T00:02:00+00:00")
+            fake_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            status = workflow.get_status()
+
+        self.assertEqual(status["runtime_window"]["long_run_seconds"], 60)
+        self.assertEqual(status["runtime_window"]["next_action"], "review_takeover")
+        self.assertEqual(status["runtime_window"]["takeover_elapsed_seconds"], 120)
 
     def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
         service = AutomationService()
@@ -293,6 +352,9 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["alert_summary"]["latest_code"], "executor_offline")
         self.assertEqual(health["alert_summary"]["error_count"], 1)
         self.assertEqual(health["alert_summary"]["warning_count"], 2)
+        self.assertEqual(health["alert_summary"]["active_error_count"], 1)
+        self.assertEqual(health["alert_summary"]["active_warning_count"], 2)
+        self.assertEqual(health["alert_summary"]["cleanup_minutes"], 15)
         self.assertEqual(health["active_blockers"][0]["code"], "paused")
         self.assertIn("恢复自动化", [item["label"] for item in health["operator_actions"]])
         self.assertIn("查看执行器", [item["label"] for item in health["operator_actions"]])

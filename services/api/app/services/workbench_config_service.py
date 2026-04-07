@@ -56,6 +56,7 @@ def _default_config() -> dict[str, object]:
             "model_key": "heuristic_v1",
             "label_mode": "earliest_hit",
             "holding_window_label": "1-3d",
+            "force_validation_top_candidate": False,
             "min_holding_days": 1,
             "max_holding_days": 3,
             "label_target_pct": "1",
@@ -105,6 +106,10 @@ def _default_config() -> dict[str, object]:
             "cycle_cooldown_minutes": "15",
             "max_daily_cycle_count": "8",
         },
+        "automation": {
+            "long_run_seconds": "300",
+            "alert_cleanup_minutes": "15",
+        },
     }
 
 
@@ -145,6 +150,8 @@ class WorkbenchConfigService:
             merged["thresholds"] = self._normalize_thresholds_section(next_section)
         elif normalized_section == "operations":
             merged["operations"] = self._normalize_operations_section(next_section)
+        elif normalized_section == "automation":
+            merged["automation"] = self._normalize_automation_section(next_section)
         else:
             raise ValueError("unsupported workbench config section")
 
@@ -220,6 +227,9 @@ class WorkbenchConfigService:
             "QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS": str(research.get("max_holding_days", 3)),
             "QUANT_QLIB_HOLDING_WINDOW_LABEL": str(research.get("holding_window_label", "1-3d")),
             "QUANT_QLIB_MODEL_KEY": str(research.get("model_key", "heuristic_v1")),
+            "QUANT_QLIB_FORCE_TOP_CANDIDATE": "true"
+            if bool(research.get("force_validation_top_candidate", False))
+            else "false",
             "QUANT_QLIB_TRAIN_SPLIT_RATIO": str(research.get("train_split_ratio", "0.6")),
             "QUANT_QLIB_VALIDATION_SPLIT_RATIO": str(research.get("validation_split_ratio", "0.2")),
             "QUANT_QLIB_TEST_SPLIT_RATIO": str(research.get("test_split_ratio", "0.2")),
@@ -262,6 +272,7 @@ class WorkbenchConfigService:
             "execution": self._normalize_execution_section(row.get("execution")),
             "thresholds": self._normalize_thresholds_section(row.get("thresholds")),
             "operations": self._normalize_operations_section(row.get("operations")),
+            "automation": self._normalize_automation_section(row.get("automation")),
         }
 
     def _normalize_data_section(self, value: object) -> dict[str, object]:
@@ -371,6 +382,10 @@ class WorkbenchConfigService:
             "model_key": model_key,
             "label_mode": label_mode,
             "holding_window_label": f"{min_days}-{max_days}d",
+            "force_validation_top_candidate": self._normalize_bool(
+                payload.get("force_validation_top_candidate"),
+                default=False,
+            ),
             "min_holding_days": min_days,
             "max_holding_days": max_days,
             "label_target_pct": self._normalize_decimal(payload.get("label_target_pct"), default=Decimal("1"), minimum=Decimal("0.1")),
@@ -487,6 +502,19 @@ class WorkbenchConfigService:
             ),
             "max_daily_cycle_count": str(
                 self._normalize_int(payload.get("max_daily_cycle_count"), default=8, minimum=1, maximum=200)
+            ),
+        }
+
+    def _normalize_automation_section(self, value: object) -> dict[str, object]:
+        """整理自动化长期运行和告警窗口。"""
+
+        payload = dict(value or {}) if isinstance(value, dict) else {}
+        return {
+            "long_run_seconds": str(
+                self._normalize_int(payload.get("long_run_seconds"), default=300, minimum=60, maximum=86400)
+            ),
+            "alert_cleanup_minutes": str(
+                self._normalize_int(payload.get("alert_cleanup_minutes"), default=15, minimum=1, maximum=1440)
             ),
         }
 

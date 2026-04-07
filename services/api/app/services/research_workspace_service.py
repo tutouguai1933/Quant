@@ -87,6 +87,9 @@ class ResearchWorkspaceService:
                 "model_key": str(configured_research.get("model_key", "")),
                 "label_mode": label_mode,
                 "holding_window_label": str(configured_research.get("holding_window_label", "")),
+                "force_validation_top_candidate": bool(
+                    configured_research.get("force_validation_top_candidate", False)
+                ),
                 "min_holding_days": int(configured_research.get("min_holding_days", 1) or 1),
                 "max_holding_days": int(configured_research.get("max_holding_days", 3) or 3),
                 "label_target_pct": str(configured_research.get("label_target_pct", "")),
@@ -217,6 +220,9 @@ class ResearchWorkspaceService:
             "label_scope": f"{configured_research.get('label_mode', 'earliest_hit')} · {configured_research.get('min_holding_days', 1)}-{configured_research.get('max_holding_days', 3)} 天 · 目标 {configured_research.get('label_target_pct', '1')}% / 止损 {configured_research.get('label_stop_pct', '-1')}%",
             "dry_run_gate": f"score ≥ {configured_thresholds.get('dry_run_min_score', '0.55')} / 净收益 ≥ {configured_thresholds.get('dry_run_min_net_return_pct', '0')}% / Sharpe ≥ {configured_thresholds.get('dry_run_min_sharpe', '0.5')}",
             "live_gate": f"score ≥ {configured_thresholds.get('live_min_score', '0.65')} / 净收益 ≥ {configured_thresholds.get('live_min_net_return_pct', '0.20')}% / 胜率 ≥ {configured_thresholds.get('live_min_win_rate', '0.55')}",
+            "validation_policy": "当前最优候选会被强制送去验证"
+            if bool(configured_research.get("force_validation_top_candidate", False))
+            else "候选按统一门控自然筛选后再进入验证",
         }
 
 

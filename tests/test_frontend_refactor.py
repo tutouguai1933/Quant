@@ -97,8 +97,8 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
-            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "双栏布局", "左边看判断", "右边看执行", "当前推荐执行候选", "研究候选", "自动化判断", "自动化推荐", "下一步动作", "执行器状态", "账户收口", "执行动作", "白名单摘要", "最近执行结果", "research_cockpit", "推荐策略", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "是否允许进入 dry-run", "运行中…"],
-            WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "自动化控制台", "自动化模式", "统一调度入口", "统一复盘", "健康摘要", "最近告警", "本轮自动化判断", "推荐策略实例", "派发结果", "失败原因", "今日摘要", "调度顺序", "失败规则", "dry-run only", "Kill Switch", "当前阻塞", "接管建议", "恢复步骤", "告警摘要", "风险等级摘要", "恢复清单", "执行安全门", "当前放行口径", "自动化冷却时间", "每日最大轮次", "最近告警历史", "运行中…"],
+            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "双栏布局", "左边看判断", "右边看执行", "当前推荐执行候选", "研究候选", "自动化判断", "自动化推荐", "下一步动作", "执行器状态", "当前配置摘要", "研究范围", "验证策略", "自动化策略", "账户收口", "执行动作", "白名单摘要", "最近执行结果", "research_cockpit", "推荐策略", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "是否允许进入 dry-run", "运行中…"],
+            WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "自动化控制台", "自动化模式", "统一调度入口", "统一复盘", "健康摘要", "最近告警", "本轮自动化判断", "推荐策略实例", "派发结果", "失败原因", "今日摘要", "调度顺序", "失败规则", "dry-run only", "Kill Switch", "当前阻塞", "接管建议", "恢复步骤", "告警摘要", "风险等级摘要", "恢复清单", "执行安全门", "当前放行口径", "自动化冷却时间", "每日最大轮次", "自动化运行参数", "长时间接管阈值", "活跃告警窗口", "最近告警历史", "运行中…"],
             WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "自动化入口", "当前模式", "下一步动作", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要", "筛选通过率", "当前最佳候选", "运行中…"],
         }
         for file_path, patterns in expectations.items():
@@ -170,6 +170,10 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("左边看判断", content)
         self.assertIn("右边看执行", content)
         self.assertIn("执行器状态", content)
+        self.assertIn("当前配置摘要", content)
+        self.assertIn("研究范围", content)
+        self.assertIn("验证策略", content)
+        self.assertIn("自动化策略", content)
         self.assertIn("执行动作", content)
         self.assertIn("最近执行结果", content)
         self.assertIn("推荐策略", content)
@@ -239,6 +243,7 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("name=\"oscillator_weight\"", research_content)
         self.assertIn("name=\"volatility_weight\"", research_content)
         self.assertIn("name=\"strict_penalty_weight\"", research_content)
+        self.assertIn("name=\"force_validation_top_candidate\"", research_content)
         self.assertIn("name=\"dry_run_min_win_rate\"", evaluation_content)
         self.assertIn("name=\"dry_run_max_turnover\"", evaluation_content)
         self.assertIn("name=\"dry_run_min_sample_count\"", evaluation_content)
@@ -252,10 +257,17 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("接管建议", content)
         self.assertIn("恢复步骤", content)
         self.assertIn("告警摘要", content)
+        self.assertIn("长期运行窗口", content)
+        self.assertIn("今日轮次", content)
+        self.assertIn("冷却剩余", content)
         self.assertIn("连续失败", content)
         self.assertIn("升级级别", content)
         self.assertIn("同步新鲜度", content)
         self.assertIn("最后成功时间", content)
+        self.assertIn("自动化运行参数", content)
+        self.assertIn("长时间接管阈值", content)
+        self.assertIn("活跃告警窗口", content)
+        self.assertIn("活跃错误", content)
 
     def test_evaluation_page_explains_research_vs_execution_alignment(self) -> None:
         content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")

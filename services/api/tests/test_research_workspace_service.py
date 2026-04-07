@@ -32,6 +32,7 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["controls"]["validation_split_ratio"], "0.2")
         self.assertEqual(item["controls"]["test_split_ratio"], "0.2")
         self.assertEqual(item["controls"]["signal_confidence_floor"], "0.55")
+        self.assertTrue(item["controls"]["force_validation_top_candidate"])
         self.assertEqual(item["controls"]["trend_weight"], "1.3")
         self.assertEqual(item["controls"]["strict_penalty_weight"], "1")
         self.assertTrue(item["readiness"]["train_ready"])
@@ -42,6 +43,7 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("earliest_hit", item["execution_preview"]["label_scope"])
         self.assertIn("score", item["execution_preview"]["dry_run_gate"])
         self.assertIn("score", item["execution_preview"]["live_gate"])
+        self.assertIn("强制送去验证", item["execution_preview"]["validation_policy"])
 
     def test_workspace_handles_missing_report(self) -> None:
         service = ResearchWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
@@ -130,6 +132,7 @@ def _fake_controls() -> dict[str, object]:
                 "model_key": "heuristic_v1",
                 "label_mode": "earliest_hit",
                 "holding_window_label": "1-3d",
+                "force_validation_top_candidate": True,
                 "min_holding_days": 1,
                 "max_holding_days": 3,
                 "label_target_pct": "1",

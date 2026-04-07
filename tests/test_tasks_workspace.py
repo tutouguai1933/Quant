@@ -40,6 +40,15 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("max_daily_cycle_count", content)
         self.assertIn("自动化冷却时间", content)
         self.assertIn("每日最大轮次", content)
+        self.assertIn("自动化运行参数", content)
+        self.assertIn("long_run_seconds", content)
+        self.assertIn("alert_cleanup_minutes", content)
+        self.assertIn("长时间接管阈值", content)
+        self.assertIn("活跃告警窗口", content)
+        self.assertIn("长期运行窗口", content)
+        self.assertIn("这一轮之后还能不能继续自动跑", content)
+        self.assertIn("今日轮次", content)
+        self.assertIn("冷却剩余", content)
         self.assertIn("最近告警历史", content)
 
 

@@ -29,6 +29,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["data"]["end_date"], "")
         self.assertEqual(config["research"]["model_key"], "heuristic_v1")
         self.assertEqual(config["research"]["label_mode"], "earliest_hit")
+        self.assertFalse(config["research"]["force_validation_top_candidate"])
         self.assertEqual(config["research"]["train_split_ratio"], "0.6")
         self.assertEqual(config["research"]["validation_split_ratio"], "0.2")
         self.assertEqual(config["research"]["test_split_ratio"], "0.2")
@@ -59,6 +60,8 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["operations"]["review_limit"], "10")
         self.assertEqual(config["operations"]["cycle_cooldown_minutes"], "15")
         self.assertEqual(config["operations"]["max_daily_cycle_count"], "8")
+        self.assertEqual(config["automation"]["long_run_seconds"], "300")
+        self.assertEqual(config["automation"]["alert_cleanup_minutes"], "15")
 
     def test_update_section_persists_and_normalizes_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -100,6 +103,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "research_template": "single_asset_timing_strict",
                     "model_key": "trend_bias_v2",
                     "label_mode": "close_only",
+                    "force_validation_top_candidate": True,
                     "min_holding_days": "2",
                     "max_holding_days": "4",
                     "label_target_pct": "1.5",
@@ -150,6 +154,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_MODEL_KEY"], "trend_bias_v2")
         self.assertEqual(overrides["QUANT_QLIB_RESEARCH_TEMPLATE"], "single_asset_timing_strict")
         self.assertEqual(overrides["QUANT_QLIB_LABEL_MODE"], "close_only")
+        self.assertEqual(overrides["QUANT_QLIB_FORCE_TOP_CANDIDATE"], "true")
         self.assertEqual(overrides["QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS"], "2")
         self.assertEqual(overrides["QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS"], "4")
         self.assertEqual(overrides["QUANT_QLIB_LABEL_TARGET_PCT"], "1.5")
@@ -223,6 +228,21 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["thresholds"]["dry_run_min_score"], "0.7")
         self.assertEqual(config["thresholds"]["live_min_score"], "0.95")
         self.assertEqual(config["thresholds"]["live_min_positive_rate"], "0.77")
+
+    def test_update_automation_section_normalizes_runtime_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            config = service.update_section(
+                "automation",
+                {
+                    "long_run_seconds": "900",
+                    "alert_cleanup_minutes": "45",
+                },
+            )
+
+        self.assertEqual(config["automation"]["long_run_seconds"], "900")
+        self.assertEqual(config["automation"]["alert_cleanup_minutes"], "45")
 
     def test_update_execution_section_normalizes_symbols_and_limits(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

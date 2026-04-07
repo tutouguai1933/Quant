@@ -242,6 +242,7 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("account_state", response["data"])
         self.assertIn("executor_runtime", response["data"])
         self.assertIn("research_recommendation", response["data"])
+        self.assertIn("configuration", response["data"])
         self.assertEqual(response["meta"]["source"], "strategy-workspace")
 
     def test_detail_routes_return_consistent_response_shape(self) -> None:
@@ -401,6 +402,7 @@ class ApiSkeletonTests(unittest.TestCase):
             self.assertIn("item", response["data"])
         self.assertIn("state", status["data"]["item"])
         self.assertIn("health", status["data"]["item"])
+        self.assertIn("automation_config", status["data"]["item"])
         self.assertIn("daily_summary", status["data"]["item"])
         self.assertIn("scheduler_plan", status["data"]["item"])
         self.assertIn("failure_policy", status["data"]["item"])

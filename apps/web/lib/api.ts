@@ -72,6 +72,7 @@ export type StrategyWorkspaceModel = {
   recent_signals: Array<Record<string, unknown>>;
   recent_orders: Array<Record<string, unknown>>;
   account_state: WorkspaceAccountState;
+  configuration: Record<string, unknown>;
 };
 
 type BalancesPageModel = {
@@ -175,6 +176,7 @@ export type AutomationStatusModel = {
   schedulerPlan: Array<Record<string, unknown>>;
   failurePolicy: Record<string, unknown>;
   operations: Record<string, unknown>;
+  automationConfig: Record<string, unknown>;
   executionPolicy: Record<string, unknown>;
   severitySummary: Record<string, unknown>;
   resumeChecklist: Array<Record<string, unknown>>;
@@ -869,6 +871,7 @@ export async function getStrategyWorkspace(
       recent_signals: normalizeObjectArray(data.recent_signals),
       recent_orders: normalizeObjectArray(data.recent_orders),
       account_state: normalizeWorkspaceAccountState(data.account_state),
+      configuration: isPlainObject(data.configuration) ? data.configuration : {},
     },
   };
 }
@@ -1104,6 +1107,7 @@ export async function getAutomationStatus(
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
         operations: isPlainObject(item.operations) ? item.operations : {},
+        automationConfig: isPlainObject(item.automation_config) ? item.automation_config : {},
         executionPolicy: isPlainObject(item.execution_policy) ? item.execution_policy : {},
         severitySummary: isPlainObject(item.severity_summary) ? item.severity_summary : {},
         resumeChecklist: Array.isArray(item.resume_checklist) ? item.resume_checklist.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
@@ -2586,6 +2590,7 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
       latest_order: null,
       latest_position: null,
     },
+    configuration: {},
   };
 }
 
@@ -2777,6 +2782,10 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       failurePolicy: {},
       severitySummary: {},
       resumeChecklist: [],
+      automationConfig: {
+        long_run_seconds: "300",
+        alert_cleanup_minutes: "15",
+      },
       executionPolicy: {
         live_allowed_symbols: [],
         live_max_stake_usdt: "6",

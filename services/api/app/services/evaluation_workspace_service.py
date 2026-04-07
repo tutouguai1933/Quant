@@ -72,6 +72,8 @@ class EvaluationWorkspaceService:
             },
             "leaderboard": leaderboard,
             "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)],
+            "recent_training_runs": self._build_recent_run_history(report=report, run_type="training"),
+            "recent_inference_runs": self._build_recent_run_history(report=report, run_type="inference"),
             "experiment_comparison": self._build_experiment_comparison(report),
             "gate_matrix": self._build_gate_matrix(report),
             "workflow_alignment_timeline": self._build_workflow_alignment_timeline(review_report),
@@ -231,6 +233,46 @@ class EvaluationWorkspaceService:
                 }
             )
         return rows
+
+    @staticmethod
+    def _build_recent_run_history(*, report: dict[str, object], run_type: str) -> list[dict[str, object]]:
+        """按训练或推理拆出最近运行历史。"""
+
+        experiments = dict(report.get("experiments") or {})
+        recent_runs = [dict(item) for item in list(experiments.get("recent_runs") or []) if isinstance(item, dict)]
+        rows: list[dict[str, object]] = []
+        for item in recent_runs:
+            if str(item.get("run_type", "")) != run_type:
+                continue
+            backtest = dict((item.get("backtest") or {}).get("metrics") or item.get("backtest") or {})
+            context = dict(item.get("training_context") or item.get("inference_context") or {})
+            parameters = dict(context.get("parameters") or context.get("input_summary") or {})
+            rows.append(
+                {
+                    "run_id": str(item.get("run_id", "")),
+                    "status": str(item.get("status", "")),
+                    "model_version": str(item.get("model_version", "")),
+                    "dataset_snapshot_id": str(
+                        dict(item.get("dataset_snapshot") or {}).get("snapshot_id", "")
+                        or item.get("dataset_snapshot_id", "")
+                    ),
+                    "signal_count": str(item.get("signal_count", dict(item.get("summary") or {}).get("signal_count", ""))),
+                    "net_return_pct": str(backtest.get("net_return_pct", "")),
+                    "sharpe": str(backtest.get("sharpe", "")),
+                    "win_rate": str(backtest.get("win_rate", "")),
+                    "holding_window": str(
+                        context.get("holding_window")
+                        or parameters.get("holding_window_label", "")
+                    ),
+                    "model_key": str(parameters.get("model_key", "")),
+                    "label_mode": str(parameters.get("label_mode", "")),
+                    "window_mode": str(parameters.get("window_mode", "")),
+                    "force_validation_top_candidate": "是"
+                    if bool(parameters.get("force_validation_top_candidate", False))
+                    else "否",
+                }
+            )
+        return rows[:5]
 
     @staticmethod
     def _build_workflow_alignment_timeline(review_report: dict[str, object]) -> list[dict[str, object]]:
@@ -466,6 +508,7 @@ class EvaluationWorkspaceService:
             "research_template",
             "model_key",
             "label_mode",
+            "force_validation_top_candidate",
             "holding_window_min_days",
             "holding_window_max_days",
             "sample_limit",

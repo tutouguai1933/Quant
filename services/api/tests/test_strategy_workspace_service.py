@@ -47,6 +47,9 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(workspace["account_state"]["source"], "binance-account-sync")
         self.assertEqual(workspace["account_state"]["truth_source"], "binance")
         self.assertEqual(workspace["account_state"]["summary"]["dust_count"], 1)
+        self.assertIn("configuration", workspace)
+        self.assertIn("research_scope", workspace["configuration"])
+        self.assertIn("automation_policy", workspace["configuration"])
 
     def test_workspace_cards_include_runtime_status_signal_and_evaluation(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):

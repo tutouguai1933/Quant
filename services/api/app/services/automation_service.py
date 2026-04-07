@@ -85,6 +85,7 @@ class AutomationService:
             "state": self.get_state(),
             "health": health,
             "operations": self._get_operations_config(),
+            "automation_config": self._get_automation_config(),
             "execution_policy": self._get_execution_policy(),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
@@ -359,20 +360,27 @@ class AutomationService:
     def _build_alert_summary(self) -> dict[str, object]:
         """汇总最近告警级别，给前端直接展示。"""
 
+        automation = self._get_automation_config()
+        cleanup_minutes = int(automation.get("alert_cleanup_minutes", 15) or 15)
         summary = {
             "error_count": 0,
             "warning_count": 0,
             "info_count": 0,
+            "active_error_count": 0,
+            "active_warning_count": 0,
+            "active_info_count": 0,
             "latest_code": "",
             "latest_message": "",
             "latest_level": "",
             "latest_source": "",
+            "cleanup_minutes": cleanup_minutes,
         }
         if self._alerts:
             summary["latest_code"] = str(self._alerts[0].get("code", ""))
             summary["latest_message"] = str(self._alerts[0].get("message", ""))
             summary["latest_level"] = str(self._alerts[0].get("level", ""))
             summary["latest_source"] = str(self._alerts[0].get("source", ""))
+        active_alerts = self._filter_active_alerts(cleanup_minutes=cleanup_minutes)
         for item in self._alerts:
             level = str(item.get("level", "")).strip().lower()
             if level == "error":
@@ -381,6 +389,14 @@ class AutomationService:
                 summary["warning_count"] = int(summary["warning_count"]) + 1
             elif level == "info":
                 summary["info_count"] = int(summary["info_count"]) + 1
+        for item in active_alerts:
+            level = str(item.get("level", "")).strip().lower()
+            if level == "error":
+                summary["active_error_count"] = int(summary["active_error_count"]) + 1
+            elif level == "warning":
+                summary["active_warning_count"] = int(summary["active_warning_count"]) + 1
+            elif level == "info":
+                summary["active_info_count"] = int(summary["active_info_count"]) + 1
         return summary
 
     def _build_takeover_summary(self, *, active_blockers: list[dict[str, str]], run_health: dict[str, object]) -> dict[str, str]:
@@ -779,6 +795,8 @@ class AutomationService:
             "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
             "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
             "review_limit": int(operations.get("review_limit", 10) or 10),
+            "cycle_cooldown_minutes": int(operations.get("cycle_cooldown_minutes", 15) or 15),
+            "max_daily_cycle_count": int(operations.get("max_daily_cycle_count", 8) or 8),
         }
 
     @staticmethod
@@ -792,6 +810,40 @@ class AutomationService:
             "live_max_stake_usdt": str(execution.get("live_max_stake_usdt", "")),
             "live_max_open_trades": str(execution.get("live_max_open_trades", "")),
         }
+
+    @staticmethod
+    def _get_automation_config() -> dict[str, object]:
+        """读取自动化长期运行配置。"""
+
+        config = workbench_config_service.get_config()
+        automation = dict(config.get("automation") or {})
+        return {
+            "long_run_seconds": int(automation.get("long_run_seconds", 300) or 300),
+            "alert_cleanup_minutes": int(automation.get("alert_cleanup_minutes", 15) or 15),
+        }
+
+    def _filter_active_alerts(self, *, cleanup_minutes: int) -> list[dict[str, object]]:
+        """按清理窗口筛出仍算活跃的告警。"""
+
+        if cleanup_minutes <= 0:
+            return list(self._alerts)
+        threshold = datetime.now(timezone.utc).timestamp() - cleanup_minutes * 60
+        active: list[dict[str, object]] = []
+        for item in self._alerts:
+            created_at = str(item.get("created_at", "") or "").strip()
+            if not created_at:
+                active.append(item)
+                continue
+            try:
+                created = datetime.fromisoformat(created_at)
+            except ValueError:
+                active.append(item)
+                continue
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created.astimezone(timezone.utc).timestamp() >= threshold:
+                active.append(item)
+        return active
 
     def run_cycle(self, *, actor: str = "user") -> dict[str, object]:
         """兼容路由层的统一自动化周期入口。"""

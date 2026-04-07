@@ -73,6 +73,9 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["comparison_summary"]["training_dataset_snapshot"], "snapshot-1")
         self.assertEqual(item["comparison_summary"]["inference_dataset_snapshot"], "snapshot-1")
         self.assertIn("模型一致", item["comparison_summary"]["experiment_alignment_note"])
+        self.assertEqual(item["recent_training_runs"][0]["run_id"], "train-1")
+        self.assertEqual(item["recent_training_runs"][0]["force_validation_top_candidate"], "否")
+        self.assertEqual(item["recent_inference_runs"][0]["run_id"], "infer-1")
 
     def test_workspace_handles_missing_evaluation(self) -> None:
         service = EvaluationWorkspaceService(
@@ -234,6 +237,7 @@ class _FakeResearchService:
                                 "window_mode": "fixed",
                                 "start_date": "2026-01-01",
                                 "end_date": "2026-02-01",
+                                "force_validation_top_candidate": False,
                             }
                         },
                     },
@@ -259,6 +263,13 @@ class _FakeResearchService:
                         "model_version": "model-a",
                         "signal_count": "2",
                         "dataset_snapshot": {"snapshot_id": "snapshot-1"},
+                        "inference_context": {
+                            "input_summary": {
+                                "model_key": "heuristic_v1",
+                                "window_mode": "fixed",
+                                "force_validation_top_candidate": False,
+                            }
+                        },
                     },
                     {
                         "run_type": "inference",

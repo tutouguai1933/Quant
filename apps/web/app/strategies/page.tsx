@@ -81,6 +81,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   }
   const automationCycle = asRecord(automation.lastCycle);
   const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
+  const configuration = asRecord(workspace.configuration);
 
   return (
     <AppShell
@@ -196,6 +197,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <AutomationInfo label="最近一轮" value={readText(automationCycle.status, "waiting")} />
                   <AutomationInfo label="自动化推荐" value={readText(automationCycle.recommended_symbol, "n/a")} />
                   <AutomationInfo label="下一步动作" value={readText(automationCycle.next_action, "continue_research")} />
+                  <AutomationInfo label="是否暂停" value={automation.paused ? "已暂停" : "正常运行"} />
+                  <AutomationInfo label="人工接管" value={automation.manualTakeover ? "人工接管中" : "当前未接管"} />
+                  <AutomationInfo label="暂停原因" value={readText(automation.pauseReason, "当前没有暂停原因")} />
+                  <AutomationInfo label="上次失败时间" value={readText(automation.lastFailureAt, "当前没有失败记录")} />
                 </CardContent>
               </Card>
 
@@ -280,6 +285,21 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                     {workspace.executor_runtime.mode}
                   </p>
                   <p>连接状态：{workspace.executor_runtime.connection_status}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">当前配置摘要</p>
+                  <CardTitle>先确认这轮研究和执行到底按什么口径在跑</CardTitle>
+                  <CardDescription>把研究模板、验证门、执行安全门和自动化策略压成一块，避免你只看到推荐结果，却不知道它是按什么规则得出来的。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>研究范围：{readText(configuration.research_scope, "当前还没有研究范围摘要")}</p>
+                  <p>验证策略：{readText(configuration.validation_policy, "当前还没有验证策略摘要")}</p>
+                  <p>执行策略：{readText(configuration.execution_policy, "当前还没有执行策略摘要")}</p>
+                  <p>门槛策略：{readText(configuration.threshold_policy, "当前还没有门槛策略摘要")}</p>
+                  <p>自动化策略：{readText(configuration.automation_policy, "当前还没有自动化策略摘要")}</p>
                 </CardContent>
               </Card>
 

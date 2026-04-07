@@ -665,7 +665,7 @@ function buildChangedFieldSummary(row: Record<string, unknown>) {
   if (status === "unavailable") {
     return String(row.changed_fields_note ?? "当前实验账本缺少配置快照，暂时无法比较。");
   }
-  const changedFields = Array.isArray(row.changed_fields) ? row.changed_fields.map((item) => String(item)).filter(Boolean) : [];
+  const changedFields = normalizeChangedFields(row);
   return changedFields.length ? changedFields.join(" / ") : "当前没有额外配置变化";
 }
 
@@ -681,7 +681,7 @@ function buildConfigDiffSections(row: Record<string, unknown>) {
       thresholds: note,
     };
   }
-  const changedFields = Array.isArray(row.changed_fields) ? row.changed_fields.map((item) => String(item)).filter(Boolean) : [];
+  const changedFields = normalizeChangedFields(row);
   const grouped = {
     data: [] as string[],
     features: [] as string[],
@@ -715,4 +715,34 @@ function buildConfigDiffSections(row: Record<string, unknown>) {
     backtest: grouped.backtest.length ? grouped.backtest.join(" / ") : "当前没有回测配置变化",
     thresholds: grouped.thresholds.length ? grouped.thresholds.join(" / ") : "当前没有门槛配置变化",
   };
+}
+
+function normalizeChangedFields(row: Record<string, unknown>) {
+  const labelMap: Record<string, string> = {
+    research_template: "研究模板",
+    model_key: "模型选择",
+    label_mode: "标签口径",
+    force_validation_top_candidate: "强制验证当前最优候选",
+    holding_window_min_days: "最短持有天数",
+    holding_window_max_days: "最长持有天数",
+    sample_limit: "样本长度",
+    lookback_days: "回看天数",
+    window_mode: "窗口模式",
+    start_date: "固定日期范围",
+    end_date: "固定日期范围",
+    missing_policy: "缺失处理",
+    outlier_policy: "去极值",
+    normalization_policy: "标准化",
+    backtest_fee_bps: "回测手续费",
+    backtest_slippage_bps: "回测滑点",
+  };
+  const changedFields = Array.isArray(row.changed_fields) ? row.changed_fields.map((item) => String(item)).filter(Boolean) : [];
+  const labels: string[] = [];
+  changedFields.forEach((field) => {
+    const label = labelMap[field] ?? field;
+    if (!labels.includes(label)) {
+      labels.push(label);
+    }
+  });
+  return labels;
 }

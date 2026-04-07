@@ -17,6 +17,9 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("自动化判断")).toBeVisible();
   await expect(page.getByText("自动化推荐").first()).toBeVisible();
   await expect(page.getByText("下一步动作").first()).toBeVisible();
+  await expect(page.getByText("当前配置摘要")).toBeVisible();
+  await expect(page.getByText("研究范围").first()).toBeVisible();
+  await expect(page.getByText("自动化策略").first()).toBeVisible();
   await expect(page.getByText("研究链入口")).toBeVisible();
   await expect(page.getByText("评估与实验中心").first()).toBeVisible();
 

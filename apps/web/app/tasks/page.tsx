@@ -84,6 +84,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     ? automation.resumeChecklist.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
   const operations = asRecord(automation.operations);
+  const runtimeWindow = asRecord(automation.runtimeWindow);
   const pauseReasonRaw = readText(automation.pauseReason, "");
   const takeoverReason = pauseReasonRaw || "当前没有接管原因。";
   const recoveryAction = readText(executionHealth.recovery_action, "healthy");
@@ -130,6 +131,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
     reviewLimit: readText(operations.review_limit, "10"),
     cycleCooldownMinutes: readText(operations.cycle_cooldown_minutes, "15"),
     maxDailyCycleCount: readText(operations.max_daily_cycle_count, "8"),
+  };
+  const automationConfig = asRecord(automation.automationConfig);
+  const automationConfigSummary = {
+    longRunSeconds: readText(automationConfig.long_run_seconds, "300"),
+    alertCleanupMinutes: readText(automationConfig.alert_cleanup_minutes, "15"),
+  };
+  const runtimeWindowSummary = {
+    currentCycleCount: readText(runtimeWindow.current_cycle_count, "0"),
+    dailyLimit: readText(runtimeWindow.daily_limit, operationsConfig.maxDailyCycleCount),
+    remainingDailyCycles: readText(runtimeWindow.remaining_daily_cycle_count, operationsConfig.maxDailyCycleCount),
+    cooldownRemainingMinutes: readText(runtimeWindow.cooldown_remaining_minutes, "0"),
+    nextAction: readText(runtimeWindow.next_action, "run_next_cycle"),
+    note: readText(runtimeWindow.note, "当前没有额外长期运行说明。"),
+    readyForCycle: Boolean(runtimeWindow.ready_for_cycle),
   };
   const executionPolicy = asRecord(automation.executionPolicy);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
@@ -207,16 +222,48 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <CardContent className="grid gap-3 md:grid-cols-3">
                   <ActionCard action="automation_run_cycle" label="运行自动化工作流" detail="按当前模式推进一轮训练、推理、执行和复盘。" />
                   <ActionCard action="automation_pause" label="暂停自动化" detail="停止后续自动推进，切回人工接管。" danger />
-                  <ActionCard action="automation_manual_takeover" label="人工立即接管" detail="立刻触发全局暂停，并尽量暂停执行器，先人工确认再恢复。" danger />
+                  <ActionCard action="automation_manual_takeover" label="人工立即接管" detail="立刻切到人工接管并暂停后续自动推进，先人工确认，再决定是否恢复。" danger />
                   <ActionCard action="automation_resume" label="恢复自动化" detail="恢复当前模式，让系统继续自动推进。" />
                   <ActionCard action="automation_dry_run_only" label="dry-run only" detail="只保留自动 dry-run，不再继续自动小额 live。" />
                   <ActionCard action="automation_kill_switch" label="Kill Switch" detail="一键停机，立即切回人工接管。" danger />
                 </CardContent>
               </Card>
 
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">长期运行窗口</p>
+                  <CardTitle>这一轮之后还能不能继续自动跑</CardTitle>
+                  <CardDescription>把今日轮次、冷却时间和下一步动作压成一块，先判断现在该继续、该等待还是该人工接管。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  <GuidanceBlock
+                    label="今日轮次"
+                    value={`${runtimeWindowSummary.currentCycleCount} / ${runtimeWindowSummary.dailyLimit}`}
+                    detail={`还剩 ${runtimeWindowSummary.remainingDailyCycles} 轮可跑`}
+                  />
+                  <GuidanceBlock
+                    label="冷却剩余"
+                    value={`${runtimeWindowSummary.cooldownRemainingMinutes} 分钟`}
+                    detail={runtimeWindowSummary.readyForCycle ? "当前已经可以继续下一轮" : "还在等待下一轮窗口"}
+                  />
+                  <GuidanceBlock
+                    label="下一步动作"
+                    value={formatRuntimeWindowAction(runtimeWindowSummary.nextAction)}
+                    detail={runtimeWindowSummary.note}
+                    tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
+                  />
+                  <GuidanceBlock
+                    label="当前状态"
+                    value={runtimeWindowSummary.readyForCycle ? "可以继续下一轮" : "先不要继续"}
+                    detail={runtimeWindowSummary.readyForCycle ? "当前没有冷却和轮次阻塞" : "先处理冷却、暂停或轮次上限"}
+                    tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
+                  />
+                </CardContent>
+              </Card>
+
               <WorkbenchConfigCard
                 title="长期运行配置"
-                description="这里改的是自动化长期运行时真正会消费的失败阈值、同步陈旧阈值、自动暂停和复盘条数。"
+                description="这里改的是长期运行时的健康阈值、停机建议和复盘窗口，先把系统怎么判断风险讲清楚。"
                 scope="operations"
                 returnTo="/tasks"
               >
@@ -230,7 +277,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     defaultValue={operationsConfig.pauseAfterFailures}
                   />
                 </ConfigField>
-                <ConfigField label="同步陈旧阈值" hint="连续多少次同步失败后，把系统标成 stale 并提高风险等级。">
+                <ConfigField label="同步陈旧阈值" hint="连续多少次同步失败后，把系统标成 stale，并在健康摘要里提高风险等级。">
                   <ConfigInput
                     name="stale_sync_failure_threshold"
                     type="number"
@@ -256,8 +303,36 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <ConfigField label="自动化冷却时间" hint="每轮自动化之间至少间隔多久，避免短时间内连续重跑。">
                   <ConfigInput name="cycle_cooldown_minutes" type="number" min={0} max={1440} step={1} defaultValue={operationsConfig.cycleCooldownMinutes} />
                 </ConfigField>
-                <ConfigField label="每日最大轮次" hint="当天自动化最多跑几轮，超过后会自动停在等待状态。">
-                  <ConfigInput name="max_daily_cycle_count" type="number" min={1} max={200} step={1} defaultValue={operationsConfig.maxDailyCycleCount} />
+                  <ConfigField label="每日最大轮次" hint="当天自动化最多跑几轮，超过后会自动停在等待状态。">
+                    <ConfigInput name="max_daily_cycle_count" type="number" min={1} max={200} step={1} defaultValue={operationsConfig.maxDailyCycleCount} />
+                  </ConfigField>
+              </WorkbenchConfigCard>
+
+              <WorkbenchConfigCard
+                title="自动化运行参数"
+                description="这里改的是长期运行时真正会消费的接管时长和告警清理窗口，用来决定多久必须人工复核、多久前的旧告警不再算活跃告警。"
+                scope="automation"
+                returnTo="/tasks"
+              >
+                <ConfigField label="长时间接管阈值" hint="人工接管持续超过这个秒数后，系统会把下一步动作切到 review_takeover。">
+                  <ConfigInput
+                    name="long_run_seconds"
+                    type="number"
+                    min={60}
+                    max={86400}
+                    step={60}
+                    defaultValue={automationConfigSummary.longRunSeconds}
+                  />
+                </ConfigField>
+                <ConfigField label="活跃告警窗口" hint="只把最近这段时间内的告警算作活跃告警，超过窗口的旧告警仍保留历史，但不再提高当前风险等级。">
+                  <ConfigInput
+                    name="alert_cleanup_minutes"
+                    type="number"
+                    min={1}
+                    max={1440}
+                    step={1}
+                    defaultValue={automationConfigSummary.alertCleanupMinutes}
+                  />
                 </ConfigField>
               </WorkbenchConfigCard>
 
@@ -479,6 +554,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <p>错误告警：{String(alertSummary.error_count ?? 0)}</p>
                   <p>警告告警：{String(alertSummary.warning_count ?? 0)}</p>
                   <p>信息提示：{String(alertSummary.info_count ?? 0)}</p>
+                  <p>活跃错误：{String(alertSummary.active_error_count ?? alertSummary.error_count ?? 0)}</p>
+                  <p>活跃警告：{String(alertSummary.active_warning_count ?? alertSummary.warning_count ?? 0)}</p>
+                  <p>活跃信息：{String(alertSummary.active_info_count ?? alertSummary.info_count ?? 0)}</p>
+                  <p>活跃告警窗口：{String(alertSummary.cleanup_minutes ?? automationConfigSummary.alertCleanupMinutes)} 分钟</p>
                   <p>最近错误：{readText(alertSummary.latest_code, "当前没有错误告警")}</p>
                   <p>最近说明：{readText(alertSummary.latest_message, "当前没有额外说明")}</p>
                 </CardContent>
@@ -508,6 +587,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <p>复盘条数：{operationsConfig.reviewLimit}</p>
                   <p>自动化冷却时间：{operationsConfig.cycleCooldownMinutes} 分钟</p>
                   <p>每日最大轮次：{operationsConfig.maxDailyCycleCount}</p>
+                  <p>长时间接管阈值：{automationConfigSummary.longRunSeconds} 秒</p>
+                  <p>活跃告警窗口：{automationConfigSummary.alertCleanupMinutes} 分钟</p>
                 </CardContent>
               </Card>
 
@@ -878,6 +959,17 @@ function formatRecoveryAction(action: string) {
     watch_pending_exit: "先等待平仓完成",
     resume_after_review: "人工确认后再恢复",
     manual_takeover: "保持人工接管",
+  };
+  return mapping[action] ?? action;
+}
+
+function formatRuntimeWindowAction(action: string) {
+  const mapping: Record<string, string> = {
+    run_next_cycle: "继续下一轮",
+    wait_cooldown: "等待冷却",
+    wait_next_window: "等待下一窗口",
+    manual_takeover: "先人工接管",
+    resume_after_review: "先复核再恢复",
   };
   return mapping[action] ?? action;
 }

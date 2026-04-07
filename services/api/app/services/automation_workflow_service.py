@@ -38,6 +38,7 @@ class AutomationWorkflowService:
         automation_status = self._automation.get_status(task_health=task_health)
         state = dict(automation_status.get("state") or {})
         operations = self._get_operations_config()
+        automation_config = dict(automation_status.get("automation_config") or self._get_automation_config())
         review_limit = int(operations.get("review_limit", 10) or 10)
         report = self._reviewer.build_report(limit=review_limit)
         health = self._automation.build_health_summary(task_health=task_health)
@@ -45,6 +46,7 @@ class AutomationWorkflowService:
             "state": state,
             "health": health,
             "operations": operations,
+            "automation_config": automation_config,
             "execution_policy": dict(automation_status.get("execution_policy") or {}),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
@@ -56,6 +58,7 @@ class AutomationWorkflowService:
                 automation_state=state,
             ),
             "daily_summary": dict(automation_status.get("daily_summary") or {}),
+            "runtime_window": self._build_runtime_window(state=state, operations=operations, automation_config=automation_config),
             "scheduler_plan": self._build_scheduler_plan(review_limit=review_limit),
             "failure_policy": self._build_failure_policy(operations=operations),
         }
@@ -371,6 +374,70 @@ class AutomationWorkflowService:
             "sync": "retry_then_review",
         }
 
+    @classmethod
+    def _build_runtime_window(
+        cls,
+        *,
+        state: dict[str, object],
+        operations: dict[str, object],
+        automation_config: dict[str, object],
+    ) -> dict[str, object]:
+        """整理长期运行窗口，方便页面说明当前还能不能继续跑下一轮。"""
+
+        daily_summary = dict(state.get("daily_summary") or {})
+        daily_limit = int(operations.get("max_daily_cycle_count", 8) or 8)
+        current_cycle_count = int(daily_summary.get("cycle_count", 0) or 0)
+        remaining_daily_cycle_count = max(daily_limit - current_cycle_count, 0)
+        cooldown_minutes = int(operations.get("cycle_cooldown_minutes", 15) or 0)
+        cooldown_remaining_minutes = cls._resolve_cooldown_remaining_minutes(
+            last_cycle=dict(state.get("last_cycle") or {}),
+            cooldown_minutes=cooldown_minutes,
+        )
+        long_run_seconds = int(automation_config.get("long_run_seconds", 300) or 300)
+        paused = bool(state.get("paused"))
+        manual_takeover = bool(state.get("manual_takeover"))
+        paused_since = cls._parse_timestamp(str(state.get("paused_at", "") or ""))
+        takeover_since = cls._parse_timestamp(str(state.get("manual_takeover_at", "") or ""))
+        takeover_elapsed_seconds = 0
+        if manual_takeover and takeover_since is not None:
+            takeover_elapsed_seconds = max(
+                int((datetime.now(timezone.utc) - takeover_since.astimezone(timezone.utc)).total_seconds()),
+                0,
+            )
+        if paused and manual_takeover:
+            if takeover_elapsed_seconds >= long_run_seconds:
+                next_action = "review_takeover"
+                note = "人工接管已持续较久，先确认执行器、同步和账户状态，再决定是否恢复。"
+            else:
+                next_action = "manual_takeover"
+                note = "当前已人工接管，先处理阻塞再考虑恢复自动化。"
+        elif paused:
+            next_action = "resume_after_review"
+            note = "当前处于暂停状态，先看恢复清单再继续。"
+        elif remaining_daily_cycle_count <= 0:
+            next_action = "wait_next_window"
+            note = "今日轮次已用完，先等下一轮时间窗口。"
+        elif cooldown_remaining_minutes > 0:
+            next_action = "wait_cooldown"
+            note = f"冷却中，约 {cooldown_remaining_minutes} 分钟后可继续。"
+        else:
+            next_action = "run_next_cycle"
+            note = "当前可以继续进入下一轮自动化。"
+        return {
+            "current_cycle_count": current_cycle_count,
+            "daily_limit": daily_limit,
+            "remaining_daily_cycle_count": remaining_daily_cycle_count,
+            "cooldown_minutes": cooldown_minutes,
+            "cooldown_remaining_minutes": cooldown_remaining_minutes,
+            "long_run_seconds": long_run_seconds,
+            "paused_since": str(state.get("paused_at", "") or ""),
+            "takeover_since": str(state.get("manual_takeover_at", "") or ""),
+            "takeover_elapsed_seconds": takeover_elapsed_seconds,
+            "ready_for_cycle": not paused and remaining_daily_cycle_count > 0 and cooldown_remaining_minutes <= 0,
+            "next_action": next_action,
+            "note": note,
+        }
+
     @staticmethod
     def _get_operations_config() -> dict[str, object]:
         """读取长期运行配置。"""
@@ -384,6 +451,17 @@ class AutomationWorkflowService:
             "review_limit": int(operations.get("review_limit", 10) or 10),
             "cycle_cooldown_minutes": int(operations.get("cycle_cooldown_minutes", 15) or 0),
             "max_daily_cycle_count": int(operations.get("max_daily_cycle_count", 8) or 8),
+        }
+
+    @staticmethod
+    def _get_automation_config() -> dict[str, object]:
+        """读取自动化长期运行与告警配置。"""
+
+        config = workbench_config_service.get_config()
+        automation = dict(config.get("automation") or {})
+        return {
+            "long_run_seconds": int(automation.get("long_run_seconds", 300) or 300),
+            "alert_cleanup_minutes": int(automation.get("alert_cleanup_minutes", 15) or 15),
         }
 
     @staticmethod
@@ -404,6 +482,21 @@ class AutomationWorkflowService:
         elapsed_minutes = (datetime.now(timezone.utc) - recorded.astimezone(timezone.utc)).total_seconds() / 60
         remaining = int(round(cooldown_minutes - elapsed_minutes))
         return remaining if remaining > 0 else 0
+
+    @staticmethod
+    def _parse_timestamp(value: str) -> datetime | None:
+        """解析时间字符串。"""
+
+        normalized = str(value or "").strip()
+        if not normalized:
+            return None
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
 
 
 automation_workflow_service = AutomationWorkflowService()
