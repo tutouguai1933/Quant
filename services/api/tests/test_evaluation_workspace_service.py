@@ -44,6 +44,9 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["run_deltas"][0]["previous_run_id"], "train-previous")
         self.assertEqual(item["run_deltas"][0]["model_changed"], "是")
         self.assertEqual(item["run_deltas"][0]["dataset_changed"], "是")
+        self.assertIn("model_key", item["run_deltas"][0]["changed_fields"])
+        self.assertIn("window_mode", item["run_deltas"][0]["changed_fields"])
+        self.assertEqual(item["run_deltas"][0]["changed_fields_status"], "ready")
         self.assertEqual(item["experiment_comparison"][0]["run_type"], "training")
         self.assertIn("controls", item)
         self.assertEqual(item["controls"]["dry_run_min_win_rate"], "0.50")
@@ -66,6 +69,31 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["status"], "unavailable")
         self.assertEqual(item["leaderboard"], [])
         self.assertEqual(item["evaluation"], {})
+
+    def test_workspace_marks_run_delta_as_unavailable_when_context_is_missing(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_MissingContextResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["run_deltas"][0]["changed_fields"], [])
+        self.assertEqual(item["run_deltas"][0]["changed_fields_status"], "unavailable")
+        self.assertIn("暂时无法比较", item["run_deltas"][0]["changed_fields_note"])
+
+    def test_workspace_uses_configured_review_limit(self) -> None:
+        review_reader = _CapturingValidationReviewService()
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=lambda: _fake_controls(review_limit="3"),
+            review_reader=review_reader,
+        )
+
+        service.get_workspace()
+
+        self.assertEqual(review_reader.last_limit, 3)
 
 
 class _FakeResearchService:
@@ -144,6 +172,14 @@ class _FakeResearchService:
                         "signal_count": "0",
                         "backtest": {"net_return_pct": "8.10", "sharpe": "1.10", "win_rate": "0.58"},
                         "dataset_snapshot": {"snapshot_id": "snapshot-1"},
+                        "training_context": {
+                            "parameters": {
+                                "model_key": "heuristic_v1",
+                                "window_mode": "fixed",
+                                "start_date": "2026-01-01",
+                                "end_date": "2026-02-01",
+                            }
+                        },
                     },
                     {
                         "run_type": "training",
@@ -152,6 +188,14 @@ class _FakeResearchService:
                         "signal_count": "0",
                         "backtest": {"net_return_pct": "5.20", "sharpe": "0.90", "win_rate": "0.51"},
                         "dataset_snapshot": {"snapshot_id": "snapshot-prev"},
+                        "training_context": {
+                            "parameters": {
+                                "model_key": "trend_bias_v2",
+                                "window_mode": "rolling",
+                                "start_date": "",
+                                "end_date": "",
+                            }
+                        },
                     },
                     {
                         "run_type": "inference",
@@ -211,9 +255,50 @@ class _UnavailableResearchService:
         return {"status": "unavailable"}
 
 
-def _fake_controls() -> dict[str, object]:
+class _MissingContextResearchService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        payload["latest_training"] = {
+            "run_id": "train-1",
+            "model_version": "model-a",
+            "dataset_snapshot_id": "snapshot-1",
+        }
+        payload["experiments"]["recent_runs"] = [
+            {
+                "run_type": "training",
+                "run_id": "train-1",
+                "model_version": "model-a",
+                "signal_count": "0",
+                "backtest": {"net_return_pct": "8.10", "sharpe": "1.10", "win_rate": "0.58"},
+                "dataset_snapshot": {"snapshot_id": "snapshot-1"},
+            },
+            {
+                "run_type": "training",
+                "run_id": "train-previous",
+                "model_version": "model-prev",
+                "signal_count": "0",
+                "backtest": {"net_return_pct": "5.20", "sharpe": "0.90", "win_rate": "0.51"},
+                "dataset_snapshot": {"snapshot_id": "snapshot-prev"},
+            },
+        ]
+        return payload
+
+
+class _CapturingValidationReviewService(_FakeValidationReviewService):
+    def __init__(self) -> None:
+        self.last_limit = 0
+
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        self.last_limit = limit
+        return super().build_report(limit=limit)
+
+
+def _fake_controls(*, review_limit: str = "10") -> dict[str, object]:
     return {
         "config": {
+            "operations": {
+                "review_limit": review_limit,
+            },
             "thresholds": {
                 "dry_run_min_score": "0.55",
                 "dry_run_min_positive_rate": "0.45",

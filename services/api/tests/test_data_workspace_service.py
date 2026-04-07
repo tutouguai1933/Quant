@@ -30,8 +30,8 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["filters"]["limit"], 120)
         self.assertEqual(item["controls"]["lookback_days"], 30)
         self.assertEqual(item["controls"]["window_mode"], "fixed")
-        self.assertEqual(item["controls"]["start_date"], "2026-01-01")
-        self.assertEqual(item["controls"]["end_date"], "2026-02-01")
+        self.assertEqual(item["controls"]["start_date"], "2024-04-02")
+        self.assertEqual(item["controls"]["end_date"], "2024-04-04")
         self.assertIn("fixed", item["controls"]["available_window_modes"])
         self.assertEqual(item["snapshot"]["snapshot_id"], "dataset-abc123")
         self.assertEqual(item["snapshot"]["data_states"]["current"], "feature-ready")
@@ -70,6 +70,35 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["preview"]["status"], "unavailable")
         self.assertEqual(item["preview"]["total_rows"], 0)
         self.assertIn("preview unavailable", item["preview"]["detail"])
+
+    def test_workspace_marks_fixed_window_without_preview_data_as_degraded(self) -> None:
+        service = DataWorkspaceService(
+            research_reader=_FakeResearchService(),
+            market_reader=_FakeMarketService(),
+            whitelist_provider=lambda: ["BTCUSDT"],
+            controls_builder=lambda: {
+                "config": {
+                    "data": {
+                        "selected_symbols": ["BTCUSDT"],
+                        "primary_symbol": "BTCUSDT",
+                        "timeframes": ["4h"],
+                        "sample_limit": 120,
+                        "lookback_days": 30,
+                        "window_mode": "fixed",
+                        "start_date": "2025-01-01",
+                        "end_date": "2025-01-10",
+                    }
+                },
+                "options": {"window_modes": ["rolling", "fixed"]},
+            },
+        )
+
+        item = service.get_workspace(symbol="BTCUSDT", interval="4h", limit=80)
+
+        self.assertEqual(item["status"], "degraded")
+        self.assertEqual(item["preview"]["status"], "unavailable")
+        self.assertEqual(item["preview"]["total_rows"], 0)
+        self.assertIn("固定日期范围内没有可用预览样本", item["preview"]["detail"])
 
     def test_workspace_normalizes_invalid_symbol_and_interval(self) -> None:
         service = DataWorkspaceService(
@@ -180,8 +209,8 @@ def _fake_controls() -> dict[str, object]:
                 "sample_limit": 120,
                 "lookback_days": 30,
                 "window_mode": "fixed",
-                "start_date": "2026-01-01",
-                "end_date": "2026-02-01",
+                "start_date": "2024-04-02",
+                "end_date": "2024-04-04",
             }
         },
         "options": {"window_modes": ["rolling", "fixed"]},

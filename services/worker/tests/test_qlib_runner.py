@@ -458,6 +458,8 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertEqual(experiment_index["items"][0]["run_type"], "training")
         self.assertIn("dataset_snapshot", experiment_index["items"][0])
         self.assertEqual(experiment_index["items"][0]["dataset_snapshot"]["data_states"]["current"], "feature-ready")
+        self.assertIn("training_context", experiment_index["items"][0])
+        self.assertEqual(experiment_index["items"][0]["training_context"]["feature_version"], "v2")
 
     def test_training_reuses_dataset_cache_for_same_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -633,6 +635,8 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertEqual(recent_runs[1]["run_type"], "training")
         self.assertIn("signal_count", recent_runs[0])
         self.assertIn("backtest", recent_runs[0])
+        self.assertIn("inference_context", recent_runs[0])
+        self.assertIn("training_context", recent_runs[1])
 
     def test_inference_exposes_input_output_context_summary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

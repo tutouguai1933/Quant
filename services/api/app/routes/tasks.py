@@ -136,7 +136,7 @@ def run_health_check_task(source: str = "scheduler", token: str = "", authorizat
 
 
 @router.get("/validation-review")
-def get_validation_review(limit: int = 10, token: str = "", authorization: str = Header("")) -> dict:
+def get_validation_review(limit: int = 0, token: str = "", authorization: str = Header("")) -> dict:
     try:
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:

@@ -10,6 +10,7 @@ from typing import Any
 from services.api.app.services.automation_service import automation_service
 from services.api.app.services.research_service import research_service
 from services.api.app.services.sync_service import sync_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 from services.api.app.tasks.scheduler import task_scheduler
 
 
@@ -21,9 +22,11 @@ class ValidationWorkflowService:
         self._sync_reader = sync_reader or sync_service
         self._scheduler = scheduler or task_scheduler
 
-    def build_report(self, limit: int = 10) -> dict[str, object]:
+    def build_report(self, limit: int | None = None) -> dict[str, object]:
         """返回固定验证工作流复盘。"""
 
+        if limit is None or int(limit or 0) <= 0:
+            limit = self._resolve_review_limit()
         research_report = self._research_reader.get_factory_report()
         raw_recent_tasks = self._scheduler.list_tasks(limit=limit)
         task_health = self._scheduler.get_health_summary()
@@ -76,6 +79,16 @@ class ValidationWorkflowService:
             "recent_tasks": recent_tasks,
             "account_snapshot": account_snapshot,
         }
+
+    @staticmethod
+    def _resolve_review_limit() -> int:
+        """读取统一配置里的复盘条数。"""
+
+        operations = dict(workbench_config_service.get_config().get("operations") or {})
+        try:
+            return max(int(operations.get("review_limit") or 10), 1)
+        except (TypeError, ValueError):
+            return 10
 
     def _build_account_snapshot(self, *, limit: int) -> dict[str, object]:
         """用最小同步结果补当前账户状态。"""

@@ -96,6 +96,8 @@ def _build_experiment_entry(payload: dict[str, object]) -> dict[str, object]:
             _parse_int(dict(payload.get("summary") or {}).get("signal_count")),
         ),
         "backtest": _build_backtest_snapshot(payload.get("backtest")),
+        "training_context": dict(payload.get("training_context") or {}),
+        "inference_context": dict(payload.get("inference_context") or {}),
     }
 
 
@@ -279,6 +281,8 @@ def _build_recent_runs(items: list[dict[str, object]] | None) -> list[dict[str, 
                 "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
                 "dataset_snapshot": dict(payload.get("dataset_snapshot") or {}),
                 "backtest": _build_backtest_snapshot(payload.get("backtest")),
+                "training_context": dict(payload.get("training_context") or {}),
+                "inference_context": dict(payload.get("inference_context") or {}),
                 "artifact_path": str(payload.get("artifact_path", "")),
             }
         )

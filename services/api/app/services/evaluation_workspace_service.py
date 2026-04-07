@@ -21,16 +21,17 @@ class EvaluationWorkspaceService:
     def get_workspace(self) -> dict[str, object]:
         """返回评估与实验中心统一模型。"""
 
+        controls = self._controls_builder()
+        review_limit = self._resolve_review_limit(controls)
         report = self._read_factory_report()
         leaderboard = self._build_leaderboard(report)
         evaluation = dict(report.get("evaluation") or {})
         reviews = dict(report.get("reviews") or {})
         overview = dict(report.get("overview") or {})
         recent_runs = list((report.get("experiments") or {}).get("recent_runs") or [])
-        review_report = self._read_validation_review()
+        review_report = self._read_validation_review(limit=review_limit)
         execution_alignment = dict(review_report.get("execution_comparison") or {})
         validation_reviews = dict(review_report.get("reviews") or {})
-        controls = self._controls_builder()
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
 
         status = str(report.get("status", "unavailable") or "unavailable")
@@ -96,15 +97,26 @@ class EvaluationWorkspaceService:
                 return payload
         return {"status": "unavailable", "backend": "qlib-fallback"}
 
-    def _read_validation_review(self) -> dict[str, object]:
+    def _read_validation_review(self, *, limit: int) -> dict[str, object]:
         """读取统一复盘摘要。"""
 
         reader = getattr(self._review_reader, "build_report", None)
         if callable(reader):
-            payload = reader(limit=10)
+            payload = reader(limit=limit)
             if isinstance(payload, dict):
                 return payload
         return {}
+
+    @staticmethod
+    def _resolve_review_limit(controls: dict[str, object]) -> int:
+        """从统一工作台配置中取复盘展示窗口。"""
+
+        operations = dict((controls.get("config") or {}).get("operations") or {})
+        try:
+            value = int(str(operations.get("review_limit", "10") or "10"))
+        except (TypeError, ValueError):
+            return 10
+        return max(value, 1)
 
     @staticmethod
     def _build_leaderboard(report: dict[str, object]) -> list[dict[str, object]]:
@@ -300,7 +312,11 @@ class EvaluationWorkspaceService:
         }
         rows: list[dict[str, object]] = []
         for run_type in ("training", "inference"):
-            current = latest_by_type.get(run_type) or {}
+            current = EvaluationWorkspaceService._merge_run_with_recent(
+                latest_by_type.get(run_type) or {},
+                recent_runs=recent_runs,
+                run_type=run_type,
+            )
             if not current:
                 continue
             previous = EvaluationWorkspaceService._find_previous_run(
@@ -316,6 +332,10 @@ class EvaluationWorkspaceService:
             previous_snapshot = str(dict(previous.get("dataset_snapshot") or {}).get("snapshot_id") or previous.get("dataset_snapshot_id", ""))
             model_changed = str(current.get("model_version", "")) != str(previous.get("model_version", ""))
             dataset_changed = current_snapshot != previous_snapshot
+            changed_field_payload = EvaluationWorkspaceService._resolve_changed_fields(
+                current=current,
+                previous=previous,
+            )
             rows.append(
                 {
                     "run_type": run_type,
@@ -339,10 +359,9 @@ class EvaluationWorkspaceService:
                         current_backtest.get("win_rate", ""),
                         previous_backtest.get("win_rate", ""),
                     ),
-                    "changed_fields": EvaluationWorkspaceService._resolve_changed_fields(
-                        current=current,
-                        previous=previous,
-                    ),
+                    "changed_fields": list(changed_field_payload.get("fields") or []),
+                    "changed_fields_status": str(changed_field_payload.get("status", "ready") or "ready"),
+                    "changed_fields_note": str(changed_field_payload.get("note", "") or ""),
                     "note": EvaluationWorkspaceService._build_delta_note(
                         run_type=run_type,
                         model_changed=model_changed,
@@ -353,11 +372,17 @@ class EvaluationWorkspaceService:
         return rows
 
     @staticmethod
-    def _resolve_changed_fields(*, current: dict[str, object], previous: dict[str, object]) -> list[str]:
+    def _resolve_changed_fields(*, current: dict[str, object], previous: dict[str, object]) -> dict[str, object]:
         """列出最近两轮最主要的配置变化。"""
 
         current_context = dict(current.get("training_context") or current.get("inference_context") or {})
         previous_context = dict(previous.get("training_context") or previous.get("inference_context") or {})
+        if not current_context or not previous_context:
+            return {
+                "fields": [],
+                "status": "unavailable",
+                "note": "当前实验账本缺少配置快照，暂时无法比较最近两轮配置变化。",
+            }
         current_parameters = dict(current_context.get("parameters") or current_context.get("input_summary") or {})
         previous_parameters = dict(previous_context.get("parameters") or previous_context.get("input_summary") or {})
         watched_fields = (
@@ -381,7 +406,11 @@ class EvaluationWorkspaceService:
         for field in watched_fields:
             if str(current_parameters.get(field, "")) != str(previous_parameters.get(field, "")):
                 changed.append(field)
-        return changed
+        return {
+            "fields": changed,
+            "status": "ready",
+            "note": "",
+        }
 
     @staticmethod
     def _build_alignment_details(
@@ -428,6 +457,34 @@ class EvaluationWorkspaceService:
                 continue
             return dict(item)
         return {}
+
+    @staticmethod
+    def _merge_run_with_recent(current: dict[str, object], *, recent_runs: list[dict[str, object]], run_type: str) -> dict[str, object]:
+        """当前轮缺少上下文时，用实验账本里的同轮记录补齐。"""
+
+        current_run = dict(current or {})
+        if not current_run:
+            return {}
+        if current_run.get("training_context") or current_run.get("inference_context"):
+            return current_run
+        current_run_id = str(current_run.get("run_id", ""))
+        for item in recent_runs:
+            if str(item.get("run_type", "")) != run_type:
+                continue
+            if current_run_id and str(item.get("run_id", "")) != current_run_id:
+                continue
+            merged = dict(item)
+            merged.update(current_run)
+            if item.get("training_context") and not current_run.get("training_context"):
+                merged["training_context"] = dict(item.get("training_context") or {})
+            if item.get("inference_context") and not current_run.get("inference_context"):
+                merged["inference_context"] = dict(item.get("inference_context") or {})
+            if item.get("backtest") and not current_run.get("backtest"):
+                merged["backtest"] = dict(item.get("backtest") or {})
+            if item.get("dataset_snapshot") and not current_run.get("dataset_snapshot"):
+                merged["dataset_snapshot"] = dict(item.get("dataset_snapshot") or {})
+            return merged
+        return current_run
 
     @staticmethod
     def _format_delta(current: object, previous: object) -> str:

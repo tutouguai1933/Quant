@@ -15,11 +15,21 @@ if str(REPO_ROOT) not in sys.path:
 from services.api.app.services.automation_service import AutomationService  # noqa: E402
 from services.api.app.services.automation_workflow_service import AutomationWorkflowService  # noqa: E402
 from services.api.app.core.settings import Settings  # noqa: E402
+from services.api.app.services.workbench_config_service import WorkbenchConfigService  # noqa: E402
+import services.api.app.services.automation_service as automation_service_module  # noqa: E402
+import services.api.app.services.automation_workflow_service as automation_workflow_module  # noqa: E402
 
 
 class AutomationServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
+        self._original_automation_config_service = automation_service_module.workbench_config_service
+        self._original_workflow_config_service = automation_workflow_module.workbench_config_service
+        isolated_config = WorkbenchConfigService(
+            config_path=Path(self._temp_dir.name) / "workbench_config.json"
+        )
+        automation_service_module.workbench_config_service = isolated_config
+        automation_workflow_module.workbench_config_service = isolated_config
         self._env_patcher = mock.patch.dict(
             os.environ,
             {"QUANT_AUTOMATION_STATE_PATH": str(Path(self._temp_dir.name) / "automation.json")},
@@ -29,6 +39,8 @@ class AutomationServiceTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._env_patcher.stop()
+        automation_service_module.workbench_config_service = self._original_automation_config_service
+        automation_workflow_module.workbench_config_service = self._original_workflow_config_service
         self._temp_dir.cleanup()
 
     def test_configure_pause_and_resume_updates_state(self) -> None:

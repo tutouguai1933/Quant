@@ -183,6 +183,19 @@ class QlibDatasetTests(unittest.TestCase):
         self.assertGreaterEqual(min(int(item["generated_at"]) for item in merged_rows), 1712707200000)
         self.assertLessEqual(max(int(item["generated_at"]) for item in merged_rows), 1713657599999)
 
+    def test_build_dataset_bundle_rejects_empty_fixed_date_window(self) -> None:
+        candles_4h = _sample_candles(120, step_hours=4)
+
+        with self.assertRaisesRegex(RuntimeError, "固定日期范围内没有可用研究样本"):
+            build_dataset_bundle(
+                symbol="BTCUSDT",
+                candles_1h=[],
+                candles_4h=candles_4h,
+                window_mode="fixed",
+                start_date="2025-01-01",
+                end_date="2025-01-10",
+            )
+
 
 def _sample_candles(count: int, *, step_hours: int = 1) -> list[dict[str, object]]:
     """生成最小的时间序列样本。"""

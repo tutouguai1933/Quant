@@ -193,6 +193,18 @@ class DataWorkspaceService:
             start_date=start_date,
             end_date=end_date,
         )
+        if window_mode == "fixed" and (start_date or end_date) and not items:
+            return {
+                "symbol": symbol,
+                "interval": interval,
+                "effective_interval": interval,
+                "source": "binance",
+                "total_rows": 0,
+                "first_open_time": "",
+                "last_close_time": "",
+                "status": "unavailable",
+                "detail": "固定日期范围内没有可用预览样本",
+            }
         first_item = items[0] if items else {}
         last_item = items[-1] if items else {}
         return {
@@ -298,7 +310,7 @@ def _filter_items_by_fixed_window(items: list[dict[str, object]], *, start_date:
         if end_ms and open_time > end_ms:
             continue
         filtered.append(item)
-    return filtered or items
+    return filtered
 
 
 def _date_to_timestamp(value: str, *, end_of_day: bool) -> int:

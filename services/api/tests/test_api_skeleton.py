@@ -433,6 +433,23 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIsNone(payload["error"])
         self.assertIn("overview", payload["data"]["item"])
 
+    def test_validation_review_route_uses_configured_review_limit_by_default(self) -> None:
+        from services.api.app.services.workbench_config_service import workbench_config_service
+
+        token = self._login_token()
+        original_operations = dict(workbench_config_service.get_config().get("operations") or {})
+        try:
+            workbench_config_service.update_section("operations", {"review_limit": "3"})
+            for index in range(5):
+                run_review_task(source=f"user-{index}", token=token)
+
+            payload = get_validation_review(token=token)
+
+            self.assertIsNone(payload["error"])
+            self.assertEqual(len(payload["data"]["item"]["recent_tasks"]), 3)
+        finally:
+            workbench_config_service.update_section("operations", original_operations)
+
     def test_research_report_route_stays_unavailable_without_results(self) -> None:
         original_research_service = signals_route.research_service
 

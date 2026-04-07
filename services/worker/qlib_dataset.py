@@ -55,6 +55,7 @@ def build_dataset_bundle(
     """把输入 K 线整理成训练、验证、测试三段数据。"""
 
     standardized_symbol = _normalize_symbol(symbol)
+    fixed_window_requested = window_mode == "fixed" and bool(str(start_date or "").strip() or str(end_date or "").strip())
     candidates = []
     if candles_4h:
         candidates.append(("4h", candles_4h))
@@ -78,6 +79,8 @@ def build_dataset_bundle(
             start_date=start_date,
             end_date=end_date,
         )
+        if fixed_window_requested and not filtered_candles:
+            continue
         try:
             return _build_dataset_bundle_for_candles(
                 symbol=standardized_symbol,
@@ -99,6 +102,8 @@ def build_dataset_bundle(
                 raise
             last_error = exc
 
+    if fixed_window_requested:
+        raise RuntimeError("固定日期范围内没有可用研究样本")
     if last_error is not None:
         raise last_error
     raise RuntimeError("样本不足以切成训练/验证/测试三段")
@@ -302,7 +307,7 @@ def _filter_candles_by_fixed_window(
         if end_ms and open_time > end_ms:
             continue
         filtered.append(candle)
-    return filtered or list(candles)
+    return filtered
 
 
 def _date_to_timestamp(value: str, *, end_of_day: bool) -> int:

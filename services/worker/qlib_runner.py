@@ -908,6 +908,8 @@ class QlibRunner:
             "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
             "dataset_snapshot": _build_dataset_snapshot_summary(payload),
             "backtest": _build_experiment_backtest_snapshot(payload.get("backtest")),
+            "training_context": dict(payload.get("training_context") or {}),
+            "inference_context": dict(payload.get("inference_context") or {}),
             "artifact_path": str(payload.get("artifact_path", "")),
         }
 
