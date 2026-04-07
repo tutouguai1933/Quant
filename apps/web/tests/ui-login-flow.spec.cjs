@@ -1,10 +1,8 @@
 const { test, expect } = require("@playwright/test");
+const { getPlaywrightUseOptions } = require("./playwright-browser.cjs");
 const { WEB_BASE_URL } = require("./test-urls.cjs");
 
-test.use({
-  launchOptions: { executablePath: "/snap/bin/chromium" },
-  viewport: { width: 1440, height: 1100 },
-});
+test.use(getPlaywrightUseOptions());
 
 test("login page submits and redirects without getting stuck", async ({ page }) => {
   await page.goto(`${WEB_BASE_URL}/login?next=%2Fstrategies`, { waitUntil: "networkidle" });
