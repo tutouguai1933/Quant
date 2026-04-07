@@ -17,6 +17,7 @@ from services.worker.qlib_features import AUXILIARY_FEATURE_COLUMNS, PRIMARY_FEA
 DEFAULT_RUNTIME_ROOT = Path("/tmp/quant-qlib-runtime")
 DEFAULT_BACKTEST_FEE_BPS = Decimal("10")
 DEFAULT_BACKTEST_SLIPPAGE_BPS = Decimal("5")
+DEFAULT_BACKTEST_COST_MODEL = "round_trip_basis_points"
 DEFAULT_LABEL_TARGET_PCT = Decimal("1")
 DEFAULT_LABEL_STOP_PCT = Decimal("-1")
 DEFAULT_LOOKBACK_DAYS = 30
@@ -57,6 +58,11 @@ SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
 SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
 SUPPORTED_WINDOW_MODES = ("rolling", "fixed")
+SUPPORTED_BACKTEST_COST_MODELS = (
+    "round_trip_basis_points",
+    "single_side_basis_points",
+    "zero_cost_baseline",
+)
 _RUNTIME_HINTS: dict[str, str] = {}
 
 
@@ -90,6 +96,7 @@ class QlibRuntimeConfig:
     qlib_available: bool
     backtest_fee_bps: Decimal
     backtest_slippage_bps: Decimal
+    backtest_cost_model: str
     force_validation_top_candidate: bool
     research_data_layer: str
     selected_symbols: tuple[str, ...]
@@ -125,6 +132,11 @@ class QlibRuntimeConfig:
     dry_run_max_turnover: Decimal
     dry_run_min_sample_count: int
     validation_min_sample_count: int
+    enable_rule_gate: bool
+    enable_validation_gate: bool
+    enable_backtest_gate: bool
+    enable_consistency_gate: bool
+    enable_live_gate: bool
     live_min_score: Decimal
     live_min_positive_rate: Decimal
     live_min_net_return_pct: Decimal
@@ -171,6 +183,11 @@ def load_qlib_config(
         default=DEFAULT_BACKTEST_SLIPPAGE_BPS,
         env_name="QUANT_QLIB_BACKTEST_SLIPPAGE_BPS",
         minimum=Decimal("0"),
+    )
+    backtest_cost_model = _read_choice(
+        values.get("QUANT_QLIB_BACKTEST_COST_MODEL"),
+        default=DEFAULT_BACKTEST_COST_MODEL,
+        allowed=SUPPORTED_BACKTEST_COST_MODELS,
     )
     force_validation_top_candidate = str(values.get("QUANT_QLIB_FORCE_TOP_CANDIDATE", "")).strip().lower() == "true"
     selected_symbols = _read_symbol_list(values.get("QUANT_QLIB_SELECTED_SYMBOLS"))
@@ -326,6 +343,11 @@ def load_qlib_config(
         env_name="QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT",
         minimum=3,
     )
+    enable_rule_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_RULE_GATE"), default=True)
+    enable_validation_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_VALIDATION_GATE"), default=True)
+    enable_backtest_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_BACKTEST_GATE"), default=True)
+    enable_consistency_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_CONSISTENCY_GATE"), default=True)
+    enable_live_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_LIVE_GATE"), default=True)
     live_min_score = _read_decimal(
         values.get("QUANT_QLIB_LIVE_MIN_SCORE"),
         default=DEFAULT_LIVE_MIN_SCORE,
@@ -411,6 +433,12 @@ def load_qlib_config(
             "dry_run_max_turnover": format(dry_run_max_turnover.normalize(), "f"),
             "dry_run_min_sample_count": str(dry_run_min_sample_count),
             "validation_min_sample_count": str(validation_min_sample_count),
+            "backtest_cost_model": backtest_cost_model,
+            "enable_rule_gate": "true" if enable_rule_gate else "false",
+            "enable_validation_gate": "true" if enable_validation_gate else "false",
+            "enable_backtest_gate": "true" if enable_backtest_gate else "false",
+            "enable_consistency_gate": "true" if enable_consistency_gate else "false",
+            "enable_live_gate": "true" if enable_live_gate else "false",
             "live_min_win_rate": format(live_min_win_rate.normalize(), "f"),
             "live_max_turnover": format(live_max_turnover.normalize(), "f"),
             "live_min_sample_count": str(live_min_sample_count),
@@ -435,6 +463,7 @@ def load_qlib_config(
             detail="未设置 QUANT_QLIB_RUNTIME_ROOT 或 QUANT_QLIB_SESSION_ID，研究层当前只能返回明确状态，不能直接执行训练。",
             backtest_fee_bps=backtest_fee_bps,
             backtest_slippage_bps=backtest_slippage_bps,
+            backtest_cost_model=backtest_cost_model,
             force_validation_top_candidate=force_validation_top_candidate,
             selected_symbols=selected_symbols,
             selected_timeframes=selected_timeframes,
@@ -469,6 +498,11 @@ def load_qlib_config(
             dry_run_max_turnover=dry_run_max_turnover,
             dry_run_min_sample_count=dry_run_min_sample_count,
             validation_min_sample_count=validation_min_sample_count,
+            enable_rule_gate=enable_rule_gate,
+            enable_validation_gate=enable_validation_gate,
+            enable_backtest_gate=enable_backtest_gate,
+            enable_consistency_gate=enable_consistency_gate,
+            enable_live_gate=enable_live_gate,
             live_min_score=live_min_score,
             live_min_positive_rate=live_min_positive_rate,
             live_min_net_return_pct=live_min_net_return_pct,
@@ -495,6 +529,7 @@ def load_qlib_config(
         detail=f"研究层目录已指向 {runtime_root}",
         backtest_fee_bps=backtest_fee_bps,
         backtest_slippage_bps=backtest_slippage_bps,
+        backtest_cost_model=backtest_cost_model,
         force_validation_top_candidate=force_validation_top_candidate,
         selected_symbols=selected_symbols,
         selected_timeframes=selected_timeframes,
@@ -529,6 +564,11 @@ def load_qlib_config(
         dry_run_max_turnover=dry_run_max_turnover,
         dry_run_min_sample_count=dry_run_min_sample_count,
         validation_min_sample_count=validation_min_sample_count,
+        enable_rule_gate=enable_rule_gate,
+        enable_validation_gate=enable_validation_gate,
+        enable_backtest_gate=enable_backtest_gate,
+        enable_consistency_gate=enable_consistency_gate,
+        enable_live_gate=enable_live_gate,
         live_min_score=live_min_score,
         live_min_positive_rate=live_min_positive_rate,
         live_min_net_return_pct=live_min_net_return_pct,
@@ -551,6 +591,7 @@ def _build_config(
     detail: str,
     backtest_fee_bps: Decimal,
     backtest_slippage_bps: Decimal,
+    backtest_cost_model: str,
     force_validation_top_candidate: bool,
     selected_symbols: tuple[str, ...],
     selected_timeframes: tuple[str, ...],
@@ -585,6 +626,11 @@ def _build_config(
     dry_run_max_turnover: Decimal,
     dry_run_min_sample_count: int,
     validation_min_sample_count: int,
+    enable_rule_gate: bool,
+    enable_validation_gate: bool,
+    enable_backtest_gate: bool,
+    enable_consistency_gate: bool,
+    enable_live_gate: bool,
     live_min_score: Decimal,
     live_min_positive_rate: Decimal,
     live_min_net_return_pct: Decimal,
@@ -621,6 +667,7 @@ def _build_config(
         qlib_available=qlib_available,
         backtest_fee_bps=backtest_fee_bps,
         backtest_slippage_bps=backtest_slippage_bps,
+        backtest_cost_model=backtest_cost_model,
         force_validation_top_candidate=force_validation_top_candidate,
         research_data_layer="feature-ready",
         selected_symbols=selected_symbols,
@@ -656,6 +703,11 @@ def _build_config(
         dry_run_max_turnover=dry_run_max_turnover,
         dry_run_min_sample_count=dry_run_min_sample_count,
         validation_min_sample_count=validation_min_sample_count,
+        enable_rule_gate=enable_rule_gate,
+        enable_validation_gate=enable_validation_gate,
+        enable_backtest_gate=enable_backtest_gate,
+        enable_consistency_gate=enable_consistency_gate,
+        enable_live_gate=enable_live_gate,
         live_min_score=live_min_score,
         live_min_positive_rate=live_min_positive_rate,
         live_min_net_return_pct=live_min_net_return_pct,
@@ -777,6 +829,19 @@ def _read_choice(value: str | None, *, default: str, allowed: tuple[str, ...]) -
 
     normalized = str(value or "").strip()
     return normalized if normalized in allowed else default
+
+
+def _read_bool(value: str | None, *, default: bool) -> bool:
+    """读取布尔配置。"""
+
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    return default
 
 
 def _read_date(value: str | None) -> str:

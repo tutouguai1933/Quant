@@ -6,7 +6,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
-import { ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/workbench-config-card";
+import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getEvaluationWorkspace } from "../../lib/api";
@@ -130,6 +130,50 @@ export default async function EvaluationPage() {
                 <ConfigInput name="live_min_sample_count" defaultValue={String(controls.live_min_sample_count ?? "24")} placeholder="最低 live 样本数" />
               </div>
             </ConfigField>
+            <ConfigField label="门控开关" hint="这里可以明确控制规则门、验证门、回测门、一致性门和 live 门是否参与放行。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigSelect
+                  name="enable_rule_gate"
+                  defaultValue={String(Boolean(controls.enable_rule_gate))}
+                  options={[
+                    { value: "true", label: "开启规则门" },
+                    { value: "false", label: "关闭规则门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_validation_gate"
+                  defaultValue={String(Boolean(controls.enable_validation_gate))}
+                  options={[
+                    { value: "true", label: "开启验证门" },
+                    { value: "false", label: "关闭验证门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_backtest_gate"
+                  defaultValue={String(Boolean(controls.enable_backtest_gate))}
+                  options={[
+                    { value: "true", label: "开启回测门" },
+                    { value: "false", label: "关闭回测门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_consistency_gate"
+                  defaultValue={String(Boolean(controls.enable_consistency_gate))}
+                  options={[
+                    { value: "true", label: "开启一致性门" },
+                    { value: "false", label: "关闭一致性门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_live_gate"
+                  defaultValue={String(Boolean(controls.enable_live_gate))}
+                  options={[
+                    { value: "true", label: "开启 live 门" },
+                    { value: "false", label: "关闭 live 门" },
+                  ]}
+                />
+              </div>
+            </ConfigField>
           </WorkbenchConfigCard>
 
           <WorkbenchConfigCard
@@ -145,26 +189,6 @@ export default async function EvaluationPage() {
             </ConfigField>
             <ConfigField label="复盘窗口" hint="这里决定评估中心和任务页最多展示最近多少条统一复盘记录。">
               <ConfigInput name="review_limit" type="number" min={1} max={100} step={1} defaultValue={reviewLimit} />
-            </ConfigField>
-          </WorkbenchConfigCard>
-
-          <WorkbenchConfigCard
-            title="实验对比与复盘窗口"
-            description="这里控制评估页和任务页默认展示多少条最近复盘。训练实验和推理实验快照不受这个窗口影响。"
-            scope="operations"
-            returnTo="/evaluation"
-            disabled={!configEditable}
-            disabledReason={unavailableConfigReason}
-          >
-            <ConfigField label="复盘窗口" hint="这里只影响最近复盘记录和任务页里的统一复盘窗口，不会裁掉训练实验和推理实验快照。">
-              <ConfigInput
-                name="review_limit"
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                defaultValue={String(operations.review_limit ?? "10")}
-              />
             </ConfigField>
           </WorkbenchConfigCard>
 
@@ -771,15 +795,34 @@ function buildConfigDiffSections(row: Record<string, unknown>) {
       grouped.data.push(field);
       return;
     }
-    if (["缺失处理", "去极值", "标准化"].includes(field)) {
+    if (["缺失处理", "去极值", "标准化", "主判断因子", "辅助确认因子"].includes(field)) {
       grouped.features.push(field);
       return;
     }
-    if (["研究模板", "模型选择", "标签口径", "最短持有天数", "最长持有天数"].includes(field)) {
+    if (
+      [
+        "研究模板",
+        "模型选择",
+        "标签口径",
+        "持有窗口",
+        "最短持有天数",
+        "最长持有天数",
+        "训练比例",
+        "验证比例",
+        "测试比例",
+        "最低置信度",
+        "严格模板惩罚权重",
+        "趋势权重",
+        "量能权重",
+        "震荡权重",
+        "波动权重",
+        "强制验证当前最优候选",
+      ].includes(field)
+    ) {
       grouped.research.push(field);
       return;
     }
-    if (["回测手续费", "回测滑点"].includes(field)) {
+    if (["回测手续费", "回测滑点", "成本模型"].includes(field)) {
       grouped.backtest.push(field);
       return;
     }
@@ -800,6 +843,7 @@ function normalizeChangedFields(row: Record<string, unknown>) {
     model_key: "模型选择",
     label_mode: "标签口径",
     force_validation_top_candidate: "强制验证当前最优候选",
+    holding_window_label: "持有窗口",
     holding_window_min_days: "最短持有天数",
     holding_window_max_days: "最长持有天数",
     sample_limit: "样本长度",
@@ -810,8 +854,41 @@ function normalizeChangedFields(row: Record<string, unknown>) {
     missing_policy: "缺失处理",
     outlier_policy: "去极值",
     normalization_policy: "标准化",
+    primary_factors: "主判断因子",
+    auxiliary_factors: "辅助确认因子",
+    train_split_ratio: "训练比例",
+    validation_split_ratio: "验证比例",
+    test_split_ratio: "测试比例",
+    signal_confidence_floor: "最低置信度",
+    strict_penalty_weight: "严格模板惩罚权重",
+    trend_weight: "趋势权重",
+    volume_weight: "量能权重",
+    oscillator_weight: "震荡权重",
+    volatility_weight: "波动权重",
     backtest_fee_bps: "回测手续费",
     backtest_slippage_bps: "回测滑点",
+    backtest_cost_model: "成本模型",
+    enable_rule_gate: "规则门开关",
+    enable_validation_gate: "验证门开关",
+    enable_backtest_gate: "回测门开关",
+    enable_consistency_gate: "一致性门开关",
+    enable_live_gate: "live 门开关",
+    dry_run_min_score: "dry-run 最低分数",
+    dry_run_min_positive_rate: "dry-run 最低验证正收益比例",
+    dry_run_min_net_return_pct: "dry-run 最低净收益",
+    dry_run_min_sharpe: "dry-run 最低 Sharpe",
+    dry_run_max_drawdown_pct: "dry-run 最大回撤",
+    dry_run_max_loss_streak: "dry-run 最大连续亏损段",
+    dry_run_min_win_rate: "dry-run 最低胜率",
+    dry_run_max_turnover: "dry-run 最高换手",
+    dry_run_min_sample_count: "dry-run 最低样本数",
+    validation_min_sample_count: "验证最少样本数",
+    live_min_score: "live 最低分数",
+    live_min_positive_rate: "live 最低正收益比例",
+    live_min_net_return_pct: "live 最低净收益",
+    live_min_win_rate: "live 最低胜率",
+    live_max_turnover: "live 最高换手",
+    live_min_sample_count: "live 最低样本数",
   };
   const changedFields = Array.isArray(row.changed_fields) ? row.changed_fields.map((item) => String(item)).filter(Boolean) : [];
   const labels: string[] = [];

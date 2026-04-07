@@ -40,6 +40,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["research"]["volatility_weight"], "0.9")
         self.assertEqual(config["research"]["strict_penalty_weight"], "1")
         self.assertEqual(config["backtest"]["fee_bps"], "10")
+        self.assertEqual(config["backtest"]["cost_model"], "round_trip_basis_points")
         self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])
         self.assertEqual(config["execution"]["live_max_stake_usdt"], "6")
         self.assertEqual(config["execution"]["live_max_open_trades"], "1")
@@ -51,6 +52,11 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["thresholds"]["dry_run_max_turnover"], "0.6")
         self.assertEqual(config["thresholds"]["dry_run_min_sample_count"], "20")
         self.assertEqual(config["thresholds"]["validation_min_sample_count"], "12")
+        self.assertTrue(config["thresholds"]["enable_rule_gate"])
+        self.assertTrue(config["thresholds"]["enable_validation_gate"])
+        self.assertTrue(config["thresholds"]["enable_backtest_gate"])
+        self.assertTrue(config["thresholds"]["enable_consistency_gate"])
+        self.assertTrue(config["thresholds"]["enable_live_gate"])
         self.assertEqual(config["thresholds"]["live_min_win_rate"], "0.55")
         self.assertEqual(config["thresholds"]["live_max_turnover"], "0.45")
         self.assertEqual(config["thresholds"]["live_min_sample_count"], "24")
@@ -132,6 +138,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                 {
                     "fee_bps": "12",
                     "slippage_bps": "7",
+                    "cost_model": "zero_cost_baseline",
                 },
             )
             service.update_section(
@@ -143,6 +150,11 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "dry_run_max_turnover": "0.5",
                     "dry_run_min_sample_count": "26",
                     "validation_min_sample_count": "18",
+                    "enable_rule_gate": False,
+                    "enable_validation_gate": False,
+                    "enable_backtest_gate": True,
+                    "enable_consistency_gate": False,
+                    "enable_live_gate": True,
                     "live_min_win_rate": "0.61",
                     "live_max_turnover": "0.42",
                     "live_min_sample_count": "30",
@@ -172,12 +184,18 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_NORMALIZATION_POLICY"], "zscore_by_symbol")
         self.assertEqual(overrides["QUANT_QLIB_MISSING_POLICY"], "strict_drop")
         self.assertEqual(overrides["QUANT_QLIB_BACKTEST_FEE_BPS"], "12")
+        self.assertEqual(overrides["QUANT_QLIB_BACKTEST_COST_MODEL"], "zero_cost_baseline")
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MIN_SCORE"], "0.6")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_SCORE"], "0.8")
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MIN_WIN_RATE"], "0.57")
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MAX_TURNOVER"], "0.5")
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MIN_SAMPLE_COUNT"], "26")
         self.assertEqual(overrides["QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT"], "18")
+        self.assertEqual(overrides["QUANT_QLIB_ENABLE_RULE_GATE"], "false")
+        self.assertEqual(overrides["QUANT_QLIB_ENABLE_VALIDATION_GATE"], "false")
+        self.assertEqual(overrides["QUANT_QLIB_ENABLE_BACKTEST_GATE"], "true")
+        self.assertEqual(overrides["QUANT_QLIB_ENABLE_CONSISTENCY_GATE"], "false")
+        self.assertEqual(overrides["QUANT_QLIB_ENABLE_LIVE_GATE"], "true")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_WIN_RATE"], "0.61")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MAX_TURNOVER"], "0.42")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT"], "30")

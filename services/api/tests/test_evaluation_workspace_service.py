@@ -46,11 +46,15 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["run_deltas"][0]["dataset_changed"], "是")
         self.assertIn("model_key", item["run_deltas"][0]["changed_fields"])
         self.assertIn("window_mode", item["run_deltas"][0]["changed_fields"])
+        self.assertIn("backtest_cost_model", item["run_deltas"][0]["changed_fields"])
+        self.assertIn("enable_rule_gate", item["run_deltas"][0]["changed_fields"])
         self.assertEqual(item["run_deltas"][0]["changed_fields_status"], "ready")
         self.assertEqual(item["run_deltas"][0]["comparison_readiness"], "limited")
         self.assertIn("模型版本", item["run_deltas"][0]["change_summary"])
         self.assertIn("数据快照", item["run_deltas"][0]["comparison_reason"])
         self.assertIn("强制验证当前最优候选", item["run_deltas"][0]["comparison_reason"])
+        self.assertIn("成本模型", item["run_deltas"][0]["comparison_reason"])
+        self.assertIn("规则门开关", item["run_deltas"][0]["comparison_reason"])
         self.assertEqual(item["delta_overview"]["status"], "limited")
         self.assertIn("当前先看", item["delta_overview"]["headline"])
         self.assertEqual(item["experiment_comparison"][0]["run_type"], "training")
@@ -258,6 +262,8 @@ class _FakeResearchService:
                                 "start_date": "2026-01-01",
                                 "end_date": "2026-02-01",
                                 "force_validation_top_candidate": False,
+                                "backtest_cost_model": "zero_cost_baseline",
+                                "enable_rule_gate": False,
                             }
                         },
                     },
@@ -274,6 +280,8 @@ class _FakeResearchService:
                                 "window_mode": "rolling",
                                 "start_date": "",
                                 "end_date": "",
+                                "backtest_cost_model": "round_trip_basis_points",
+                                "enable_rule_gate": True,
                             }
                         },
                     },

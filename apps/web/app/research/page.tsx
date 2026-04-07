@@ -210,6 +210,11 @@ export default async function ResearchPage() {
               />
             </ConfigField>
             <ConfigField label="持有窗口" hint="这会决定标签在未来几天里寻找最早命中结果。">
+              <ConfigSelect
+                name="holding_window_label"
+                defaultValue={String(controls.holding_window_label ?? "1-3d")}
+                options={workspace.controls.available_holding_windows.map((item) => ({ value: item, label: item }))}
+              />
               <div className="grid gap-3 md:grid-cols-2">
                 <ConfigInput name="min_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.min_holding_days)} />
                 <ConfigInput name="max_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.max_holding_days)} />

@@ -149,6 +149,26 @@ class QlibRankingTests(unittest.TestCase):
         self.assertIn("trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
+    def test_rank_candidates_can_disable_rule_gate_from_thresholds(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7800",
+                    "backtest": {"metrics": _passing_metrics()},
+                    "rule_gate": {"status": "failed", "reasons": ["trend_broken"]},
+                }
+            ],
+            thresholds={
+                "enable_rule_gate": False,
+            },
+        )
+
+        self.assertEqual(result["items"][0]["rule_gate"]["status"], "failed")
+        self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "passed")
+        self.assertTrue(result["items"][0]["allowed_to_dry_run"])
+
     def test_rank_candidates_blocks_dry_run_when_sample_count_is_too_low(self) -> None:
         result = rank_candidates(
             [

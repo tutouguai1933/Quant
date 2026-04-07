@@ -66,7 +66,13 @@ def _normalize_candidate(
     research_validation_gate = _evaluate_validation_gate(validation, thresholds=gate_thresholds)
     backtest_gate = _evaluate_backtest_gate(metrics, thresholds=gate_thresholds)
     consistency_gate = _evaluate_consistency_gate(validation=validation, metrics=metrics, training_metrics=training_metrics)
-    dry_run_gate = _merge_gates(score_gate, rule_gate, research_validation_gate, backtest_gate, consistency_gate)
+    dry_run_gate = _merge_gates(
+        score_gate,
+        _apply_gate_toggle(rule_gate, enabled=_gate_enabled(gate_thresholds, "enable_rule_gate")),
+        _apply_gate_toggle(research_validation_gate, enabled=_gate_enabled(gate_thresholds, "enable_validation_gate")),
+        _apply_gate_toggle(backtest_gate, enabled=_gate_enabled(gate_thresholds, "enable_backtest_gate")),
+        _apply_gate_toggle(consistency_gate, enabled=_gate_enabled(gate_thresholds, "enable_consistency_gate")),
+    )
     allowed_to_dry_run = dry_run_gate["status"] == "passed"
     live_gate = _evaluate_live_gate(
         score=item.get("score"),
@@ -75,6 +81,8 @@ def _normalize_candidate(
         thresholds=gate_thresholds,
         allowed_to_dry_run=allowed_to_dry_run,
     )
+    if not _gate_enabled(gate_thresholds, "enable_live_gate") and allowed_to_dry_run:
+        live_gate = {"status": "passed", "reasons": [], "disabled": True}
     allowed_to_live = live_gate["status"] == "passed"
     recommendation_context = _normalize_recommendation_context(item.get("recommendation_context"))
     recommendation_score = _build_recommendation_score(
@@ -377,6 +385,18 @@ def _merge_gates(*gates: dict[str, object]) -> dict[str, object]:
     return {"status": "failed", "reasons": reasons}
 
 
+def _apply_gate_toggle(gate: dict[str, object], *, enabled: bool) -> dict[str, object]:
+    """按开关决定某个门是否参与阻断。"""
+
+    if enabled:
+        return gate
+    passthrough = dict(gate)
+    passthrough["status"] = "passed"
+    passthrough["reasons"] = []
+    passthrough["disabled"] = True
+    return passthrough
+
+
 def _resolve_thresholds(value: dict[str, object] | None, *, research_template: str = "single_asset_timing") -> dict[str, Decimal | int]:
     """整理 dry-run 和 live 门槛。"""
 
@@ -392,6 +412,11 @@ def _resolve_thresholds(value: dict[str, object] | None, *, research_template: s
         "dry_run_max_turnover": _to_decimal(payload.get("dry_run_max_turnover") or _runtime_decimal("dry_run_max_turnover", "0.6")),
         "dry_run_min_sample_count": _to_int_or_none(payload.get("dry_run_min_sample_count") or _runtime_int("dry_run_min_sample_count", "20")) or 20,
         "validation_min_sample_count": _to_int_or_none(payload.get("validation_min_sample_count") or _runtime_int("validation_min_sample_count", "12")) or 12,
+        "enable_rule_gate": _to_bool(payload.get("enable_rule_gate"), _runtime_bool("enable_rule_gate", "true")),
+        "enable_validation_gate": _to_bool(payload.get("enable_validation_gate"), _runtime_bool("enable_validation_gate", "true")),
+        "enable_backtest_gate": _to_bool(payload.get("enable_backtest_gate"), _runtime_bool("enable_backtest_gate", "true")),
+        "enable_consistency_gate": _to_bool(payload.get("enable_consistency_gate"), _runtime_bool("enable_consistency_gate", "true")),
+        "enable_live_gate": _to_bool(payload.get("enable_live_gate"), _runtime_bool("enable_live_gate", "true")),
         "live_min_score": _to_decimal(payload.get("live_min_score") or _runtime_decimal("live_min_score", "0.65")),
         "live_min_positive_rate": _to_decimal(payload.get("live_min_positive_rate") or _runtime_decimal("live_min_positive_rate", "0.50")),
         "live_min_net_return_pct": _to_decimal(payload.get("live_min_net_return_pct") or _runtime_decimal("live_min_net_return_pct", "0.20")),
@@ -429,6 +454,12 @@ def _runtime_int(name: str, default: str) -> str:
     return str(get_runtime_hint(name, default) or default)
 
 
+def _runtime_bool(name: str, default: str) -> str:
+    """读取运行时布尔提示。"""
+
+    return str(get_runtime_hint(name, default) or default)
+
+
 def _to_decimal(value: object) -> Decimal:
     """把输入统一转成十进制。"""
 
@@ -447,6 +478,23 @@ def _to_int_or_none(value: object) -> int | None:
         return int(Decimal(str(value)))
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+def _to_bool(value: object, default: str | bool = True) -> bool:
+    """把输入统一转成布尔值。"""
+
+    normalized = str(value if value is not None else default).strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    return bool(default)
+
+
+def _gate_enabled(thresholds: dict[str, Decimal | int | bool], name: str) -> bool:
+    """读取某个门当前是否开启。"""
+
+    return _to_bool(thresholds.get(name), True)
 
 
 def _format_decimal(value: Decimal) -> str:

@@ -77,6 +77,7 @@ class QlibRunner:
             holding_window=self._config.holding_window_label,
             fee_bps=self._config.backtest_fee_bps,
             slippage_bps=self._config.backtest_slippage_bps,
+            cost_model=self._config.backtest_cost_model,
         )
         run_id = self._new_run_id("train")
         generated_at = _utc_now()
@@ -200,6 +201,11 @@ class QlibRunner:
                 "dry_run_max_turnover": self._config.dry_run_max_turnover,
                 "dry_run_min_sample_count": self._config.dry_run_min_sample_count,
                 "validation_min_sample_count": self._config.validation_min_sample_count,
+                "enable_rule_gate": self._config.enable_rule_gate,
+                "enable_validation_gate": self._config.enable_validation_gate,
+                "enable_backtest_gate": self._config.enable_backtest_gate,
+                "enable_consistency_gate": self._config.enable_consistency_gate,
+                "enable_live_gate": self._config.enable_live_gate,
                 "live_min_score": self._config.live_min_score,
                 "live_min_positive_rate": self._config.live_min_positive_rate,
                 "live_min_net_return_pct": self._config.live_min_net_return_pct,
@@ -291,6 +297,7 @@ class QlibRunner:
             holding_window=self._config.holding_window_label,
             fee_bps=self._config.backtest_fee_bps,
             slippage_bps=self._config.backtest_slippage_bps,
+            cost_model=self._config.backtest_cost_model,
         )
 
     def _build_symbol_dataset_bundle(self, *, symbol: str, market_payload: object) -> DatasetBundle:
@@ -509,10 +516,12 @@ class QlibRunner:
             "parameters": {
                 "backtest_fee_bps": str(self._config.backtest_fee_bps),
                 "backtest_slippage_bps": str(self._config.backtest_slippage_bps),
+                "backtest_cost_model": str(self._config.backtest_cost_model),
                 "force_validation_top_candidate": bool(self._config.force_validation_top_candidate),
                 "research_template": str(self._config.research_template),
                 "model_key": str(self._config.model_key),
                 "label_mode": str(self._config.label_mode),
+                "holding_window_label": str(self._config.holding_window_label),
                 "label_target_pct": str(self._config.label_target_pct),
                 "label_stop_pct": str(self._config.label_stop_pct),
                 "holding_window_min_days": self._config.holding_window_min_days,
@@ -567,6 +576,8 @@ class QlibRunner:
                 "window_mode": str(self._config.window_mode),
                 "start_date": str(self._config.start_date),
                 "end_date": str(self._config.end_date),
+                "holding_window_label": str(self._config.holding_window_label),
+                "backtest_cost_model": str(self._config.backtest_cost_model),
                 "train_split_ratio": str(self._config.train_split_ratio),
                 "validation_split_ratio": str(self._config.validation_split_ratio),
                 "test_split_ratio": str(self._config.test_split_ratio),
@@ -580,6 +591,11 @@ class QlibRunner:
                 "dry_run_max_turnover": str(self._config.dry_run_max_turnover),
                 "dry_run_min_sample_count": str(self._config.dry_run_min_sample_count),
                 "validation_min_sample_count": str(self._config.validation_min_sample_count),
+                "enable_rule_gate": self._config.enable_rule_gate,
+                "enable_validation_gate": self._config.enable_validation_gate,
+                "enable_backtest_gate": self._config.enable_backtest_gate,
+                "enable_consistency_gate": self._config.enable_consistency_gate,
+                "enable_live_gate": self._config.enable_live_gate,
                 "live_min_score": str(self._config.live_min_score),
                 "live_min_positive_rate": str(self._config.live_min_positive_rate),
                 "live_min_net_return_pct": str(self._config.live_min_net_return_pct),

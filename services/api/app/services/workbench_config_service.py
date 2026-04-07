@@ -27,6 +27,12 @@ SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
 SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
 SUPPORTED_WINDOW_MODES = ("rolling", "fixed")
+SUPPORTED_HOLDING_WINDOWS = ("1-3d", "2-4d", "3-5d")
+SUPPORTED_BACKTEST_COST_MODELS = (
+    "round_trip_basis_points",
+    "single_side_basis_points",
+    "zero_cost_baseline",
+)
 
 
 def _default_config() -> dict[str, object]:
@@ -74,6 +80,7 @@ def _default_config() -> dict[str, object]:
         "backtest": {
             "fee_bps": "10",
             "slippage_bps": "5",
+            "cost_model": "round_trip_basis_points",
         },
         "execution": {
             "live_allowed_symbols": list(DEFAULT_MARKET_SYMBOLS),
@@ -91,6 +98,11 @@ def _default_config() -> dict[str, object]:
             "dry_run_max_turnover": "0.6",
             "dry_run_min_sample_count": "20",
             "validation_min_sample_count": "12",
+            "enable_rule_gate": True,
+            "enable_validation_gate": True,
+            "enable_backtest_gate": True,
+            "enable_consistency_gate": True,
+            "enable_live_gate": True,
             "live_min_score": "0.65",
             "live_min_positive_rate": "0.50",
             "live_min_net_return_pct": "0.20",
@@ -142,6 +154,10 @@ class WorkbenchConfigService:
         elif normalized_section == "features":
             merged["features"] = self._normalize_features_section(next_section)
         elif normalized_section == "research":
+            if "holding_window_label" not in values and (
+                "min_holding_days" in values or "max_holding_days" in values
+            ):
+                next_section.pop("holding_window_label", None)
             merged["research"] = self._normalize_research_section(next_section)
         elif normalized_section == "backtest":
             merged["backtest"] = self._normalize_backtest_section(next_section)
@@ -185,6 +201,8 @@ class WorkbenchConfigService:
                 "models": list(SUPPORTED_MODELS),
                 "research_templates": list(SUPPORTED_RESEARCH_TEMPLATES),
                 "label_modes": list(SUPPORTED_LABEL_MODES),
+                "holding_windows": list(SUPPORTED_HOLDING_WINDOWS),
+                "backtest_cost_models": list(SUPPORTED_BACKTEST_COST_MODELS),
                 "all_symbols": list(DEFAULT_MARKET_SYMBOLS),
                 "primary_factors": list(PRIMARY_FEATURE_COLUMNS),
                 "auxiliary_factors": list(AUXILIARY_FEATURE_COLUMNS),
@@ -242,6 +260,7 @@ class WorkbenchConfigService:
             "QUANT_QLIB_STRICT_PENALTY_WEIGHT": str(research.get("strict_penalty_weight", "1")),
             "QUANT_QLIB_BACKTEST_FEE_BPS": str(backtest.get("fee_bps", "10")),
             "QUANT_QLIB_BACKTEST_SLIPPAGE_BPS": str(backtest.get("slippage_bps", "5")),
+            "QUANT_QLIB_BACKTEST_COST_MODEL": str(backtest.get("cost_model", "round_trip_basis_points")),
             "QUANT_QLIB_DRY_RUN_MIN_SCORE": str(thresholds.get("dry_run_min_score", "0.55")),
             "QUANT_QLIB_DRY_RUN_MIN_POSITIVE_RATE": str(thresholds.get("dry_run_min_positive_rate", "0.45")),
             "QUANT_QLIB_DRY_RUN_MIN_NET_RETURN_PCT": str(thresholds.get("dry_run_min_net_return_pct", "0")),
@@ -252,6 +271,21 @@ class WorkbenchConfigService:
             "QUANT_QLIB_DRY_RUN_MAX_TURNOVER": str(thresholds.get("dry_run_max_turnover", "0.6")),
             "QUANT_QLIB_DRY_RUN_MIN_SAMPLE_COUNT": str(thresholds.get("dry_run_min_sample_count", "20")),
             "QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT": str(thresholds.get("validation_min_sample_count", "12")),
+            "QUANT_QLIB_ENABLE_RULE_GATE": "true"
+            if self._normalize_bool(thresholds.get("enable_rule_gate"), default=True)
+            else "false",
+            "QUANT_QLIB_ENABLE_VALIDATION_GATE": "true"
+            if self._normalize_bool(thresholds.get("enable_validation_gate"), default=True)
+            else "false",
+            "QUANT_QLIB_ENABLE_BACKTEST_GATE": "true"
+            if self._normalize_bool(thresholds.get("enable_backtest_gate"), default=True)
+            else "false",
+            "QUANT_QLIB_ENABLE_CONSISTENCY_GATE": "true"
+            if self._normalize_bool(thresholds.get("enable_consistency_gate"), default=True)
+            else "false",
+            "QUANT_QLIB_ENABLE_LIVE_GATE": "true"
+            if self._normalize_bool(thresholds.get("enable_live_gate"), default=True)
+            else "false",
             "QUANT_QLIB_LIVE_MIN_SCORE": str(thresholds.get("live_min_score", "0.65")),
             "QUANT_QLIB_LIVE_MIN_POSITIVE_RATE": str(thresholds.get("live_min_positive_rate", "0.50")),
             "QUANT_QLIB_LIVE_MIN_NET_RETURN_PCT": str(thresholds.get("live_min_net_return_pct", "0.20")),
@@ -360,10 +394,12 @@ class WorkbenchConfigService:
             default="earliest_hit",
             allowed=SUPPORTED_LABEL_MODES,
         )
-        min_days = self._normalize_int(payload.get("min_holding_days"), default=1, minimum=1, maximum=7)
-        max_days = self._normalize_int(payload.get("max_holding_days"), default=3, minimum=1, maximum=7)
-        if min_days > max_days:
-            min_days, max_days = max_days, min_days
+        normalized_label = self._normalize_holding_window_label(
+            payload.get("holding_window_label"),
+            min_days=self._normalize_int(payload.get("min_holding_days"), default=1, minimum=1, maximum=7),
+            max_days=self._normalize_int(payload.get("max_holding_days"), default=3, minimum=1, maximum=7),
+        )
+        min_days, max_days = self._holding_window_bounds(normalized_label)
         train_ratio = Decimal(
             self._normalize_decimal(payload.get("train_split_ratio"), default=Decimal("0.6"), minimum=Decimal("0.1"), maximum=Decimal("0.9"))
         )
@@ -382,7 +418,7 @@ class WorkbenchConfigService:
             "research_template": research_template,
             "model_key": model_key,
             "label_mode": label_mode,
-            "holding_window_label": f"{min_days}-{max_days}d",
+            "holding_window_label": normalized_label,
             "force_validation_top_candidate": self._normalize_bool(
                 payload.get("force_validation_top_candidate"),
                 default=False,
@@ -439,6 +475,11 @@ class WorkbenchConfigService:
         return {
             "fee_bps": self._normalize_decimal(payload.get("fee_bps"), default=Decimal("10"), minimum=Decimal("0")),
             "slippage_bps": self._normalize_decimal(payload.get("slippage_bps"), default=Decimal("5"), minimum=Decimal("0")),
+            "cost_model": self._normalize_choice(
+                payload.get("cost_model"),
+                default="round_trip_basis_points",
+                allowed=SUPPORTED_BACKTEST_COST_MODELS,
+            ),
         }
 
     def _normalize_execution_section(self, value: object) -> dict[str, object]:
@@ -477,6 +518,11 @@ class WorkbenchConfigService:
             "dry_run_max_turnover": self._normalize_decimal(payload.get("dry_run_max_turnover"), default=Decimal("0.6"), minimum=Decimal("0")),
             "dry_run_min_sample_count": str(self._normalize_int(payload.get("dry_run_min_sample_count"), default=20, minimum=3, maximum=500)),
             "validation_min_sample_count": str(self._normalize_int(payload.get("validation_min_sample_count"), default=12, minimum=3, maximum=500)),
+            "enable_rule_gate": self._normalize_bool(payload.get("enable_rule_gate"), default=True),
+            "enable_validation_gate": self._normalize_bool(payload.get("enable_validation_gate"), default=True),
+            "enable_backtest_gate": self._normalize_bool(payload.get("enable_backtest_gate"), default=True),
+            "enable_consistency_gate": self._normalize_bool(payload.get("enable_consistency_gate"), default=True),
+            "enable_live_gate": self._normalize_bool(payload.get("enable_live_gate"), default=True),
             "live_min_score": self._normalize_decimal(payload.get("live_min_score"), default=Decimal("0.65"), minimum=Decimal("0"), maximum=Decimal("1")),
             "live_min_positive_rate": self._normalize_decimal(payload.get("live_min_positive_rate"), default=Decimal("0.50"), minimum=Decimal("0"), maximum=Decimal("1")),
             "live_min_net_return_pct": self._normalize_decimal(payload.get("live_min_net_return_pct"), default=Decimal("0.20")),
@@ -621,6 +667,27 @@ class WorkbenchConfigService:
 
         normalized = str(value or "").strip()
         return normalized if normalized in set(str(item) for item in allowed) else default
+
+    def _normalize_holding_window_label(self, value: object, *, min_days: int, max_days: int) -> str:
+        """整理持有窗口标签。"""
+
+        normalized = str(value or "").strip()
+        if normalized in SUPPORTED_HOLDING_WINDOWS:
+            return normalized
+        return f"{min_days}-{max_days}d"
+
+    @staticmethod
+    def _holding_window_bounds(label: str) -> tuple[int, int]:
+        """把持有窗口标签拆成最小和最大天数。"""
+
+        matched = re.fullmatch(r"(\d+)-(\d+)d", str(label or "").strip())
+        if not matched:
+            return 1, 3
+        min_days = max(1, min(7, int(matched.group(1))))
+        max_days = max(1, min(7, int(matched.group(2))))
+        if min_days > max_days:
+            min_days, max_days = max_days, min_days
+        return min_days, max_days
 
     @staticmethod
     def _normalize_bool(value: object, *, default: bool) -> bool:

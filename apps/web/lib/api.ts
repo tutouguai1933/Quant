@@ -513,6 +513,7 @@ export type ResearchWorkspaceModel = {
     available_models: string[];
     available_research_templates: string[];
     available_label_modes: string[];
+    available_holding_windows: string[];
   };
   parameters: Record<string, string>;
   selectors: {
@@ -548,6 +549,19 @@ export type BacktestWorkspaceModel = {
   controls: {
     fee_bps: string;
     slippage_bps: string;
+    cost_model: string;
+    available_cost_models: string[];
+    enable_rule_gate: boolean;
+    enable_validation_gate: boolean;
+    enable_backtest_gate: boolean;
+    enable_consistency_gate: boolean;
+    enable_live_gate: boolean;
+    dry_run_min_win_rate: string;
+    dry_run_max_turnover: string;
+    dry_run_min_sample_count: string;
+    live_min_win_rate: string;
+    live_max_turnover: string;
+    live_min_sample_count: string;
   };
   training_backtest: {
     metrics: Record<string, string>;
@@ -579,6 +593,11 @@ export type EvaluationWorkspaceModel = {
     dry_run_max_turnover: string;
     dry_run_min_sample_count: string;
     validation_min_sample_count: string;
+    enable_rule_gate: boolean;
+    enable_validation_gate: boolean;
+    enable_backtest_gate: boolean;
+    enable_consistency_gate: boolean;
+    enable_live_gate: boolean;
     live_min_score: string;
     live_min_positive_rate: string;
     live_min_net_return_pct: string;
@@ -1497,6 +1516,7 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       available_models: ["heuristic_v1", "trend_bias_v2"],
       available_research_templates: ["single_asset_timing", "single_asset_timing_strict"],
       available_label_modes: ["earliest_hit", "close_only"],
+      available_holding_windows: ["1-3d", "2-4d", "3-5d"],
     },
     parameters: {},
     selectors: {
@@ -1534,6 +1554,19 @@ export function getBacktestWorkspaceFallback(): BacktestWorkspaceModel {
     controls: {
       fee_bps: "10",
       slippage_bps: "5",
+      cost_model: "round_trip_basis_points",
+      available_cost_models: ["round_trip_basis_points", "single_side_basis_points", "zero_cost_baseline"],
+      enable_rule_gate: true,
+      enable_validation_gate: true,
+      enable_backtest_gate: true,
+      enable_consistency_gate: true,
+      enable_live_gate: true,
+      dry_run_min_win_rate: "0.5",
+      dry_run_max_turnover: "0.6",
+      dry_run_min_sample_count: "20",
+      live_min_win_rate: "0.55",
+      live_max_turnover: "0.45",
+      live_min_sample_count: "24",
     },
     training_backtest: {
       metrics: {},
@@ -1562,6 +1595,11 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       dry_run_max_turnover: "0.6",
       dry_run_min_sample_count: "20",
       validation_min_sample_count: "12",
+      enable_rule_gate: true,
+      enable_validation_gate: true,
+      enable_backtest_gate: true,
+      enable_consistency_gate: true,
+      enable_live_gate: true,
       live_min_score: "0.65",
       live_min_positive_rate: "0.50",
       live_min_net_return_pct: "0.20",
@@ -1862,6 +1900,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       available_models: normalizeStringArray(controls.available_models, []),
       available_research_templates: normalizeStringArray(controls.available_research_templates, []),
       available_label_modes: normalizeStringArray(controls.available_label_modes, []),
+      available_holding_windows: normalizeStringArray(controls.available_holding_windows, []),
     },
     parameters: Object.fromEntries(
       Object.entries(parameters).map(([name, value]) => [String(name), String(value ?? "")]),
@@ -1911,6 +1950,19 @@ function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel 
     controls: {
       fee_bps: String(controls.fee_bps ?? ""),
       slippage_bps: String(controls.slippage_bps ?? ""),
+      cost_model: String(controls.cost_model ?? "round_trip_basis_points"),
+      available_cost_models: normalizeStringArray(controls.available_cost_models, []),
+      enable_rule_gate: Boolean(controls.enable_rule_gate),
+      enable_validation_gate: Boolean(controls.enable_validation_gate),
+      enable_backtest_gate: Boolean(controls.enable_backtest_gate),
+      enable_consistency_gate: Boolean(controls.enable_consistency_gate),
+      enable_live_gate: Boolean(controls.enable_live_gate),
+      dry_run_min_win_rate: String(controls.dry_run_min_win_rate ?? "0.5"),
+      dry_run_max_turnover: String(controls.dry_run_max_turnover ?? "0.6"),
+      dry_run_min_sample_count: String(controls.dry_run_min_sample_count ?? "20"),
+      live_min_win_rate: String(controls.live_min_win_rate ?? "0.55"),
+      live_max_turnover: String(controls.live_max_turnover ?? "0.45"),
+      live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
     },
     training_backtest: {
       metrics: Object.fromEntries(
@@ -1959,6 +2011,11 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       dry_run_max_turnover: String(controls.dry_run_max_turnover ?? "0.6"),
       dry_run_min_sample_count: String(controls.dry_run_min_sample_count ?? "20"),
       validation_min_sample_count: String(controls.validation_min_sample_count ?? "12"),
+      enable_rule_gate: Boolean(controls.enable_rule_gate),
+      enable_validation_gate: Boolean(controls.enable_validation_gate),
+      enable_backtest_gate: Boolean(controls.enable_backtest_gate),
+      enable_consistency_gate: Boolean(controls.enable_consistency_gate),
+      enable_live_gate: Boolean(controls.enable_live_gate),
       live_min_score: String(controls.live_min_score ?? ""),
       live_min_positive_rate: String(controls.live_min_positive_rate ?? ""),
       live_min_net_return_pct: String(controls.live_min_net_return_pct ?? ""),

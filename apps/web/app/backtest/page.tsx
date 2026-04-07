@@ -4,7 +4,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
-import { ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/workbench-config-card";
+import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getBacktestWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -95,6 +95,13 @@ export default async function BacktestPage() {
             disabled={!configEditable}
             disabledReason={unavailableConfigReason}
           >
+            <ConfigField label="成本模型" hint="先定清楚成本是按单边、双边还是零成本基线计算。">
+              <ConfigSelect
+                name="cost_model"
+                defaultValue={workspace.controls.cost_model}
+                options={workspace.controls.available_cost_models.map((item) => ({ value: item, label: item }))}
+              />
+            </ConfigField>
             <ConfigField label="手续费和滑点" hint="先把成本口径定清楚，再看净收益和回撤。">
               <div className="grid gap-3 md:grid-cols-2">
                 <ConfigInput name="fee_bps" defaultValue={workspace.controls.fee_bps} placeholder="手续费 bps" />

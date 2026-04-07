@@ -15,13 +15,18 @@ def run_backtest(
     holding_window: str,
     fee_bps: Decimal | str | float | int = Decimal("0"),
     slippage_bps: Decimal | str | float | int = Decimal("0"),
+    cost_model: str = "round_trip_basis_points",
 ) -> dict[str, object]:
     """运行一次最小回测并返回统一指标。"""
 
     gross_returns = [_to_float(item.get("future_return_pct")) for item in rows]
     fee_bps_decimal = _to_decimal(fee_bps)
     slippage_bps_decimal = _to_decimal(slippage_bps)
-    round_trip_cost_pct = float((fee_bps_decimal + slippage_bps_decimal) * Decimal("2") / Decimal("100"))
+    round_trip_cost_pct = _resolve_cost_pct(
+        fee_bps=fee_bps_decimal,
+        slippage_bps=slippage_bps_decimal,
+        cost_model=cost_model,
+    )
     net_returns = [item - round_trip_cost_pct for item in gross_returns]
 
     metrics = {
@@ -44,12 +49,22 @@ def run_backtest(
             "fee_bps": str(fee_bps_decimal),
             "slippage_bps": str(slippage_bps_decimal),
             "round_trip_cost_pct": _format_float(round_trip_cost_pct),
-            "cost_model": "round_trip_basis_points",
+            "cost_model": str(cost_model),
             "switch_rule": "signal_flip_only",
             "segment_turnover_mode": "watch_to_action_segments",
         },
         "metrics": metrics,
     }
+
+
+def _resolve_cost_pct(*, fee_bps: Decimal, slippage_bps: Decimal, cost_model: str) -> float:
+    """按成本模型计算净收益扣减比例。"""
+
+    if cost_model == "zero_cost_baseline":
+        return 0.0
+    if cost_model == "single_side_basis_points":
+        return float((fee_bps + slippage_bps) / Decimal("100"))
+    return float((fee_bps + slippage_bps) * Decimal("2") / Decimal("100"))
 
 
 def _max_drawdown_pct(returns: list[float]) -> float:

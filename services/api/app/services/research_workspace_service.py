@@ -106,6 +106,7 @@ class ResearchWorkspaceService:
                 "available_models": [str(item) for item in list((controls.get("options") or {}).get("models") or [])],
                 "available_research_templates": [str(item) for item in list((controls.get("options") or {}).get("research_templates") or [])],
                 "available_label_modes": [str(item) for item in list((controls.get("options") or {}).get("label_modes") or [])],
+                "available_holding_windows": [str(item) for item in list((controls.get("options") or {}).get("holding_windows") or [])],
             },
             "parameters": {
                 str(name): str(value)
