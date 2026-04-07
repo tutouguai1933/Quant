@@ -20,13 +20,29 @@ export default async function EvaluationPage() {
   const researchReview = asRecord(asRecord(workspace.reviews).research);
   const executionAlignment = asRecord(workspace.execution_alignment);
   const alignmentDetails = asRecord(workspace.alignment_details);
+  const alignmentGaps = Array.isArray(workspace.alignment_gaps) ? workspace.alignment_gaps.filter((item) => item && typeof item === "object") : [];
+  const alignmentActions = Array.isArray(workspace.alignment_actions) ? workspace.alignment_actions.filter((item) => item && typeof item === "object") : [];
   const comparisonSummary = asRecord(workspace.comparison_summary);
+  const deltaOverview = asRecord(workspace.delta_overview);
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
   const executionMetrics = asRecord(executionAlignment.execution);
   const executionBacktest = asRecord(executionAlignment.backtest);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
+  const experimentAlignmentNote = readText(comparisonSummary.experiment_alignment_note, "当前还没有实验对比说明");
+  const trainingModelVersion = readText(comparisonSummary.training_model_version, "n/a");
+  const inferenceModelVersion = readText(comparisonSummary.inference_model_version, "n/a");
+  const trainingDatasetSnapshot = readText(comparisonSummary.training_dataset_snapshot, "n/a");
+  const inferenceDatasetSnapshot = readText(comparisonSummary.inference_dataset_snapshot, "n/a");
+  const experimentAlignmentContent = `${trainingModelVersion} / ${inferenceModelVersion} / ${trainingDatasetSnapshot} / ${inferenceDatasetSnapshot}`;
+  const configAlignmentStatus = readText(configAlignment.status, "unavailable");
+  const configAlignmentCallout =
+    configAlignmentStatus === "aligned"
+      ? "当前研究结果仍然基于这页右上角的最新门槛。"
+      : configAlignmentStatus === "unavailable"
+        ? "评估系统还没拿到配置快照，无法确认与当前门槛的关系。"
+        : "检测到配置与研究结果之间可能存在漂移，请参照右侧字段进一步核对。";
   const executionAlignmentNarrative = buildExecutionAlignmentNarrative({
     executionAlignment,
     executionMetrics,
@@ -35,6 +51,8 @@ export default async function EvaluationPage() {
     overview: workspace.overview,
     comparisonSummary,
   });
+  const latestRunDelta = workspace.run_deltas.length ? asRecord(workspace.run_deltas[0]) : {};
+  const configDiffSections = buildConfigDiffSections(latestRunDelta);
 
   return (
     <AppShell
@@ -131,6 +149,36 @@ export default async function EvaluationPage() {
             emptyTitle="当前还没有实验对照"
             emptyDetail="先运行研究训练和推理，系统才会把训练、推理和最近运行放到同一张对照表里。"
           />
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>实验对齐概况</CardTitle>
+              <CardDescription>不只是数据，而是把训练、推理、模型和快照一起讲清楚，缺上下文也能直接看出。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm leading-6 text-muted-foreground">{experimentAlignmentNote}</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoBlock label="训练模型" value={trainingModelVersion} />
+                <InfoBlock label="推理模型" value={inferenceModelVersion} />
+                <InfoBlock label="训练数据快照" value={trainingDatasetSnapshot} />
+                <InfoBlock label="推理数据快照" value={inferenceDatasetSnapshot} />
+              </div>
+              <p className="text-xs leading-5 text-foreground/70">对齐内容：{experimentAlignmentContent}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>最近两轮变化焦点</CardTitle>
+              <CardDescription>先抓住这一轮最核心的变化，再决定要不要继续放量或回退配置。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="关键变化" value={String(deltaOverview.headline ?? "当前还没有变化焦点")} />
+              <InfoBlock label="不可直接比较原因" value={String(deltaOverview.detail ?? "当前没有额外说明")} />
+              <InfoBlock label="当前状态" value={formatComparisonReadiness(String(deltaOverview.status ?? "unavailable"))} />
+              <InfoBlock label="补充说明" value={String(deltaOverview.note ?? "当前没有补充说明")} />
+            </CardContent>
+          </Card>
 
           <Card className="bg-card/90">
             <CardHeader>
@@ -234,35 +282,47 @@ export default async function EvaluationPage() {
             </CardContent>
           </Card>
 
+          <DataTable
+            columns={["研究到执行时间线", "最近状态", "最近完成时间", "说明"]}
+            rows={workspace.workflow_alignment_timeline.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${row.task_type ?? index}`,
+                cells: [
+                  String(row.label ?? row.task_type ?? "task"),
+                  String(row.status ?? "waiting"),
+                  String(row.finished_at ?? row.requested_at ?? "n/a"),
+                  String(row.detail ?? "当前没有额外说明"),
+                ],
+              };
+            })}
+            emptyTitle="当前还没有研究到执行时间线"
+            emptyDetail="先跑一轮研究、执行和复盘，系统才会把最近时间线整理到这里。"
+          />
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>最近两轮对比</CardTitle>
-              <CardDescription>参数与结果一起看，先确认这一轮到底是模型变了、数据变了，还是结果本身变了。</CardDescription>
+              <CardDescription>参数与结果一起看，再把关键变化、配置变化和不可直接比较原因拆开看，先确认这一轮到底能不能直接比。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {workspace.run_deltas.length ? (
                 <DataTable
-                  columns={["最近两轮对比", "模型变化", "数据变化", "配置变化", "净收益差", "Sharpe 差", "胜率差", "说明"]}
+                  columns={["最近两轮对比", "关键变化", "可比性判断", "不可直接比较原因", "净收益差", "Sharpe 差", "胜率差", "说明"]}
                   rows={workspace.run_deltas.map((item, index) => {
                     const row = asRecord(item);
-                    const changedFieldsStatus = String(row.changed_fields_status ?? "ready");
-                    const changedFieldsNote = String(row.changed_fields_note ?? "");
-                    const changedFields = Array.isArray(row.changed_fields)
-                      ? row.changed_fields.map(String).filter(Boolean).join(" / ")
-                      : "";
+                    const changedFields = buildChangedFieldSummary(row);
                     return {
                       id: `${row.run_type ?? index}`,
                       cells: [
                         `${String(row.run_type ?? "run")} / ${String(row.previous_run_id ?? "n/a")} → ${String(row.current_run_id ?? "n/a")}`,
-                        String(row.model_changed ?? "否"),
-                        String(row.dataset_changed ?? "否"),
-                        changedFieldsStatus === "unavailable"
-                          ? (changedFieldsNote || "当前实验账本缺少配置快照，暂时无法比较。")
-                          : (changedFields || "当前没有配置变化"),
+                        String(row.change_summary ?? "当前没有变化摘要"),
+                        formatComparisonReadiness(String(row.comparison_readiness ?? "unavailable")),
+                        String(row.comparison_reason ?? "当前没有额外说明"),
                         String(row.net_return_delta ?? "n/a"),
                         String(row.sharpe_delta ?? "n/a"),
                         String(row.win_rate_delta ?? "n/a"),
-                        String(row.note ?? "当前还没有说明"),
+                        `${changedFields} / ${String(row.note ?? "当前还没有说明")}`,
                       ],
                     };
                   })}
@@ -280,10 +340,27 @@ export default async function EvaluationPage() {
               <CardTitle>当前结果与配置对齐</CardTitle>
               <CardDescription>先确认当前评估结果是不是仍然基于这页右上角的最新门槛。</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
-              <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
-              <InfoBlock label="变更字段" value={Array.isArray(configAlignment.stale_fields) && configAlignment.stale_fields.length ? configAlignment.stale_fields.map(String).join(" / ") : "当前没有发现漂移字段"} />
+            <CardContent className="space-y-3">
+              <p className="text-sm leading-6 text-muted-foreground">{configAlignmentCallout}</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
+                <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
+                <InfoBlock label="配置变化" value={Array.isArray(configAlignment.stale_fields) && configAlignment.stale_fields.length ? configAlignment.stale_fields.map(String).join(" / ") : "当前没有发现漂移字段"} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>配置差异拆解</CardTitle>
+              <CardDescription>不只告诉你“变了”，而是直接按数据、特征、研究、回测和门槛拆开，方便判断这两轮还能不能直接比。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="数据配置" value={configDiffSections.data} />
+              <InfoBlock label="特征配置" value={configDiffSections.features} />
+              <InfoBlock label="研究配置" value={configDiffSections.research} />
+              <InfoBlock label="回测配置" value={configDiffSections.backtest} />
+              <InfoBlock label="门槛配置" value={configDiffSections.thresholds} />
             </CardContent>
           </Card>
 
@@ -313,6 +390,43 @@ export default async function EvaluationPage() {
               <InfoBlock label="研究标的" value={String(alignmentDetails.research_symbol ?? "n/a")} />
               <InfoBlock label="最近订单标的" value={String(alignmentDetails.last_order_symbol ?? "n/a")} />
               <InfoBlock label="最近持仓标的" value={String(alignmentDetails.last_position_symbol ?? "n/a")} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>研究与执行差异</CardTitle>
+              <CardDescription>把当前差在哪、严重程度和先处理什么讲清楚，避免只看到“未对齐”。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前差在哪" value={String(alignmentDetails.difference_summary ?? "当前没有差异摘要")} />
+              <InfoBlock label="严重程度" value={formatGapSeverity(String(alignmentDetails.difference_severity ?? "low"))} />
+              <InfoBlock
+                label="差异明细"
+                value={
+                  alignmentGaps.length
+                    ? alignmentGaps.map((item) => String(asRecord(item).detail ?? "")).filter(Boolean).join(" / ")
+                    : "当前没有差异明细"
+                }
+              />
+              <InfoBlock label="先处理什么" value={String(alignmentDetails.next_step ?? "继续观察当前评估结果")} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>下一步动作</CardTitle>
+              <CardDescription>按当前对齐状态，直接给出下一步应该回哪一层处理。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {alignmentActions.length ? alignmentActions.map((item, index) => {
+                const row = asRecord(item);
+                return (
+                  <p key={`${String(row.label ?? index)}-${index}`}>
+                    {index + 1}. {String(row.label ?? "继续处理")}：{String(row.detail ?? "")}
+                  </p>
+                );
+              }) : <p>当前还没有明确下一步动作。</p>}
             </CardContent>
           </Card>
         </div>
@@ -474,4 +588,80 @@ function readText(value: unknown, fallback: string): string {
 
 function toYesNo(value: unknown): string {
   return value ? "是" : "否";
+}
+
+function formatComparisonReadiness(value: string): string {
+  const mapping: Record<string, string> = {
+    ready: "可以直接比",
+    limited: "只能看方向，不能直接归因",
+    unavailable: "当前还不能直接比",
+  };
+  return mapping[value] ?? "当前还不能直接比";
+}
+
+function formatGapSeverity(value: string): string {
+  const mapping: Record<string, string> = {
+    low: "低",
+    medium: "中",
+    high: "高",
+    unknown: "待确认",
+  };
+  return mapping[value] ?? "待确认";
+}
+
+function buildChangedFieldSummary(row: Record<string, unknown>) {
+  const status = String(row.changed_fields_status ?? "ready");
+  if (status === "unavailable") {
+    return String(row.changed_fields_note ?? "当前实验账本缺少配置快照，暂时无法比较。");
+  }
+  const changedFields = Array.isArray(row.changed_fields) ? row.changed_fields.map((item) => String(item)).filter(Boolean) : [];
+  return changedFields.length ? changedFields.join(" / ") : "当前没有额外配置变化";
+}
+
+function buildConfigDiffSections(row: Record<string, unknown>) {
+  const status = String(row.changed_fields_status ?? "ready");
+  if (status === "unavailable") {
+    const note = String(row.changed_fields_note ?? "当前实验账本缺少配置快照，暂时无法比较最近两轮配置变化。");
+    return {
+      data: note,
+      features: note,
+      research: note,
+      backtest: note,
+      thresholds: note,
+    };
+  }
+  const changedFields = Array.isArray(row.changed_fields) ? row.changed_fields.map((item) => String(item)).filter(Boolean) : [];
+  const grouped = {
+    data: [] as string[],
+    features: [] as string[],
+    research: [] as string[],
+    backtest: [] as string[],
+    thresholds: [] as string[],
+  };
+  changedFields.forEach((field) => {
+    if (["样本长度", "回看天数", "窗口模式", "固定日期范围"].includes(field)) {
+      grouped.data.push(field);
+      return;
+    }
+    if (["缺失处理", "去极值", "标准化"].includes(field)) {
+      grouped.features.push(field);
+      return;
+    }
+    if (["研究模板", "模型选择", "标签口径", "最短持有天数", "最长持有天数"].includes(field)) {
+      grouped.research.push(field);
+      return;
+    }
+    if (["回测手续费", "回测滑点"].includes(field)) {
+      grouped.backtest.push(field);
+      return;
+    }
+    grouped.thresholds.push(field);
+  });
+  return {
+    data: grouped.data.length ? grouped.data.join(" / ") : "当前没有数据配置变化",
+    features: grouped.features.length ? grouped.features.join(" / ") : "当前没有特征配置变化",
+    research: grouped.research.length ? grouped.research.join(" / ") : "当前没有研究配置变化",
+    backtest: grouped.backtest.length ? grouped.backtest.join(" / ") : "当前没有回测配置变化",
+    thresholds: grouped.thresholds.length ? grouped.thresholds.join(" / ") : "当前没有门槛配置变化",
+  };
 }

@@ -9,7 +9,7 @@ import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
-import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
+import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { readFeedback } from "../../lib/feedback";
@@ -75,15 +75,27 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const operatorActions = Array.isArray(automationHealth.operator_actions)
     ? automationHealth.operator_actions.filter((item) => item && typeof item === "object")
     : [];
+  const focusCards = asRecord(automationHealth.focus_cards);
   const takeoverSummary = asRecord(automationHealth.takeover_summary);
   const alertSummary = asRecord(automationHealth.alert_summary);
   const runHealth = asRecord(automationHealth.run_health);
+  const severitySummary = asRecord(automation.severitySummary);
+  const resumeChecklist = Array.isArray(automation.resumeChecklist)
+    ? automation.resumeChecklist.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
   const operations = asRecord(automation.operations);
   const pauseReasonRaw = readText(automation.pauseReason, "");
   const takeoverReason = pauseReasonRaw || "当前没有接管原因。";
   const recoveryAction = readText(executionHealth.recovery_action, "healthy");
   const takeoverStateLabel = describeTakeoverState(automation.mode, automation.manualTakeover, automation.pauseReason);
   const recoveryActionLabel = formatRecoveryAction(recoveryAction);
+  const latestFailedSync = asRecord(executionHealth.latest_failed_sync);
+  const lastSyncFailureAt = readText(latestFailedSync.finished_at, "");
+  const lastSyncFailureMessage = readText(latestFailedSync.error_message, readText(executionHealth.latest_error_message, "当前没有同步失败说明。"));
+  const pausedSince = readText(takeoverSummary.paused_since, automation.pausedAt);
+  const takeoverSince = readText(takeoverSummary.takeover_since, automation.manualTakeoverAt);
+  const lastFailureAt = readText(takeoverSummary.last_failure_at, automation.lastFailureAt);
+  const syncFailureCount = Number(runHealth.sync_failure_count ?? 0);
   const primaryBlocker = asRecord(activeBlockers[0]);
   const guidanceCurrentBlock = buildCurrentBlockSummary({
     primaryBlocker,
@@ -108,11 +120,28 @@ export default async function TasksPage({ searchParams }: PageProps) {
     cycleCount: Number(automation.dailySummary.cycle_count ?? 0),
     latestSyncStatus: String(executionHealth.latest_sync_status ?? "unknown"),
   });
+  const alertFocus = resolveFocusCard(asRecord(focusCards.alert), guidanceAlert);
+  const takeoverFocus = resolveFocusCard(asRecord(focusCards.takeover), guidanceTakeover);
+  const recoveryFocus = resolveFocusCard(asRecord(focusCards.recovery), guidanceRecovery);
   const operationsConfig = {
     pauseAfterFailures: readText(operations.pause_after_consecutive_failures, "2"),
     staleSyncThreshold: readText(operations.stale_sync_failure_threshold, "1"),
     autoPauseOnError: String(operations.auto_pause_on_error ?? true) === "false" ? "false" : "true",
     reviewLimit: readText(operations.review_limit, "10"),
+    cycleCooldownMinutes: readText(operations.cycle_cooldown_minutes, "15"),
+    maxDailyCycleCount: readText(operations.max_daily_cycle_count, "8"),
+  };
+  const executionPolicy = asRecord(automation.executionPolicy);
+  const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
+  const executionSymbolOptions = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"].map((item) => ({
+    value: item,
+    label: item,
+    checked: executionAllowedSymbols.includes(item),
+  }));
+  const executionConfig = {
+    liveAllowedSymbols: executionAllowedSymbols,
+    liveMaxStakeUsdt: readText(executionPolicy.live_max_stake_usdt, "6"),
+    liveMaxOpenTrades: readText(executionPolicy.live_max_open_trades, "1"),
   };
 
   return (
@@ -224,6 +253,29 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <ConfigField label="复盘条数" hint="统一复盘和自动化摘要最多展示最近多少条记录。">
                   <ConfigInput name="review_limit" type="number" min={1} max={100} step={1} defaultValue={operationsConfig.reviewLimit} />
                 </ConfigField>
+                <ConfigField label="自动化冷却时间" hint="每轮自动化之间至少间隔多久，避免短时间内连续重跑。">
+                  <ConfigInput name="cycle_cooldown_minutes" type="number" min={0} max={1440} step={1} defaultValue={operationsConfig.cycleCooldownMinutes} />
+                </ConfigField>
+                <ConfigField label="每日最大轮次" hint="当天自动化最多跑几轮，超过后会自动停在等待状态。">
+                  <ConfigInput name="max_daily_cycle_count" type="number" min={1} max={200} step={1} defaultValue={operationsConfig.maxDailyCycleCount} />
+                </ConfigField>
+              </WorkbenchConfigCard>
+
+              <WorkbenchConfigCard
+                title="执行安全门"
+                description="这里改的是自动小额 live 真正会消费的币种白名单、单笔金额上限和最大持仓数。"
+                scope="execution"
+                returnTo="/tasks"
+              >
+                <ConfigField label="live_allowed_symbols" hint="只允许这些币种进入自动小额 live，没勾选的标的即使研究通过也不会放行。">
+                  <ConfigCheckboxGrid name="live_allowed_symbols" options={executionSymbolOptions} />
+                </ConfigField>
+                <ConfigField label="当前 live 金额上限" hint="单笔真实下单最多用多少 USDT，超过这里会被本地安全门拦下。">
+                  <ConfigInput name="live_max_stake_usdt" type="number" min={0.1} step={0.1} defaultValue={executionConfig.liveMaxStakeUsdt} />
+                </ConfigField>
+                <ConfigField label="最大打开仓位数" hint="自动小额 live 最多同时保留几笔持仓。">
+                  <ConfigInput name="live_max_open_trades" type="number" min={1} max={20} step={1} defaultValue={executionConfig.liveMaxOpenTrades} />
+                </ConfigField>
               </WorkbenchConfigCard>
 
               <Card>
@@ -273,21 +325,59 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="grid gap-3">
                   <div className="grid gap-3 sm:grid-cols-2">
+                    <GuidanceBlock label="告警强度" value={alertFocus.value} detail={alertFocus.detail} tone={alertFocus.tone} />
+                    <GuidanceBlock label="人工接管原因" value={takeoverFocus.value} detail={takeoverFocus.detail} tone={takeoverFocus.tone} />
+                    <GuidanceBlock label="恢复前先做什么" value={recoveryFocus.value} detail={recoveryFocus.detail} tone={recoveryFocus.tone} />
                     <GuidanceBlock label="当前阻塞" value={guidanceCurrentBlock.value} detail={guidanceCurrentBlock.detail} />
-                    <GuidanceBlock label="接管建议" value={guidanceTakeover.value} detail={guidanceTakeover.detail} />
-                    <GuidanceBlock label="恢复步骤" value={guidanceRecovery.value} detail={guidanceRecovery.detail} />
-                    <GuidanceBlock label="告警摘要" value={guidanceAlert.value} detail={guidanceAlert.detail} />
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4 text-sm leading-6 text-muted-foreground">
                     <p>当前模式：{formatMode(automation.mode)}，暂停：{automation.paused ? "是" : "否"}，人工介入：{automation.manualTakeover ? "是" : "否"}</p>
-                    <p>当前控制：{takeoverStateLabel}，接管原因：{takeoverReason}</p>
+                    <p>当前控制：{readText(takeoverSummary.state_label, takeoverStateLabel)}，接管原因：{readText(takeoverSummary.reason_label, takeoverReason)}</p>
                     <p>执行器状态：{executionStateName}，说明：{executionStateDetail}</p>
                     <p>最近 armed 候选：{automation.armedSymbol || "n/a"}，最近复盘：{String(executionHealth.latest_review_status ?? "unknown")}</p>
                     <p>连续失败：{String(runHealth.consecutive_failure_count ?? 0)}，升级级别：{String(runHealth.escalation_level ?? "normal")}</p>
-                    <p>同步新鲜度：{String(runHealth.stale_sync_state ?? "fresh")}，最后成功时间：{readText(runHealth.last_success_at, "当前还没有成功记录")}</p>
+                    <p>同步新鲜度：{String(runHealth.stale_sync_state ?? "fresh")}，同步失败次数：{String(syncFailureCount)}</p>
+                    <p>最后成功时间：{readText(runHealth.last_success_at, "当前还没有成功记录")}，最近失败时间：{lastFailureAt || "当前还没有失败记录"}</p>
                   </div>
                 </CardContent>
               </Card>
+
+              <section className="grid gap-5 lg:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <p className="eyebrow">风险等级摘要</p>
+                    <CardTitle>{readText(severitySummary.label, "当前还没有风险等级摘要")}</CardTitle>
+                    <CardDescription>{readText(severitySummary.detail, "当前没有额外风险说明。")}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                    <p>当前等级：{String(severitySummary.level ?? "normal")}</p>
+                    <p>最近告警：{readText(severitySummary.latest_alert_code, "当前没有新告警")}</p>
+                    <p>主要阻塞：{readText(severitySummary.primary_blocker, "当前没有明显阻塞")}</p>
+                    <p>severitySummary：系统会先按这里决定是否建议人工接管。</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <p className="eyebrow">恢复清单</p>
+                    <CardTitle>恢复前先把这几项过一遍</CardTitle>
+                    <CardDescription>resumeChecklist 会把恢复自动化前最小检查项固定下来，避免凭感觉恢复。</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {resumeChecklist.length ? resumeChecklist.map((item, index) => (
+                      <div key={`${String(item.label ?? index)}-${index}`} className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-foreground">{String(item.label ?? "检查项")}</p>
+                          <StatusBadge value={String(item.status ?? "ready")} />
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">{String(item.detail ?? "当前没有额外说明。")}</p>
+                      </div>
+                    )) : (
+                      <p className="text-sm leading-6 text-muted-foreground">当前没有额外恢复清单，可以继续观察。</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
 
               <Card>
                 <CardHeader>
@@ -309,6 +399,33 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
               <Card>
                 <CardHeader>
+                  <p className="eyebrow">同步失败细节</p>
+                  <CardTitle>先确认最近一次同步为什么失败</CardTitle>
+                  <CardDescription>这里直接告诉你最近一次同步失败发生在什么时候、失败了几次、错误是什么，不用再翻任务记录。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>最近同步状态：{String(executionHealth.latest_sync_status ?? "unknown")}</p>
+                  <p>最近同步失败：{lastSyncFailureAt ? `${lastSyncFailureAt}（${formatRelativeMoment(lastSyncFailureAt)}）` : "当前没有同步失败记录"}</p>
+                  <p>同步失败次数：{String(syncFailureCount)}</p>
+                  <p>失败说明：{lastSyncFailureMessage}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">人工接管时间线</p>
+                  <CardTitle>先确认这次接管已经持续了多久</CardTitle>
+                  <CardDescription>长期运行时，先分清是刚刚接管，还是已经挂了很久，再决定恢复还是继续停住。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>暂停开始：{pausedSince ? `${pausedSince}（${formatRelativeMoment(pausedSince)}）` : "当前没有暂停时间"}</p>
+                  <p>已接管多久：{takeoverSince ? formatRelativeMoment(takeoverSince) : "当前没有人工接管时间"}</p>
+                  <p>最近失败时间：{lastFailureAt ? `${lastFailureAt}（${formatRelativeMoment(lastFailureAt)}）` : "当前还没有失败记录"}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
                   <p className="eyebrow">接管建议</p>
                   <CardTitle>{readText(takeoverSummary.state_label, "当前无需接管")}</CardTitle>
                   <CardDescription>{readText(takeoverSummary.note, "当前没有额外接管说明。")}</CardDescription>
@@ -316,7 +433,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>当前模式：{formatMode(automation.mode)}</p>
                   <p>建议模式：{formatMode(readText(takeoverSummary.suggested_mode, automation.mode))}</p>
-                  <p>接管原因：{readText(takeoverSummary.reason, takeoverReason)}</p>
+                  <p>接管原因：{readText(takeoverSummary.reason_label, takeoverReason)}</p>
+                  <p>恢复前确认：{readText(takeoverSummary.next_step, "可以继续下一轮自动化")}</p>
                 </CardContent>
               </Card>
 
@@ -388,6 +506,35 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <p>同步陈旧阈值：{operationsConfig.staleSyncThreshold}</p>
                   <p>失败后自动暂停：{operationsConfig.autoPauseOnError === "true" ? "开启" : "关闭"}</p>
                   <p>复盘条数：{operationsConfig.reviewLimit}</p>
+                  <p>自动化冷却时间：{operationsConfig.cycleCooldownMinutes} 分钟</p>
+                  <p>每日最大轮次：{operationsConfig.maxDailyCycleCount}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">最近告警历史</p>
+                  <CardTitle>先判断是偶发抖动还是持续性问题</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  {automation.alerts.length ? automation.alerts.slice(0, 5).map((item, index) => (
+                    <p key={`${item.code}-${item.createdAt}-${index}`}>
+                      {index + 1}. [{item.level}] {item.code} / {item.message} / {item.createdAt || "n/a"}
+                    </p>
+                  )) : <p>当前还没有新的自动化告警。</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">执行安全门</p>
+                  <CardTitle>当前放行口径</CardTitle>
+                  <CardDescription>自动化切到 live 前，会先按这里的白名单、单笔金额和最大持仓数做最后一道本地检查。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>live_allowed_symbols：{executionConfig.liveAllowedSymbols.length ? executionConfig.liveAllowedSymbols.join(" / ") : "当前未配置"}</p>
+                  <p>live_max_stake_usdt：{executionConfig.liveMaxStakeUsdt}</p>
+                  <p>live_max_open_trades：{executionConfig.liveMaxOpenTrades}</p>
                 </CardContent>
               </Card>
 
@@ -506,9 +653,20 @@ function ActionCard({
   );
 }
 
-function GuidanceBlock({ label, value, detail }: { label: string; value: string; detail: string }) {
+function GuidanceBlock({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: string;
+}) {
+  const toneClass = resolveGuidanceToneClass(tone);
   return (
-    <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4">
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
       <p className="eyebrow">{label}</p>
       <p className="mt-2 text-sm font-semibold leading-6 text-foreground">{value}</p>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
@@ -585,17 +743,20 @@ function buildTakeoverGuidanceSummary({
   const nextStep = readText(takeoverSummary.next_step, "");
   if (stateLabel === "人工接管中" || stateLabel === "已暂停" || takeoverStateLabel === "风险接管") {
     return {
+      tone: "critical",
       value: stateLabel,
       detail: note || nextStep || (pauseReason ? `当前原因：${pauseReason}` : "问题没查清前先不要恢复自动化。"),
     };
   }
   if (failureReason) {
     return {
+      tone: "warning",
       value: "建议人工复核",
       detail: `先看失败原因：${failureReason}`,
     };
   }
   return {
+    tone: "ok",
     value: "暂不需要接管",
     detail: note || nextStep || "当前没有明显风险，自动化可以继续按计划运行。",
   };
@@ -621,12 +782,14 @@ function buildRecoverySummary({
 
   if (steps.length > 0) {
     return {
+      tone: "warning",
       value: steps.length > 1 ? `先做前 ${steps.length} 步` : "先做这一步",
       detail: steps.join(" / "),
     };
   }
 
   return {
+    tone: recoveryAction === "healthy" ? "ok" : "warning",
     value: recoveryActionLabel,
     detail: recoveryAction === "healthy" ? "当前没有额外恢复步骤，可以继续观察下一轮自动化结果。" : "先按当前恢复建议处理，再决定是否恢复自动化。",
   };
@@ -652,9 +815,32 @@ function buildAlertSummaryCard({
   const value = latestCode ? `${formatAlertLevel(latestLevel)} / ${latestCode}` : "当前没有新告警";
 
   return {
+    tone: latestLevel === "error" ? "critical" : latestLevel === "warning" ? "warning" : latestLevel === "info" ? "info" : "ok",
     value,
     detail: latestMessage || `今天已跑 ${cycleCount} 轮；错误 ${errorCount} 条，警告 ${warningCount} 条，提示 ${infoCount} 条；最近同步 ${latestSyncStatus}。`,
   };
+}
+
+function resolveFocusCard(
+  value: Record<string, unknown>,
+  fallback: { tone?: string; value: string; detail: string },
+) {
+  return {
+    tone: readText(value.tone, fallback.tone ?? "neutral"),
+    value: readText(value.value, fallback.value),
+    detail: readText(value.detail, fallback.detail),
+  };
+}
+
+function resolveGuidanceToneClass(tone: string) {
+  const mapping: Record<string, string> = {
+    critical: "border-rose-500/30 bg-rose-500/10",
+    warning: "border-amber-500/30 bg-amber-500/10",
+    info: "border-sky-500/30 bg-sky-500/10",
+    ok: "border-emerald-500/30 bg-emerald-500/10",
+    neutral: "border-border/70 bg-[color:var(--panel-strong)]/70",
+  };
+  return mapping[tone] ?? mapping.neutral;
 }
 
 function formatMode(mode: string) {
@@ -671,8 +857,11 @@ function describeTakeoverState(mode: string, manualTakeover: boolean, pauseReaso
   if (!manualTakeover) {
     return "未接管";
   }
-  if (pauseReason === "kill_switch" || pauseReason === "manual_takeover") {
+  if (pauseReason === "kill_switch") {
     return "风险接管";
+  }
+  if (pauseReason) {
+    return "人工接管";
   }
   if (mode === "manual") {
     return "手动模式";
@@ -703,6 +892,27 @@ function formatAlertLevel(level: string) {
   return mapping[level] ?? (level || "告警");
 }
 
+function formatRelativeMoment(value: string) {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "时间格式不可用";
+  }
+  const diffMs = Date.now() - timestamp;
+  const diffMinutes = Math.round(diffMs / 60000);
+  if (diffMinutes <= 1) {
+    return "刚刚";
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes} 分钟前`;
+  }
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours} 小时前`;
+  }
+  const diffDays = Math.round(diffHours / 24);
+  return `${diffDays} 天前`;
+}
+
 function readText(value: unknown, fallback: string): string {
   const text = String(value ?? "").trim();
   return text.length > 0 ? text : fallback;
@@ -713,4 +923,11 @@ function asRecord(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item ?? "").trim()).filter((item) => item.length > 0);
 }

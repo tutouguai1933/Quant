@@ -25,8 +25,26 @@ export default async function ResearchPage() {
       : getResearchRuntimeStatusFallback();
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
-  const configEditable = workspace.status !== "unavailable";
+  const configEditable = true;
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
+  const hasResearchResults = workspace.status !== "unavailable";
+  const readinessTrainLabel = hasResearchResults
+    ? (workspace.readiness.train_ready ? "可以" : "还不行")
+    : (workspace.readiness.train_ready ? "可以启动首轮训练" : "还不行");
+  const readinessInferLabel = hasResearchResults
+    ? (workspace.readiness.infer_ready ? "可以" : "还不行")
+    : "还不行";
+  const readinessBlockers = workspace.readiness.blocking_reasons.length
+    ? workspace.readiness.blocking_reasons.join(" / ")
+    : hasResearchResults
+      ? "当前没有研究配置阻塞"
+      : "当前没有配置阻塞，但研究结果还没生成。";
+  const readinessInferReason = hasResearchResults
+    ? (workspace.readiness.infer_reason || "当前没有推理说明")
+    : "当前还没有训练和推理结果，先启动首轮研究训练。";
+  const readinessNextStep = hasResearchResults
+    ? (workspace.readiness.next_step || "继续观察当前研究状态")
+    : "先保存右侧配置，再运行研究训练，首轮结果会自动进入评估中心。";
 
   return (
     <AppShell
@@ -54,6 +72,20 @@ export default async function ResearchPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
         <div className="space-y-5">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>研究准备状态</CardTitle>
+              <CardDescription>这里直接说明现在能不能继续训练、能不能继续推理，以及下一步该做什么。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="可训练" value={readinessTrainLabel} />
+              <InfoBlock label="可推理" value={readinessInferLabel} />
+              <InfoBlock label="当前阻塞" value={readinessBlockers} />
+              <InfoBlock label="推理说明" value={readinessInferReason} />
+              <InfoBlock label="下一步" value={readinessNextStep} />
+            </CardContent>
+          </Card>
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>研究模板</CardTitle>
@@ -87,6 +119,23 @@ export default async function ResearchPage() {
               <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
               <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
               <InfoBlock label="变更字段" value={Array.isArray(configAlignment.stale_fields) && configAlignment.stale_fields.length ? configAlignment.stale_fields.map(String).join(" / ") : "当前没有发现漂移字段"} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>当前配置快照</CardTitle>
+              <CardDescription>把数据、特征、研究、门槛和长期运行配置压成一屏，先确认这一轮到底按什么口径在跑。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="数据快照" value={workspace.execution_preview.data_scope || "当前没有数据范围摘要"} />
+              <InfoBlock label="特征快照" value={workspace.execution_preview.factor_mix || "当前没有因子组合摘要"} />
+              <InfoBlock label="研究快照" value={workspace.execution_preview.label_scope || "当前没有研究范围摘要"} />
+              <InfoBlock
+                label="门槛快照"
+                value={`${workspace.execution_preview.dry_run_gate || "当前没有 dry-run 门槛摘要"} / ${workspace.execution_preview.live_gate || "当前没有 live 门槛摘要"}`}
+              />
+              <InfoBlock label="长期运行快照" value="研究动作会先在后台运行，再由任务页继续承接自动化、告警和人工接管状态。" />
             </CardContent>
           </Card>
 
@@ -161,6 +210,20 @@ export default async function ResearchPage() {
               </div>
             </ConfigField>
           </WorkbenchConfigCard>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>当前配置会怎么影响下一步</CardTitle>
+              <CardDescription>你现在改的数据、因子、标签和门槛，最终会直接影响能不能进入 dry-run 和小额 live。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="数据范围" value={workspace.execution_preview.data_scope || "当前没有数据范围摘要"} />
+              <InfoBlock label="因子组合" value={workspace.execution_preview.factor_mix || "当前没有因子组合摘要"} />
+              <InfoBlock label="标签定义" value={workspace.execution_preview.label_scope || "当前没有标签定义摘要"} />
+              <InfoBlock label="dry-run 门槛" value={workspace.execution_preview.dry_run_gate || "当前没有 dry-run 门槛摘要"} />
+              <InfoBlock label="live 门槛" value={workspace.execution_preview.live_gate || "当前没有 live 门槛摘要"} />
+            </CardContent>
+          </Card>
 
           <Card className="bg-card/90">
             <CardHeader>

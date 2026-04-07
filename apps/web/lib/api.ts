@@ -158,6 +158,9 @@ export type AutomationStatusModel = {
   paused: boolean;
   pauseReason: string;
   manualTakeover: boolean;
+  pausedAt: string;
+  manualTakeoverAt: string;
+  lastFailureAt: string;
   armedSymbol: string;
   runtimeMode: string;
   allowLiveExecution: boolean;
@@ -171,6 +174,9 @@ export type AutomationStatusModel = {
   schedulerPlan: Array<Record<string, unknown>>;
   failurePolicy: Record<string, unknown>;
   operations: Record<string, unknown>;
+  executionPolicy: Record<string, unknown>;
+  severitySummary: Record<string, unknown>;
+  resumeChecklist: Array<Record<string, unknown>>;
 };
 
 export type DataWorkspaceModel = {
@@ -492,6 +498,20 @@ export type ResearchWorkspaceModel = {
     symbols: string[];
     timeframes: string[];
   };
+  readiness: {
+    train_ready: boolean;
+    infer_ready: boolean;
+    blocking_reasons: string[];
+    infer_reason: string;
+    next_step: string;
+  };
+  execution_preview: {
+    data_scope: string;
+    factor_mix: string;
+    label_scope: string;
+    dry_run_gate: string;
+    live_gate: string;
+  };
 };
 
 export type BacktestWorkspaceModel = {
@@ -551,9 +571,12 @@ export type EvaluationWorkspaceModel = {
   experiment_comparison: Array<Record<string, unknown>>;
   gate_matrix: Array<Record<string, unknown>>;
   run_deltas: Array<Record<string, unknown>>;
+  delta_overview: Record<string, unknown>;
   comparison_summary: Record<string, unknown>;
   execution_alignment: Record<string, unknown>;
   alignment_details: Record<string, unknown>;
+  alignment_gaps: Array<Record<string, unknown>>;
+  alignment_actions: Array<Record<string, unknown>>;
 };
 
 export type ValidationReviewItem = {
@@ -1031,6 +1054,9 @@ export async function getAutomationStatus(
         paused: Boolean(state.paused),
         pauseReason: String(state.paused_reason ?? ""),
         manualTakeover: Boolean(state.manual_takeover),
+        pausedAt: String(state.paused_at ?? ""),
+        manualTakeoverAt: String(state.manual_takeover_at ?? ""),
+        lastFailureAt: String(state.last_failure_at ?? ""),
         armedSymbol: String(state.armed_symbol ?? ""),
         runtimeMode: String(state.runtime_mode ?? "demo"),
         allowLiveExecution: Boolean(state.allow_live_execution),
@@ -1047,13 +1073,16 @@ export async function getAutomationStatus(
           : [],
         lastCycle: isPlainObject(state.last_cycle) ? state.last_cycle : {},
         reviewOverview: isPlainObject(item.review_overview) ? item.review_overview : {},
-        researchOverview: isPlainObject(item.review_overview) ? item.review_overview : {},
+        researchOverview: isPlainObject(item.research_overview) ? item.research_overview : {},
         health,
         executionHealth: isPlainObject(item.execution_health) ? item.execution_health : {},
         dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
         operations: isPlainObject(item.operations) ? item.operations : {},
+        executionPolicy: isPlainObject(item.execution_policy) ? item.execution_policy : {},
+        severitySummary: isPlainObject(item.severity_summary) ? item.severity_summary : {},
+        resumeChecklist: Array.isArray(item.resume_checklist) ? item.resume_checklist.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
       },
     },
   };
@@ -1438,6 +1467,20 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       symbols: [],
       timeframes: [],
     },
+    readiness: {
+      train_ready: false,
+      infer_ready: false,
+      blocking_reasons: ["当前工作台暂时不可用"],
+      infer_reason: "当前还没有训练结果，暂时无法推理。",
+      next_step: "先恢复研究接口，再重新运行训练。",
+    },
+    execution_preview: {
+      data_scope: "",
+      factor_mix: "",
+      label_scope: "",
+      dry_run_gate: "",
+      live_gate: "",
+    },
   };
 }
 
@@ -1496,9 +1539,12 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     experiment_comparison: [],
     gate_matrix: [],
     run_deltas: [],
+    delta_overview: {},
     comparison_summary: {},
     execution_alignment: {},
     alignment_details: {},
+    alignment_gaps: [],
+    alignment_actions: [],
   };
 }
 
@@ -1721,6 +1767,8 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
   const selectors = isPlainObject(row.selectors) ? row.selectors : {};
   const sampleWindow = isPlainObject(row.sample_window) ? row.sample_window : {};
   const parameters = isPlainObject(row.parameters) ? row.parameters : {};
+  const readiness = isPlainObject(row.readiness) ? row.readiness : {};
+  const executionPreview = isPlainObject(row.execution_preview) ? row.execution_preview : {};
 
   return {
     status: String(row.status ?? "unavailable"),
@@ -1773,6 +1821,20 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
     selectors: {
       symbols: normalizeStringArray(selectors.symbols, []),
       timeframes: normalizeStringArray(selectors.timeframes, []),
+    },
+    readiness: {
+      train_ready: Boolean(readiness.train_ready),
+      infer_ready: Boolean(readiness.infer_ready),
+      blocking_reasons: normalizeStringArray(readiness.blocking_reasons, []),
+      infer_reason: String(readiness.infer_reason ?? ""),
+      next_step: String(readiness.next_step ?? ""),
+    },
+    execution_preview: {
+      data_scope: String(executionPreview.data_scope ?? ""),
+      factor_mix: String(executionPreview.factor_mix ?? ""),
+      label_scope: String(executionPreview.label_scope ?? ""),
+      dry_run_gate: String(executionPreview.dry_run_gate ?? ""),
+      live_gate: String(executionPreview.live_gate ?? ""),
     },
   };
 }
@@ -1861,9 +1923,12 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     experiment_comparison: Array.isArray(row.experiment_comparison) ? row.experiment_comparison.filter(isPlainObject) : [],
     gate_matrix: Array.isArray(row.gate_matrix) ? row.gate_matrix.filter(isPlainObject) : [],
     run_deltas: Array.isArray(row.run_deltas) ? row.run_deltas.filter(isPlainObject) : [],
+    delta_overview: isPlainObject(row.delta_overview) ? row.delta_overview : {},
     comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
     execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
     alignment_details: isPlainObject(row.alignment_details) ? row.alignment_details : {},
+    alignment_gaps: Array.isArray(row.alignment_gaps) ? row.alignment_gaps.filter(isPlainObject) : [],
+    alignment_actions: Array.isArray(row.alignment_actions) ? row.alignment_actions.filter(isPlainObject) : [],
   };
 }
 
@@ -2655,6 +2720,9 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       paused: false,
       pauseReason: "",
       manualTakeover: false,
+      pausedAt: "",
+      manualTakeoverAt: "",
+      lastFailureAt: "",
       armedSymbol: "",
       runtimeMode: "demo",
       allowLiveExecution: false,
@@ -2672,6 +2740,13 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       dailySummary: {},
       schedulerPlan: [],
       failurePolicy: {},
+      severitySummary: {},
+      resumeChecklist: [],
+      executionPolicy: {
+        live_allowed_symbols: [],
+        live_max_stake_usdt: "6",
+        live_max_open_trades: "1",
+      },
       operations: {
         pause_after_consecutive_failures: "2",
         stale_sync_failure_threshold: "1",

@@ -44,6 +44,12 @@ test("tasks page shows latest automation decision after login", async ({ page })
   await expect(page.getByText("推荐策略实例")).toBeVisible();
   await expect(page.getByText("派发结果")).toBeVisible();
   await expect(page.getByText("失败原因")).toBeVisible();
+  await expect(page.getByText("告警强度")).toBeVisible();
+  await expect(page.getByText("人工接管原因")).toBeVisible();
+  await expect(page.getByText("恢复前先做什么")).toBeVisible();
+  await expect(page.getByText("风险等级摘要")).toBeVisible();
+  await expect(page.getByText("恢复清单")).toBeVisible();
+  await expect(page.getByText("风控触发人工接管")).toBeVisible();
 
   expect(errors).toEqual([]);
 });

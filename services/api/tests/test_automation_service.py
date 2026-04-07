@@ -224,6 +224,14 @@ class AutomationServiceTests(unittest.TestCase):
     def test_status_exposes_scheduler_plan_and_failure_policy(self) -> None:
         scheduler = _FakeScheduler()
         automation = AutomationService()
+        automation_service_module.workbench_config_service.update_section(
+            "execution",
+            {
+                "live_allowed_symbols": ["ETHUSDT", "DOGEUSDT"],
+                "live_max_stake_usdt": "8",
+                "live_max_open_trades": "2",
+            },
+        )
         workflow = AutomationWorkflowService(
             scheduler=scheduler,
             automation=automation,
@@ -250,6 +258,17 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("operations", status)
         self.assertEqual(status["operations"]["pause_after_consecutive_failures"], 2)
         self.assertEqual(status["operations"]["review_limit"], 10)
+        self.assertEqual(status["operations"]["cycle_cooldown_minutes"], 15)
+        self.assertEqual(status["operations"]["max_daily_cycle_count"], 8)
+        self.assertIn("execution_policy", status)
+        self.assertEqual(status["execution_policy"]["live_allowed_symbols"], ["ETHUSDT", "DOGEUSDT"])
+        self.assertEqual(status["execution_policy"]["live_max_stake_usdt"], "8")
+        self.assertEqual(status["execution_policy"]["live_max_open_trades"], "2")
+        self.assertIn("severity_summary", status["health"])
+        self.assertIn("resume_checklist", status["health"])
+        self.assertIn("last_failure_at", status["state"])
+        self.assertIn("paused_at", status["state"])
+        self.assertIn("manual_takeover_at", status["state"])
 
     def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
         service = AutomationService()
@@ -277,6 +296,16 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["active_blockers"][0]["code"], "paused")
         self.assertIn("恢复自动化", [item["label"] for item in health["operator_actions"]])
         self.assertIn("查看执行器", [item["label"] for item in health["operator_actions"]])
+        self.assertIn("focus_cards", health)
+        self.assertEqual(health["focus_cards"]["alert"]["tone"], "critical")
+        self.assertIn("执行器离线", health["focus_cards"]["alert"]["detail"])
+        self.assertEqual(health["focus_cards"]["takeover"]["tone"], "critical")
+        self.assertIn("人工暂停自动化", health["focus_cards"]["takeover"]["detail"])
+        self.assertEqual(health["focus_cards"]["recovery"]["tone"], "critical")
+        self.assertIn("恢复自动化", health["focus_cards"]["recovery"]["detail"])
+        self.assertEqual(health["severity_summary"]["level"], "critical")
+        self.assertEqual(health["resume_checklist"][0]["label"], "告警强度")
+        self.assertEqual(health["resume_checklist"][0]["status"], "pending")
 
     def test_health_summary_tracks_failure_streak_and_escalation_level(self) -> None:
         service = AutomationService()
@@ -291,6 +320,100 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["run_health"]["consecutive_failure_count"], 2)
         self.assertEqual(health["run_health"]["stale_sync_state"], "stale")
         self.assertEqual(health["run_health"]["escalation_level"], "critical")
+
+    def test_health_summary_uses_sync_failure_count_for_stale_threshold(self) -> None:
+        service = AutomationService()
+        automation_service_module.workbench_config_service.update_section(
+            "operations",
+            {
+                "stale_sync_failure_threshold": "2",
+            },
+        )
+        service.record_cycle({"status": "attention_required", "next_action": "manual_takeover"})
+        service.record_cycle({"status": "attention_required", "next_action": "manual_takeover"})
+
+        health = service.build_health_summary(
+            task_health={
+                "latest_status_by_type": {"sync": "failed"},
+                "latest_failure_by_type": {"sync": {"finished_at": "2026-04-07T10:00:00+00:00", "error_message": "timeout"}},
+                "consecutive_failure_count_by_type": {"sync": 1},
+            }
+        )
+
+        self.assertEqual(health["run_health"]["consecutive_failure_count"], 2)
+        self.assertEqual(health["run_health"]["sync_failure_count"], 1)
+        self.assertEqual(health["run_health"]["stale_sync_state"], "fresh")
+
+    def test_run_cycle_waits_when_daily_cycle_limit_is_reached(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation_workflow_module.workbench_config_service.update_section(
+            "operations",
+            {
+                "max_daily_cycle_count": "1",
+            },
+        )
+        automation.record_cycle({"status": "succeeded", "next_action": "continue_dry_run"})
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        result = workflow.run_cycle(source="tester")
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["failure_reason"], "daily_cycle_limit_reached")
+        self.assertIn("今日轮次上限", result["message"])
+        self.assertEqual(scheduler.named_calls, [])
+
+    def test_run_cycle_waits_when_cooldown_is_active(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation_workflow_module.workbench_config_service.update_section(
+            "operations",
+            {
+                "cycle_cooldown_minutes": "120",
+            },
+        )
+        automation.record_cycle({"status": "succeeded", "next_action": "continue_dry_run"})
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        result = workflow.run_cycle(source="tester")
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["failure_reason"], "cycle_cooldown_active")
+        self.assertIn("冷却", result["message"])
+        self.assertEqual(scheduler.named_calls, [])
+
+    def test_manual_takeover_and_pause_expose_timeline_fields(self) -> None:
+        service = AutomationService()
+
+        paused = service.pause("manual_stop", actor="tester")
+        takeover = service.manual_takeover(reason="risk_guard_triggered", actor="watchdog")
+        health = service.build_health_summary(
+            task_health={
+                "latest_status_by_type": {"sync": "failed"},
+                "latest_failure_by_type": {"sync": {"finished_at": "2026-04-07T10:00:00+00:00", "error_message": "timeout"}},
+                "consecutive_failure_count_by_type": {"sync": 2},
+            }
+        )
+
+        self.assertTrue(str(paused["paused_at"]))
+        self.assertTrue(str(takeover["manual_takeover_at"]))
+        self.assertEqual(health["takeover_summary"]["paused_since"], str(paused["paused_at"]))
+        self.assertEqual(health["takeover_summary"]["takeover_since"], str(takeover["manual_takeover_at"]))
+        self.assertEqual(health["run_health"]["last_sync_failure_at"], "2026-04-07T10:00:00+00:00")
 
     def test_manual_takeover_entry_switches_to_manual_with_reason(self) -> None:
         service = AutomationService()

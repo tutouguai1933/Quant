@@ -22,6 +22,7 @@ class TaskScheduler:
             "latest_status_by_type": {},
             "latest_success_by_type": {},
             "latest_failure_by_type": {},
+            "consecutive_failure_count_by_type": {},
         }
 
     def list_tasks(self, limit: int = 100) -> list[dict[str, object]]:
@@ -109,6 +110,7 @@ class TaskScheduler:
             "latest_status_by_type": dict(self._health_summary["latest_status_by_type"]),
             "latest_success_by_type": dict(self._health_summary["latest_success_by_type"]),
             "latest_failure_by_type": dict(self._health_summary["latest_failure_by_type"]),
+            "consecutive_failure_count_by_type": dict(self._health_summary["consecutive_failure_count_by_type"]),
         }
 
     def _create_task(
@@ -222,11 +224,14 @@ class TaskScheduler:
         self._health_summary["latest_status_by_type"][task_type] = status
         if status == "succeeded":
             self._health_summary["latest_success_by_type"][task_type] = str(task.get("finished_at") or task.get("started_at") or "")
+            self._health_summary["consecutive_failure_count_by_type"][task_type] = 0
         if status == "failed":
             self._health_summary["latest_failure_by_type"][task_type] = {
                 "finished_at": str(task.get("finished_at") or ""),
                 "error_message": str(task.get("error_message") or ""),
             }
+            current = int(self._health_summary["consecutive_failure_count_by_type"].get(task_type, 0) or 0)
+            self._health_summary["consecutive_failure_count_by_type"][task_type] = current + 1
 
 
 task_scheduler = TaskScheduler()

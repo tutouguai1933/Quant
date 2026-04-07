@@ -130,6 +130,31 @@ export default async function BacktestPage() {
               <InfoBlock label="live_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.live_min_sample_count))} />
             </CardContent>
           </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>完整准入门槛</CardTitle>
+              <CardDescription>把 dry-run、验证和 live 三层门槛一次看全，先确认这轮结果到底卡在哪一层。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="dry_run_min_score" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_score))} />
+              <InfoBlock label="dry_run_min_positive_rate" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_positive_rate))} />
+              <InfoBlock label="dry_run_min_net_return_pct" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_net_return_pct))} />
+              <InfoBlock label="dry_run_min_sharpe" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_sharpe))} />
+              <InfoBlock label="dry_run_max_drawdown_pct" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_drawdown_pct))} />
+              <InfoBlock label="dry_run_max_loss_streak" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_loss_streak))} />
+              <InfoBlock label="dry_run_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_win_rate))} />
+              <InfoBlock label="dry_run_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_turnover))} />
+              <InfoBlock label="dry_run_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_sample_count))} />
+              <InfoBlock label="validation_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.validation_min_sample_count))} />
+              <InfoBlock label="live_min_score" value={valueOrFallback(asOptionalString(gatePreview.live_min_score))} />
+              <InfoBlock label="live_min_positive_rate" value={valueOrFallback(asOptionalString(gatePreview.live_min_positive_rate))} />
+              <InfoBlock label="live_min_net_return_pct" value={valueOrFallback(asOptionalString(gatePreview.live_min_net_return_pct))} />
+              <InfoBlock label="live_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.live_min_win_rate))} />
+              <InfoBlock label="live_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.live_max_turnover))} />
+              <InfoBlock label="live_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.live_min_sample_count))} />
+            </CardContent>
+          </Card>
         </div>
       </section>
     </AppShell>

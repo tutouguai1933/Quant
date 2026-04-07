@@ -43,6 +43,9 @@ class AutomationService:
         self._daily_summary = self._new_daily_summary()
         self._consecutive_failure_count = 0
         self._last_success_at = ""
+        self._last_failure_at = ""
+        self._paused_at = ""
+        self._manual_takeover_at = ""
         self._load_state()
 
     def get_state(self) -> dict[str, object]:
@@ -65,6 +68,9 @@ class AutomationService:
             "daily_summary": dict(self._daily_summary),
             "consecutive_failure_count": self._consecutive_failure_count,
             "last_success_at": self._last_success_at,
+            "last_failure_at": self._last_failure_at,
+            "paused_at": self._paused_at,
+            "manual_takeover_at": self._manual_takeover_at,
         }
 
     def get_status(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
@@ -79,10 +85,13 @@ class AutomationService:
             "state": self.get_state(),
             "health": health,
             "operations": self._get_operations_config(),
+            "execution_policy": self._get_execution_policy(),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
             "takeover_summary": dict(health.get("takeover_summary") or {}),
             "alert_summary": dict(health.get("alert_summary") or {}),
+            "severity_summary": dict(health.get("severity_summary") or {}),
+            "resume_checklist": list(health.get("resume_checklist") or []),
             "alerts_count": len(self._alerts),
             "latest_alert_level": str(self._alerts[0]["level"]) if self._alerts else "",
             "latest_alert_title": str(self._alerts[0]["message"]) if self._alerts else "",
@@ -97,6 +106,8 @@ class AutomationService:
             raise ValueError("automation mode must be manual, auto_dry_run or auto_live")
         self._mode = normalized
         self._manual_takeover = normalized == "manual"
+        if not self._manual_takeover:
+            self._manual_takeover_at = ""
         if normalized == "manual":
             self.clear_armed_symbol()
         self._updated_at = _utc_now()
@@ -119,6 +130,8 @@ class AutomationService:
         self._paused = False
         self._paused_reason = ""
         self._manual_takeover = False
+        self._paused_at = ""
+        self._manual_takeover_at = ""
         self._updated_at = _utc_now()
         self.record_alert(level="warning", code="dry_run_only_enabled", message="系统已切到 dry-run only", source=actor)
         self._persist_state()
@@ -134,6 +147,9 @@ class AutomationService:
         self._paused = True
         self._paused_reason = "kill_switch"
         self._manual_takeover = True
+        if not self._paused_at:
+            self._paused_at = _utc_now()
+        self._manual_takeover_at = self._paused_at
         self.clear_armed_symbol()
         self._apply_execution_guard(paused=True, stop_executor=True)
         self._updated_at = _utc_now()
@@ -150,6 +166,10 @@ class AutomationService:
         self._paused = True
         self._paused_reason = reason.strip() or "manual_pause"
         self._manual_takeover = True
+        if not self._paused_at:
+            self._paused_at = _utc_now()
+        if not self._manual_takeover_at:
+            self._manual_takeover_at = self._paused_at
         self._apply_execution_guard(paused=True, stop_executor=False)
         self._updated_at = _utc_now()
         self.record_alert(level="warning", code="automation_paused", message="自动化已暂停", source=actor)
@@ -166,6 +186,9 @@ class AutomationService:
         self._paused = True
         self._paused_reason = reason.strip() or "manual_takeover"
         self._manual_takeover = True
+        if not self._paused_at:
+            self._paused_at = _utc_now()
+        self._manual_takeover_at = _utc_now()
         self.clear_armed_symbol()
         self._apply_execution_guard(paused=True, stop_executor=False)
         self._updated_at = _utc_now()
@@ -188,6 +211,9 @@ class AutomationService:
         self._paused = False
         self._paused_reason = ""
         self._manual_takeover = self._mode == "manual"
+        self._paused_at = ""
+        if not self._manual_takeover:
+            self._manual_takeover_at = ""
         self._apply_execution_guard(paused=False, stop_executor=False)
         self._updated_at = _utc_now()
         self.record_alert(level="info", code="automation_resumed", message="自动化已恢复", source=actor)
@@ -230,6 +256,7 @@ class AutomationService:
             self._last_success_at = _utc_now()
         elif status == "attention_required":
             self._consecutive_failure_count += 1
+            self._last_failure_at = _utc_now()
         self._daily_summary["cycle_count"] = int(self._daily_summary.get("cycle_count", 0)) + 1
         status_counts = dict(self._daily_summary.get("status_counts") or {})
         status_counts[status] = int(status_counts.get(status, 0) or 0) + 1
@@ -265,12 +292,42 @@ class AutomationService:
         """构造自动化健康摘要。"""
 
         latest_status = dict(task_health.get("latest_status_by_type") or {})
+        latest_failure = dict(task_health.get("latest_failure_by_type") or {})
+        failure_counts = dict(task_health.get("consecutive_failure_count_by_type") or {})
         last_cycle = dict(self._last_cycle)
         last_alert = self._alerts[0] if self._alerts else None
         alert_summary = self._build_alert_summary()
-        active_blockers = self._build_active_blockers(latest_status=latest_status, last_alert=last_alert)
-        takeover_summary = self._build_takeover_summary(active_blockers=active_blockers)
-        operator_actions = self._build_operator_actions(latest_status=latest_status)
+        run_health = self._build_run_health(
+            latest_status=latest_status,
+            latest_failure=latest_failure,
+            failure_counts=failure_counts,
+            last_alert=last_alert,
+        )
+        active_blockers = self._build_active_blockers(
+            latest_status=latest_status,
+            latest_failure=latest_failure,
+            last_alert=last_alert,
+            run_health=run_health,
+        )
+        takeover_summary = self._build_takeover_summary(active_blockers=active_blockers, run_health=run_health)
+        operator_actions = self._build_operator_actions(latest_status=latest_status, run_health=run_health)
+        focus_cards = self._build_focus_cards(
+            alert_summary=alert_summary,
+            takeover_summary=takeover_summary,
+            operator_actions=operator_actions,
+            last_alert=last_alert,
+            run_health=run_health,
+        )
+        severity_summary = self._build_severity_summary(
+            active_blockers=active_blockers,
+            last_alert=last_alert,
+            run_health=run_health,
+        )
+        resume_checklist = self._build_resume_checklist(
+            latest_status=latest_status,
+            active_blockers=active_blockers,
+            last_alert=last_alert,
+        )
         return {
             "mode": self._mode,
             "paused": self._paused,
@@ -293,7 +350,10 @@ class AutomationService:
             "active_blockers": active_blockers,
             "operator_actions": operator_actions,
             "alert_summary": alert_summary,
-            "run_health": self._build_run_health(latest_status=latest_status, last_alert=last_alert),
+            "run_health": run_health,
+            "focus_cards": focus_cards,
+            "severity_summary": severity_summary,
+            "resume_checklist": resume_checklist,
         }
 
     def _build_alert_summary(self) -> dict[str, object]:
@@ -323,7 +383,7 @@ class AutomationService:
                 summary["info_count"] = int(summary["info_count"]) + 1
         return summary
 
-    def _build_takeover_summary(self, *, active_blockers: list[dict[str, str]]) -> dict[str, str]:
+    def _build_takeover_summary(self, *, active_blockers: list[dict[str, str]], run_health: dict[str, object]) -> dict[str, str]:
         """给出当前是否接管、为什么接管、恢复时先做什么。"""
 
         if self._manual_takeover:
@@ -342,27 +402,33 @@ class AutomationService:
         else:
             note = "当前没有接管或暂停，系统可以继续自动推进。"
         primary_blocker = active_blockers[0] if active_blockers else {}
+        reason = self._paused_reason or "当前没有接管原因"
 
         return {
             "state_label": state_label,
-            "reason": self._paused_reason or "当前没有接管原因",
+            "reason": reason,
+            "reason_label": self._describe_pause_reason(reason),
             "suggested_mode": "manual" if self._manual_takeover or self._paused else self._mode,
             "note": note,
             "primary_blocker_code": str(primary_blocker.get("code", "")),
             "primary_blocker_detail": str(primary_blocker.get("detail", "")),
             "next_step": "先处理阻塞原因，再恢复自动化" if self._manual_takeover or self._paused else "可以继续下一轮自动化",
+            "paused_since": self._paused_at,
+            "takeover_since": self._manual_takeover_at,
+            "last_failure_at": str(run_health.get("last_failure_at", "")),
         }
 
     def _build_active_blockers(
         self,
         *,
         latest_status: dict[str, object],
+        latest_failure: dict[str, object],
         last_alert: dict[str, object] | None,
+        run_health: dict[str, object],
     ) -> list[dict[str, str]]:
         """把当前真正阻塞自动化继续推进的原因整理成列表。"""
 
         blockers: list[dict[str, str]] = []
-        operations = self._get_operations_config()
         if self._paused:
             blockers.append(
                 {
@@ -382,14 +448,14 @@ class AutomationService:
                 }
             )
         latest_sync_status = str(latest_status.get("sync", "unknown"))
-        stale_sync_threshold = int(operations.get("stale_sync_failure_threshold", 1) or 1)
-        if latest_sync_status == "failed" and self._consecutive_failure_count >= stale_sync_threshold:
+        latest_sync_failure = dict(latest_failure.get("sync") or {})
+        if latest_sync_status == "failed" and str(run_health.get("stale_sync_state", "")) == "stale":
             blockers.append(
                 {
                     "code": "sync_failed",
                     "severity": "error",
                     "label": "执行结果还没有同步收口",
-                    "detail": "最近一次同步失败，执行结果和账户状态还没有完全收口。",
+                    "detail": f"最近一次同步失败还没有收口：{str(latest_sync_failure.get('error_message', '未返回错误详情')) or '未返回错误详情'}",
                 }
             )
         if last_alert and str(last_alert.get("level", "")).lower() == "error":
@@ -412,7 +478,7 @@ class AutomationService:
             )
         return blockers
 
-    def _build_operator_actions(self, *, latest_status: dict[str, object]) -> list[dict[str, str]]:
+    def _build_operator_actions(self, *, latest_status: dict[str, object], run_health: dict[str, object]) -> list[dict[str, str]]:
         """给前端一组直接可执行的恢复步骤。"""
 
         actions: list[dict[str, str]] = []
@@ -429,7 +495,7 @@ class AutomationService:
                 {
                     "action": "automation_run_cycle",
                     "label": "重跑一轮同步链",
-                    "detail": "先重新跑一轮训练、推理、执行和复盘，确认同步是否恢复。",
+                    "detail": f"最近同步已失败 {int(run_health.get('sync_failure_count', 0) or 0)} 次，先重跑一轮训练、推理、执行和复盘，确认同步是否恢复。",
                 }
             )
         if self._armed_symbol:
@@ -450,22 +516,231 @@ class AutomationService:
             )
         return actions
 
+    def _build_focus_cards(
+        self,
+        *,
+        alert_summary: dict[str, object],
+        takeover_summary: dict[str, str],
+        operator_actions: list[dict[str, str]],
+        last_alert: dict[str, object] | None,
+        run_health: dict[str, object],
+    ) -> dict[str, dict[str, str]]:
+        """把任务页最常看的三组信息压成前端可直接渲染的卡片。"""
+
+        return {
+            "alert": self._build_alert_focus_card(
+                alert_summary=alert_summary,
+                last_alert=last_alert,
+                run_health=run_health,
+            ),
+            "takeover": self._build_takeover_focus_card(takeover_summary=takeover_summary),
+            "recovery": self._build_recovery_focus_card(
+                operator_actions=operator_actions,
+                takeover_summary=takeover_summary,
+                run_health=run_health,
+            ),
+        }
+
+    @staticmethod
+    def _build_alert_focus_card(
+        *,
+        alert_summary: dict[str, object],
+        last_alert: dict[str, object] | None,
+        run_health: dict[str, object],
+    ) -> dict[str, str]:
+        """整理最近告警强度，给任务页直接展示。"""
+
+        latest_code = str(alert_summary.get("latest_code", "") or "")
+        latest_message = str(alert_summary.get("latest_message", "") or "")
+        latest_level = str(alert_summary.get("latest_level", "") or "").lower()
+        error_count = int(alert_summary.get("error_count", 0) or 0)
+        warning_count = int(alert_summary.get("warning_count", 0) or 0)
+        info_count = int(alert_summary.get("info_count", 0) or 0)
+        if latest_level == "error" or str(run_health.get("escalation_level", "")) == "critical":
+            return {
+                "tone": "critical",
+                "value": f"高风险 / {latest_code or '错误告警'}",
+                "detail": latest_message or f"当前已有 {error_count} 条错误告警，需要先人工处理。",
+            }
+        if latest_level == "warning" or warning_count > 0 or str(run_health.get("stale_sync_state", "")) == "stale":
+            return {
+                "tone": "warning",
+                "value": f"需要关注 / {latest_code or '警告告警'}",
+                "detail": latest_message
+                or f"当前有 {warning_count} 条警告，建议先确认同步和执行状态。",
+            }
+        if latest_level == "info" or info_count > 0 or last_alert:
+            return {
+                "tone": "info",
+                "value": f"最新提示 / {latest_code or '提示告警'}",
+                "detail": latest_message or "当前有新的运行提示，继续观察即可。",
+            }
+        return {
+            "tone": "ok",
+            "value": "当前没有高风险告警",
+            "detail": "最近没有新的错误或警告，自动化可以继续观察下一轮。",
+        }
+
+    @staticmethod
+    def _build_takeover_focus_card(*, takeover_summary: dict[str, str]) -> dict[str, str]:
+        """整理人工接管原因，方便前端直接展示。"""
+
+        state_label = str(takeover_summary.get("state_label", "") or "自动化运行中")
+        reason_label = str(takeover_summary.get("reason_label", "") or "当前没有接管原因")
+        note = str(takeover_summary.get("note", "") or "")
+        blocker_detail = str(takeover_summary.get("primary_blocker_detail", "") or "")
+        if state_label == "人工接管中":
+            return {
+                "tone": "critical",
+                "value": state_label,
+                "detail": f"{reason_label}；{note or blocker_detail or '恢复前先确认阻塞原因。'}",
+            }
+        if state_label == "已暂停":
+            return {
+                "tone": "warning",
+                "value": state_label,
+                "detail": f"{reason_label}；{note or blocker_detail or '恢复前先确认暂停原因。'}",
+            }
+        return {
+            "tone": "ok",
+            "value": "暂不需要人工接管",
+            "detail": note or "当前没有接管或暂停，系统会继续自动推进。",
+        }
+
+    @staticmethod
+    def _build_recovery_focus_card(
+        *,
+        operator_actions: list[dict[str, str]],
+        takeover_summary: dict[str, str],
+        run_health: dict[str, object],
+    ) -> dict[str, str]:
+        """整理恢复前最该做的事。"""
+
+        action_summaries = []
+        for item in operator_actions:
+            label = str(item.get("label", "") or "").strip()
+            detail = str(item.get("detail", "") or "").strip()
+            if not label:
+                continue
+            action_summaries.append(f"{label}：{detail}" if detail else label)
+        if action_summaries:
+            tone = "critical" if str(run_health.get("escalation_level", "")) == "critical" else "warning"
+            total = len(action_summaries)
+            return {
+                "tone": tone,
+                "value": f"恢复前先做 {total} 件事",
+                "detail": " / ".join(action_summaries[:3]),
+            }
+        return {
+            "tone": "ok",
+            "value": str(takeover_summary.get("next_step", "") or "可以继续下一轮自动化"),
+            "detail": "当前没有额外恢复动作，继续观察下一轮自动化结果即可。",
+        }
+
+    def _build_severity_summary(
+        self,
+        *,
+        active_blockers: list[dict[str, str]],
+        last_alert: dict[str, object] | None,
+        run_health: dict[str, object],
+    ) -> dict[str, str]:
+        """整理当前风险等级，方便任务页直接判断是否该停手。"""
+
+        escalation_level = str(run_health.get("escalation_level", "normal") or "normal")
+        if escalation_level == "critical":
+            label = "需要立刻人工接管"
+            detail = "当前已有关键阻塞或错误告警，先停下自动化并人工确认。"
+        elif escalation_level == "high":
+            label = "建议先人工确认"
+            detail = "系统已暂停或进入人工接管，恢复前先按清单逐项确认。"
+        else:
+            label = "当前风险可控"
+            detail = "当前没有关键阻塞，可以继续按既定顺序推进。"
+        primary_blocker = active_blockers[0] if active_blockers else {}
+        return {
+            "level": escalation_level,
+            "label": label,
+            "detail": detail,
+            "latest_alert_code": str(last_alert.get("code", "")) if last_alert else "",
+            "primary_blocker": str(primary_blocker.get("label", "")),
+        }
+
+    def _build_resume_checklist(
+        self,
+        *,
+        latest_status: dict[str, object],
+        active_blockers: list[dict[str, str]],
+        last_alert: dict[str, object] | None,
+    ) -> list[dict[str, str]]:
+        """给出恢复自动化前最小检查清单。"""
+
+        latest_sync_status = str(latest_status.get("sync", "unknown") or "unknown")
+        return [
+            {
+                "label": "告警强度",
+                "status": "pending" if last_alert and str(last_alert.get("level", "")).lower() == "error" else "ready",
+                "detail": "如果最近告警还是 error，先处理它，再恢复自动化。",
+            },
+            {
+                "label": "人工接管原因",
+                "status": "pending" if self._manual_takeover or self._paused else "ready",
+                "detail": "如果当前仍在暂停或人工接管，先确认原因已经处理。",
+            },
+            {
+                "label": "同步状态",
+                "status": "pending" if latest_sync_status not in {"succeeded", "unknown"} else "ready",
+                "detail": "先确认最近一次同步已经成功，避免研究结果和账户状态错位。",
+            },
+            {
+                "label": "恢复前先做什么",
+                "status": "pending" if active_blockers and str(active_blockers[0].get("code", "")) != "none" else "ready",
+                "detail": "按阻塞清单和恢复建议逐项处理完，再按恢复按钮继续自动化。",
+            },
+        ]
+
+    @staticmethod
+    def _describe_pause_reason(reason: str) -> str:
+        """把接管原因转成更直白的中文。"""
+
+        normalized = str(reason or "").strip()
+        mapping = {
+            "kill_switch": "Kill Switch 已触发",
+            "manual_pause": "人工暂停自动化",
+            "manual_stop": "人工暂停自动化",
+            "manual_takeover": "人工主动接管",
+            "risk_guard_triggered": "风控触发人工接管",
+            "workflow_train_failed": "自动训练失败",
+            "workflow_infer_failed": "自动推理失败",
+            "workflow_signal_output_failed": "研究信号输出失败",
+            "dispatch_execution_failed": "执行派发失败",
+        }
+        if not normalized:
+            return "当前没有接管原因"
+        return mapping.get(normalized, normalized)
+
     def _build_run_health(
         self,
         *,
         latest_status: dict[str, object],
+        latest_failure: dict[str, object],
+        failure_counts: dict[str, object],
         last_alert: dict[str, object] | None,
     ) -> dict[str, object]:
         """补充长期运行最关心的失败连续性和升级级别。"""
 
         operations = self._get_operations_config()
         latest_sync_status = str(latest_status.get("sync", "unknown"))
+        latest_sync_failure = dict(latest_failure.get("sync") or {})
         stale_sync_threshold = int(operations.get("stale_sync_failure_threshold", 1) or 1)
         pause_after_failures = int(operations.get("pause_after_consecutive_failures", 2) or 2)
+        raw_sync_failure_count = failure_counts.get("sync", 0)
+        sync_failure_count = int(raw_sync_failure_count or 0)
+        if sync_failure_count <= 0 and latest_sync_status not in {"succeeded", "unknown"}:
+            sync_failure_count = self._consecutive_failure_count
         stale_sync_state = (
             "stale"
             if latest_sync_status not in {"succeeded", "unknown"}
-            and self._consecutive_failure_count >= stale_sync_threshold
+            and sync_failure_count >= stale_sync_threshold
             else "fresh"
         )
         escalation_level = "normal"
@@ -479,13 +754,18 @@ class AutomationService:
             escalation_level = "critical"
         return {
             "consecutive_failure_count": self._consecutive_failure_count,
+            "sync_failure_count": sync_failure_count,
             "last_success_at": self._last_success_at,
+            "last_failure_at": self._last_failure_at,
+            "last_sync_failure_at": str(latest_sync_failure.get("finished_at", "")),
             "stale_sync_state": stale_sync_state,
             "escalation_level": escalation_level,
             "pause_after_consecutive_failures": pause_after_failures,
             "stale_sync_failure_threshold": stale_sync_threshold,
             "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
             "review_limit": int(operations.get("review_limit", 10) or 10),
+            "paused_since": self._paused_at,
+            "takeover_since": self._manual_takeover_at,
         }
 
     @staticmethod
@@ -499,6 +779,18 @@ class AutomationService:
             "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
             "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
             "review_limit": int(operations.get("review_limit", 10) or 10),
+        }
+
+    @staticmethod
+    def _get_execution_policy() -> dict[str, object]:
+        """读取当前执行安全门配置。"""
+
+        config = workbench_config_service.get_config()
+        execution = dict(config.get("execution") or {})
+        return {
+            "live_allowed_symbols": [str(item) for item in list(execution.get("live_allowed_symbols") or []) if str(item).strip()],
+            "live_max_stake_usdt": str(execution.get("live_max_stake_usdt", "")),
+            "live_max_open_trades": str(execution.get("live_max_open_trades", "")),
         }
 
     def run_cycle(self, *, actor: str = "user") -> dict[str, object]:
@@ -549,6 +841,9 @@ class AutomationService:
         self._daily_summary = daily_summary if daily_summary else self._new_daily_summary()
         self._consecutive_failure_count = int(payload.get("consecutive_failure_count", 0) or 0)
         self._last_success_at = str(payload.get("last_success_at", ""))
+        self._last_failure_at = str(payload.get("last_failure_at", ""))
+        self._paused_at = str(payload.get("paused_at", ""))
+        self._manual_takeover_at = str(payload.get("manual_takeover_at", ""))
         self._ensure_daily_summary()
 
     def _persist_state(self) -> None:
@@ -568,6 +863,9 @@ class AutomationService:
             "daily_summary": self._daily_summary,
             "consecutive_failure_count": self._consecutive_failure_count,
             "last_success_at": self._last_success_at,
+            "last_failure_at": self._last_failure_at,
+            "paused_at": self._paused_at,
+            "manual_takeover_at": self._manual_takeover_at,
         }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -39,6 +39,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["research"]["volatility_weight"], "0.9")
         self.assertEqual(config["research"]["strict_penalty_weight"], "1")
         self.assertEqual(config["backtest"]["fee_bps"], "10")
+        self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])
+        self.assertEqual(config["execution"]["live_max_stake_usdt"], "6")
+        self.assertEqual(config["execution"]["live_max_open_trades"], "1")
         self.assertEqual(config["features"]["outlier_policy"], "clip")
         self.assertEqual(config["features"]["normalization_policy"], "fixed_4dp")
         self.assertEqual(config["features"]["missing_policy"], "neutral_fill")
@@ -54,6 +57,8 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["operations"]["stale_sync_failure_threshold"], "1")
         self.assertTrue(config["operations"]["auto_pause_on_error"])
         self.assertEqual(config["operations"]["review_limit"], "10")
+        self.assertEqual(config["operations"]["cycle_cooldown_minutes"], "15")
+        self.assertEqual(config["operations"]["max_daily_cycle_count"], "8")
 
     def test_update_section_persists_and_normalizes_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -219,6 +224,23 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["thresholds"]["live_min_score"], "0.95")
         self.assertEqual(config["thresholds"]["live_min_positive_rate"], "0.77")
 
+    def test_update_execution_section_normalizes_symbols_and_limits(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            config = service.update_section(
+                "execution",
+                {
+                    "live_allowed_symbols": ["ethusdt", "dogeusdt", "bad-symbol"],
+                    "live_max_stake_usdt": "8.5",
+                    "live_max_open_trades": "2",
+                },
+            )
+
+        self.assertEqual(config["execution"]["live_allowed_symbols"], ["ETHUSDT", "DOGEUSDT"])
+        self.assertEqual(config["execution"]["live_max_stake_usdt"], "8.5")
+        self.assertEqual(config["execution"]["live_max_open_trades"], "2")
+
     def test_update_section_does_not_keep_old_factor_values_when_empty_selection_is_submitted(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
@@ -285,6 +307,8 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "stale_sync_failure_threshold": "4",
                     "auto_pause_on_error": "false",
                     "review_limit": "25",
+                    "cycle_cooldown_minutes": "30",
+                    "max_daily_cycle_count": "12",
                 },
             )
 
@@ -292,6 +316,8 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["operations"]["stale_sync_failure_threshold"], "4")
         self.assertFalse(config["operations"]["auto_pause_on_error"])
         self.assertEqual(config["operations"]["review_limit"], "25")
+        self.assertEqual(config["operations"]["cycle_cooldown_minutes"], "30")
+        self.assertEqual(config["operations"]["max_daily_cycle_count"], "12")
 
 
 if __name__ == "__main__":

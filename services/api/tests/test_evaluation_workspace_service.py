@@ -47,7 +47,19 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("model_key", item["run_deltas"][0]["changed_fields"])
         self.assertIn("window_mode", item["run_deltas"][0]["changed_fields"])
         self.assertEqual(item["run_deltas"][0]["changed_fields_status"], "ready")
+        self.assertEqual(item["run_deltas"][0]["comparison_readiness"], "limited")
+        self.assertIn("模型版本", item["run_deltas"][0]["change_summary"])
+        self.assertIn("数据快照", item["run_deltas"][0]["comparison_reason"])
+        self.assertEqual(item["delta_overview"]["status"], "limited")
+        self.assertIn("当前先看", item["delta_overview"]["headline"])
         self.assertEqual(item["experiment_comparison"][0]["run_type"], "training")
+        self.assertEqual(item["alignment_details"]["difference_summary"], "研究标的、最近订单和最近持仓已经对上")
+        self.assertEqual(item["alignment_details"]["difference_severity"], "low")
+        self.assertEqual(item["alignment_details"]["difference_reasons"], ["当前没有明显差异"])
+        self.assertEqual(item["alignment_gaps"], [])
+        self.assertEqual(item["alignment_actions"][0]["label"], "继续保持研究和执行同一轮")
+        self.assertEqual(item["workflow_alignment_timeline"][0]["task_type"], "research_train")
+        self.assertEqual(item["workflow_alignment_timeline"][0]["status"], "succeeded")
         self.assertIn("controls", item)
         self.assertEqual(item["controls"]["dry_run_min_win_rate"], "0.50")
         self.assertEqual(item["controls"]["dry_run_max_turnover"], "0.60")
@@ -56,6 +68,11 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["controls"]["live_min_win_rate"], "0.55")
         self.assertEqual(item["controls"]["live_max_turnover"], "0.45")
         self.assertEqual(item["controls"]["live_min_sample_count"], "24")
+        self.assertEqual(item["comparison_summary"]["training_model_version"], "model-a")
+        self.assertEqual(item["comparison_summary"]["inference_model_version"], "model-a")
+        self.assertEqual(item["comparison_summary"]["training_dataset_snapshot"], "snapshot-1")
+        self.assertEqual(item["comparison_summary"]["inference_dataset_snapshot"], "snapshot-1")
+        self.assertIn("模型一致", item["comparison_summary"]["experiment_alignment_note"])
 
     def test_workspace_handles_missing_evaluation(self) -> None:
         service = EvaluationWorkspaceService(
@@ -69,6 +86,10 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["status"], "unavailable")
         self.assertEqual(item["leaderboard"], [])
         self.assertEqual(item["evaluation"], {})
+        self.assertEqual(
+            item["comparison_summary"]["experiment_alignment_note"],
+            "当前还没有训练或推理记录，先跑实验再来看对比。",
+        )
 
     def test_workspace_marks_run_delta_as_unavailable_when_context_is_missing(self) -> None:
         service = EvaluationWorkspaceService(
@@ -82,6 +103,8 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["run_deltas"][0]["changed_fields"], [])
         self.assertEqual(item["run_deltas"][0]["changed_fields_status"], "unavailable")
         self.assertIn("暂时无法比较", item["run_deltas"][0]["changed_fields_note"])
+        self.assertEqual(item["run_deltas"][0]["comparison_readiness"], "unavailable")
+        self.assertIn("配置快照", item["run_deltas"][0]["comparison_reason"])
 
     def test_workspace_uses_configured_review_limit(self) -> None:
         review_reader = _CapturingValidationReviewService()
@@ -94,6 +117,39 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         service.get_workspace()
 
         self.assertEqual(review_reader.last_limit, 3)
+
+    def test_workspace_builds_execution_gap_summary_when_research_and_execution_diverge(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_DivergedValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["alignment_details"]["difference_severity"], "high")
+        self.assertIn("研究建议 ETHUSDT", item["alignment_details"]["difference_summary"])
+        self.assertIn("最近订单仍是 BTCUSDT", item["alignment_details"]["difference_reasons"])
+        self.assertIn("同步失败", item["alignment_details"]["difference_reasons"])
+        self.assertEqual(item["alignment_details"]["next_step"], "先恢复同步，再确认是否真的把研究候选派发到执行侧。")
+        self.assertEqual(item["alignment_gaps"][0]["severity"], "high")
+        self.assertEqual(item["alignment_actions"][0]["label"], "先恢复同步")
+
+    def test_workspace_does_not_mark_alignment_as_matched_when_research_candidate_is_missing(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_NoRecommendationResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_UnavailableAlignmentReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["alignment_details"]["difference_severity"], "unknown")
+        self.assertEqual(item["alignment_details"]["difference_summary"], "当前还没有足够结果可对齐")
+        self.assertEqual(item["alignment_details"]["difference_reasons"], ["当前还没有研究候选，先补研究结果。"])
+        self.assertEqual(item["alignment_details"]["next_step"], "先补研究结果、执行同步或 dry-run，再回来复核。")
+        self.assertEqual(item["alignment_gaps"][0]["severity"], "unknown")
+        self.assertEqual(item["alignment_actions"][0]["label"], "继续研究")
 
 
 class _FakeResearchService:
@@ -247,12 +303,54 @@ class _FakeValidationReviewService:
                     "next_action": "wait_live",
                 },
             },
+            "recent_tasks": [
+                {
+                    "task_type": "research_train",
+                    "status": "succeeded",
+                    "finished_at": "2026-04-07T12:00:00+00:00",
+                    "result_summary": "训练完成",
+                },
+                {
+                    "task_type": "research_infer",
+                    "status": "succeeded",
+                    "finished_at": "2026-04-07T12:03:00+00:00",
+                    "result_summary": "推理完成",
+                },
+                {
+                    "task_type": "signal_output",
+                    "status": "succeeded",
+                    "finished_at": "2026-04-07T12:04:00+00:00",
+                    "result_summary": "信号已输出",
+                },
+                {
+                    "task_type": "sync",
+                    "status": "succeeded",
+                    "finished_at": "2026-04-07T12:05:00+00:00",
+                    "result_summary": "同步完成",
+                },
+                {
+                    "task_type": "review",
+                    "status": "succeeded",
+                    "finished_at": "2026-04-07T12:06:00+00:00",
+                    "result_summary": "复盘完成",
+                },
+            ],
         }
 
 
 class _UnavailableResearchService:
     def get_factory_report(self) -> dict[str, object]:
         return {"status": "unavailable"}
+
+
+class _NoRecommendationResearchService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        payload["overview"] = {
+            "recommended_symbol": "",
+            "recommended_action": "run_inference",
+        }
+        return payload
 
 
 class _MissingContextResearchService(_FakeResearchService):
@@ -291,6 +389,46 @@ class _CapturingValidationReviewService(_FakeValidationReviewService):
     def build_report(self, limit: int = 10) -> dict[str, object]:
         self.last_limit = limit
         return super().build_report(limit=limit)
+
+
+class _DivergedValidationReviewService(_FakeValidationReviewService):
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        payload = super().build_report(limit=limit)
+        payload["execution_comparison"] = {
+            "status": "attention_required",
+            "symbol": "ETHUSDT",
+            "recommended_action": "enter_dry_run",
+            "note": "研究允许执行，但最近同步失败，执行结果也还没跟上。",
+            "execution": {
+                "runtime_mode": "manual",
+                "latest_sync_status": "failed",
+                "matched_order_count": 0,
+                "matched_position_count": 0,
+                "orders": [{"symbol": "BTCUSDT", "status": "filled"}],
+                "positions": [{"symbol": "BTCUSDT", "side": "long"}],
+            },
+        }
+        return payload
+
+
+class _UnavailableAlignmentReviewService(_FakeValidationReviewService):
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        payload = super().build_report(limit=limit)
+        payload["execution_comparison"] = {
+            "status": "unavailable",
+            "symbol": "",
+            "recommended_action": "run_inference",
+            "note": "当前没有可对照的研究候选",
+            "execution": {
+                "runtime_mode": "demo",
+                "latest_sync_status": "unknown",
+                "matched_order_count": 0,
+                "matched_position_count": 0,
+                "orders": [],
+                "positions": [],
+            },
+        }
+        return payload
 
 
 def _fake_controls(*, review_limit: str = "10") -> dict[str, object]:

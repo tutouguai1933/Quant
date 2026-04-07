@@ -74,6 +74,11 @@ def _default_config() -> dict[str, object]:
             "fee_bps": "10",
             "slippage_bps": "5",
         },
+        "execution": {
+            "live_allowed_symbols": list(DEFAULT_MARKET_SYMBOLS),
+            "live_max_stake_usdt": "6",
+            "live_max_open_trades": "1",
+        },
         "thresholds": {
             "dry_run_min_score": "0.55",
             "dry_run_min_positive_rate": "0.45",
@@ -97,6 +102,8 @@ def _default_config() -> dict[str, object]:
             "stale_sync_failure_threshold": "1",
             "auto_pause_on_error": True,
             "review_limit": "10",
+            "cycle_cooldown_minutes": "15",
+            "max_daily_cycle_count": "8",
         },
     }
 
@@ -132,6 +139,8 @@ class WorkbenchConfigService:
             merged["research"] = self._normalize_research_section(next_section)
         elif normalized_section == "backtest":
             merged["backtest"] = self._normalize_backtest_section(next_section)
+        elif normalized_section == "execution":
+            merged["execution"] = self._normalize_execution_section(next_section)
         elif normalized_section == "thresholds":
             merged["thresholds"] = self._normalize_thresholds_section(next_section)
         elif normalized_section == "operations":
@@ -250,6 +259,7 @@ class WorkbenchConfigService:
             "features": self._normalize_features_section(row.get("features")),
             "research": self._normalize_research_section(row.get("research")),
             "backtest": self._normalize_backtest_section(row.get("backtest")),
+            "execution": self._normalize_execution_section(row.get("execution")),
             "thresholds": self._normalize_thresholds_section(row.get("thresholds")),
             "operations": self._normalize_operations_section(row.get("operations")),
         }
@@ -415,6 +425,27 @@ class WorkbenchConfigService:
             "slippage_bps": self._normalize_decimal(payload.get("slippage_bps"), default=Decimal("5"), minimum=Decimal("0")),
         }
 
+    def _normalize_execution_section(self, value: object) -> dict[str, object]:
+        """整理执行安全门配置。"""
+
+        payload = dict(value or {}) if isinstance(value, dict) else {}
+        live_allowed_symbols = self._normalize_symbol_list(
+            payload.get("live_allowed_symbols"),
+            fallback=DEFAULT_MARKET_SYMBOLS,
+            allow_empty=True,
+        )
+        return {
+            "live_allowed_symbols": list(live_allowed_symbols),
+            "live_max_stake_usdt": self._normalize_decimal(
+                payload.get("live_max_stake_usdt"),
+                default=Decimal("6"),
+                minimum=Decimal("0.1"),
+            ),
+            "live_max_open_trades": str(
+                self._normalize_int(payload.get("live_max_open_trades"), default=1, minimum=1, maximum=20)
+            ),
+        }
+
     def _normalize_thresholds_section(self, value: object) -> dict[str, object]:
         """整理 dry-run / live 门槛。"""
 
@@ -451,6 +482,12 @@ class WorkbenchConfigService:
             ),
             "auto_pause_on_error": self._normalize_bool(payload.get("auto_pause_on_error"), default=True),
             "review_limit": str(self._normalize_int(payload.get("review_limit"), default=10, minimum=1, maximum=100)),
+            "cycle_cooldown_minutes": str(
+                self._normalize_int(payload.get("cycle_cooldown_minutes"), default=15, minimum=0, maximum=1440)
+            ),
+            "max_daily_cycle_count": str(
+                self._normalize_int(payload.get("max_daily_cycle_count"), default=8, minimum=1, maximum=200)
+            ),
         }
 
     def _normalize_symbol_list(

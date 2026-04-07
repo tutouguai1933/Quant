@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+import tempfile
 from pathlib import Path
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -24,6 +25,7 @@ import services.api.app.services.execution_service as execution_service_module  
 import services.api.app.services.sync_service as sync_service_module  # noqa: E402
 from services.api.app.adapters.freqtrade.client import FreqtradeClient  # noqa: E402
 from services.api.app.domain.contracts import ExecutionActionContract, ExecutionActionType, SignalSide  # noqa: E402
+from services.api.app.services.workbench_config_service import WorkbenchConfigService  # noqa: E402
 from services.api.app.services.execution_service import ExecutionService  # noqa: E402
 from services.api.app.services.signal_service import SignalService  # noqa: E402
 from services.api.app.services.sync_service import SyncService  # noqa: E402
@@ -1000,6 +1002,63 @@ class ExecutionFlowTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=5)
+
+    def test_live_mode_prefers_execution_config_over_env_limits(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_config = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            isolated_config.update_section(
+                "execution",
+                {
+                    "live_allowed_symbols": ["ETHUSDT"],
+                    "live_max_stake_usdt": "6",
+                    "live_max_open_trades": "2",
+                },
+            )
+            original_config_service = execution_service_module.workbench_config_service
+            execution_service_module.workbench_config_service = isolated_config
+            try:
+                with patch.dict(
+                    os.environ,
+                    {
+                        "QUANT_RUNTIME_MODE": "live",
+                        "QUANT_ALLOW_LIVE_EXECUTION": "true",
+                        "BINANCE_API_KEY": "k",
+                        "BINANCE_API_SECRET": "s",
+                        "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
+                        "QUANT_LIVE_MAX_STAKE_USDT": "1",
+                        "QUANT_LIVE_MAX_OPEN_TRADES": "1",
+                    },
+                    clear=False,
+                ), patch.object(
+                    execution_service_module.freqtrade_client,
+                    "get_snapshot",
+                    return_value=type("Snapshot", (), {"positions": []})(),
+                ):
+                    action = {"symbol": "ETH/USDT", "side": "long"}
+                    runtime_snapshot = {
+                        "backend": "rest",
+                        "connection_status": "connected",
+                        "mode": "live",
+                        "trading_mode": "spot",
+                        "stake_amount": "6",
+                        "max_open_trades": 2,
+                    }
+
+                    ExecutionService(
+                        market_client=_FakeBinanceMarketClient(
+                            {"ETHUSDT": "5"},
+                            step_size_map={"ETHUSDT": "0.0001"},
+                            last_price_map={"ETHUSDT": "100"},
+                        )
+                    )._guard_live_execution(
+                        action=action,
+                        settings=execution_service_module.Settings.from_env(),
+                        runtime_snapshot=runtime_snapshot,
+                    )
+            finally:
+                execution_service_module.workbench_config_service = original_config_service
+
+        self.assertEqual(action["stake_amount"], "6.0000000000")
 
     def test_rest_mode_uses_real_backend_for_execution_and_sync(self) -> None:
         state: dict[str, object] = {

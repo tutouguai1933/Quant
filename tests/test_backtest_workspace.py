@@ -29,7 +29,18 @@ class BacktestWorkspaceTests(unittest.TestCase):
         self.assertIn("回测参数配置", content)
         self.assertIn("fee_bps", content)
         self.assertIn("准入门槛预览", content)
+        self.assertIn("完整准入门槛", content)
+        self.assertIn("dry_run_min_score", content)
+        self.assertIn("dry_run_min_positive_rate", content)
+        self.assertIn("dry_run_min_net_return_pct", content)
+        self.assertIn("dry_run_min_sharpe", content)
+        self.assertIn("dry_run_max_drawdown_pct", content)
+        self.assertIn("dry_run_max_loss_streak", content)
         self.assertIn("dry_run_min_win_rate", content)
+        self.assertIn("validation_min_sample_count", content)
+        self.assertIn("live_min_score", content)
+        self.assertIn("live_min_positive_rate", content)
+        self.assertIn("live_min_net_return_pct", content)
         self.assertIn("live_min_win_rate", content)
 
 

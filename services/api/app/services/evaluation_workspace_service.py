@@ -74,7 +74,9 @@ class EvaluationWorkspaceService:
             "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)],
             "experiment_comparison": self._build_experiment_comparison(report),
             "gate_matrix": self._build_gate_matrix(report),
+            "workflow_alignment_timeline": self._build_workflow_alignment_timeline(review_report),
             "run_deltas": self._build_run_deltas(report),
+            "delta_overview": self._build_delta_overview(report),
             "comparison_summary": self._build_comparison_summary(
                 report=report,
                 validation_reviews=validation_reviews,
@@ -85,6 +87,11 @@ class EvaluationWorkspaceService:
                 overview=overview,
                 execution_alignment=execution_alignment,
             ),
+            "alignment_gaps": self._build_alignment_gaps(
+                overview=overview,
+                execution_alignment=execution_alignment,
+            ),
+            "alignment_actions": self._build_alignment_actions(execution_alignment=execution_alignment),
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -226,6 +233,45 @@ class EvaluationWorkspaceService:
         return rows
 
     @staticmethod
+    def _build_workflow_alignment_timeline(review_report: dict[str, object]) -> list[dict[str, object]]:
+        """把研究到执行的最近一轮关键节点压成时间线。"""
+
+        recent_tasks = [dict(item) for item in list(review_report.get("recent_tasks") or []) if isinstance(item, dict)]
+        rows: list[dict[str, object]] = []
+        label_map = {
+            "research_train": "研究训练",
+            "research_infer": "研究推理",
+            "signal_output": "信号输出",
+            "sync": "执行同步",
+            "review": "统一复盘",
+        }
+        for task_type in ("research_train", "research_infer", "signal_output", "sync", "review"):
+            latest = next((item for item in recent_tasks if str(item.get("task_type", "")) == task_type), None)
+            if not latest:
+                rows.append(
+                    {
+                        "task_type": task_type,
+                        "label": label_map.get(task_type, task_type),
+                        "status": "waiting",
+                        "requested_at": "",
+                        "finished_at": "",
+                        "detail": "当前还没有这一段记录",
+                    }
+                )
+                continue
+            rows.append(
+                {
+                    "task_type": task_type,
+                    "label": label_map.get(task_type, task_type),
+                    "status": str(latest.get("status", "waiting") or "waiting"),
+                    "requested_at": str(latest.get("requested_at", "") or ""),
+                    "finished_at": str(latest.get("finished_at", "") or ""),
+                    "detail": str(latest.get("result_summary", "") or latest.get("error_message", "") or "当前没有额外说明"),
+                }
+            )
+        return rows
+
+    @staticmethod
     def _build_gate_matrix(report: dict[str, object]) -> list[dict[str, object]]:
         """把候选在各个门控的状态整理成表格。"""
 
@@ -286,6 +332,17 @@ class EvaluationWorkspaceService:
             f"执行对齐：{str(execution_alignment.get('status', 'n/a')) or 'n/a'}",
         ]
 
+        experiment_alignment_note = EvaluationWorkspaceService._build_experiment_alignment_note(
+            training_present=bool(training),
+            inference_present=bool(inference),
+            training_model=training_model,
+            inference_model=inference_model,
+            training_snapshot=training_snapshot,
+            inference_snapshot=inference_snapshot,
+            model_aligned=model_aligned,
+            dataset_aligned=dataset_aligned,
+        )
+
         return {
             "training_run_id": str(training.get("run_id", "")),
             "inference_run_id": str(inference.get("run_id", "")),
@@ -298,6 +355,11 @@ class EvaluationWorkspaceService:
             "model_aligned": model_aligned,
             "dataset_aligned": dataset_aligned,
             "note": " / ".join(note_parts),
+            "training_model_version": training_model,
+            "inference_model_version": inference_model,
+            "training_dataset_snapshot": training_snapshot,
+            "inference_dataset_snapshot": inference_snapshot,
+            "experiment_alignment_note": experiment_alignment_note,
         }
 
     @staticmethod
@@ -362,6 +424,21 @@ class EvaluationWorkspaceService:
                     "changed_fields": list(changed_field_payload.get("fields") or []),
                     "changed_fields_status": str(changed_field_payload.get("status", "ready") or "ready"),
                     "changed_fields_note": str(changed_field_payload.get("note", "") or ""),
+                    "comparison_readiness": EvaluationWorkspaceService._resolve_comparison_readiness(
+                        changed_field_payload=changed_field_payload,
+                        model_changed=model_changed,
+                        dataset_changed=dataset_changed,
+                    ),
+                    "comparison_reason": EvaluationWorkspaceService._build_comparison_reason(
+                        model_changed=model_changed,
+                        dataset_changed=dataset_changed,
+                        changed_field_payload=changed_field_payload,
+                    ),
+                    "change_summary": EvaluationWorkspaceService._build_change_summary(
+                        model_changed=model_changed,
+                        dataset_changed=dataset_changed,
+                        changed_fields=list(changed_field_payload.get("fields") or []),
+                    ),
                     "note": EvaluationWorkspaceService._build_delta_note(
                         run_type=run_type,
                         model_changed=model_changed,
@@ -413,11 +490,126 @@ class EvaluationWorkspaceService:
         }
 
     @staticmethod
+    def _resolve_comparison_readiness(
+        *,
+        changed_field_payload: dict[str, object],
+        model_changed: bool,
+        dataset_changed: bool,
+    ) -> str:
+        """说明最近两轮对比当前是否完整。"""
+
+        if str(changed_field_payload.get("status", "ready") or "ready") == "unavailable":
+            return "unavailable"
+        fields = list(changed_field_payload.get("fields") or [])
+        return "limited" if model_changed or dataset_changed or bool(fields) else "ready"
+
+    @staticmethod
+    def _build_comparison_reason(
+        *,
+        model_changed: bool,
+        dataset_changed: bool,
+        changed_field_payload: dict[str, object],
+    ) -> str:
+        """生成最近两轮对比的口头原因。"""
+
+        if str(changed_field_payload.get("status", "ready") or "ready") == "unavailable":
+            return str(changed_field_payload.get("note", "") or "当前实验账本缺少配置快照，暂时无法比较。")
+        reasons: list[str] = []
+        fields = EvaluationWorkspaceService._format_changed_field_labels(
+            list(changed_field_payload.get("fields") or []),
+        )
+        if model_changed and dataset_changed:
+            reasons.append("模型版本和数据快照都变了，本轮收益变化不能直接归因。")
+        elif model_changed:
+            reasons.append("模型版本已切换，这更像换方案，不是同模型复测。")
+        elif dataset_changed:
+            reasons.append("数据快照已变化，这更像换样本，不是同样本复测。")
+        if fields:
+            reasons.append(f"关键配置也变了：{' / '.join(fields)}")
+        if not reasons:
+            return "模型、数据和关键配置都没变，可以直接看结果差异。"
+        return "；".join(reasons)
+
+    @staticmethod
+    def _build_change_summary(
+        *,
+        model_changed: bool,
+        dataset_changed: bool,
+        changed_fields: list[object],
+    ) -> str:
+        """把最主要的变化压成一行摘要。"""
+
+        summary: list[str] = []
+        if model_changed:
+            summary.append("模型版本")
+        if dataset_changed:
+            summary.append("数据快照")
+        fields = EvaluationWorkspaceService._format_changed_field_labels(changed_fields)
+        if fields:
+            summary.extend(fields[:3])
+            if len(fields) > 3:
+                summary.append(f"另外还有 {len(fields) - 3} 项配置变化")
+        if not summary:
+            summary.append("主要结果沿用上一轮口径")
+        return " / ".join(summary)
+
+    @staticmethod
+    def _format_changed_field_labels(changed_fields: list[object]) -> list[str]:
+        """把内部字段名转成前端能直接读懂的中文。"""
+
+        label_map = {
+            "research_template": "研究模板",
+            "model_key": "模型选择",
+            "label_mode": "标签口径",
+            "holding_window_min_days": "最短持有天数",
+            "holding_window_max_days": "最长持有天数",
+            "sample_limit": "样本长度",
+            "lookback_days": "回看天数",
+            "window_mode": "窗口模式",
+            "start_date": "固定日期范围",
+            "end_date": "固定日期范围",
+            "missing_policy": "缺失处理",
+            "outlier_policy": "去极值",
+            "normalization_policy": "标准化",
+            "backtest_fee_bps": "回测手续费",
+            "backtest_slippage_bps": "回测滑点",
+        }
+        labels: list[str] = []
+        for item in changed_fields:
+            field = str(item).strip()
+            if not field:
+                continue
+            label = label_map.get(field, field)
+            if label in labels:
+                continue
+            labels.append(label)
+        return labels
+
+    @staticmethod
+    def _build_delta_overview(report: dict[str, object]) -> dict[str, object]:
+        """把最近两轮对比压成一张概况卡。"""
+
+        rows = EvaluationWorkspaceService._build_run_deltas(report)
+        if not rows:
+            return {
+                "status": "unavailable",
+                "headline": "当前还没有足够的实验账本",
+                "detail": "至少要有两轮同类型训练或推理，系统才会给出最近两轮变化焦点。",
+            }
+        current = dict(rows[0])
+        return {
+            "status": str(current.get("comparison_readiness", "ready") or "ready"),
+            "headline": f"当前先看：{str(current.get('change_summary', '') or '当前没有变化摘要')}",
+            "detail": str(current.get("comparison_reason", "") or "当前没有变化说明"),
+            "note": str(current.get("note", "") or "当前没有补充说明"),
+        }
+
+    @staticmethod
     def _build_alignment_details(
         *,
         overview: dict[str, object],
         execution_alignment: dict[str, object],
-    ) -> dict[str, str]:
+    ) -> dict[str, object]:
         """把研究和执行的最近标的对齐成更直白的明细。"""
 
         execution = dict(execution_alignment.get("execution") or {})
@@ -428,23 +620,155 @@ class EvaluationWorkspaceService:
             or overview.get("recommended_symbol")
             or ""
         )
+        research_action = str(
+            execution_alignment.get("recommended_action")
+            or overview.get("recommended_action")
+            or ""
+        )
         last_order_symbol = str(orders[0].get("symbol", "")) if orders else ""
         last_position_symbol = str(positions[0].get("symbol", "")) if positions else ""
+        latest_sync_status = str(execution.get("latest_sync_status", "") or "unknown")
+        runtime_mode = str(execution.get("runtime_mode", "") or "unknown")
         status = str(execution_alignment.get("status", "") or "unavailable")
         if status == "matched":
             alignment_state = "研究和执行已对齐"
-        elif status == "waiting":
+        elif status == "waiting_research":
             alignment_state = "研究已生成，等待执行收口"
         elif status == "unavailable":
             alignment_state = "当前还没有执行对齐结果"
         else:
             alignment_state = "研究和执行暂未对齐"
+        if not research_symbol and status == "unavailable":
+            return {
+                "research_symbol": research_symbol,
+                "research_action": research_action,
+                "last_order_symbol": last_order_symbol,
+                "last_position_symbol": last_position_symbol,
+                "alignment_state": alignment_state,
+                "runtime_mode": runtime_mode,
+                "latest_sync_status": latest_sync_status,
+                "difference_summary": "当前还没有足够结果可对齐",
+                "difference_severity": "unknown",
+                "difference_reasons": ["当前还没有研究候选，先补研究结果。"],
+                "next_step": "先补研究结果、执行同步或 dry-run，再回来复核。",
+            }
+        difference_reasons: list[str] = []
+        if research_symbol and last_order_symbol and research_symbol != last_order_symbol:
+            difference_reasons.append(f"最近订单仍是 {last_order_symbol}")
+        if research_symbol and last_position_symbol and research_symbol != last_position_symbol:
+            difference_reasons.append(f"最近持仓仍是 {last_position_symbol}")
+        if latest_sync_status == "failed":
+            difference_reasons.append("同步失败")
+        if runtime_mode == "manual" and research_action == "enter_dry_run":
+            difference_reasons.append("当前仍在手动模式，需要人工确认")
+        if not difference_reasons:
+            difference_reasons.append("当前没有明显差异")
+        if difference_reasons == ["当前没有明显差异"]:
+            difference_summary = "研究标的、最近订单和最近持仓已经对上"
+            difference_severity = "low"
+            next_step = "继续观察 dry-run 或小额 live 的复盘结果。"
+        elif status == "waiting_research":
+            difference_summary = f"研究建议 {research_symbol or 'n/a'} 还没放行到执行"
+            difference_severity = "medium"
+            next_step = "先回到研究、回测和评估链补强候选，再决定是否放行。"
+        else:
+            difference_summary = (
+                f"研究建议 {research_symbol or 'n/a'}，但执行侧还没完全对齐。"
+            )
+            difference_severity = "high" if latest_sync_status == "failed" else "medium"
+            next_step = "先恢复同步，再确认是否真的把研究候选派发到执行侧。"
         return {
             "research_symbol": research_symbol,
+            "research_action": research_action,
             "last_order_symbol": last_order_symbol,
             "last_position_symbol": last_position_symbol,
             "alignment_state": alignment_state,
+            "runtime_mode": runtime_mode,
+            "latest_sync_status": latest_sync_status,
+            "difference_summary": difference_summary,
+            "difference_severity": difference_severity,
+            "difference_reasons": difference_reasons,
+            "next_step": next_step,
         }
+
+    @staticmethod
+    def _build_alignment_gaps(
+        *,
+        overview: dict[str, object],
+        execution_alignment: dict[str, object],
+    ) -> list[dict[str, str]]:
+        """列出研究和执行当前差在哪。"""
+
+        details = EvaluationWorkspaceService._build_alignment_details(
+            overview=overview,
+            execution_alignment=execution_alignment,
+        )
+        reasons = list(details.get("difference_reasons") or [])
+        if reasons == ["当前没有明显差异"]:
+            return []
+        return [
+            {
+                "label": f"差异 {index + 1}",
+                "detail": str(item),
+                "severity": str(details.get("difference_severity", "low")),
+            }
+            for index, item in enumerate(reasons)
+        ]
+
+    @staticmethod
+    def _build_alignment_actions(*, execution_alignment: dict[str, object]) -> list[dict[str, str]]:
+        """给评估页一组更直观的下一步动作。"""
+
+        status = str(execution_alignment.get("status", "") or "unavailable")
+        if status == "matched":
+            return [
+                {"label": "继续保持研究和执行同一轮", "detail": "当前研究和执行已经对齐，先继续看 dry-run 或 live 的复盘。"},
+                {"label": "回到任务页看自动化", "detail": "确认自动化模式和长期运行参数是否需要调整。"},
+            ]
+        if status == "attention_required":
+            return [
+                {"label": "先恢复同步", "detail": "执行结果没有完全收口前，不要继续放大验证范围。"},
+                {"label": "再回到策略页确认派发", "detail": "同步恢复后，再核对这轮研究候选是否真的进入执行。"},
+            ]
+        if status == "no_execution":
+            return [
+                {"label": "先去策略页确认派发", "detail": "研究已有候选，但执行侧还没有动作。"},
+                {"label": "回到任务页确认是否被人工暂停", "detail": "人工接管或 Kill Switch 都会让执行停在研究之前。"},
+            ]
+        return [
+            {"label": "继续研究", "detail": "先补训练、推理和评估结果，再决定是否进入 dry-run。"},
+        ]
+
+    @staticmethod
+    def _build_experiment_alignment_note(
+        *,
+        training_present: bool,
+        inference_present: bool,
+        training_model: str,
+        inference_model: str,
+        training_snapshot: str,
+        inference_snapshot: str,
+        model_aligned: bool,
+        dataset_aligned: bool,
+    ) -> str:
+        """生成实验对比的口头说明。"""
+
+        if not training_present and not inference_present:
+            return "当前还没有训练或推理记录，先跑实验再来看对比。"
+
+        details: list[str] = []
+        if training_present or inference_present:
+            details.append(f"训练模型 {training_model or 'n/a'} / 推理模型 {inference_model or 'n/a'}")
+            details.append(f"训练数据 {training_snapshot or 'n/a'} / 推理数据 {inference_snapshot or 'n/a'}")
+        if training_present and inference_present:
+            details.append(
+                f"模型{'一致' if model_aligned else '不一致'} / 数据{'一致' if dataset_aligned else '不一致'}"
+            )
+        if not training_present:
+            details.append("尚未生成训练结果")
+        if not inference_present:
+            details.append("尚未生成推理结果")
+        return "；".join(details)
 
     @staticmethod
     def _find_previous_run(recent_runs: list[dict[str, object]], *, run_type: str, current_run_id: str) -> dict[str, object]:

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from services.api.app.core.settings import Settings
 from services.api.app.services.automation_service import automation_service
 from services.api.app.services.research_service import research_service
@@ -33,7 +35,8 @@ class AutomationWorkflowService:
         """返回自动化状态和健康摘要。"""
 
         task_health = self._scheduler.get_health_summary()
-        state = self._automation.get_state()
+        automation_status = self._automation.get_status(task_health=task_health)
+        state = dict(automation_status.get("state") or {})
         operations = self._get_operations_config()
         review_limit = int(operations.get("review_limit", 10) or 10)
         report = self._reviewer.build_report(limit=review_limit)
@@ -42,6 +45,7 @@ class AutomationWorkflowService:
             "state": state,
             "health": health,
             "operations": operations,
+            "execution_policy": dict(automation_status.get("execution_policy") or {}),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
             "takeover_summary": dict(health.get("takeover_summary") or {}),
@@ -51,7 +55,7 @@ class AutomationWorkflowService:
                 task_health=task_health,
                 automation_state=state,
             ),
-            "daily_summary": dict(self._automation.get_status(task_health=task_health).get("daily_summary") or {}),
+            "daily_summary": dict(automation_status.get("daily_summary") or {}),
             "scheduler_plan": self._build_scheduler_plan(review_limit=review_limit),
             "failure_policy": self._build_failure_policy(operations=operations),
         }
@@ -72,6 +76,50 @@ class AutomationWorkflowService:
                 "recommended_symbol": "",
                 "next_action": "manual_takeover",
                 "message": "自动化当前处于暂停状态",
+                "armed_symbol": armed_symbol,
+            }
+            self._automation.record_cycle(summary)
+            return summary
+
+        daily_limit = int(operations.get("max_daily_cycle_count", 8) or 8)
+        current_cycle_count = int((state.get("daily_summary") or {}).get("cycle_count", 0) or 0)
+        if current_cycle_count >= daily_limit:
+            self._automation.record_alert(
+                level="warning",
+                code="daily_cycle_limit_reached",
+                message="今日自动化轮次已达到上限",
+                source=source,
+                detail=str(current_cycle_count),
+            )
+            summary = {
+                "status": "waiting",
+                "mode": mode,
+                "recommended_symbol": "",
+                "next_action": "wait_next_window",
+                "message": f"今日轮次上限已用完（{current_cycle_count}/{daily_limit}），先等下一轮窗口再继续。",
+                "failure_reason": "daily_cycle_limit_reached",
+                "armed_symbol": armed_symbol,
+            }
+            self._automation.record_cycle(summary)
+            return summary
+
+        cooldown_minutes = int(operations.get("cycle_cooldown_minutes", 15) or 0)
+        cooldown_remaining = self._resolve_cooldown_remaining_minutes(last_cycle=dict(state.get("last_cycle") or {}), cooldown_minutes=cooldown_minutes)
+        if cooldown_remaining > 0:
+            self._automation.record_alert(
+                level="warning",
+                code="cycle_cooldown_active",
+                message="自动化仍在冷却窗口内",
+                source=source,
+                detail=str(cooldown_remaining),
+            )
+            summary = {
+                "status": "waiting",
+                "mode": mode,
+                "recommended_symbol": "",
+                "next_action": "wait_next_window",
+                "message": f"自动化仍在冷却窗口内，还需等待约 {cooldown_remaining} 分钟。",
+                "failure_reason": "cycle_cooldown_active",
                 "armed_symbol": armed_symbol,
             }
             self._automation.record_cycle(summary)
@@ -334,7 +382,28 @@ class AutomationWorkflowService:
             "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
             "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
             "review_limit": int(operations.get("review_limit", 10) or 10),
+            "cycle_cooldown_minutes": int(operations.get("cycle_cooldown_minutes", 15) or 0),
+            "max_daily_cycle_count": int(operations.get("max_daily_cycle_count", 8) or 8),
         }
+
+    @staticmethod
+    def _resolve_cooldown_remaining_minutes(*, last_cycle: dict[str, object], cooldown_minutes: int) -> int:
+        """根据最近一轮完成时间计算还剩多少冷却时间。"""
+
+        if cooldown_minutes <= 0:
+            return 0
+        recorded_at = str(last_cycle.get("recorded_at", "") or "").strip()
+        if not recorded_at:
+            return 0
+        try:
+            recorded = datetime.fromisoformat(recorded_at)
+        except ValueError:
+            return 0
+        if recorded.tzinfo is None:
+            recorded = recorded.replace(tzinfo=timezone.utc)
+        elapsed_minutes = (datetime.now(timezone.utc) - recorded.astimezone(timezone.utc)).total_seconds() / 60
+        remaining = int(round(cooldown_minutes - elapsed_minutes))
+        return remaining if remaining > 0 else 0
 
 
 automation_workflow_service = AutomationWorkflowService()
