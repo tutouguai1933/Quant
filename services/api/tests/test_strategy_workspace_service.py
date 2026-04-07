@@ -38,6 +38,8 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
 
         self.assertEqual(workspace["overview"]["strategy_count"], 2)
         self.assertEqual(workspace["overview"]["whitelist_count"], 2)
+        self.assertIn("configuration", workspace)
+        self.assertIn("priority_tags", workspace["configuration"])
         self.assertEqual(workspace["whitelist"], ["BTCUSDT", "ETHUSDT"])
         self.assertEqual(workspace["executor_runtime"]["backend"], "memory")
         self.assertEqual(len(workspace["strategies"]), 2)

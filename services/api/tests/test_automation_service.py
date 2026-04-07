@@ -143,12 +143,14 @@ class AutomationServiceTests(unittest.TestCase):
             first.arm_symbol("ETHUSDT")
             first.pause("manual_stop", actor="tester")
 
-            second = AutomationService()
+        second = AutomationService()
 
         state = second.get_state()
         self.assertEqual(state["mode"], "auto_dry_run")
         self.assertEqual(state["armed_symbol"], "ETHUSDT")
         self.assertTrue(state["paused"])
+        self.assertIn("automation_config", state)
+        self.assertIn("long_run_seconds", state["automation_config"])
 
 
 class _ReadyResearchService:

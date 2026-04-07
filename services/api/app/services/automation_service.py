@@ -11,9 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from services.api.app.core.settings import Settings
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 
 AUTOMATION_MODES = {"manual", "auto_dry_run", "auto_live"}
+
+_last_state_path: Path | None = None
+_last_state_payload: dict[str, object] | None = None
 
 
 def _utc_now() -> str:
@@ -56,6 +60,7 @@ class AutomationService:
             "allow_live_execution": settings.allow_live_execution,
             "last_cycle": last_cycle,
             "alerts": list(self._alerts),
+            "automation_config": workbench_config_service.get_config().get("automation", {}),
         }
 
     def get_status(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
@@ -221,26 +226,17 @@ class AutomationService:
     def _load_state(self) -> None:
         """在服务启动时恢复最近一次自动化状态。"""
 
-        if not self._state_path.exists():
+        for candidate in self._state_path_candidates():
+            if not candidate.exists():
+                continue
+            payload = self._read_state_payload(candidate)
+            if payload is None:
+                continue
+            self._apply_state_payload(payload)
+            self._state_path = candidate
             return
-        try:
-            payload = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except Exception:
-            return
-        if not isinstance(payload, dict):
-            return
-        mode = str(payload.get("mode", "manual")).strip().lower().replace("-", "_")
-        if mode in AUTOMATION_MODES:
-            self._mode = mode
-        self._paused = bool(payload.get("paused"))
-        self._paused_reason = str(payload.get("paused_reason", ""))
-        self._manual_takeover = bool(payload.get("manual_takeover"))
-        self._updated_at = str(payload.get("updated_at", _utc_now()))
-        self._last_cycle = dict(payload.get("last_cycle") or {})
-        self._alerts = [dict(item) for item in list(payload.get("alerts") or []) if isinstance(item, dict)][:20]
-        self._next_alert_id = int(payload.get("next_alert_id", len(self._alerts) + 1) or (len(self._alerts) + 1))
-        self._armed_symbol = str(payload.get("armed_symbol", "")).strip().upper()
-        self._armed_at = str(payload.get("armed_at", ""))
+        if _last_state_payload is not None:
+            self._apply_state_payload(_last_state_payload)
 
     def _persist_state(self) -> None:
         """把当前自动化状态写回本地状态文件。"""
@@ -259,6 +255,44 @@ class AutomationService:
         }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        global _last_state_path, _last_state_payload
+        _last_state_path = self._state_path
+        _last_state_payload = dict(payload)
 
+    def _state_path_candidates(self) -> list[Path]:
+        """按照优先级返回可用的状态文件路径。"""
+
+        candidates: list[Path] = []
+        if _last_state_path and _last_state_path != self._state_path:
+            candidates.append(_last_state_path)
+        candidates.append(self._state_path)
+        return candidates
+
+    def _read_state_payload(self, path: Path) -> dict[str, object] | None:
+        """从指定路径读取状态载荷。"""
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return payload
+
+    def _apply_state_payload(self, payload: dict[str, object]) -> None:
+        """把读取到的状态写入实例。"""
+
+        mode = str(payload.get("mode", "manual")).strip().lower().replace("-", "_")
+        if mode in AUTOMATION_MODES:
+            self._mode = mode
+        self._paused = bool(payload.get("paused"))
+        self._paused_reason = str(payload.get("paused_reason", ""))
+        self._manual_takeover = bool(payload.get("manual_takeover"))
+        self._updated_at = str(payload.get("updated_at", _utc_now()))
+        self._last_cycle = dict(payload.get("last_cycle") or {})
+        self._alerts = [dict(item) for item in list(payload.get("alerts") or []) if isinstance(item, dict)][:20]
+        self._next_alert_id = int(payload.get("next_alert_id", len(self._alerts) + 1) or (len(self._alerts) + 1))
+        self._armed_symbol = str(payload.get("armed_symbol", "")).strip().upper()
+        self._armed_at = str(payload.get("armed_at", ""))
 
 automation_service = AutomationService()

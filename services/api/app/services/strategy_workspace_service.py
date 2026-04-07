@@ -16,6 +16,7 @@ from services.api.app.services.signal_service import SignalService, signal_servi
 from services.api.app.services.strategy_catalog import StrategyCatalogService, strategy_catalog_service
 from services.api.app.services.strategy_engine import apply_research_soft_gate, evaluate_trend_breakout, evaluate_trend_pullback
 from services.api.app.services.sync_service import SyncService, sync_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 
 class StrategyWorkspaceService:
@@ -49,6 +50,7 @@ class StrategyWorkspaceService:
         latest_research = self._research_reader.get_latest_result()
         strategy_cards = self._build_strategy_cards(catalog, whitelist, latest_research)
 
+        configuration = workbench_config_service.get_config()
         return {
             "overview": {
                 "strategy_count": len(strategy_cards),
@@ -65,6 +67,7 @@ class StrategyWorkspaceService:
             "recent_signals": recent_signals,
             "recent_orders": recent_orders,
             "account_state": account_state,
+            "configuration": configuration,
         }
 
     def _build_account_state(self, order_limit: int = 5) -> dict[str, object]:
