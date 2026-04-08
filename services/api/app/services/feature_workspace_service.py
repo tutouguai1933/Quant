@@ -101,6 +101,7 @@ class FeatureWorkspaceService:
                 for item in factors
                 if isinstance(item, dict)
             ],
+            "selection_matrix": self._build_selection_matrix(factors=factors, configured_features=configured_features),
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -112,6 +113,35 @@ class FeatureWorkspaceService:
             if isinstance(payload, dict):
                 return payload
         return {"status": "unavailable", "backend": "qlib-fallback"}
+
+    @staticmethod
+    def _build_selection_matrix(*, factors: list[object], configured_features: dict[str, object]) -> list[dict[str, str]]:
+        """把协议角色和当前勾选角色整理成一张明细表。"""
+
+        primary = {str(item).strip() for item in list(configured_features.get("primary_factors") or []) if str(item).strip()}
+        auxiliary = {str(item).strip() for item in list(configured_features.get("auxiliary_factors") or []) if str(item).strip()}
+        rows: list[dict[str, str]] = []
+        for item in factors:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            if not name:
+                continue
+            current_role = "未启用"
+            if name in primary:
+                current_role = "主判断"
+            elif name in auxiliary:
+                current_role = "辅助确认"
+            rows.append(
+                {
+                    "name": name,
+                    "category": str(item.get("category", "")).strip() or "未分类",
+                    "protocol_role": str(item.get("role", "")).strip() or "未定义",
+                    "current_role": current_role,
+                    "description": str(item.get("description", "")).strip() or "当前没有说明",
+                }
+            )
+        return rows
 
 
 feature_workspace_service = FeatureWorkspaceService()

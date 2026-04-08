@@ -98,7 +98,7 @@ class FrontendRefactorTests(unittest.TestCase):
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
             WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "双栏布局", "左边看判断", "右边看执行", "当前推荐执行候选", "研究候选", "自动化判断", "自动化推荐", "下一步动作", "执行器状态", "当前配置摘要", "研究范围", "验证策略", "自动化策略", "执行安全门配置", "live_allowed_symbols", "账户收口", "执行动作", "白名单摘要", "最近执行结果", "research_cockpit", "推荐策略", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "是否允许进入 dry-run", "运行中…"],
-            WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "自动化控制台", "自动化模式", "统一调度入口", "统一复盘", "健康摘要", "最近告警", "本轮自动化判断", "推荐策略实例", "派发结果", "失败原因", "今日摘要", "调度顺序", "失败规则", "dry-run only", "Kill Switch", "当前阻塞", "接管建议", "恢复步骤", "告警摘要", "风险等级摘要", "恢复清单", "执行安全门", "当前放行口径", "自动化冷却时间", "每日最大轮次", "自动化运行参数", "长时间接管阈值", "活跃告警窗口", "最近告警历史", "活跃告警", "comparison_run_limit", "运行中…"],
+            WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "自动化控制台", "自动化模式", "统一调度入口", "统一复盘", "健康摘要", "最近告警", "今日摘要", "调度顺序", "失败规则", "dry-run only", "Kill Switch", "当前阻塞", "接管建议", "恢复步骤", "告警摘要", "风险等级摘要", "恢复清单", "执行安全门", "当前放行口径", "自动化冷却时间", "每日最大轮次", "自动化运行参数", "长时间接管阈值", "活跃告警窗口", "最近告警历史", "活跃告警", "comparison_run_limit", "运行中…"],
             WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "自动化入口", "当前模式", "下一步动作", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要", "筛选通过率", "当前最佳候选", "运行中…"],
         }
         for file_path, patterns in expectations.items():
@@ -106,7 +106,11 @@ class FrontendRefactorTests(unittest.TestCase):
             for pattern in patterns:
                 self.assertIn(pattern, content)
         tasks_content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")
+        automation_cycle_card_content = (WEB_COMPONENTS / "automation-last-cycle-card.tsx").read_text(encoding="utf-8")
         self.assertIn('action="automation_manual_takeover"', tasks_content)
+        self.assertIn("AutomationLastCycleCard", tasks_content)
+        for pattern in ["本轮自动化判断", "推荐策略实例", "派发结果", "失败原因"]:
+            self.assertIn(pattern, automation_cycle_card_content)
 
     def test_protected_forms_no_longer_expose_token_inputs(self) -> None:
         page_files = [
@@ -254,6 +258,12 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("name=\"force_validation_top_candidate\"", research_content)
         self.assertIn("window_majority", research_content)
         self.assertIn("balanced_v3", research_content)
+        self.assertIn("标签目标与止损说明", research_content)
+        self.assertIn("因子明细表", features_content)
+        self.assertIn("当前选中角色", features_content)
+        self.assertIn("为什么现在更适合", evaluation_content)
+        self.assertIn("还差什么才能进入下一阶段", evaluation_content)
+        self.assertIn("研究与执行差异", evaluation_content)
         self.assertIn("name=\"timeframe_profiles.4h.trend_window\"", features_content)
         self.assertIn("name=\"timeframe_profiles.4h.rsi_period\"", features_content)
         self.assertIn("name=\"timeframe_profiles.4h.roc_period\"", features_content)

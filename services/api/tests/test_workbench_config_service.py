@@ -51,6 +51,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["features"]["missing_policy"], "neutral_fill")
         self.assertEqual(config["features"]["feature_preset_key"], "balanced_default")
         self.assertEqual(config["research"]["research_preset_key"], "baseline_balanced")
+        self.assertEqual(config["research"]["label_preset_key"], "balanced_window")
         self.assertEqual(config["backtest"]["backtest_preset_key"], "realistic_standard")
         self.assertEqual(config["thresholds"]["threshold_preset_key"], "standard_gate")
         self.assertEqual(config["thresholds"]["live_min_score"], "0.65")
@@ -272,6 +273,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertIn("detail", options["model_catalog"][0])
         self.assertEqual(options["label_mode_catalog"][0]["key"], "earliest_hit")
         self.assertEqual(options["label_trigger_catalog"][0]["key"], "close")
+        self.assertEqual(options["label_preset_catalog"][0]["key"], "balanced_window")
         self.assertEqual(options["holding_window_catalog"][0]["key"], "1-3d")
         self.assertEqual(options["cost_model_catalog"][0]["key"], "round_trip_basis_points")
         self.assertEqual(options["feature_preset_catalog"][0]["key"], "balanced_default")
@@ -279,12 +281,13 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(options["backtest_preset_catalog"][0]["key"], "realistic_standard")
         self.assertEqual(options["threshold_preset_catalog"][0]["key"], "standard_gate")
 
-    def test_update_section_can_apply_feature_research_backtest_and_threshold_presets(self) -> None:
+    def test_update_section_can_apply_feature_research_label_backtest_and_threshold_presets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
 
             features = service.update_section("features", {"feature_preset_key": "trend_focus"})
             research = service.update_section("research", {"research_preset_key": "trend_following"})
+            label_research = service.update_section("research", {"label_preset_key": "majority_filter"})
             backtest = service.update_section("backtest", {"backtest_preset_key": "cost_stress"})
             thresholds = service.update_section("thresholds", {"threshold_preset_key": "strict_live_gate"})
 
@@ -295,6 +298,10 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(research["research"]["model_key"], "trend_bias_v2")
         self.assertEqual(research["research"]["holding_window_label"], "2-4d")
         self.assertEqual(research["research"]["label_trigger_basis"], "high_low")
+        self.assertEqual(label_research["research"]["label_preset_key"], "majority_filter")
+        self.assertEqual(label_research["research"]["label_mode"], "window_majority")
+        self.assertEqual(label_research["research"]["holding_window_label"], "3-5d")
+        self.assertEqual(label_research["research"]["label_target_pct"], "1.1")
         self.assertEqual(backtest["backtest"]["backtest_preset_key"], "cost_stress")
         self.assertEqual(backtest["backtest"]["fee_bps"], "16")
         self.assertEqual(backtest["backtest"]["slippage_bps"], "9")

@@ -33,7 +33,7 @@ test("tasks page shows latest automation decision after login", async ({ page })
   await expect(page.getByText("接管复核截止", { exact: true })).toBeVisible();
   await expect(page.getByText("自动化运行参数", { exact: true })).toBeVisible();
   await expect(page.getByText("长时间接管阈值", { exact: true })).toBeVisible();
-  await expect(page.getByText("活跃告警窗口", { exact: true })).toBeVisible();
+  await expect(page.getByText("活跃告警窗口", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/接管原因：/, { exact: false }).first()).toBeVisible();
 
   expect(errors).toEqual([]);

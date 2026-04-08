@@ -30,7 +30,7 @@ export function DataTable({ columns, rows, emptyTitle, emptyDetail }: DataTableP
   return (
     <Card className="overflow-hidden bg-card/80">
       <CardContent className="p-0">
-        <Table>
+        <Table className="table-fixed">
           <TableHeader className="bg-muted/20">
             <TableRow>
               {columns.map((column) => (

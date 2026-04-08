@@ -29,6 +29,7 @@ SUPPORTED_MODELS = ("heuristic_v1", "trend_bias_v2", "balanced_v3")
 SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only", "window_majority")
 SUPPORTED_LABEL_TRIGGER_BASES = ("close", "high_low")
+SUPPORTED_LABEL_PRESETS = ("balanced_window", "breakout_path", "closing_confirmation", "majority_filter")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
 SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
@@ -71,6 +72,7 @@ FEATURE_PRESET_VALUES = {
 
 RESEARCH_PRESET_VALUES = {
     "baseline_balanced": {
+        "label_preset_key": "balanced_window",
         "research_template": "single_asset_timing",
         "model_key": "heuristic_v1",
         "label_mode": "earliest_hit",
@@ -88,6 +90,7 @@ RESEARCH_PRESET_VALUES = {
         "strict_penalty_weight": "1",
     },
     "trend_following": {
+        "label_preset_key": "breakout_path",
         "research_template": "single_asset_timing_strict",
         "model_key": "trend_bias_v2",
         "label_mode": "earliest_hit",
@@ -105,6 +108,7 @@ RESEARCH_PRESET_VALUES = {
         "strict_penalty_weight": "1.2",
     },
     "conservative_validation": {
+        "label_preset_key": "closing_confirmation",
         "research_template": "single_asset_timing_strict",
         "model_key": "balanced_v3",
         "label_mode": "close_only",
@@ -120,6 +124,45 @@ RESEARCH_PRESET_VALUES = {
         "oscillator_weight": "0.8",
         "volatility_weight": "1",
         "strict_penalty_weight": "1.4",
+    },
+}
+
+LABEL_PRESET_VALUES = {
+    "balanced_window": {
+        "label_mode": "earliest_hit",
+        "label_trigger_basis": "close",
+        "holding_window_label": "1-3d",
+        "min_holding_days": 1,
+        "max_holding_days": 3,
+        "label_target_pct": "1",
+        "label_stop_pct": "-1",
+    },
+    "breakout_path": {
+        "label_mode": "earliest_hit",
+        "label_trigger_basis": "high_low",
+        "holding_window_label": "2-4d",
+        "min_holding_days": 2,
+        "max_holding_days": 4,
+        "label_target_pct": "1.4",
+        "label_stop_pct": "-0.9",
+    },
+    "closing_confirmation": {
+        "label_mode": "close_only",
+        "label_trigger_basis": "close",
+        "holding_window_label": "2-4d",
+        "min_holding_days": 2,
+        "max_holding_days": 4,
+        "label_target_pct": "0.8",
+        "label_stop_pct": "-0.6",
+    },
+    "majority_filter": {
+        "label_mode": "window_majority",
+        "label_trigger_basis": "close",
+        "holding_window_label": "3-5d",
+        "min_holding_days": 3,
+        "max_holding_days": 5,
+        "label_target_pct": "1.1",
+        "label_stop_pct": "-0.7",
     },
 }
 
@@ -242,6 +285,16 @@ RESEARCH_PRESET_FIELDS = {
     "oscillator_weight",
     "volatility_weight",
     "strict_penalty_weight",
+}
+
+LABEL_PRESET_FIELDS = {
+    "label_mode",
+    "label_trigger_basis",
+    "holding_window_label",
+    "min_holding_days",
+    "max_holding_days",
+    "label_target_pct",
+    "label_stop_pct",
 }
 
 BACKTEST_PRESET_FIELDS = {
@@ -431,6 +484,37 @@ def _build_label_trigger_catalog() -> list[dict[str, str]]:
     ]
 
 
+def _build_label_preset_catalog() -> list[dict[str, str]]:
+    """返回标签预设目录。"""
+
+    return [
+        {
+            "key": "balanced_window",
+            "label": "balanced_window / 均衡窗口",
+            "fit": "适合第一轮默认研究",
+            "detail": "按收盘价和最早命中结合判断，兼顾节奏和稳定性，适合作为默认标签口径。",
+        },
+        {
+            "key": "breakout_path",
+            "label": "breakout_path / 突破路径",
+            "fit": "更看重盘中先命中",
+            "detail": "按高低点命中判断，更适合验证突破和止损在盘中是否先被触发。",
+        },
+        {
+            "key": "closing_confirmation",
+            "label": "closing_confirmation / 收盘确认",
+            "fit": "更保守的窗口结束判断",
+            "detail": "只看窗口结束时的收盘结果，更适合过滤盘中噪音，强调最终收盘是否站住。",
+        },
+        {
+            "key": "majority_filter",
+            "label": "majority_filter / 多数过滤",
+            "fit": "更适合保守筛选候选",
+            "detail": "按窗口内多数阶段结果决定标签，适合先过滤单根极端波动带来的误判。",
+        },
+    ]
+
+
 def _build_holding_window_catalog() -> list[dict[str, str]]:
     """返回持有窗口目录。"""
 
@@ -535,6 +619,7 @@ def _default_config() -> dict[str, object]:
         },
         "research": {
             "research_preset_key": "baseline_balanced",
+            "label_preset_key": "balanced_window",
             "research_template": "single_asset_timing",
             "model_key": "heuristic_v1",
             "label_mode": "earliest_hit",
@@ -659,6 +744,14 @@ class WorkbenchConfigService:
                 explicit_values=explicit_values,
                 preset_key="research_preset_key",
                 managed_fields=RESEARCH_PRESET_FIELDS,
+            )
+            if "research_preset_key" in explicit_values and "label_preset_key" not in explicit_values:
+                next_section.pop("label_preset_key", None)
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="label_preset_key",
+                managed_fields=LABEL_PRESET_FIELDS,
             )
             if "holding_window_label" not in explicit_values and (
                 "min_holding_days" in explicit_values or "max_holding_days" in explicit_values
@@ -792,6 +885,8 @@ class WorkbenchConfigService:
                 "label_mode_catalog": _build_label_mode_catalog(),
                 "label_trigger_bases": list(SUPPORTED_LABEL_TRIGGER_BASES),
                 "label_trigger_catalog": _build_label_trigger_catalog(),
+                "label_presets": list(SUPPORTED_LABEL_PRESETS),
+                "label_preset_catalog": _build_label_preset_catalog(),
                 "holding_windows": list(SUPPORTED_HOLDING_WINDOWS),
                 "holding_window_catalog": _build_holding_window_catalog(),
                 "backtest_cost_models": list(SUPPORTED_BACKTEST_COST_MODELS),
@@ -1015,7 +1110,17 @@ class WorkbenchConfigService:
             default="baseline_balanced",
             allowed=SUPPORTED_RESEARCH_PRESETS,
         )
-        payload = {**RESEARCH_PRESET_VALUES.get(research_preset_key, {}), **payload}
+        research_preset_values = dict(RESEARCH_PRESET_VALUES.get(research_preset_key, {}))
+        label_preset_key = self._normalize_choice(
+            payload.get("label_preset_key", research_preset_values.get("label_preset_key", "balanced_window")),
+            default="balanced_window",
+            allowed=SUPPORTED_LABEL_PRESETS,
+        )
+        payload = {
+            **research_preset_values,
+            **LABEL_PRESET_VALUES.get(label_preset_key, {}),
+            **payload,
+        }
         model_key = str(payload.get("model_key", "heuristic_v1")).strip() or "heuristic_v1"
         if model_key not in SUPPORTED_MODELS:
             model_key = "heuristic_v1"
@@ -1054,6 +1159,7 @@ class WorkbenchConfigService:
         )
         return {
             "research_preset_key": research_preset_key,
+            "label_preset_key": label_preset_key,
             "research_template": research_template,
             "model_key": model_key,
             "label_mode": label_mode,

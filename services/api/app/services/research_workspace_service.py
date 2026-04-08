@@ -86,6 +86,7 @@ class ResearchWorkspaceService:
             },
             "controls": {
                 "research_preset_key": str(configured_research.get("research_preset_key", "baseline_balanced")),
+                "label_preset_key": str(configured_research.get("label_preset_key", "balanced_window")),
                 "research_template": str(configured_research.get("research_template", "")),
                 "model_key": str(configured_research.get("model_key", "")),
                 "label_mode": label_mode,
@@ -117,6 +118,8 @@ class ResearchWorkspaceService:
                 "label_mode_catalog": [dict(item) for item in list((controls.get("options") or {}).get("label_mode_catalog") or []) if isinstance(item, dict)],
                 "available_label_trigger_bases": [str(item) for item in list((controls.get("options") or {}).get("label_trigger_bases") or [])],
                 "label_trigger_catalog": [dict(item) for item in list((controls.get("options") or {}).get("label_trigger_catalog") or []) if isinstance(item, dict)],
+                "available_label_presets": [str(item) for item in list((controls.get("options") or {}).get("label_presets") or [])],
+                "label_preset_catalog": [dict(item) for item in list((controls.get("options") or {}).get("label_preset_catalog") or []) if isinstance(item, dict)],
                 "available_holding_windows": [str(item) for item in list((controls.get("options") or {}).get("holding_windows") or [])],
                 "holding_window_catalog": [dict(item) for item in list((controls.get("options") or {}).get("holding_window_catalog") or []) if isinstance(item, dict)],
             },
@@ -140,6 +143,7 @@ class ResearchWorkspaceService:
                 configured_research=configured_research,
                 configured_thresholds=configured_thresholds,
             ),
+            "label_rule_summary": self._build_label_rule_summary(configured_research=configured_research),
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -238,6 +242,30 @@ class ResearchWorkspaceService:
             "validation_policy": "当前最优候选会被强制送去验证"
             if bool(configured_research.get("force_validation_top_candidate", False))
             else "候选按统一门控自然筛选后再进入验证",
+        }
+
+    @staticmethod
+    def _build_label_rule_summary(*, configured_research: dict[str, object]) -> dict[str, str]:
+        """把标签目标、止损和命中方式翻译成直白说明。"""
+
+        min_days = int(configured_research.get("min_holding_days", 1) or 1)
+        max_days = int(configured_research.get("max_holding_days", 3) or 3)
+        target = str(configured_research.get("label_target_pct", "1") or "1")
+        stop = str(configured_research.get("label_stop_pct", "-1") or "-1")
+        trigger_basis = str(configured_research.get("label_trigger_basis", "close") or "close")
+        label_mode = str(configured_research.get("label_mode", "earliest_hit") or "earliest_hit")
+        preset_key = str(configured_research.get("label_preset_key", "balanced_window") or "balanced_window")
+        trigger_text = "先看高低点命中" if trigger_basis == "high_low" else "先看收盘价命中"
+        mode_text = {
+            "earliest_hit": "窗口里谁先命中就先记账",
+            "close_only": "只在窗口结束时记账",
+            "window_majority": "按窗口内多数结果记账",
+        }.get(label_mode, "按当前标签规则记账")
+        return {
+            "preset_key": preset_key,
+            "headline": f"目标 {target}% / 止损 {stop}% / {min_days}-{max_days} 天窗口",
+            "detail": f"未来 {min_days}-{max_days} 天里，{trigger_text}；{mode_text}。",
+            "next_step": "想更激进就提高目标收益或缩短窗口；想更稳就放宽窗口并降低目标。",  # noqa: E501
         }
 
 

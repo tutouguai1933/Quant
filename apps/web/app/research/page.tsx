@@ -81,6 +81,12 @@ export default async function ResearchPage() {
   const researchPresetCatalog = Array.isArray(controls.research_preset_catalog)
     ? controls.research_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
+  const labelPresetCatalog = Array.isArray(controls.label_preset_catalog)
+    ? controls.label_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const availableLabelPresets = Array.isArray(controls.available_label_presets)
+    ? controls.available_label_presets.map(String)
+    : ["balanced_window", "breakout_path", "closing_confirmation", "majority_filter"];
   const labelModeCatalog = Array.isArray(controls.label_mode_catalog)
     ? controls.label_mode_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
@@ -90,6 +96,12 @@ export default async function ResearchPage() {
   const holdingWindowCatalog = Array.isArray(controls.holding_window_catalog)
     ? controls.holding_window_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
+  const splitPreviewRows = buildSplitPreviewRows({
+    sampleWindow: workspace.sample_window,
+    trainRatio: String(controls.train_split_ratio ?? "0.6"),
+    validationRatio: String(controls.validation_split_ratio ?? "0.2"),
+    testRatio: String(controls.test_split_ratio ?? "0.2"),
+  });
   const weightSummaries = [
     { label: "趋势权重", value: workspace.controls.trend_weight },
     { label: "动量权重", value: workspace.controls.momentum_weight },
@@ -99,6 +111,7 @@ export default async function ResearchPage() {
     { label: "严格惩罚权重", value: workspace.controls.strict_penalty_weight },
     { label: "信心阈值", value: workspace.controls.signal_confidence_floor },
   ];
+  const selectedLabelPresetKey = String(controls.label_preset_key ?? "balanced_window");
 
   return (
     <AppShell
@@ -174,6 +187,81 @@ export default async function ResearchPage() {
             </CardContent>
           </Card>
 
+          <DataTable
+            columns={["模型目录", "更适合什么", "当前是否选中", "说明"]}
+            rows={modelCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "当前没有适用场景说明"),
+                String(item.key ?? "") === selectedModelKey ? "当前模型" : "可切换",
+                String(item.detail ?? "当前没有模型说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有模型目录"
+            emptyDetail="先恢复研究工作台，系统才会给出模型目录。"
+          />
+
+          <DataTable
+            columns={["标签预设", "更适合什么", "当前是否选中", "说明"]}
+            rows={labelPresetCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "当前没有适用场景说明"),
+                String(item.key ?? "") === selectedLabelPresetKey ? "当前标签预设" : "可切换",
+                String(item.detail ?? "当前没有标签预设说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有标签预设目录"
+            emptyDetail="先恢复研究工作台，系统才会给出标签预设目录。"
+          />
+
+          <DataTable
+            columns={["标签方式说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={labelModeCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "当前没有适用场景说明"),
+                String(item.key ?? "") === String(controls.label_mode ?? "") ? "当前标签方式" : "可切换",
+                String(item.detail ?? "当前没有标签说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有标签方式目录"
+            emptyDetail="先恢复研究工作台，系统才会给出标签方式目录。"
+          />
+
+          <DataTable
+            columns={["触发基础说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={labelTriggerCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "当前没有适用场景说明"),
+                String(item.key ?? "") === String(controls.label_trigger_basis ?? "close") ? "当前触发基础" : "可切换",
+                String(item.detail ?? "当前没有触发说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有触发基础目录"
+            emptyDetail="先恢复研究工作台，系统才会给出触发基础目录。"
+          />
+
+          <DataTable
+            columns={["持有窗口说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={holdingWindowCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "当前没有适用场景说明"),
+                String(item.key ?? "") === String(controls.holding_window_label ?? "1-3d") ? "当前持有窗口" : "可切换",
+                String(item.detail ?? "当前没有持有窗口说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有持有窗口目录"
+            emptyDetail="先恢复研究工作台，系统才会给出持有窗口目录。"
+          />
+
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>研究分数与权重</CardTitle>
@@ -223,6 +311,13 @@ export default async function ResearchPage() {
             }))}
             emptyTitle="还没有训练窗口"
             emptyDetail="先运行研究训练，窗口摘要才会在这里出现。"
+          />
+
+          <DataTable
+            columns={["训练切分说明", "当前配置", "按当前样本大致会怎样切"]}
+            rows={splitPreviewRows}
+            emptyTitle="当前还没有切分预览"
+            emptyDetail="先生成一轮训练窗口，系统才会把训练/验证/测试切分预览出来。"
           />
         </div>
 
@@ -288,6 +383,14 @@ export default async function ResearchPage() {
               />
             </ConfigField>
             <ConfigField label="标签方式" hint="用未来窗口里的目标收益和止损阈值定义 buy / sell / watch。">
+              <ConfigSelect
+                name="label_preset_key"
+                defaultValue={selectedLabelPresetKey}
+                options={availableLabelPresets.map((item) => ({
+                  value: item,
+                  label: item,
+                }))}
+              />
               <div className="grid gap-3">
                 <ConfigSelect
                   name="label_mode"
@@ -453,6 +556,18 @@ export default async function ResearchPage() {
             emptyDetail="先恢复工作台配置选项，持有窗口说明才会在这里出现。"
           />
 
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>标签目标与止损说明</CardTitle>
+              <CardDescription>把未来命中规则、目标收益和止损口径直接讲清楚，避免只盯着字段名猜含义。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="未来命中规则" value={workspace.label_rule_summary?.headline || "当前还没有标签规则摘要"} />
+              <InfoBlock label="标签解释" value={workspace.label_rule_summary?.detail || "当前还没有标签解释"} />
+              <InfoBlock label="下一步怎么调" value={workspace.label_rule_summary?.next_step || "先确认这一轮标签口径是否和你的目标一致。"} />
+            </CardContent>
+          </Card>
+
           <DataTable
             columns={["参数名", "参数值"]}
             rows={Object.entries(workspace.parameters).map(([name, value]) => ({
@@ -524,6 +639,47 @@ function formatWindow(payload: Record<string, unknown>) {
     parts.push(`count=${String(payload.count)}`);
   }
   return parts.join(" / ") || "当前没有窗口信息";
+}
+
+function buildSplitPreviewRows({
+  sampleWindow,
+  trainRatio,
+  validationRatio,
+  testRatio,
+}: {
+  sampleWindow: Record<string, unknown>;
+  trainRatio: string;
+  validationRatio: string;
+  testRatio: string;
+}) {
+  const rows = ["training", "validation", "test"].map((name) => {
+    const window = payloadRecord(sampleWindow[name]);
+    const count = Number(window.count ?? 0);
+    const ratio =
+      name === "training"
+        ? trainRatio
+        : name === "validation"
+          ? validationRatio
+          : testRatio;
+    const label =
+      name === "training" ? "训练窗口" : name === "validation" ? "验证窗口" : "测试窗口";
+    return {
+      id: name,
+      cells: [
+        label,
+        `${ratio} / ${formatWindow(window)}`,
+        count > 0 ? `当前大约 ${count} 条样本` : "当前还没有样本数",
+      ],
+    };
+  });
+  return rows;
+}
+
+function payloadRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
 }
 
 function describeModel(modelKey: string) {

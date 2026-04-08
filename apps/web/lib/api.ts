@@ -510,6 +510,13 @@ export type FeatureWorkspaceModel = {
     role: string;
     description: string;
   }>;
+  selection_matrix?: Array<{
+    name: string;
+    category: string;
+    protocol_role: string;
+    current_role: string;
+    description: string;
+  }>;
 };
 
 export type ResearchWorkspaceModel = {
@@ -582,6 +589,12 @@ export type ResearchWorkspaceModel = {
     dry_run_gate: string;
     live_gate: string;
     validation_policy: string;
+  };
+  label_rule_summary?: {
+    preset_key: string;
+    headline: string;
+    detail: string;
+    next_step: string;
   };
 };
 
@@ -720,6 +733,7 @@ export type EvaluationWorkspaceModel = {
   alignment_gaps: Array<Record<string, unknown>>;
   alignment_actions: Array<Record<string, unknown>>;
   workflow_alignment_timeline: Array<Record<string, unknown>>;
+  stage_decision_summary?: Record<string, unknown>;
 };
 
 export type ValidationReviewItem = {
@@ -1597,6 +1611,7 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
     },
     timeframe_profiles: {},
     factors: [],
+    selection_matrix: [],
   };
 }
 
@@ -1668,6 +1683,12 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       dry_run_gate: "",
       live_gate: "",
       validation_policy: "",
+    },
+    label_rule_summary: {
+      preset_key: "balanced_window",
+      headline: "",
+      detail: "",
+      next_step: "",
     },
   };
 }
@@ -1795,6 +1816,7 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     delta_overview: {},
     comparison_summary: {},
     execution_alignment: {},
+    stage_decision_summary: {},
     alignment_details: {},
     alignment_story: {},
     alignment_gaps: [],
@@ -2007,6 +2029,7 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
   const categories = isPlainObject(row.categories) ? row.categories : {};
   const timeframeProfiles = isPlainObject(row.timeframe_profiles) ? row.timeframe_profiles : {};
   const factors = Array.isArray(row.factors) ? row.factors : [];
+  const selectionMatrix = Array.isArray(row.selection_matrix) ? row.selection_matrix : [];
 
   return {
     status: String(row.status ?? "unavailable"),
@@ -2063,6 +2086,18 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
         };
       })
       .filter((value) => value.name.length > 0),
+    selection_matrix: selectionMatrix
+      .map((value) => {
+        const item = isPlainObject(value) ? value : {};
+        return {
+          name: String(item.name ?? ""),
+          category: String(item.category ?? ""),
+          protocol_role: String(item.protocol_role ?? ""),
+          current_role: String(item.current_role ?? ""),
+          description: String(item.description ?? ""),
+        };
+      })
+      .filter((value) => value.name.length > 0),
   };
 }
 
@@ -2077,6 +2112,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
   const parameters = isPlainObject(row.parameters) ? row.parameters : {};
   const readiness = isPlainObject(row.readiness) ? row.readiness : {};
   const executionPreview = isPlainObject(row.execution_preview) ? row.execution_preview : {};
+  const labelRuleSummary = isPlainObject(row.label_rule_summary) ? row.label_rule_summary : {};
 
   return {
     status: String(row.status ?? "unavailable"),
@@ -2149,6 +2185,12 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       dry_run_gate: String(executionPreview.dry_run_gate ?? ""),
       live_gate: String(executionPreview.live_gate ?? ""),
       validation_policy: String(executionPreview.validation_policy ?? ""),
+    },
+    label_rule_summary: {
+      preset_key: String(labelRuleSummary.preset_key ?? "balanced_window"),
+      headline: String(labelRuleSummary.headline ?? ""),
+      detail: String(labelRuleSummary.detail ?? ""),
+      next_step: String(labelRuleSummary.next_step ?? ""),
     },
   };
 }
@@ -2306,6 +2348,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     delta_overview: isPlainObject(row.delta_overview) ? row.delta_overview : {},
     comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
     execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
+    stage_decision_summary: isPlainObject(row.stage_decision_summary) ? row.stage_decision_summary : {},
     alignment_details: isPlainObject(row.alignment_details) ? row.alignment_details : {},
     alignment_story: isPlainObject(row.alignment_story) ? row.alignment_story : {},
     alignment_gaps: Array.isArray(row.alignment_gaps) ? row.alignment_gaps.filter(isPlainObject) : [],

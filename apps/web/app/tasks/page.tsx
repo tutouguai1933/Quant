@@ -399,6 +399,17 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </ConfigField>
               </WorkbenchConfigCard>
 
+              <DataTable
+                columns={["长期运行与人工接管策略", "当前口径", "会影响什么", "现在建议怎么用"]}
+                rows={buildLongRunPolicyRows({
+                  operationsConfig,
+                  automationConfigSummary,
+                  runtimeWindowSummary,
+                })}
+                emptyTitle="当前还没有长期运行策略说明"
+                emptyDetail="先保存长期运行参数，系统才会按当前口径给出长期运行和人工接管说明。"
+              />
+
               <Card>
                 <CardHeader>
                   <p className="eyebrow">当前自动化建议动作</p>
@@ -471,6 +482,28 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       <Link href="/tasks">留在任务页继续观察</Link>
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">告警处理建议</p>
+                  <CardTitle>头号告警怎么先处理</CardTitle>
+                  <CardDescription>先把当前先做什么、恢复前还差什么讲清楚，再决定要不要恢复自动化。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3">
+                  <GuidanceBlock
+                    label="当前先做什么"
+                    value={latestAlert ? formatAlertAction(readText(latestAlert.level, "info")) : "先看最近一轮自动化判断"}
+                    detail={latestAlert ? readText(latestAlert.message, "当前没有额外告警原因") : "当前没有活跃告警，先看最近一轮执行和复盘。"}
+                    tone={latestAlert ? resolveAlertTone(readText(latestAlert.level, "info")) : "default"}
+                  />
+                  <GuidanceBlock
+                    label="恢复前还差什么"
+                    value={resumeBlockedItems.length ? resumeBlockedItems.join(" / ") : "当前恢复清单已经全部通过"}
+                    detail={latestAlert ? `头号告警：${readText(latestAlert.message, "当前没有额外说明")}` : "当前没有新的头号告警。"}
+                    tone={resumeBlockedItems.length ? "warning" : "supportive"}
+                  />
                 </CardContent>
               </Card>
 
@@ -1353,6 +1386,29 @@ function describeRuntimeBlockedReason(reason: string) {
   return mapping[reason] ?? "先处理冷却、暂停或轮次上限。";
 }
 
+function formatAlertAction(severity: string) {
+  if (severity === "error") {
+    return "先人工接管，再处理执行或同步错误";
+  }
+  if (severity === "warning") {
+    return "先做复盘确认，再决定是否继续自动化";
+  }
+  return "先看最新摘要，再决定要不要继续";
+}
+
+function resolveAlertTone(severity: string) {
+  if (severity === "error") {
+    return "critical";
+  }
+  if (severity === "warning") {
+    return "warning";
+  }
+  if (severity === "info") {
+    return "info";
+  }
+  return "neutral";
+}
+
 function resolveAlertTarget(source: string, nextAction: string, blockedReason: string) {
   const normalizedSource = String(source || "").toLowerCase();
   if (normalizedSource.includes("research")) {
@@ -1445,6 +1501,100 @@ function buildTakeoverTimelineRows({
     });
   }
   return rows;
+}
+
+function buildLongRunPolicyRows({
+  operationsConfig,
+  automationConfigSummary,
+  runtimeWindowSummary,
+}: {
+  operationsConfig: {
+    pauseAfterFailures: string;
+    staleSyncThreshold: string;
+    autoPauseOnError: string;
+    reviewLimit: string;
+    comparisonRunLimit: string;
+    cycleCooldownMinutes: string;
+    maxDailyCycleCount: string;
+  };
+  automationConfigSummary: {
+    longRunSeconds: string;
+    alertCleanupMinutes: string;
+  };
+  runtimeWindowSummary: {
+    readyForCycle: boolean;
+    cooldownRemainingMinutes: string;
+    nextAction: string;
+    blockedReason: string;
+  };
+}) {
+  return [
+    {
+      id: "pause_after_consecutive_failures",
+      cells: [
+        "连续失败阈值",
+        `${operationsConfig.pauseAfterFailures} 次`,
+        "达到这个次数后，系统会先停在人工复核或人工接管。",
+        "如果最近频繁失败，先降低自动推进频率，再决定要不要恢复。",
+      ],
+    },
+    {
+      id: "stale_sync_failure_threshold",
+      cells: [
+        "同步陈旧阈值",
+        `${operationsConfig.staleSyncThreshold} 次`,
+        "连续同步失败达到这里后，会优先停在同步复核，不再继续自动推进。",
+        "如果最近同步失败在增加，先处理同步问题，不要继续跑下一轮。",
+      ],
+    },
+    {
+      id: "auto_pause_on_error",
+      cells: [
+        "失败后自动暂停",
+        operationsConfig.autoPauseOnError === "true" ? "开启自动暂停" : "只给复盘建议",
+        "决定关键失败后是直接停机，还是只记录风险并继续人工判断。",
+        operationsConfig.autoPauseOnError === "true" ? "当前更保守，适合先稳住系统。" : "当前更激进，恢复前先看最近告警。",
+      ],
+    },
+    {
+      id: "cycle_window",
+      cells: [
+        "调度节奏",
+        `${operationsConfig.cycleCooldownMinutes} 分钟 / 每日 ${operationsConfig.maxDailyCycleCount} 轮`,
+        "决定多久后才能继续下一轮，以及当天最多自动推进多少次。",
+        runtimeWindowSummary.readyForCycle
+          ? "当前已经可以继续下一轮。"
+          : `当前还要等 ${runtimeWindowSummary.cooldownRemainingMinutes} 分钟，或先处理阻塞：${describeRuntimeBlockedReason(runtimeWindowSummary.blockedReason)}`,
+      ],
+    },
+    {
+      id: "takeover_review_window",
+      cells: [
+        "人工接管复核",
+        `${automationConfigSummary.longRunSeconds} 秒`,
+        "接管持续超过这个时间后，会把下一步动作切到人工复核。",
+        "如果接管已经持续较久，先做复核，不要直接恢复自动化。",
+      ],
+    },
+    {
+      id: "alert_cleanup_window",
+      cells: [
+        "活跃告警窗口",
+        `${automationConfigSummary.alertCleanupMinutes} 分钟`,
+        "只把这个窗口内的告警算作当前风险，超出的旧告警保留历史但不再提高当前风险等级。",
+        "如果当前告警很多，先清理旧告警，再看真正还在发生的问题。",
+      ],
+    },
+    {
+      id: "review_windows",
+      cells: [
+        "复盘与实验窗口",
+        `复盘 ${operationsConfig.reviewLimit} 条 / 实验 ${operationsConfig.comparisonRunLimit} 轮`,
+        "决定任务页和评估页一次展示多少历史，避免只看单轮结果。",
+        "如果最近变化很多，先把窗口调大；如果想更聚焦当前结果，再调小。",
+      ],
+    },
+  ];
 }
 
 function formatRelativeMoment(value: string) {

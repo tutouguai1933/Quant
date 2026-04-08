@@ -34,7 +34,7 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await page.goto(`${WEB_BASE_URL}/backtest`, { waitUntil: "load" });
   await page.waitForFunction(() => document.body.innerText.includes("成本模型说明"));
   await expect(page.getByText("成本模型说明").first()).toBeVisible();
-  await expect(page.getByText("准入阶段").first()).toBeVisible();
+  await expect(page.getByText("准入门槛预览").first()).toBeVisible();
 
   await page.goto(`${WEB_BASE_URL}/tasks`, { waitUntil: "load" });
   await page.waitForFunction(() => document.body.innerText.includes("回到研究链"));
@@ -53,8 +53,8 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await page.goto(`${WEB_BASE_URL}/evaluation`, { waitUntil: "load" });
   await page.waitForFunction(() => document.body.innerText.includes("最近复盘记录"));
   await expect(page.getByText("实验对比与复盘窗口")).toBeVisible();
-  await expect(page.getByText("准入预设")).toBeVisible();
-  await expect(page.getByText("自选实验对比")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "准入预设", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "自选实验对比", exact: true })).toBeVisible();
   await expect(page.getByText("最近复盘记录").first()).toBeVisible();
   await expect(page.getByText("最近训练实验快照").first()).toBeVisible();
   await expect(page.getByText("最近推理实验快照").first()).toBeVisible();

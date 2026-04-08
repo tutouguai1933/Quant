@@ -105,6 +105,10 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["recent_inference_runs"][0]["run_id"], "infer-1")
         self.assertEqual(item["recent_review_tasks"][0]["task_type"], "research_train")
         self.assertEqual(item["recent_review_tasks"][-1]["result_summary"], "复盘完成")
+        self.assertIn("ETHUSDT", item["stage_decision_summary"]["headline"])
+        self.assertIn("dry-run", item["stage_decision_summary"]["headline"])
+        self.assertIn("trend 行情下优先参考", item["stage_decision_summary"]["why_recommended"])
+        self.assertIn("研究标的、最近订单和最近持仓已经对上", item["stage_decision_summary"]["execution_gap"])
 
     def test_workspace_handles_missing_evaluation(self) -> None:
         service = EvaluationWorkspaceService(

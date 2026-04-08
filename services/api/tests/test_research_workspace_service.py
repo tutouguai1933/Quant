@@ -48,6 +48,9 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("score", item["execution_preview"]["dry_run_gate"])
         self.assertIn("score", item["execution_preview"]["live_gate"])
         self.assertIn("强制送去验证", item["execution_preview"]["validation_policy"])
+        self.assertEqual(item["label_rule_summary"]["preset_key"], "balanced_window")
+        self.assertIn("目标 1%", item["label_rule_summary"]["headline"])
+        self.assertIn("1-3 天", item["label_rule_summary"]["detail"])
 
     def test_workspace_handles_missing_report(self) -> None:
         service = ResearchWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)

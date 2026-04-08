@@ -33,6 +33,9 @@ class FeatureWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("zscore_by_symbol", item["controls"]["available_normalization_policies"])
         self.assertIn("4h", item["timeframe_profiles"])
         self.assertEqual(item["factors"][0]["name"], "ema20_gap_pct")
+        self.assertEqual(item["selection_matrix"][0]["name"], "ema20_gap_pct")
+        self.assertEqual(item["selection_matrix"][0]["current_role"], "主判断")
+        self.assertEqual(item["selection_matrix"][2]["current_role"], "辅助确认")
         self.assertIn("controls", item)
 
     def test_workspace_handles_missing_factor_protocol(self) -> None:

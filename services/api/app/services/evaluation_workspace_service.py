@@ -57,6 +57,12 @@ class EvaluationWorkspaceService:
             alignment_details=alignment_details,
             alignment_actions=alignment_actions,
         )
+        stage_decision_summary = self._build_stage_decision_summary(
+            best_experiment=best_experiment,
+            recommendation_explanation=recommendation_explanation,
+            elimination_explanation=elimination_explanation,
+            alignment_details=alignment_details,
+        )
 
         status = str(report.get("status", "unavailable") or "unavailable")
         if evaluation or leaderboard or reviews:
@@ -146,6 +152,7 @@ class EvaluationWorkspaceService:
                 execution_alignment=execution_alignment,
             ),
             "alignment_actions": alignment_actions,
+            "stage_decision_summary": stage_decision_summary,
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -320,6 +327,27 @@ class EvaluationWorkspaceService:
             "detail": " / ".join(reasons[:3]) if reasons else "当前没有明显差异。",
             "evidence": reasons if reasons else [summary],
             "next_step": str(alignment_details.get("next_step", "") or first_action.get("detail", "") or "先继续观察。"),
+        }
+
+    @staticmethod
+    def _build_stage_decision_summary(
+        *,
+        best_experiment: dict[str, object],
+        recommendation_explanation: dict[str, object],
+        elimination_explanation: dict[str, object],
+        alignment_details: dict[str, object],
+    ) -> dict[str, str]:
+        """把“为什么推荐 / 为什么淘汰 / 和执行差在哪”压成直白摘要。"""
+
+        symbol = str(best_experiment.get("symbol", "")).strip() or "当前候选"
+        stage = str(best_experiment.get("recommended_stage", "dry_run") or "dry_run")
+        stage_label = "live" if stage == "live" else "dry-run"
+        return {
+            "headline": f"{symbol} 现在更适合进入 {stage_label}",
+            "why_recommended": str(recommendation_explanation.get("detail", "")).strip() or "当前还没有足够理由说明为什么推荐。",
+            "why_blocked": str(elimination_explanation.get("detail", "")).strip() or "当前没有额外淘汰说明。",
+            "execution_gap": str(alignment_details.get("difference_summary", "")).strip() or "当前还没有研究与执行差异摘要。",
+            "next_step": str(best_experiment.get("next_action", "")).strip() or "continue_research",
         }
 
     @staticmethod

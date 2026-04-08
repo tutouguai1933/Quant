@@ -60,6 +60,18 @@ export default async function FeaturePage() {
       describeCategoryWeight(summary.name).effect,
     ],
   }));
+  const selectionMatrixRows = Array.isArray(workspace.selection_matrix)
+    ? workspace.selection_matrix.map((item) => ({
+        id: String(item.name ?? ""),
+        cells: [
+          String(item.name ?? "n/a"),
+          String(item.category ?? "未分类"),
+          String(item.protocol_role ?? "未定义"),
+          String(item.current_role ?? "未启用"),
+          String(item.description ?? "当前没有说明"),
+        ],
+      }))
+    : [];
 
   return (
     <AppShell
@@ -314,6 +326,13 @@ export default async function FeaturePage() {
             rows={timeframeRows}
             emptyTitle="还没有周期参数"
             emptyDetail="当前研究协议还没有写出周期参数映射。"
+          />
+
+          <DataTable
+            columns={["因子明细表", "类别", "协议角色", "当前选中角色", "说明"]}
+            rows={selectionMatrixRows}
+            emptyTitle="当前还没有因子明细"
+            emptyDetail="先恢复因子协议，系统才会告诉你每个因子当前是主判断、辅助确认还是未启用。"
           />
         </div>
       </section>

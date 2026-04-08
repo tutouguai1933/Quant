@@ -47,6 +47,7 @@ from services.api.app.tasks.scheduler import task_scheduler  # noqa: E402
 class RiskAndTaskTests(unittest.TestCase):
     def setUp(self) -> None:
         auth_service.__init__()
+        automation_service.__init__()
         freqtrade_client.__init__()
         signal_service.__init__()
         risk_service.__init__()
@@ -60,6 +61,7 @@ class RiskAndTaskTests(unittest.TestCase):
         strategies_route.auth_service = auth_service
         strategies_route.task_scheduler = task_scheduler
         tasks_route.auth_service = auth_service
+        tasks_route.automation_service = automation_service
         tasks_route.task_scheduler = task_scheduler
         risk_events_route.risk_service = risk_service
         risk_service_module.signal_service = signal_service

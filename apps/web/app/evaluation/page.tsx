@@ -425,6 +425,30 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
         <div className="space-y-5">
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>为什么现在更适合</CardTitle>
+              <CardDescription>把推荐阶段、推荐理由和研究与执行差异压成一组最短判断，不用再自己拼多张卡片。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前判断" value={readText(workspace.stage_decision_summary?.headline, "当前还没有阶段判断")} />
+              <InfoBlock label="推荐原因" value={readText(workspace.stage_decision_summary?.why_recommended, "当前还没有推荐原因")} />
+              <InfoBlock label="研究与执行差异" value={readText(workspace.stage_decision_summary?.execution_gap, "当前还没有差异摘要")} />
+              <InfoBlock label="下一步" value={readText(workspace.stage_decision_summary?.next_step, "continue_research")} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>还差什么才能进入下一阶段</CardTitle>
+              <CardDescription>先看当前最主要的淘汰原因，再决定该改门槛、重跑研究，还是先停在 dry-run。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="当前主要阻塞" value={readText(workspace.stage_decision_summary?.why_blocked, "当前没有明显阻塞")} />
+              <InfoBlock label="修复方向" value={readText(workspace.alignment_story?.next_step, "先继续观察。")} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <p className="eyebrow">为什么淘汰</p>
               <CardTitle>淘汰原因</CardTitle>
               <CardDescription>把主要阻断理由集中看，不用再回头翻各页细节。</CardDescription>
