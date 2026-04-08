@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from services.api.app.core.settings import Settings
 from services.api.app.services.automation_service import automation_service
@@ -484,6 +484,24 @@ class AutomationWorkflowService:
         else:
             next_action = "run_next_cycle"
             note = "当前可以继续进入下一轮自动化。"
+        next_run_at = cls._resolve_next_run_at(
+            last_cycle=dict(state.get("last_cycle") or {}),
+            cooldown_remaining_minutes=cooldown_remaining_minutes,
+        )
+        takeover_review_due_at = cls._resolve_takeover_review_due_at(
+            takeover_since=takeover_since,
+            long_run_seconds=long_run_seconds,
+            manual_takeover=manual_takeover,
+        )
+        blocked_reason = ""
+        if paused and manual_takeover:
+            blocked_reason = "manual_takeover_active"
+        elif paused:
+            blocked_reason = "paused_waiting_review"
+        elif remaining_daily_cycle_count <= 0:
+            blocked_reason = "daily_limit_reached"
+        elif cooldown_remaining_minutes > 0:
+            blocked_reason = "cooldown_active"
         return {
             "current_cycle_count": current_cycle_count,
             "daily_limit": daily_limit,
@@ -496,6 +514,9 @@ class AutomationWorkflowService:
             "takeover_elapsed_seconds": takeover_elapsed_seconds,
             "ready_for_cycle": not paused and remaining_daily_cycle_count > 0 and cooldown_remaining_minutes <= 0,
             "next_action": next_action,
+            "next_run_at": next_run_at,
+            "takeover_review_due_at": takeover_review_due_at,
+            "blocked_reason": blocked_reason,
             "note": note,
         }
 
@@ -543,6 +564,36 @@ class AutomationWorkflowService:
         elapsed_minutes = (datetime.now(timezone.utc) - recorded.astimezone(timezone.utc)).total_seconds() / 60
         remaining = int(round(cooldown_minutes - elapsed_minutes))
         return remaining if remaining > 0 else 0
+
+    @staticmethod
+    def _resolve_next_run_at(*, last_cycle: dict[str, object], cooldown_remaining_minutes: int) -> str:
+        """推算最早还能继续下一轮的时间。"""
+
+        if cooldown_remaining_minutes <= 0:
+            return ""
+        recorded_at = str(last_cycle.get("recorded_at", "") or "").strip()
+        if not recorded_at:
+            return ""
+        try:
+            recorded = datetime.fromisoformat(recorded_at)
+        except ValueError:
+            return ""
+        if recorded.tzinfo is None:
+            recorded = recorded.replace(tzinfo=timezone.utc)
+        return (recorded.astimezone(timezone.utc) + timedelta(minutes=cooldown_remaining_minutes)).isoformat()
+
+    @staticmethod
+    def _resolve_takeover_review_due_at(
+        *,
+        takeover_since: datetime | None,
+        long_run_seconds: int,
+        manual_takeover: bool,
+    ) -> str:
+        """推算人工接管最晚该复核的时间。"""
+
+        if not manual_takeover or takeover_since is None or long_run_seconds <= 0:
+            return ""
+        return (takeover_since.astimezone(timezone.utc) + timedelta(seconds=long_run_seconds)).isoformat()
 
     @staticmethod
     def _parse_timestamp(value: str) -> datetime | None:

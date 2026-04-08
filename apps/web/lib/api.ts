@@ -233,11 +233,31 @@ export type DataWorkspaceModel = {
     available_window_modes: string[];
   };
   snapshot: {
+    run_type: string;
+    run_id: string;
+    generated_at: string;
     snapshot_id: string;
     cache_signature: string;
+    cache_status: string;
+    cache_hit_count: number;
+    cache_miss_count: number;
     active_data_state: string;
     data_states: Record<string, unknown>;
     dataset_snapshot_path: string;
+  };
+  snapshot_consistency: {
+    training_snapshot_id: string;
+    training_generated_at: string;
+    training_cache_status: string;
+    training_cache_hit_count: number;
+    training_cache_miss_count: number;
+    inference_snapshot_id: string;
+    inference_generated_at: string;
+    inference_cache_status: string;
+    inference_cache_hit_count: number;
+    inference_cache_miss_count: number;
+    matches_training_snapshot: boolean;
+    note: string;
   };
   quality: {
     raw_rows: number;
@@ -1469,11 +1489,31 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
     },
     source_explanations: [],
     snapshot: {
+      run_type: "training",
+      run_id: "",
+      generated_at: "",
       snapshot_id: "",
       cache_signature: "",
+      cache_status: "",
+      cache_hit_count: 0,
+      cache_miss_count: 0,
       active_data_state: "",
       data_states: {},
       dataset_snapshot_path: "",
+    },
+    snapshot_consistency: {
+      training_snapshot_id: "",
+      training_generated_at: "",
+      training_cache_status: "",
+      training_cache_hit_count: 0,
+      training_cache_miss_count: 0,
+      inference_snapshot_id: "",
+      inference_generated_at: "",
+      inference_cache_status: "",
+      inference_cache_hit_count: 0,
+      inference_cache_miss_count: 0,
+      matches_training_snapshot: false,
+      note: "当前还没有可用快照一致性说明。",
     },
     quality: {
       raw_rows: 0,
@@ -1869,12 +1909,19 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       detail: String(value.detail ?? ""),
     })),
     snapshot: {
+      run_type: String(snapshot.run_type ?? "training"),
+      run_id: String(snapshot.run_id ?? ""),
+      generated_at: String(snapshot.generated_at ?? ""),
       snapshot_id: String(snapshot.snapshot_id ?? ""),
       cache_signature: String(snapshot.cache_signature ?? ""),
+      cache_status: String(snapshot.cache_status ?? ""),
+      cache_hit_count: Number(snapshot.cache_hit_count ?? 0),
+      cache_miss_count: Number(snapshot.cache_miss_count ?? 0),
       active_data_state: String(snapshot.active_data_state ?? ""),
       data_states: isPlainObject(snapshot.data_states) ? snapshot.data_states : {},
       dataset_snapshot_path: String(snapshot.dataset_snapshot_path ?? ""),
     },
+    snapshot_consistency: normalizeDataWorkspaceSnapshotConsistency(row.snapshot_consistency),
     quality: normalizeDataWorkspaceQuality(row.quality),
     preview: {
       symbol: String(preview.symbol ?? ""),
@@ -1900,6 +1947,24 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
         };
       })
       .filter((value) => value.symbol.length > 0),
+  };
+}
+
+function normalizeDataWorkspaceSnapshotConsistency(value: unknown): DataWorkspaceModel["snapshot_consistency"] {
+  const row: Record<string, unknown> = isPlainObject(value) ? value : {};
+  return {
+    training_snapshot_id: String(row.training_snapshot_id ?? ""),
+    training_generated_at: String(row.training_generated_at ?? ""),
+    training_cache_status: String(row.training_cache_status ?? ""),
+    training_cache_hit_count: Number(row.training_cache_hit_count ?? 0),
+    training_cache_miss_count: Number(row.training_cache_miss_count ?? 0),
+    inference_snapshot_id: String(row.inference_snapshot_id ?? ""),
+    inference_generated_at: String(row.inference_generated_at ?? ""),
+    inference_cache_status: String(row.inference_cache_status ?? ""),
+    inference_cache_hit_count: Number(row.inference_cache_hit_count ?? 0),
+    inference_cache_miss_count: Number(row.inference_cache_miss_count ?? 0),
+    matches_training_snapshot: Boolean(row.matches_training_snapshot),
+    note: String(row.note ?? "当前还没有可用快照一致性说明。"),
   };
 }
 

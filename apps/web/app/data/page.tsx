@@ -46,6 +46,7 @@ export default async function DataPage({ searchParams }: PageProps) {
   const alignmentStatus = String(configAlignment.status ?? workspace.status ?? "unavailable");
   const alignmentNote = String(configAlignment.note ?? "当前还没有可用对齐说明");
   const alignmentFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
+  const snapshotConsistency = workspace.snapshot_consistency;
 
   return (
     <AppShell
@@ -95,10 +96,35 @@ export default async function DataPage({ searchParams }: PageProps) {
               <CardDescription>回答“这次研究到底用了什么数据”。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="快照来源" value={formatSnapshotSource(workspace.snapshot.run_type, workspace.snapshot.run_id)} />
+              <InfoBlock label="快照生成时间" value={formatMoment(workspace.snapshot.generated_at)} />
               <InfoBlock label="快照 ID" value={workspace.snapshot.snapshot_id || "未生成"} />
               <InfoBlock label="缓存签名" value={workspace.snapshot.cache_signature || "未命中"} />
+              <InfoBlock label="缓存状态" value={formatCacheStatus(workspace.snapshot.cache_status, workspace.snapshot.cache_hit_count, workspace.snapshot.cache_miss_count)} />
               <InfoBlock label="当前状态" value={workspace.snapshot.active_data_state || workspace.status} />
               <InfoBlock label="快照路径" value={workspace.snapshot.dataset_snapshot_path || "当前未落盘"} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>训练 / 推理快照一致性</CardTitle>
+              <CardDescription>先确认训练和推理是不是站在同一份快照上，再决定要不要直接看评估和执行。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="训练快照" value={snapshotConsistency.training_snapshot_id || "未生成"} />
+              <InfoBlock label="推理快照" value={snapshotConsistency.inference_snapshot_id || "未生成"} />
+              <InfoBlock label="训练生成时间" value={formatMoment(snapshotConsistency.training_generated_at)} />
+              <InfoBlock label="推理生成时间" value={formatMoment(snapshotConsistency.inference_generated_at)} />
+              <InfoBlock
+                label="是否同一份快照"
+                value={snapshotConsistency.matches_training_snapshot ? "是，同一轮可直接对照" : "否，先看最近两轮实验对比"}
+              />
+              <InfoBlock
+                label="缓存复用"
+                value={`train ${formatCacheStatus(snapshotConsistency.training_cache_status, snapshotConsistency.training_cache_hit_count, snapshotConsistency.training_cache_miss_count)} / infer ${formatCacheStatus(snapshotConsistency.inference_cache_status, snapshotConsistency.inference_cache_hit_count, snapshotConsistency.inference_cache_miss_count)}`}
+              />
+              <InfoBlock label="当前判断" value={snapshotConsistency.note} />
             </CardContent>
           </Card>
 
@@ -379,6 +405,22 @@ function buildQualityRows(quality: {
 
 function formatPercent(value: number) {
   return Number.isFinite(value) ? `${value.toFixed(2)}%` : "n/a";
+}
+
+function formatSnapshotSource(runType: string, runId: string) {
+  if (!runType && !runId) {
+    return "当前还没有研究运行来源";
+  }
+  return `${runType || "run"} / ${runId || "未写入 run_id"}`;
+}
+
+function formatCacheStatus(status: string, hitCount: number, missCount: number) {
+  const normalized = String(status || "").trim() || "unknown";
+  return `${normalized}（hit ${hitCount} / miss ${missCount}）`;
+}
+
+function formatMoment(value: string) {
+  return String(value || "").trim() || "未写入";
 }
 
 function formatOptionalCount(value: number | null) {

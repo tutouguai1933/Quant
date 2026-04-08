@@ -28,6 +28,9 @@ test("tasks page shows latest automation decision after login", async ({ page })
   await expect(page.getByText("恢复前先做什么", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("风险等级摘要", { exact: true })).toBeVisible();
   await expect(page.getByText("恢复清单", { exact: true })).toBeVisible();
+  await expect(page.getByText("头号告警", { exact: true })).toBeVisible();
+  await expect(page.getByText("最早恢复时间", { exact: true })).toBeVisible();
+  await expect(page.getByText("接管复核截止", { exact: true })).toBeVisible();
   await expect(page.getByText("自动化运行参数", { exact: true })).toBeVisible();
   await expect(page.getByText("长时间接管阈值", { exact: true })).toBeVisible();
   await expect(page.getByText("活跃告警窗口", { exact: true })).toBeVisible();

@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { buildAuthHeaders, buildProxyUrl, fetchJson, getAdminSession } from "../../lib/api";
+import { buildAuthHeaders, buildUpstreamApiUrl, fetchJson, getAdminSession } from "../../lib/api";
 import { buildRedirectUrl } from "../../lib/redirect";
 import { normalizeAppPath, SESSION_COOKIE_NAME } from "../../lib/session";
 
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const response = await fetch(buildProxyUrl(request, config.path), {
+    const response = await fetch(buildActionUpstreamUrl(request, config.path), {
       method: config.method,
       headers: {
         Accept: "application/json",
@@ -130,7 +130,7 @@ async function handleWorkbenchConfigUpdate({
   const values = serializeWorkbenchValues(params);
 
   try {
-    const response = await fetch(buildProxyUrl(request, "/workbench/config"), {
+    const response = await fetch(buildActionUpstreamUrl(request, "/workbench/config"), {
       method: "POST",
       headers: {
         ...buildAuthHeaders(token),
@@ -164,12 +164,22 @@ async function handleWorkbenchConfigUpdate({
   }
 }
 
+/* 服务端动作直接连控制面 API，避免再绕一层前端代理。 */
+function buildActionUpstreamUrl(request: Request, path: string): string {
+  const [pathname, search = ""] = path.split("?", 2);
+  const upstreamUrl = new URL(buildUpstreamApiUrl(pathname, request));
+  if (search) {
+    upstreamUrl.search = search;
+  }
+  return upstreamUrl.toString();
+}
+
 function resolveActionFeedback(
   action: string,
   payload: Awaited<ReturnType<typeof fetchJson>>,
   config: ActionConfig,
 ): { tone: "success" | "warning"; title: string; message: string } | null {
-  if (action !== "automation_run_cycle") {
+  if (action !== "automation_run_cycle" && action !== "automation_resume") {
     return null;
   }
 
@@ -179,6 +189,23 @@ function resolveActionFeedback(
   const workflowStatus = String(workflowResult.status ?? item.status ?? "").trim().toLowerCase();
   const nextAction = String(workflowResult.next_action ?? "").trim();
   const message = String(workflowResult.message ?? "").trim();
+  const pendingItems = Array.isArray(item.pending_items)
+    ? item.pending_items
+        .map((entry) => (isPlainRecord(entry) ? String(entry.label ?? "") : ""))
+        .filter((entry) => entry.length > 0)
+    : [];
+
+  if (action === "automation_resume" && workflowStatus === "blocked") {
+    const blockedReason = String(item.blocked_reason ?? "").trim();
+    const blockedDetail = pendingItems.length
+      ? `当前还不能恢复，先处理：${pendingItems.join(" / ")}。`
+      : "当前还不能恢复，先完成恢复清单后再继续自动化。";
+    return {
+      tone: "warning",
+      title: "自动化反馈",
+      message: blockedReason === "resume_checklist_pending" ? blockedDetail : (message || blockedDetail),
+    };
+  }
 
   if (workflowStatus === "succeeded") {
     return {

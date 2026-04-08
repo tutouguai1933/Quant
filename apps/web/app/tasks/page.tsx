@@ -150,6 +150,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
     remainingDailyCycles: readText(runtimeWindow.remaining_daily_cycle_count, operationsConfig.maxDailyCycleCount),
     cooldownRemainingMinutes: readText(runtimeWindow.cooldown_remaining_minutes, "0"),
     nextAction: readText(runtimeWindow.next_action, "run_next_cycle"),
+    nextRunAt: readText(runtimeWindow.next_run_at, ""),
+    takeoverReviewDueAt: readText(runtimeWindow.takeover_review_due_at, ""),
+    blockedReason: readText(runtimeWindow.blocked_reason, ""),
     note: readText(runtimeWindow.note, "当前没有额外长期运行说明。"),
     readyForCycle: Boolean(runtimeWindow.ready_for_cycle),
   };
@@ -166,6 +169,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
     latestAlert,
     fallbackLabel: primaryOperatorLabel,
     fallbackDetail: primaryOperatorDetail,
+  });
+  const primaryAlertSummary = buildPrimaryAlertSummary({
+    alertSummary,
+    latestAlert,
+    restoreConclusion,
+    runtimeWindowSummary,
   });
   const executionPolicy = asRecord(automation.executionPolicy);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
@@ -285,9 +294,21 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
                   />
                   <GuidanceBlock
+                    label="最早恢复时间"
+                    value={formatMoment(runtimeWindowSummary.nextRunAt)}
+                    detail={runtimeWindowSummary.nextRunAt ? "到了这个时间点后，系统才会结束当前冷却窗口。" : "当前没有额外冷却限制。"}
+                    tone={runtimeWindowSummary.nextRunAt ? "warning" : "supportive"}
+                  />
+                  <GuidanceBlock
+                    label="接管复核截止"
+                    value={formatMoment(runtimeWindowSummary.takeoverReviewDueAt)}
+                    detail={runtimeWindowSummary.takeoverReviewDueAt ? "超过这个时间还在人工接管，就先做接管复核，不要直接恢复。" : "当前没有长时间接管复核限制。"}
+                    tone={runtimeWindowSummary.takeoverReviewDueAt ? "warning" : "default"}
+                  />
+                  <GuidanceBlock
                     label="当前状态"
                     value={runtimeWindowSummary.readyForCycle ? "可以继续下一轮" : "先不要继续"}
-                    detail={runtimeWindowSummary.readyForCycle ? "当前没有冷却和轮次阻塞" : "先处理冷却、暂停或轮次上限"}
+                    detail={runtimeWindowSummary.readyForCycle ? "当前没有冷却和轮次阻塞" : describeRuntimeBlockedReason(runtimeWindowSummary.blockedReason)}
                     tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
                   />
                 </CardContent>
@@ -378,11 +399,31 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardDescription>这里把接管、告警和恢复建议压成一张卡，先告诉你当前最该先做什么。</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p>最该先做什么：{readText(asRecord(operatorActions[0]).label, "当前可以继续下一轮自动化")}</p>
-                  <p>原因：{readText(asRecord(operatorActions[0]).detail, "当前没有额外阻塞说明。")}</p>
-                  <p>最重要告警：{readText(asRecord(alertGroups[0]).message, "当前没有活跃告警")}</p>
+                  <p>最该先做什么：{restoreConclusion.actionLabel}</p>
+                  <p>原因：{restoreConclusion.summary}</p>
+                  <p>最重要告警：{primaryAlertSummary.value}</p>
                   <p>当前接管：{readText(takeoverSummary.state_label, takeoverStateLabel)} / {readText(takeoverSummary.note, "当前没有额外接管说明。")}</p>
-                  <p>恢复前先做什么：{readText(takeoverSummary.next_step, "可以继续下一轮自动化")}</p>
+                  <p>恢复前先做什么：{restoreConclusion.detail}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">头号告警</p>
+                  <CardTitle>{primaryAlertSummary.value}</CardTitle>
+                  <CardDescription>{primaryAlertSummary.detail}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>当前建议：{primaryAlertSummary.actionLabel}</p>
+                  <p>优先处理页：{primaryAlertSummary.targetPage}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={primaryAlertSummary.targetHref}>去处理</Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/tasks">留在任务页继续观察</Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -1127,6 +1168,41 @@ function buildAlertSummaryCard({
   };
 }
 
+function buildPrimaryAlertSummary({
+  alertSummary,
+  latestAlert,
+  restoreConclusion,
+  runtimeWindowSummary,
+}: {
+  alertSummary: Record<string, unknown>;
+  latestAlert: { level: string; code: string; message: string; createdAt: string } | undefined;
+  restoreConclusion: { actionLabel: string; summary: string; detail: string };
+  runtimeWindowSummary: { nextAction: string; blockedReason: string };
+}) {
+  const latestCode = readText(alertSummary.latest_code, latestAlert?.code || "");
+  const latestLevel = readText(alertSummary.latest_level, latestAlert?.level || "");
+  const latestSource = readText(alertSummary.latest_source, "tasks");
+  const latestMessage = readText(alertSummary.latest_message, latestAlert?.message || "");
+  const hasActiveAlert = latestCode.length > 0 || latestLevel.length > 0 || latestMessage.length > 0;
+  if (!hasActiveAlert) {
+    return {
+      value: "当前没有头号告警",
+      detail: "最近没有新的高优先级异常，当前可以继续按恢复清单和调度窗口判断下一步。",
+      actionLabel: restoreConclusion.actionLabel,
+      targetPage: "任务页",
+      targetHref: "/tasks",
+    };
+  }
+  const target = resolveAlertTarget(latestSource, runtimeWindowSummary.nextAction, runtimeWindowSummary.blockedReason);
+  return {
+    value: `${formatAlertLevel(latestLevel)} / ${latestCode || "alert"}`,
+    detail: latestMessage || "当前没有额外告警说明。",
+    actionLabel: target.actionLabel,
+    targetPage: target.page,
+    targetHref: target.href,
+  };
+}
+
 function resolveFocusCard(
   value: Record<string, unknown>,
   fallback: { tone?: string; value: string; detail: string },
@@ -1197,6 +1273,33 @@ function formatRuntimeWindowAction(action: string) {
     resume_after_review: "先复核再恢复",
   };
   return mapping[action] ?? action;
+}
+
+function describeRuntimeBlockedReason(reason: string) {
+  const mapping: Record<string, string> = {
+    manual_takeover_active: "当前还在人工接管中，先处理接管原因再决定是否恢复。",
+    paused_waiting_review: "当前处于暂停待复核状态，先看恢复清单和同步失败细节。",
+    daily_limit_reached: "今日轮次已用完，等下一个时间窗口再继续。",
+    cooldown_active: "当前还在冷却中，等最早恢复时间到了再继续。",
+  };
+  return mapping[reason] ?? "先处理冷却、暂停或轮次上限。";
+}
+
+function resolveAlertTarget(source: string, nextAction: string, blockedReason: string) {
+  const normalizedSource = String(source || "").toLowerCase();
+  if (normalizedSource.includes("research")) {
+    return { actionLabel: "先回研究页处理", page: "研究工作台", href: "/research" };
+  }
+  if (normalizedSource.includes("dispatch") || normalizedSource.includes("execution")) {
+    return { actionLabel: "先去策略页检查执行", page: "策略页", href: "/strategies" };
+  }
+  if (normalizedSource.includes("review") || normalizedSource.includes("evaluation")) {
+    return { actionLabel: "先去评估页复核", page: "评估与实验中心", href: "/evaluation" };
+  }
+  if (nextAction === "review_takeover" || blockedReason === "manual_takeover_active") {
+    return { actionLabel: "先留在任务页处理接管", page: "任务页", href: "/tasks" };
+  }
+  return { actionLabel: "先留在任务页处理", page: "任务页", href: "/tasks" };
 }
 
 function formatAlertLevel(level: string) {
@@ -1281,6 +1384,11 @@ function formatRelativeMoment(value: string) {
   }
   const diffDays = Math.round(diffHours / 24);
   return `${diffDays} 天前`;
+}
+
+function formatMoment(value: string) {
+  const normalized = String(value || "").trim();
+  return normalized || "当前没有明确时间";
 }
 
 function readText(value: unknown, fallback: string): string {

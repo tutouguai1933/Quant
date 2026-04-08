@@ -57,6 +57,7 @@ class DataWorkspaceService:
 
         research_report = self._read_factory_report()
         training_snapshot = self._extract_training_snapshot(research_report)
+        inference_snapshot = self._extract_inference_snapshot(research_report)
         preview = self._build_preview(
             symbol=selected_symbol,
             interval=normalized_interval,
@@ -92,6 +93,7 @@ class DataWorkspaceService:
                 interval=normalized_interval,
                 preview=preview,
                 training_snapshot=training_snapshot,
+                inference_snapshot=inference_snapshot,
                 holding_window=str((self._extract_training_window(research_report) or {}).get("holding_window", "")),
             ),
             "controls": {
@@ -108,6 +110,10 @@ class DataWorkspaceService:
                 "available_window_modes": [str(item) for item in list((workbench_controls.get("options") or {}).get("window_modes") or [])],
             },
             "snapshot": training_snapshot,
+            "snapshot_consistency": self._build_snapshot_consistency(
+                training_snapshot=training_snapshot,
+                inference_snapshot=inference_snapshot,
+            ),
             "quality": self._build_quality_snapshot(training_snapshot),
             "preview": preview,
             "training_window": self._extract_training_window(research_report),
@@ -128,18 +134,37 @@ class DataWorkspaceService:
     def _extract_training_snapshot(report: dict[str, object]) -> dict[str, object]:
         """抽取训练阶段的数据快照。"""
 
+        return DataWorkspaceService._extract_snapshot(report, stage="training")
+
+    @staticmethod
+    def _extract_inference_snapshot(report: dict[str, object]) -> dict[str, object]:
+        """抽取推理阶段的数据快照。"""
+
+        return DataWorkspaceService._extract_snapshot(report, stage="inference")
+
+    @staticmethod
+    def _extract_snapshot(report: dict[str, object], *, stage: str) -> dict[str, object]:
+        """抽取指定阶段的数据快照。"""
+
         snapshots = dict(report.get("snapshots") or {})
-        training = dict(snapshots.get("training") or {})
-        data_states = dict(training.get("data_states") or {})
-        current_state = str(data_states.get("current") or training.get("active_data_state") or "")
+        payload = dict(snapshots.get(stage) or {})
+        data_states = dict(payload.get("data_states") or {})
+        cache = dict(payload.get("cache") or {})
+        current_state = str(data_states.get("current") or payload.get("active_data_state") or "")
         if current_state and "current" not in data_states:
             data_states["current"] = current_state
         return {
-            "snapshot_id": str(training.get("snapshot_id", "")),
-            "cache_signature": str(training.get("cache_signature", "")),
-            "active_data_state": str(training.get("active_data_state", "")) or current_state,
+            "run_type": stage,
+            "run_id": str(payload.get("run_id", "")),
+            "generated_at": str(payload.get("generated_at", "")),
+            "snapshot_id": str(payload.get("snapshot_id", "")),
+            "cache_signature": str(payload.get("cache_signature", "")),
+            "cache_status": str(payload.get("cache_status", "")),
+            "cache_hit_count": int(cache.get("hit_count", 0) or 0),
+            "cache_miss_count": int(cache.get("miss_count", 0) or 0),
+            "active_data_state": str(payload.get("active_data_state", "")) or current_state,
             "data_states": data_states,
-            "dataset_snapshot_path": str(training.get("dataset_snapshot_path", "")),
+            "dataset_snapshot_path": str(payload.get("dataset_snapshot_path", "")),
         }
 
     @staticmethod
@@ -274,12 +299,49 @@ class DataWorkspaceService:
         }
 
     @staticmethod
+    def _build_snapshot_consistency(
+        *,
+        training_snapshot: dict[str, object],
+        inference_snapshot: dict[str, object],
+    ) -> dict[str, object]:
+        """整理训练快照和推理快照的一致性说明。"""
+
+        training_snapshot_id = str(training_snapshot.get("snapshot_id", "") or "")
+        inference_snapshot_id = str(inference_snapshot.get("snapshot_id", "") or "")
+        training_generated_at = str(training_snapshot.get("generated_at", "") or "")
+        inference_generated_at = str(inference_snapshot.get("generated_at", "") or "")
+        matches_training_snapshot = bool(training_snapshot_id) and training_snapshot_id == inference_snapshot_id
+        if not training_snapshot_id:
+            note = "当前还没有训练快照，先运行研究训练再比较训练和推理是不是同一份数据。"
+        elif not inference_snapshot_id:
+            note = "当前还没有推理快照，说明这一轮还没完成推理，先不要把训练结果直接当执行依据。"
+        elif matches_training_snapshot:
+            note = "当前推理复用了同一份训练快照，研究、评估和执行可以按同一批数据理解。"
+        else:
+            note = "当前推理用了另一份快照，先比较最近两轮实验，再决定要不要继续 dry-run 或 live。"
+        return {
+            "training_snapshot_id": training_snapshot_id,
+            "training_generated_at": training_generated_at,
+            "training_cache_status": str(training_snapshot.get("cache_status", "") or ""),
+            "training_cache_hit_count": int(training_snapshot.get("cache_hit_count", 0) or 0),
+            "training_cache_miss_count": int(training_snapshot.get("cache_miss_count", 0) or 0),
+            "inference_snapshot_id": inference_snapshot_id,
+            "inference_generated_at": inference_generated_at,
+            "inference_cache_status": str(inference_snapshot.get("cache_status", "") or ""),
+            "inference_cache_hit_count": int(inference_snapshot.get("cache_hit_count", 0) or 0),
+            "inference_cache_miss_count": int(inference_snapshot.get("cache_miss_count", 0) or 0),
+            "matches_training_snapshot": matches_training_snapshot,
+            "note": note,
+        }
+
+    @staticmethod
     def _build_source_explanations(
         *,
         symbol: str,
         interval: str,
         preview: dict[str, object],
         training_snapshot: dict[str, object],
+        inference_snapshot: dict[str, object],
         holding_window: str,
     ) -> list[dict[str, object]]:
         """整理快照来源解释，避免只看到结果看不到口径。"""
@@ -293,12 +355,22 @@ class DataWorkspaceService:
             {
                 "label": "研究训练快照",
                 "value": str(training_snapshot.get('snapshot_id', '') or "未生成"),
-                "detail": "训练完成后会把数据冻结成快照，后面的研究、回测和评估都会优先回指这一份快照。",
+                "detail": f"最近一次训练生成于 {str(training_snapshot.get('generated_at', '') or '未知时间')}，缓存状态 {str(training_snapshot.get('cache_status', '') or 'unknown')}。",
+            },
+            {
+                "label": "研究推理快照",
+                "value": str(inference_snapshot.get('snapshot_id', '') or "未生成"),
+                "detail": f"最近一次推理生成于 {str(inference_snapshot.get('generated_at', '') or '未知时间')}，如果和训练快照不同，就要优先看评估页最近两轮对比。",
             },
             {
                 "label": "训练窗口口径",
                 "value": holding_window or "未写入",
                 "detail": "这里说明最近一次研究训练到底按多长的持有窗口切训练、验证和回测。",
+            },
+            {
+                "label": "缓存复用情况",
+                "value": f"train {str(training_snapshot.get('cache_hit_count', 0))}/{str(training_snapshot.get('cache_miss_count', 0))} / infer {str(inference_snapshot.get('cache_hit_count', 0))}/{str(inference_snapshot.get('cache_miss_count', 0))}",
+                "detail": "这里直接说明训练和推理各自命中了多少缓存，避免误以为每一轮都重新构建了数据快照。",
             },
             {
                 "label": "快照落盘位置",

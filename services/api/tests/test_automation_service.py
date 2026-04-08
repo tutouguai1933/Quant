@@ -315,6 +315,8 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["runtime_window"]["current_cycle_count"], 1)
         self.assertEqual(status["runtime_window"]["remaining_daily_cycle_count"], 7)
         self.assertEqual(status["runtime_window"]["next_action"], "wait_cooldown")
+        self.assertTrue(status["runtime_window"]["next_run_at"])
+        self.assertEqual(status["runtime_window"]["blocked_reason"], "cooldown_active")
 
     def test_runtime_window_requests_takeover_review_after_long_manual_takeover(self) -> None:
         scheduler = _FakeScheduler()
@@ -345,6 +347,8 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["runtime_window"]["long_run_seconds"], 60)
         self.assertEqual(status["runtime_window"]["next_action"], "review_takeover")
         self.assertEqual(status["runtime_window"]["takeover_elapsed_seconds"], 120)
+        self.assertTrue(status["runtime_window"]["takeover_review_due_at"])
+        self.assertEqual(status["runtime_window"]["blocked_reason"], "manual_takeover_active")
 
     def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
         service = AutomationService()

@@ -34,14 +34,23 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["controls"]["end_date"], "2024-04-04")
         self.assertIn("fixed", item["controls"]["available_window_modes"])
         self.assertEqual(item["snapshot"]["snapshot_id"], "dataset-abc123")
+        self.assertEqual(item["snapshot"]["run_id"], "train-1")
+        self.assertEqual(item["snapshot"]["cache_status"], "created")
+        self.assertEqual(item["snapshot"]["cache_hit_count"], 1)
+        self.assertEqual(item["snapshot"]["cache_miss_count"], 1)
         self.assertEqual(item["snapshot"]["data_states"]["current"], "feature-ready")
+        self.assertTrue(item["snapshot_consistency"]["matches_training_snapshot"])
+        self.assertEqual(item["snapshot_consistency"]["inference_snapshot_id"], "dataset-abc123")
+        self.assertEqual(item["snapshot_consistency"]["inference_cache_status"], "reused")
+        self.assertIn("同一份训练快照", item["snapshot_consistency"]["note"])
         self.assertEqual(item["quality"]["raw_rows"], 240)
         self.assertEqual(item["quality"]["cleaned_rows"], 220)
         self.assertEqual(item["quality"]["feature_ready_rows"], 200)
         self.assertEqual(item["quality"]["total_drop_rows"], 40)
         self.assertAlmostEqual(item["quality"]["retention_ratio_pct"], 83.3, places=1)
         self.assertEqual(item["source_explanations"][0]["label"], "市场预览样本")
-        self.assertIn("持有窗口", item["source_explanations"][2]["detail"])
+        self.assertTrue(any(entry["label"] == "研究推理快照" for entry in item["source_explanations"]))
+        self.assertTrue(any("持有窗口" in entry["detail"] for entry in item["source_explanations"]))
         self.assertEqual(item["preview"]["symbol"], "ETHUSDT")
         self.assertEqual(item["preview"]["total_rows"], 3)
         self.assertIn("first_open_time", item["preview"])
@@ -139,8 +148,12 @@ class _FakeResearchService:
             },
             "snapshots": {
                 "training": {
+                    "run_id": "train-1",
+                    "generated_at": "2026-04-08T10:00:00+00:00",
                     "snapshot_id": "dataset-abc123",
                     "cache_signature": "abc123",
+                    "cache_status": "created",
+                    "cache": {"hit_count": 1, "miss_count": 1},
                     "active_data_state": "feature-ready",
                     "data_states": {
                         "raw": {"symbol_count": 2, "row_count": 240},
@@ -148,7 +161,22 @@ class _FakeResearchService:
                         "feature-ready": {"symbol_count": 2, "row_count": 200},
                         "current": "feature-ready",
                     },
-                }
+                },
+                "inference": {
+                    "run_id": "infer-1",
+                    "generated_at": "2026-04-08T10:05:00+00:00",
+                    "snapshot_id": "dataset-abc123",
+                    "cache_signature": "abc123",
+                    "cache_status": "reused",
+                    "cache": {"hit_count": 2, "miss_count": 0},
+                    "active_data_state": "feature-ready",
+                    "data_states": {
+                        "raw": {"symbol_count": 2, "row_count": 240},
+                        "cleaned": {"symbol_count": 2, "row_count": 220},
+                        "feature-ready": {"symbol_count": 2, "row_count": 200},
+                        "current": "feature-ready",
+                    },
+                },
             },
             "latest_training": {
                 "training_context": {
