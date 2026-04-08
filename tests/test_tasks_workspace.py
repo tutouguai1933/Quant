@@ -51,6 +51,8 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("只恢复到 dry-run", content)
         self.assertIn("确认后恢复自动化", content)
         self.assertIn("当前结论", content)
+        self.assertIn("先不要恢复", content)
+        self.assertIn("等待调度窗口", content)
         self.assertIn("恢复确认", content)
         self.assertIn("清单通过情况", content)
         self.assertIn("调度状态", content)

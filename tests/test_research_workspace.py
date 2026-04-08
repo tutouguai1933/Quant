@@ -30,6 +30,7 @@ class ResearchWorkspaceTests(unittest.TestCase):
         self.assertIn("标签方式说明", content)
         self.assertIn("触发基础说明", content)
         self.assertIn("持有窗口说明", content)
+        self.assertIn('case "3-5d"', content)
         self.assertIn("实验参数", content)
         self.assertIn("研究训练", content)
         self.assertIn("研究推理", content)

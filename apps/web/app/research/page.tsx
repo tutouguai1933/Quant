@@ -452,6 +452,8 @@ function describeHoldingWindow(holdingWindow: string) {
   switch (holdingWindow) {
     case "1-2d":
       return "更短，更偏快节奏择时，推荐会更敏感，但也更容易被短期波动影响。";
+    case "3-5d":
+      return "更偏中短波段，会优先观察更完整的一段走势，推荐更稳，但短线信号会更慢一些。";
     case "2-4d":
       return "更长，更偏耐心持有，推荐会更稳，但对短期强信号的反应会慢一点。";
     case "1-3d":

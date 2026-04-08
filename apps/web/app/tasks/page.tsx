@@ -164,6 +164,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
     blockedItems: resumeBlockedItems,
     manualTakeover: automation.manualTakeover,
     latestAlert,
+    fallbackLabel: primaryOperatorLabel,
+    fallbackDetail: primaryOperatorDetail,
   });
   const executionPolicy = asRecord(automation.executionPolicy);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
@@ -488,8 +490,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4 text-sm leading-6 text-muted-foreground">
-                    <p>当前首要动作：{primaryOperatorLabel}</p>
-                    <p>为什么先做它：{primaryOperatorDetail}</p>
+                    <p>当前首要动作：{restoreConclusion.actionLabel}</p>
+                    <p>为什么先做它：{restoreConclusion.detail}</p>
                     <p>当前结论：{restoreConclusion.summary}</p>
                   </div>
                   <div className="grid gap-3">
@@ -954,40 +956,49 @@ function buildRestoreConclusion({
   blockedItems,
   manualTakeover,
   latestAlert,
+  fallbackLabel,
+  fallbackDetail,
 }: {
   readyForCycle: boolean;
   nextAction: string;
   blockedItems: string[];
   manualTakeover: boolean;
   latestAlert: { level?: string; message?: string } | undefined;
+  fallbackLabel: string;
+  fallbackDetail: string;
 }) {
   if (manualTakeover) {
     return {
+      actionLabel: "先人工接管",
       summary: "建议先人工接管，确认执行器、同步和接管原因都已收口。",
       detail: "告警已处理、同步已恢复、接管原因已清除后，再点恢复。",
     };
   }
   if (blockedItems.length) {
     return {
+      actionLabel: "先不要恢复",
       summary: `现在先不要恢复，原因：${blockedItems.join(" / ")} 还没处理完。`,
       detail: "先把恢复清单里未通过的检查项处理完，再考虑继续自动化。",
     };
   }
   if (latestAlert?.level === "error") {
     return {
+      actionLabel: "先人工接管",
       summary: "建议立即人工接管，先处理执行器或同步异常。",
       detail: latestAlert.message || "最近仍有错误级告警，先不要继续放开自动化。",
     };
   }
   if (!readyForCycle) {
     return {
+      actionLabel: "等待调度窗口",
       summary: `调度状态：${formatRuntimeWindowAction(nextAction)}。`,
       detail: "当前还在等待冷却、轮次窗口或调度恢复，不需要额外重复点击。",
     };
   }
   return {
+    actionLabel: fallbackLabel || "可以继续自动化",
     summary: "当前可以继续自动化，最近没有高风险告警。",
-    detail: "如果你已经看过评估、研究和回测结果，这一轮可以继续按当前模式推进。",
+    detail: fallbackDetail || "如果你已经看过评估、研究和回测结果，这一轮可以继续按当前模式推进。",
   };
 }
 
