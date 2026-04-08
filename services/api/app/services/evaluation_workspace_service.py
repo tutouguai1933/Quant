@@ -42,6 +42,12 @@ class EvaluationWorkspaceService:
             research_reviews=reviews,
             validation_reviews=validation_reviews,
         )
+        best_stage_candidates = self._build_best_stage_candidates(
+            leaderboard=leaderboard,
+            gate_matrix=self._build_gate_matrix(report),
+            overview=overview,
+            validation_reviews=validation_reviews,
+        )
         recommendation_explanation = self._build_recommendation_explanation(
             leaderboard=leaderboard,
             best_experiment=best_experiment,
@@ -129,6 +135,7 @@ class EvaluationWorkspaceService:
             "recent_review_tasks": recent_review_tasks,
             "leaderboard": leaderboard,
             "best_experiment": best_experiment,
+            "best_stage_candidates": best_stage_candidates,
             "recommendation_explanation": recommendation_explanation,
             "elimination_explanation": elimination_explanation,
             "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)][:comparison_run_limit],
@@ -145,6 +152,12 @@ class EvaluationWorkspaceService:
                 execution_alignment=execution_alignment,
             ),
             "execution_alignment": execution_alignment,
+            "alignment_metric_rows": self._build_alignment_metric_rows(
+                best_experiment=best_experiment,
+                best_stage_candidates=best_stage_candidates,
+                execution_alignment=execution_alignment,
+                validation_reviews=validation_reviews,
+            ),
             "alignment_details": alignment_details,
             "alignment_story": alignment_story,
             "alignment_gaps": self._build_alignment_gaps(
@@ -287,6 +300,59 @@ class EvaluationWorkspaceService:
         }
 
     @staticmethod
+    def _build_best_stage_candidates(
+        *,
+        leaderboard: list[dict[str, object]],
+        gate_matrix: list[dict[str, object]],
+        overview: dict[str, object],
+        validation_reviews: dict[str, object],
+    ) -> dict[str, dict[str, str]]:
+        """按阶段提炼最值得继续推进的候选。"""
+
+        gate_by_symbol = {
+            str(item.get("symbol", "")).strip(): dict(item)
+            for item in gate_matrix
+            if str(item.get("symbol", "")).strip()
+        }
+        research_review = dict(validation_reviews.get("research") or {})
+
+        def build_stage_candidate(stage: str, *, allow_key: str) -> dict[str, str]:
+            for item in leaderboard:
+                symbol = str(item.get("symbol", "")).strip()
+                gate = gate_by_symbol.get(symbol, {})
+                if not gate:
+                    continue
+                if not bool(gate.get(allow_key)):
+                    continue
+                score = str(item.get("score", "")).strip() or "n/a"
+                next_action = str(item.get("next_action", "")).strip() or ("go_live" if stage == "live" else "enter_dry_run")
+                default_reason = (
+                    f"{symbol or '当前候选'} 当前更值得进入 {'live' if stage == 'live' else 'dry-run'}。"
+                )
+                reason = str(item.get("recommendation_reason", "")).strip() or default_reason
+                return {
+                    "symbol": symbol or "当前候选",
+                    "stage": stage,
+                    "score": score,
+                    "next_action": next_action,
+                    "reason": reason,
+                }
+            fallback_symbol = str(overview.get("recommended_symbol", "")).strip() or "当前还没有候选"
+            fallback_action = str(research_review.get("next_action", "") or overview.get("recommended_action", "")).strip()
+            return {
+                "symbol": fallback_symbol,
+                "stage": stage,
+                "score": "n/a",
+                "next_action": fallback_action or "continue_research",
+                "reason": f"当前还没有候选明确满足 {'live' if stage == 'live' else 'dry-run'} 放行条件。",
+            }
+
+        return {
+            "dry_run": build_stage_candidate("dry_run", allow_key="allowed_to_dry_run"),
+            "live": build_stage_candidate("live", allow_key="allowed_to_live"),
+        }
+
+    @staticmethod
     def _build_elimination_explanation(*, leaderboard: list[dict[str, object]]) -> dict[str, str]:
         """把淘汰原因压成一段更直白的说明。"""
 
@@ -328,6 +394,56 @@ class EvaluationWorkspaceService:
             "evidence": reasons if reasons else [summary],
             "next_step": str(alignment_details.get("next_step", "") or first_action.get("detail", "") or "先继续观察。"),
         }
+
+    @staticmethod
+    def _build_alignment_metric_rows(
+        *,
+        best_experiment: dict[str, object],
+        best_stage_candidates: dict[str, dict[str, str]],
+        execution_alignment: dict[str, object],
+        validation_reviews: dict[str, object],
+    ) -> list[dict[str, str]]:
+        """把研究、回测和执行放到一张对照表里。"""
+
+        execution = dict(execution_alignment.get("execution") or {})
+        backtest = dict(execution_alignment.get("backtest") or {})
+        research_review = dict(validation_reviews.get("research") or {})
+        dry_candidate = dict(best_stage_candidates.get("dry_run") or {})
+        live_candidate = dict(best_stage_candidates.get("live") or {})
+        research_symbol = str(best_experiment.get("symbol", "")).strip() or "当前候选"
+        research_action = str(best_experiment.get("next_action", "")).strip() or "continue_research"
+        research_result = str(research_review.get("result", "")).strip() or "未生成"
+        runtime_mode = str(execution.get("runtime_mode", "")).strip() or "unknown"
+        latest_sync_status = str(execution.get("latest_sync_status", "")).strip() or "unknown"
+        matched_order_count = str(execution.get("matched_order_count", "0"))
+        matched_position_count = str(execution.get("matched_position_count", "0"))
+        backtest_net_return = str(backtest.get("net_return_pct", "")).strip() or "n/a"
+        backtest_sharpe = str(backtest.get("sharpe", "")).strip() or "n/a"
+        backtest_win_rate = str(backtest.get("win_rate", "")).strip() or "n/a"
+
+        return [
+            {
+                "metric": "研究结论",
+                "research": f"{research_symbol} / {research_action} / {research_result}",
+                "backtest": "先看这一轮候选在回测里有没有稳定通过。",
+                "execution": f"{runtime_mode} / 同步 {latest_sync_status}",
+                "impact": "先确认研究推荐和执行状态是不是还在同一轮。",
+            },
+            {
+                "metric": "阶段候选",
+                "research": f"dry-run：{str(dry_candidate.get('symbol', 'n/a'))} / {str(dry_candidate.get('reason', ''))}",
+                "backtest": f"live：{str(live_candidate.get('symbol', 'n/a'))} / {str(live_candidate.get('reason', ''))}",
+                "execution": f"下一步 {'dry-run' if str(best_experiment.get('recommended_stage', 'dry_run')) == 'dry_run' else 'live'} / {str(best_experiment.get('next_action', 'continue_research'))}",
+                "impact": "先分清现在更适合继续 dry-run，还是已经够格进入 live。",
+            },
+            {
+                "metric": "回测结论",
+                "research": f"净收益 {backtest_net_return}",
+                "backtest": f"Sharpe {backtest_sharpe} / 胜率 {backtest_win_rate}",
+                "execution": f"订单 {matched_order_count} / 持仓 {matched_position_count}",
+                "impact": "这里直接对照回测表现和执行落地有没有明显落差。",
+            },
+        ]
 
     @staticmethod
     def _build_stage_decision_summary(

@@ -251,6 +251,27 @@ export default async function FeaturePage() {
                 <p className="text-sm leading-6 text-muted-foreground">当前还没有因子类别。</p>
               )}
             </ConfigField>
+          </WorkbenchConfigCard>
+
+          <WorkbenchConfigCard
+            title="类别权重配置"
+            description="这里把趋势、动量、量能、震荡和波动五类因子的权重直接放出来，方便你细调研究偏向。"
+            scope="research"
+            returnTo="/features"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="类别权重" hint="先决定哪一类因子在研究打分里更重要，再让研究页去承接模板和标签。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <LabeledConfigInput label="趋势权重" name="trend_weight" defaultValue={String(workspace.controls.trend_weight ?? "1.3")} />
+                <LabeledConfigInput label="动量权重" name="momentum_weight" defaultValue={String(workspace.controls.momentum_weight ?? "1")} />
+                <LabeledConfigInput label="量能权重" name="volume_weight" defaultValue={String(workspace.controls.volume_weight ?? "1.1")} />
+                <LabeledConfigInput label="震荡权重" name="oscillator_weight" defaultValue={String(workspace.controls.oscillator_weight ?? "0.7")} />
+                <LabeledConfigInput label="波动权重" name="volatility_weight" defaultValue={String(workspace.controls.volatility_weight ?? "0.9")} />
+                <LabeledConfigInput label="严格模板惩罚权重" name="strict_penalty_weight" defaultValue={String(workspace.controls.strict_penalty_weight ?? "1")} />
+                <LabeledConfigInput label="最低置信度" name="signal_confidence_floor" defaultValue={String(workspace.controls.signal_confidence_floor ?? "0.55")} />
+              </div>
+            </ConfigField>
             <ConfigField label="预处理规则" hint="这里改的是因子进入训练前的清洗方式，保存后下一轮训练和推理都会按这里重算。">
               <div className="grid gap-3 md:grid-cols-3">
                 <ConfigSelect
@@ -489,6 +510,24 @@ function TimeframeProfile1hCard({ params }: { params: Record<string, unknown> })
         />
       </div>
     </div>
+  );
+}
+
+/* 渲染带标题的配置输入框，让权重和阈值字段更容易辨认。 */
+function LabeledConfigInput({
+  label,
+  name,
+  defaultValue,
+}: {
+  label: string;
+  name: string;
+  defaultValue: string;
+}) {
+  return (
+    <label className="grid gap-2 text-sm text-foreground">
+      <span>{label}</span>
+      <ConfigInput aria-label={label} name={name} defaultValue={defaultValue} placeholder={label} />
+    </label>
   );
 }
 

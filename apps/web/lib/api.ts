@@ -486,6 +486,13 @@ export type FeatureWorkspaceModel = {
     feature_preset_key?: string;
     primary_factors: string[];
     auxiliary_factors: string[];
+    trend_weight: string;
+    momentum_weight: string;
+    volume_weight: string;
+    oscillator_weight: string;
+    volatility_weight: string;
+    strict_penalty_weight: string;
+    signal_confidence_floor: string;
     missing_policy: string;
     outlier_policy: string;
     normalization_policy: string;
@@ -717,6 +724,7 @@ export type EvaluationWorkspaceModel = {
   recent_review_tasks: Array<Record<string, unknown>>;
   leaderboard: Array<Record<string, unknown>>;
   best_experiment: Record<string, unknown>;
+  best_stage_candidates: Record<string, unknown>;
   recommendation_explanation: Record<string, unknown>;
   elimination_explanation: Record<string, unknown>;
   recent_runs: Array<Record<string, unknown>>;
@@ -730,6 +738,7 @@ export type EvaluationWorkspaceModel = {
   execution_alignment: Record<string, unknown>;
   alignment_details: Record<string, unknown>;
   alignment_story: Record<string, unknown>;
+  alignment_metric_rows: Array<Record<string, unknown>>;
   alignment_gaps: Array<Record<string, unknown>>;
   alignment_actions: Array<Record<string, unknown>>;
   workflow_alignment_timeline: Array<Record<string, unknown>>;
@@ -1594,6 +1603,13 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
     controls: {
       primary_factors: [],
       auxiliary_factors: [],
+      trend_weight: "1.3",
+      momentum_weight: "1",
+      volume_weight: "1.1",
+      oscillator_weight: "0.7",
+      volatility_weight: "0.8",
+      strict_penalty_weight: "0.6",
+      signal_confidence_floor: "0.55",
       missing_policy: "neutral_fill",
       outlier_policy: "clip",
       normalization_policy: "fixed_4dp",
@@ -1804,6 +1820,7 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     recent_review_tasks: [],
     leaderboard: [],
     best_experiment: {},
+    best_stage_candidates: {},
     recommendation_explanation: {},
     elimination_explanation: {},
     recent_runs: [],
@@ -1819,6 +1836,7 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     stage_decision_summary: {},
     alignment_details: {},
     alignment_story: {},
+    alignment_metric_rows: [],
     alignment_gaps: [],
     alignment_actions: [],
   };
@@ -2052,6 +2070,13 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
     controls: {
       primary_factors: normalizeStringArray(controls.primary_factors, []),
       auxiliary_factors: normalizeStringArray(controls.auxiliary_factors, []),
+      trend_weight: String(controls.trend_weight ?? "1.3"),
+      momentum_weight: String(controls.momentum_weight ?? "1"),
+      volume_weight: String(controls.volume_weight ?? "1.1"),
+      oscillator_weight: String(controls.oscillator_weight ?? "0.7"),
+      volatility_weight: String(controls.volatility_weight ?? "0.8"),
+      strict_penalty_weight: String(controls.strict_penalty_weight ?? "0.6"),
+      signal_confidence_floor: String(controls.signal_confidence_floor ?? "0.55"),
       missing_policy: String(controls.missing_policy ?? "neutral_fill"),
       outlier_policy: String(controls.outlier_policy ?? ""),
       normalization_policy: String(controls.normalization_policy ?? ""),
@@ -2336,6 +2361,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     recent_review_tasks: Array.isArray(row.recent_review_tasks) ? row.recent_review_tasks.filter(isPlainObject) : [],
     leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
     best_experiment: isPlainObject(row.best_experiment) ? row.best_experiment : {},
+    best_stage_candidates: isPlainObject(row.best_stage_candidates) ? row.best_stage_candidates : {},
     recommendation_explanation: isPlainObject(row.recommendation_explanation) ? row.recommendation_explanation : {},
     elimination_explanation: isPlainObject(row.elimination_explanation) ? row.elimination_explanation : {},
     recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
@@ -2351,6 +2377,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     stage_decision_summary: isPlainObject(row.stage_decision_summary) ? row.stage_decision_summary : {},
     alignment_details: isPlainObject(row.alignment_details) ? row.alignment_details : {},
     alignment_story: isPlainObject(row.alignment_story) ? row.alignment_story : {},
+    alignment_metric_rows: Array.isArray(row.alignment_metric_rows) ? row.alignment_metric_rows.filter(isPlainObject) : [],
     alignment_gaps: Array.isArray(row.alignment_gaps) ? row.alignment_gaps.filter(isPlainObject) : [],
     alignment_actions: Array.isArray(row.alignment_actions) ? row.alignment_actions.filter(isPlainObject) : [],
   };

@@ -31,6 +31,7 @@ class FeatureWorkspaceService:
         training_context = dict(latest_training.get("training_context") or {})
         controls = self._controls_builder()
         configured_features = dict((controls.get("config") or {}).get("features") or {})
+        configured_research = dict((controls.get("config") or {}).get("research") or {})
 
         status = str(report.get("status", "unavailable") or "unavailable")
         if factors:
@@ -70,6 +71,13 @@ class FeatureWorkspaceService:
                 "missing_policy": str(configured_features.get("missing_policy", "neutral_fill") or "neutral_fill"),
                 "outlier_policy": str(configured_features.get("outlier_policy", "clip") or "clip"),
                 "normalization_policy": str(configured_features.get("normalization_policy", "fixed_4dp") or "fixed_4dp"),
+                "signal_confidence_floor": str(configured_research.get("signal_confidence_floor", "0.55") or "0.55"),
+                "trend_weight": str(configured_research.get("trend_weight", "1.3") or "1.3"),
+                "momentum_weight": str(configured_research.get("momentum_weight", "1") or "1"),
+                "volume_weight": str(configured_research.get("volume_weight", "1.1") or "1.1"),
+                "oscillator_weight": str(configured_research.get("oscillator_weight", "0.7") or "0.7"),
+                "volatility_weight": str(configured_research.get("volatility_weight", "0.9") or "0.9"),
+                "strict_penalty_weight": str(configured_research.get("strict_penalty_weight", "1") or "1"),
                 "timeframe_profiles": {
                     str(interval): dict(profile or {})
                     for interval, profile in dict(configured_features.get("timeframe_profiles") or {}).items()

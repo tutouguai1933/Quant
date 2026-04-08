@@ -38,9 +38,15 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const controls = asRecord(workspace.controls);
   const operations = asRecord(workspace.operations);
   const bestExperiment = asRecord(workspace.best_experiment);
+  const bestStageCandidates = asRecord(workspace.best_stage_candidates);
+  const bestDryRunCandidate = asRecord(bestStageCandidates.dry_run);
+  const bestLiveCandidate = asRecord(bestStageCandidates.live);
   const recommendationExplanation = asRecord(workspace.recommendation_explanation);
   const eliminationExplanation = asRecord(workspace.elimination_explanation);
   const alignmentStory = asRecord(workspace.alignment_story);
+  const alignmentMetricRows = Array.isArray(workspace.alignment_metric_rows)
+    ? workspace.alignment_metric_rows.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
   const reviewLimit = readText(operations.review_limit, "10");
   const comparisonRunLimit = readText(operations.comparison_run_limit, "5");
   const executionMetrics = asRecord(executionAlignment.execution);
@@ -420,6 +426,23 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               />
             </CardContent>
           </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>分阶段最佳候选</CardTitle>
+              <CardDescription>把 dry-run 和 live 两个阶段拆开看，先分清是应该继续验证，还是已经够格进入更严格阶段。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock
+                label="更值得进入 dry-run"
+                value={`${readText(bestDryRunCandidate.symbol, "当前还没有 dry-run 候选")} / ${readText(bestDryRunCandidate.reason, "当前还没有足够候选满足 dry-run 放行条件。")}`}
+              />
+              <InfoBlock
+                label="更值得进入 live"
+                value={`${readText(bestLiveCandidate.symbol, "当前还没有 live 候选")} / ${readText(bestLiveCandidate.reason, "当前还没有足够候选满足 live 放行条件。")}`}
+              />
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-5">
@@ -435,6 +458,22 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <InfoBlock label="下一步" value={readText(workspace.stage_decision_summary?.next_step, "continue_research")} />
             </CardContent>
           </Card>
+
+          <DataTable
+            columns={["研究 / 回测 / 执行对照", "研究结论", "回测结论", "执行结果", "为什么要看它"]}
+            rows={alignmentMetricRows.map((item, index) => ({
+              id: `${String(item.metric ?? index)}-${index}`,
+              cells: [
+                String(item.metric ?? "对照项"),
+                String(item.research ?? "当前没有研究结论"),
+                String(item.backtest ?? "当前没有回测结论"),
+                String(item.execution ?? "当前没有执行结果"),
+                String(item.impact ?? "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有研究 / 回测 / 执行对照"
+            emptyDetail="先生成研究、回测和执行结果，这里才会按同一张表对照。"
+          />
 
           <Card className="bg-card/90">
             <CardHeader>

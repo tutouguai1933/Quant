@@ -66,6 +66,12 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["best_experiment"]["symbol"], "ETHUSDT")
         self.assertEqual(item["best_experiment"]["recommended_stage"], "dry_run")
         self.assertIn("更适合", item["best_experiment"]["reason"])
+        self.assertEqual(item["best_stage_candidates"]["dry_run"]["symbol"], "ETHUSDT")
+        self.assertEqual(item["best_stage_candidates"]["live"]["symbol"], "ETHUSDT")
+        self.assertEqual(item["best_stage_candidates"]["live"]["stage"], "live")
+        self.assertEqual(item["alignment_metric_rows"][0]["metric"], "研究结论")
+        self.assertIn("ETHUSDT", item["alignment_metric_rows"][0]["research"])
+        self.assertIn("dry-run", item["alignment_metric_rows"][1]["execution"])
         self.assertEqual(item["workflow_alignment_timeline"][0]["task_type"], "research_train")
         self.assertEqual(item["workflow_alignment_timeline"][0]["status"], "succeeded")
         self.assertIn("controls", item)
@@ -230,6 +236,7 @@ class _FakeResearchService:
                 {
                     "symbol": "ETHUSDT",
                     "allowed_to_dry_run": True,
+                    "allowed_to_live": True,
                     "rule_gate": {"passed": True, "reasons": []},
                     "research_validation_gate": {"passed": True, "reasons": []},
                     "backtest_gate": {"passed": True, "reasons": []},
@@ -238,6 +245,7 @@ class _FakeResearchService:
                 {
                     "symbol": "BTCUSDT",
                     "allowed_to_dry_run": False,
+                    "allowed_to_live": False,
                     "rule_gate": {"passed": True, "reasons": []},
                     "research_validation_gate": {"passed": False, "reasons": ["sample_count_too_low"]},
                     "backtest_gate": {"passed": True, "reasons": []},

@@ -162,6 +162,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
     .filter((item) => String(item.status ?? "ready") !== "ready")
     .map((item) => readText(item.label, "检查项"));
   const schedulerPreview = automation.schedulerPlan.slice(0, 3);
+  const schedulerPlanRows = buildSchedulerPlanRows(automation.schedulerPlan);
+  const failurePolicyRows = buildFailurePolicyRows(automation.failurePolicy);
   const restoreConclusion = buildRestoreConclusion({
     readyForCycle: runtimeWindowSummary.readyForCycle,
     nextAction: runtimeWindowSummary.nextAction,
@@ -929,11 +931,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardTitle>固定自动化编排</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  {(automation.schedulerPlan.length > 0 ? automation.schedulerPlan : []).map((step, index) => (
-                    <p key={`${String(step.task_type ?? index)}-${index}`}>
-                      {index + 1}. {String(step.task_type ?? "task")} / {String(step.detail ?? "")}
-                    </p>
-                  ))}
+                  <DataTable
+                    columns={["调度顺序矩阵", "任务", "当前说明", "为什么要先做"]}
+                    rows={schedulerPlanRows}
+                    emptyTitle="当前还没有调度顺序"
+                    emptyDetail="自动化链恢复后，这里会按真实顺序列出下一轮编排。"
+                  />
                 </CardContent>
               </Card>
 
@@ -943,11 +946,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardTitle>失败后怎么处理</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  {Object.entries(automation.failurePolicy).map(([key, value]) => (
-                    <p key={key}>
-                      {key}：{String(value)}
-                    </p>
-                  ))}
+                  <DataTable
+                    columns={["失败规则矩阵", "失败阶段", "系统动作", "恢复前要看什么"]}
+                    rows={failurePolicyRows}
+                    emptyTitle="当前还没有失败规则"
+                    emptyDetail="自动化规则恢复后，这里会告诉你失败后系统会怎么处理。"
+                  />
                 </CardContent>
               </Card>
 
@@ -1595,6 +1599,66 @@ function buildLongRunPolicyRows({
       ],
     },
   ];
+}
+
+function buildSchedulerPlanRows(plan: Array<Record<string, unknown>>) {
+  return (plan || []).map((step, index) => ({
+    id: `${String(step.task_type ?? index)}-${index}`,
+    cells: [
+      `第 ${index + 1} 步`,
+      String(step.task_type ?? "task"),
+      String(step.detail ?? "当前没有额外说明"),
+      describeSchedulerStep(String(step.task_type ?? "")),
+    ],
+  }));
+}
+
+function buildFailurePolicyRows(policy: Record<string, unknown>) {
+  return Object.entries(policy || {}).map(([stage, action]) => ({
+    id: stage,
+    cells: [
+      formatFailureStage(stage),
+      stage,
+      String(action ?? "n/a"),
+      describeFailurePolicy(String(stage), String(action ?? "")),
+    ],
+  }));
+}
+
+function describeSchedulerStep(taskType: string) {
+  const mapping: Record<string, string> = {
+    research_train: "先生成训练结果，后面的推理、评估和执行才有基础。",
+    research_infer: "训练完成后立刻推理，才能知道当前哪一轮值得继续。",
+    signal_output: "把研究结论整理成信号，再决定是否继续推进到执行。",
+    dispatch: "真正把候选推进到 dry-run 或 live 之前的执行环节。",
+    sync: "执行后先同步订单、持仓和余额，不然复盘没有依据。",
+    review: "最后统一复盘，决定下一轮是继续、暂停还是人工接管。",
+  };
+  return mapping[taskType] ?? "当前没有额外调度说明。";
+}
+
+function formatFailureStage(stage: string) {
+  const mapping: Record<string, string> = {
+    research_train: "研究训练",
+    research_infer: "研究推理",
+    signal_output: "信号输出",
+    dispatch: "执行派发",
+    sync: "执行同步",
+    review: "统一复盘",
+  };
+  return mapping[stage] ?? stage;
+}
+
+function describeFailurePolicy(stage: string, action: string) {
+  const stageLabel = formatFailureStage(stage);
+  const actionMap: Record<string, string> = {
+    continue: "先记录下来，留给下一轮复盘判断。",
+    retry_sync: "先重试同步，确认执行结果有没有真正落盘。",
+    resume_after_review: "先做人工复核，再决定是否恢复自动化。",
+    manual_takeover: "直接切到人工接管，避免系统继续自动推进。",
+    pause: "先暂停自动化，查清楚原因再恢复。",
+  };
+  return `${stageLabel} 失败后会先执行 ${action || "continue"}；${actionMap[action] ?? "当前没有额外恢复说明。"}`;
 }
 
 function formatRelativeMoment(value: string) {
