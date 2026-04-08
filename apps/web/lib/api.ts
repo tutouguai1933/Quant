@@ -223,6 +223,7 @@ export type DataWorkspaceModel = {
     detail: string;
   }>;
   controls: {
+    candidate_pool_preset_key: string;
     selected_symbols: string[];
     primary_symbol: string;
     timeframes: string[];
@@ -234,6 +235,8 @@ export type DataWorkspaceModel = {
     available_symbols: string[];
     available_timeframes: string[];
     available_window_modes: string[];
+    available_candidate_pool_presets?: string[];
+    candidate_pool_preset_catalog?: Array<Record<string, unknown>>;
   };
   snapshot: {
     run_type: string;
@@ -679,7 +682,11 @@ export type EvaluationWorkspaceModel = {
     candidate_count: number;
   };
   candidate_scope: {
+    candidate_pool_preset_key?: string;
+    candidate_pool_preset_detail?: string;
     candidate_symbols: string[];
+    live_subset_preset_key?: string;
+    live_subset_preset_detail?: string;
     live_allowed_symbols: string[];
   };
   controls: {
@@ -721,10 +728,14 @@ export type EvaluationWorkspaceModel = {
     threshold_preset_catalog?: Array<Record<string, unknown>>;
   };
   operations: {
+    operations_preset_key?: string;
+    operations_preset_detail?: string;
     review_limit: string;
     comparison_run_limit: string;
     cycle_cooldown_minutes: string;
     max_daily_cycle_count: string;
+    automation_preset_key?: string;
+    automation_preset_detail?: string;
   };
   evaluation: Record<string, unknown>;
   reviews: Record<string, unknown>;
@@ -1514,6 +1525,7 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
       available_intervals: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
     },
     controls: {
+      candidate_pool_preset_key: "top10_liquid",
       selected_symbols: [String(symbol ?? "").trim() || "BTCUSDT"],
       primary_symbol: String(symbol ?? "").trim() || "BTCUSDT",
       timeframes: [String(interval ?? "").trim() || "4h", "1h"],
@@ -1525,6 +1537,8 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
       available_symbols: [],
       available_timeframes: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
       available_window_modes: ["rolling", "fixed"],
+      available_candidate_pool_presets: ["top10_liquid", "majors_focus", "execution_focus"],
+      candidate_pool_preset_catalog: [],
     },
     sources: {
       research: "qlib-fallback",
@@ -1782,10 +1796,15 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       candidate_count: 0,
     },
     candidate_scope: {
+      candidate_pool_preset_key: "top10_liquid",
+      candidate_pool_preset_detail: "候选池预设：top10_liquid / 当前还没有候选池说明",
       candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+      live_subset_preset_key: "core_live",
+      live_subset_preset_detail: "live 子集预设：core_live / 当前还没有 live 子集说明",
       live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
     },
     controls: {
+      threshold_preset_key: "standard_gate",
       dry_run_min_score: "0.55",
       dry_run_min_positive_rate: "0.45",
       dry_run_min_net_return_pct: "0",
@@ -1821,10 +1840,14 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       live_min_sample_count: "24",
     },
     operations: {
+      operations_preset_key: "balanced_guard",
+      operations_preset_detail: "长期运行预设：balanced_guard / 当前还没有长期运行预设说明",
       review_limit: "10",
       comparison_run_limit: "5",
       cycle_cooldown_minutes: "15",
       max_daily_cycle_count: "8",
+      automation_preset_key: "balanced_runtime",
+      automation_preset_detail: "自动化运行预设：balanced_runtime / 当前还没有自动化运行预设说明",
     },
     evaluation: {},
     reviews: {},
@@ -1951,6 +1974,7 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       available_intervals: normalizeStringArray(filters.available_intervals, ["1h", "4h", "1d"]),
     },
     controls: {
+      candidate_pool_preset_key: String(controls.candidate_pool_preset_key ?? "top10_liquid"),
       selected_symbols: normalizeStringArray(controls.selected_symbols, []),
       primary_symbol: String(controls.primary_symbol ?? ""),
       timeframes: normalizeStringArray(controls.timeframes, []),
@@ -1962,6 +1986,8 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       available_symbols: normalizeStringArray(controls.available_symbols, []),
       available_timeframes: normalizeStringArray(controls.available_timeframes, []),
       available_window_modes: normalizeStringArray(controls.available_window_modes, ["rolling", "fixed"]),
+      available_candidate_pool_presets: normalizeStringArray(controls.available_candidate_pool_presets, ["top10_liquid", "majors_focus", "execution_focus"]),
+      candidate_pool_preset_catalog: normalizeObjectArray(controls.candidate_pool_preset_catalog),
     },
     sources: {
       research: String(sources.research ?? "qlib-fallback"),
@@ -2327,10 +2353,15 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       candidate_count: Number(overview.candidate_count ?? 0),
     },
     candidate_scope: {
+      candidate_pool_preset_key: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_pool_preset_key ?? "top10_liquid" : "top10_liquid"),
+      candidate_pool_preset_detail: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_pool_preset_detail ?? "" : ""),
       candidate_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_symbols : [], DEFAULT_CANDIDATE_SYMBOLS),
+      live_subset_preset_key: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_subset_preset_key ?? "core_live" : "core_live"),
+      live_subset_preset_detail: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_subset_preset_detail ?? "" : ""),
       live_allowed_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_allowed_symbols : [], DEFAULT_LIVE_ALLOWED_SYMBOLS),
     },
     controls: {
+      threshold_preset_key: String(controls.threshold_preset_key ?? "standard_gate"),
       dry_run_min_score: String(controls.dry_run_min_score ?? ""),
       dry_run_min_positive_rate: String(controls.dry_run_min_positive_rate ?? ""),
       dry_run_min_net_return_pct: String(controls.dry_run_min_net_return_pct ?? ""),
@@ -2366,10 +2397,14 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
     },
     operations: {
+      operations_preset_key: String(operations.operations_preset_key ?? "balanced_guard"),
+      operations_preset_detail: String(operations.operations_preset_detail ?? ""),
       review_limit: String(operations.review_limit ?? "10"),
       comparison_run_limit: String(operations.comparison_run_limit ?? "5"),
       cycle_cooldown_minutes: String(operations.cycle_cooldown_minutes ?? "15"),
       max_daily_cycle_count: String(operations.max_daily_cycle_count ?? "8"),
+      automation_preset_key: String(operations.automation_preset_key ?? "balanced_runtime"),
+      automation_preset_detail: String(operations.automation_preset_detail ?? ""),
     },
     evaluation: isPlainObject(row.evaluation) ? row.evaluation : {},
     reviews: isPlainObject(row.reviews) ? row.reviews : {},
@@ -3213,16 +3248,30 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       severitySummary: {},
       resumeChecklist: [],
       automationConfig: {
+        automation_preset_key: "balanced_runtime",
+        automation_preset_detail: "自动化运行预设：balanced_runtime / 当前还没有自动化运行预设说明",
+        available_automation_presets: ["balanced_runtime", "fast_feedback", "cautious_watch"],
+        automation_preset_catalog: [],
         long_run_seconds: "300",
         alert_cleanup_minutes: "15",
       },
       executionPolicy: {
+        candidate_pool_preset_key: "top10_liquid",
+        candidate_pool_preset_detail: "候选池预设：top10_liquid / 当前还没有候选池说明",
         candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+        candidate_pool_preset_catalog: [],
+        live_subset_preset_key: "core_live",
+        live_subset_preset_detail: "live 子集预设：core_live / 当前还没有 live 子集说明",
+        live_subset_preset_catalog: [],
         live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
         live_max_stake_usdt: "6",
         live_max_open_trades: "1",
       },
       operations: {
+        operations_preset_key: "balanced_guard",
+        operations_preset_detail: "长期运行预设：balanced_guard / 当前还没有长期运行预设说明",
+        available_operations_presets: ["balanced_guard", "strict_guard", "extended_observation"],
+        operations_preset_catalog: [],
         pause_after_consecutive_failures: "2",
         stale_sync_failure_threshold: "1",
         auto_pause_on_error: true,

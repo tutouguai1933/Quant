@@ -23,6 +23,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
 
         self.assertEqual(config["data"]["selected_symbols"][0], "BTCUSDT")
         self.assertEqual(len(config["data"]["selected_symbols"]), 10)
+        self.assertEqual(config["data"]["candidate_pool_preset_key"], "top10_liquid")
         self.assertEqual(config["data"]["timeframes"], ["4h", "1h"])
         self.assertEqual(config["data"]["lookback_days"], 30)
         self.assertEqual(config["data"]["window_mode"], "rolling")
@@ -45,6 +46,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["backtest"]["fee_bps"], "10")
         self.assertEqual(config["backtest"]["cost_model"], "round_trip_basis_points")
         self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"])
+        self.assertEqual(config["execution"]["live_subset_preset_key"], "core_live")
         self.assertEqual(config["execution"]["live_max_stake_usdt"], "6")
         self.assertEqual(config["execution"]["live_max_open_trades"], "1")
         self.assertEqual(config["features"]["outlier_policy"], "clip")
@@ -281,6 +283,8 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(options["research_preset_catalog"][0]["key"], "baseline_balanced")
         self.assertEqual(options["backtest_preset_catalog"][0]["key"], "realistic_standard")
         self.assertEqual(options["threshold_preset_catalog"][0]["key"], "standard_gate")
+        self.assertEqual(options["candidate_pool_preset_catalog"][0]["key"], "top10_liquid")
+        self.assertEqual(options["live_subset_preset_catalog"][0]["key"], "core_live")
 
     def test_update_section_can_apply_feature_research_label_backtest_and_threshold_presets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -337,6 +341,63 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(profiles["4h"]["trend_window"], 6)
         self.assertEqual(profiles["4h"]["breakout_lookback"], 21)
         self.assertEqual(profiles["1h"]["trend_window"], 12)
+
+    def test_candidate_pool_preset_updates_selected_symbols_when_field_is_not_explicitly_overridden(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            config = service.update_section(
+                "data",
+                {
+                    "candidate_pool_preset_key": "majors_focus",
+                },
+            )
+
+        self.assertEqual(config["data"]["candidate_pool_preset_key"], "majors_focus")
+        self.assertEqual(
+            config["data"]["selected_symbols"],
+            ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"],
+        )
+        self.assertEqual(config["data"]["primary_symbol"], "BTCUSDT")
+
+    def test_live_subset_preset_updates_live_allowed_symbols_when_field_is_not_explicitly_overridden(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            service.update_section(
+                "data",
+                {
+                    "candidate_pool_preset_key": "majors_focus",
+                },
+            )
+
+            config = service.update_section(
+                "execution",
+                {
+                    "live_subset_preset_key": "majors_only",
+                },
+            )
+
+        self.assertEqual(config["execution"]["live_subset_preset_key"], "majors_only")
+        self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+
+    def test_live_subset_preset_still_respects_candidate_pool_subset(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            service.update_section(
+                "data",
+                {
+                    "selected_symbols": ["BTCUSDT", "ETHUSDT", "ADAUSDT"],
+                },
+            )
+
+            config = service.update_section(
+                "execution",
+                {
+                    "live_subset_preset_key": "core_live",
+                },
+            )
+
+        self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT"])
 
     def test_runtime_overrides_include_data_range_window(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

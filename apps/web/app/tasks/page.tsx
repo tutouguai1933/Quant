@@ -132,6 +132,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const takeoverFocus = resolveFocusCard(asRecord(focusCards.takeover), guidanceTakeover);
   const recoveryFocus = resolveFocusCard(asRecord(focusCards.recovery), guidanceRecovery);
   const operationsConfig = {
+    operationsPresetKey: readText(operations.operations_preset_key, "balanced_guard"),
+    operationsPresetDetail: readText(operations.operations_preset_detail, "当前还没有长期运行预设说明。"),
     pauseAfterFailures: readText(operations.pause_after_consecutive_failures, "2"),
     staleSyncThreshold: readText(operations.stale_sync_failure_threshold, "1"),
     autoPauseOnError: String(operations.auto_pause_on_error ?? true) === "false" ? "false" : "true",
@@ -142,6 +144,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
   };
   const automationConfig = asRecord(automation.automationConfig);
   const automationConfigSummary = {
+    automationPresetKey: readText(automationConfig.automation_preset_key, "balanced_runtime"),
+    automationPresetDetail: readText(automationConfig.automation_preset_detail, "当前还没有自动化运行预设说明。"),
     longRunSeconds: readText(automationConfig.long_run_seconds, "300"),
     alertCleanupMinutes: readText(automationConfig.alert_cleanup_minutes, "15"),
   };
@@ -205,11 +209,24 @@ export default async function TasksPage({ searchParams }: PageProps) {
     ? evaluation.recent_review_tasks.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
   const executionConfig = {
+    candidatePoolPresetKey: readText(executionPolicy.candidate_pool_preset_key, "top10_liquid"),
+    candidatePoolPresetDetail: readText(executionPolicy.candidate_pool_preset_detail, "当前还没有候选池预设说明。"),
+    liveSubsetPresetKey: readText(executionPolicy.live_subset_preset_key, "core_live"),
+    liveSubsetPresetDetail: readText(executionPolicy.live_subset_preset_detail, "当前还没有 live 子集预设说明。"),
     candidateSymbols,
     liveAllowedSymbols: executionAllowedSymbols,
     liveMaxStakeUsdt: readText(executionPolicy.live_max_stake_usdt, "6"),
     liveMaxOpenTrades: readText(executionPolicy.live_max_open_trades, "1"),
   };
+  const liveSubsetPresetCatalog = Array.isArray(executionPolicy.live_subset_preset_catalog)
+    ? executionPolicy.live_subset_preset_catalog.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
+  const operationsPresetCatalog = Array.isArray(operations.operations_preset_catalog)
+    ? operations.operations_preset_catalog.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
+  const automationPresetCatalog = Array.isArray(automationConfig.automation_preset_catalog)
+    ? automationConfig.automation_preset_catalog.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
 
   return (
     <AppShell
@@ -331,6 +348,16 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 scope="operations"
                 returnTo="/tasks"
               >
+                <ConfigField label="长期运行预设" hint="先选一套长期运行口径，再决定要不要继续微调连续失败、冷却和每日轮次。">
+                  <ConfigSelect
+                    name="operations_preset_key"
+                    defaultValue={operationsConfig.operationsPresetKey}
+                    options={operationsPresetCatalog.map((item) => ({
+                      value: readText(item.key, "balanced_guard"),
+                      label: readText(item.label, readText(item.key, "balanced_guard")),
+                    }))}
+                  />
+                </ConfigField>
                 <ConfigField label="连续失败阈值" hint="连续失败达到这里时，这一轮会先停在人工复核或人工接管，不会再继续自动推进。">
                   <ConfigInput
                     name="pause_after_consecutive_failures"
@@ -370,9 +397,23 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <ConfigField label="自动化冷却时间" hint="每轮自动化之间至少间隔多久，避免短时间内连续重跑。">
                   <ConfigInput name="cycle_cooldown_minutes" type="number" min={0} max={1440} step={1} defaultValue={operationsConfig.cycleCooldownMinutes} />
                 </ConfigField>
-                  <ConfigField label="每日最大轮次" hint="当天自动化最多跑几轮，超过后会自动停在等待状态。">
+                <ConfigField label="每日最大轮次" hint="当天自动化最多跑几轮，超过后会自动停在等待状态。">
                     <ConfigInput name="max_daily_cycle_count" type="number" min={1} max={200} step={1} defaultValue={operationsConfig.maxDailyCycleCount} />
                   </ConfigField>
+                <DataTable
+                  columns={["长期运行预设", "适用场景", "当前是否选中", "说明"]}
+                  rows={operationsPresetCatalog.map((item, index) => ({
+                    id: `${readText(item.key, `operations-${index}`)}-${index}`,
+                    cells: [
+                      readText(item.label, readText(item.key, "未设置")),
+                      readText(item.fit, "当前没有适用场景说明"),
+                      readText(item.key, "") === operationsConfig.operationsPresetKey ? "当前预设" : "可切换",
+                      readText(item.detail, "当前没有预设说明"),
+                    ],
+                  }))}
+                  emptyTitle="当前还没有长期运行预设目录"
+                  emptyDetail="先恢复自动化状态接口，系统才会给出长期运行预设目录。"
+                />
               </WorkbenchConfigCard>
 
               <WorkbenchConfigCard
@@ -381,6 +422,16 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 scope="automation"
                 returnTo="/tasks"
               >
+                <ConfigField label="自动化运行预设" hint="先选一套接管和告警窗口口径，再决定要不要继续微调运行秒数和活跃告警窗口。">
+                  <ConfigSelect
+                    name="automation_preset_key"
+                    defaultValue={automationConfigSummary.automationPresetKey}
+                    options={automationPresetCatalog.map((item) => ({
+                      value: readText(item.key, "balanced_runtime"),
+                      label: readText(item.label, readText(item.key, "balanced_runtime")),
+                    }))}
+                  />
+                </ConfigField>
                 <ConfigField label="长时间接管阈值" hint="人工接管持续超过这个秒数后，系统会把下一步动作切到 review_takeover。">
                   <ConfigInput
                     name="long_run_seconds"
@@ -401,6 +452,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     defaultValue={automationConfigSummary.alertCleanupMinutes}
                   />
                 </ConfigField>
+                <DataTable
+                  columns={["自动化运行预设", "适用场景", "当前是否选中", "说明"]}
+                  rows={automationPresetCatalog.map((item, index) => ({
+                    id: `${readText(item.key, `automation-${index}`)}-${index}`,
+                    cells: [
+                      readText(item.label, readText(item.key, "未设置")),
+                      readText(item.fit, "当前没有适用场景说明"),
+                      readText(item.key, "") === automationConfigSummary.automationPresetKey ? "当前预设" : "可切换",
+                      readText(item.detail, "当前没有预设说明"),
+                    ],
+                  }))}
+                  emptyTitle="当前还没有自动化运行预设目录"
+                  emptyDetail="先恢复自动化状态接口，系统才会给出自动化运行预设目录。"
+                />
               </WorkbenchConfigCard>
 
               <DataTable
@@ -511,12 +576,50 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardContent>
               </Card>
 
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">恢复导航</p>
+                  <CardTitle>现在先处理什么、调度什么时候继续、人工接管后怎么恢复</CardTitle>
+                  <CardDescription>把当前最该做的动作、调度窗口和接管恢复顺序放在一起，减少来回切页判断。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-3">
+                  <GuidanceBlock
+                    label="现在先处理什么"
+                    value={primaryAlertSummary.actionLabel}
+                    detail={primaryAlertSummary.detail}
+                    tone="warning"
+                  />
+                  <GuidanceBlock
+                    label="调度什么时候继续"
+                    value={formatRuntimeWindowAction(runtimeWindowSummary.nextAction)}
+                    detail={runtimeWindowSummary.readyForCycle ? "当前已经可以继续下一轮。" : runtimeWindowSummary.note}
+                    tone={runtimeWindowSummary.readyForCycle ? "ok" : "warning"}
+                  />
+                  <GuidanceBlock
+                    label="人工接管后怎么恢复"
+                    value={restoreConclusion.actionLabel}
+                    detail={restoreConclusion.detail}
+                    tone={automation.manualTakeover ? "critical" : "info"}
+                  />
+                </CardContent>
+              </Card>
+
               <WorkbenchConfigCard
                 title="执行安全门"
                 description="研究推荐出来的币会先进入研究 / dry-run 候选池；这里只有更严格的 live 子集、单笔金额上限和最大持仓数。"
                 scope="execution"
                 returnTo="/tasks"
               >
+                <ConfigField label="live 子集预设" hint="研究和 dry-run 会共用候选池；这里先选更严格的 live 子集，再决定哪些币真的允许进入小额实盘。">
+                  <ConfigSelect
+                    name="live_subset_preset_key"
+                    defaultValue={executionConfig.liveSubsetPresetKey}
+                    options={liveSubsetPresetCatalog.map((item) => ({
+                      value: readText(item.key, "core_live"),
+                      label: readText(item.label, readText(item.key, "core_live")),
+                    }))}
+                  />
+                </ConfigField>
                 <ConfigField label="live_allowed_symbols" hint="只允许这些币种进入自动小额 live，没勾选的标的即使研究通过也不会放行。">
                   <ConfigCheckboxGrid name="live_allowed_symbols" options={executionSymbolOptions} />
                 </ConfigField>
@@ -526,6 +629,31 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <ConfigField label="最大打开仓位数" hint="自动小额 live 最多同时保留几笔持仓。">
                   <ConfigInput name="live_max_open_trades" type="number" min={1} max={20} step={1} defaultValue={executionConfig.liveMaxOpenTrades} />
                 </ConfigField>
+                <DataTable
+                  columns={["候选池 / live 子集", "当前口径", "为什么这样设", "说明"]}
+                  rows={[
+                    {
+                      id: "candidate-pool-preset",
+                      cells: [
+                        "研究 / dry-run 候选池",
+                        executionConfig.candidatePoolPresetKey,
+                        "先在更大的共享候选池里筛推荐，再决定要不要继续推进到 live。",
+                        executionConfig.candidatePoolPresetDetail,
+                      ],
+                    },
+                    {
+                      id: "live-subset-preset",
+                      cells: [
+                        "live 子集",
+                        executionConfig.liveSubsetPresetKey,
+                        "live 会比候选池更严，先用更小的子集控制真实风险。",
+                        executionConfig.liveSubsetPresetDetail,
+                      ],
+                    },
+                  ]}
+                  emptyTitle="当前还没有候选池和 live 子集说明"
+                  emptyDetail="先恢复执行配置，系统才会说明候选池和 live 子集怎么衔接。"
+                />
               </WorkbenchConfigCard>
 
               <Card>

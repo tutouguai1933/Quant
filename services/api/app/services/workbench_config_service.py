@@ -40,10 +40,71 @@ SUPPORTED_BACKTEST_COST_MODELS = (
     "single_side_basis_points",
     "zero_cost_baseline",
 )
+SUPPORTED_CANDIDATE_POOL_PRESETS = ("top10_liquid", "majors_focus", "execution_focus")
+SUPPORTED_LIVE_SUBSET_PRESETS = ("core_live", "majors_only", "strict_pairs")
+SUPPORTED_OPERATIONS_PRESETS = ("balanced_guard", "strict_guard", "extended_observation")
+SUPPORTED_AUTOMATION_PRESETS = ("balanced_runtime", "fast_feedback", "cautious_watch")
 SUPPORTED_FEATURE_PRESETS = ("balanced_default", "trend_focus", "confirmation_focus")
 SUPPORTED_RESEARCH_PRESETS = ("baseline_balanced", "trend_following", "conservative_validation")
 SUPPORTED_BACKTEST_PRESETS = ("realistic_standard", "cost_stress", "signal_baseline")
 SUPPORTED_THRESHOLD_PRESETS = ("standard_gate", "strict_live_gate", "exploratory_dry_run")
+
+CANDIDATE_POOL_PRESET_VALUES = {
+    "top10_liquid": list(DEFAULT_MARKET_SYMBOLS),
+    "majors_focus": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"],
+    "execution_focus": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "BNBUSDT"],
+}
+
+LIVE_SUBSET_PRESET_VALUES = {
+    "core_live": list(DEFAULT_LIVE_ALLOWED_SYMBOLS),
+    "majors_only": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "strict_pairs": ["BTCUSDT", "ETHUSDT"],
+}
+
+OPERATIONS_PRESET_VALUES = {
+    "balanced_guard": {
+        "pause_after_consecutive_failures": "2",
+        "stale_sync_failure_threshold": "1",
+        "auto_pause_on_error": True,
+        "review_limit": "10",
+        "comparison_run_limit": "5",
+        "cycle_cooldown_minutes": "15",
+        "max_daily_cycle_count": "8",
+    },
+    "strict_guard": {
+        "pause_after_consecutive_failures": "1",
+        "stale_sync_failure_threshold": "1",
+        "auto_pause_on_error": True,
+        "review_limit": "12",
+        "comparison_run_limit": "6",
+        "cycle_cooldown_minutes": "20",
+        "max_daily_cycle_count": "6",
+    },
+    "extended_observation": {
+        "pause_after_consecutive_failures": "3",
+        "stale_sync_failure_threshold": "2",
+        "auto_pause_on_error": True,
+        "review_limit": "15",
+        "comparison_run_limit": "8",
+        "cycle_cooldown_minutes": "10",
+        "max_daily_cycle_count": "10",
+    },
+}
+
+AUTOMATION_PRESET_VALUES = {
+    "balanced_runtime": {
+        "long_run_seconds": "300",
+        "alert_cleanup_minutes": "15",
+    },
+    "fast_feedback": {
+        "long_run_seconds": "180",
+        "alert_cleanup_minutes": "10",
+    },
+    "cautious_watch": {
+        "long_run_seconds": "600",
+        "alert_cleanup_minutes": "30",
+    },
+}
 
 
 FEATURE_PRESET_VALUES = {
@@ -303,6 +364,30 @@ BACKTEST_PRESET_FIELDS = {
     "cost_model",
 }
 
+DATA_PRESET_FIELDS = {
+    "selected_symbols",
+    "primary_symbol",
+}
+
+EXECUTION_PRESET_FIELDS = {
+    "live_allowed_symbols",
+}
+
+OPERATIONS_PRESET_FIELDS = {
+    "pause_after_consecutive_failures",
+    "stale_sync_failure_threshold",
+    "auto_pause_on_error",
+    "review_limit",
+    "comparison_run_limit",
+    "cycle_cooldown_minutes",
+    "max_daily_cycle_count",
+}
+
+AUTOMATION_PRESET_FIELDS = {
+    "long_run_seconds",
+    "alert_cleanup_minutes",
+}
+
 THRESHOLD_PRESET_FIELDS = {
     "dry_run_min_score",
     "dry_run_min_positive_rate",
@@ -338,6 +423,124 @@ THRESHOLD_PRESET_FIELDS = {
     "live_max_turnover",
     "live_min_sample_count",
 }
+
+
+def _build_candidate_pool_preset_catalog() -> list[dict[str, str]]:
+    """返回候选池预设目录。"""
+
+    return [
+        {
+            "key": "top10_liquid",
+            "label": "top10_liquid / 默认 10 币候选池",
+            "fit": "适合先做统一研究",
+            "detail": "覆盖默认 10 个流动性较好的标的，适合先跑完整研究链和实验对比。",
+        },
+        {
+            "key": "majors_focus",
+            "label": "majors_focus / 主流币聚焦",
+            "fit": "适合先缩小研究范围",
+            "detail": "只保留 BTC、ETH、BNB、SOL、XRP，适合先盯主流币候选池。",
+        },
+        {
+            "key": "execution_focus",
+            "label": "execution_focus / 执行优先",
+            "fit": "适合对齐研究和执行",
+            "detail": "保留更贴近执行观察的核心币种，方便先比较研究候选和实际执行差异。",
+        },
+    ]
+
+
+def _build_live_subset_preset_catalog() -> list[dict[str, str]]:
+    """返回 live 子集预设目录。"""
+
+    return [
+        {
+            "key": "core_live",
+            "label": "core_live / 默认 live 子集",
+            "fit": "适合默认小额 live",
+            "detail": "保留默认 5 个 live 标的，用于小额验证和统一执行观察。",
+        },
+        {
+            "key": "majors_only",
+            "label": "majors_only / 主流币 live",
+            "fit": "适合先压缩 live 风险面",
+            "detail": "只允许 BTC、ETH、SOL 进入 live，更适合保守验证。",
+        },
+        {
+            "key": "strict_pairs",
+            "label": "strict_pairs / 严格双币 live",
+            "fit": "适合最小真实验证",
+            "detail": "只保留 BTC、ETH 两个 live 标的，方便先做最小规模真实验证。",
+        },
+    ]
+
+
+def _build_operations_preset_catalog() -> list[dict[str, str]]:
+    """返回长期运行预设目录。"""
+
+    return [
+        {
+            "key": "balanced_guard",
+            "label": "balanced_guard / 默认守护",
+            "fit": "适合日常自动化运行",
+            "detail": "失败、冷却和每日轮次数都保持均衡，适合先稳定跑完整个自动化流程。",
+        },
+        {
+            "key": "strict_guard",
+            "label": "strict_guard / 严格守护",
+            "fit": "适合先收紧自动化风险",
+            "detail": "更快暂停、更少轮次、更长冷却，更适合先把长期运行风险压下来。",
+        },
+        {
+            "key": "extended_observation",
+            "label": "extended_observation / 扩展观察",
+            "fit": "适合多看几轮变化",
+            "detail": "允许更多轮次和更宽的复盘窗口，适合先积累实验与运行对照。",
+        },
+    ]
+
+
+def _build_automation_preset_catalog() -> list[dict[str, str]]:
+    """返回自动化运行预设目录。"""
+
+    return [
+        {
+            "key": "balanced_runtime",
+            "label": "balanced_runtime / 默认运行",
+            "fit": "适合一般日常运行",
+            "detail": "接管阈值和告警窗口都保持默认，适合作为标准自动化观察口径。",
+        },
+        {
+            "key": "fast_feedback",
+            "label": "fast_feedback / 快速反馈",
+            "fit": "适合频繁人工盯盘",
+            "detail": "更快进入接管复核，也更快把旧告警移出活跃窗口，方便快速迭代。",
+        },
+        {
+            "key": "cautious_watch",
+            "label": "cautious_watch / 保守观察",
+            "fit": "适合先稳住长期运行",
+            "detail": "把接管阈值拉长、告警窗口放宽，更适合减少频繁切换状态。",
+        },
+    ]
+
+
+def _describe_catalog_item(
+    catalog: Iterable[dict[str, str]],
+    *,
+    key: str,
+    title: str,
+) -> str:
+    """按目录键生成当前预设说明。"""
+
+    normalized_key = str(key or "").strip()
+    for item in catalog:
+        if str(item.get("key", "")) != normalized_key:
+            continue
+        label = str(item.get("label", normalized_key)).strip()
+        detail = str(item.get("detail", "")).strip()
+        return f"{title}：{label} / {detail}".strip(" /")
+    return f"{title}：{normalized_key or '未设置'}"
 
 
 def _build_feature_preset_catalog() -> list[dict[str, str]]:
@@ -596,6 +799,7 @@ def _default_config() -> dict[str, object]:
     return {
         "version": "v1",
         "data": {
+            "candidate_pool_preset_key": "top10_liquid",
             "selected_symbols": list(DEFAULT_MARKET_SYMBOLS),
             "primary_symbol": DEFAULT_MARKET_SYMBOLS[0],
             "timeframes": list(SUPPORTED_TIMEFRAMES),
@@ -648,6 +852,7 @@ def _default_config() -> dict[str, object]:
             "cost_model": "round_trip_basis_points",
         },
         "execution": {
+            "live_subset_preset_key": "core_live",
             "live_allowed_symbols": list(DEFAULT_LIVE_ALLOWED_SYMBOLS),
             "live_max_stake_usdt": "6",
             "live_max_open_trades": "1",
@@ -689,6 +894,7 @@ def _default_config() -> dict[str, object]:
             "live_min_sample_count": "24",
         },
         "operations": {
+            "operations_preset_key": "balanced_guard",
             "pause_after_consecutive_failures": "2",
             "stale_sync_failure_threshold": "1",
             "auto_pause_on_error": True,
@@ -698,6 +904,7 @@ def _default_config() -> dict[str, object]:
             "max_daily_cycle_count": "8",
         },
         "automation": {
+            "automation_preset_key": "balanced_runtime",
             "long_run_seconds": "300",
             "alert_cleanup_minutes": "15",
         },
@@ -729,6 +936,12 @@ class WorkbenchConfigService:
         next_section = {**current_section, **explicit_values}
 
         if normalized_section == "data":
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="candidate_pool_preset_key",
+                managed_fields=DATA_PRESET_FIELDS,
+            )
             merged["data"] = self._normalize_data_section(next_section)
         elif normalized_section == "features":
             next_section = self._apply_preset_reset(
@@ -772,6 +985,12 @@ class WorkbenchConfigService:
             )
             merged["backtest"] = self._normalize_backtest_section(next_section)
         elif normalized_section == "execution":
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="live_subset_preset_key",
+                managed_fields=EXECUTION_PRESET_FIELDS,
+            )
             data_section = dict(merged.get("data") or {})
             merged["execution"] = self._normalize_execution_section(
                 next_section,
@@ -786,8 +1005,20 @@ class WorkbenchConfigService:
             )
             merged["thresholds"] = self._normalize_thresholds_section(next_section)
         elif normalized_section == "operations":
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="operations_preset_key",
+                managed_fields=OPERATIONS_PRESET_FIELDS,
+            )
             merged["operations"] = self._normalize_operations_section(next_section)
         elif normalized_section == "automation":
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="automation_preset_key",
+                managed_fields=AUTOMATION_PRESET_FIELDS,
+            )
             merged["automation"] = self._normalize_automation_section(next_section)
         else:
             raise ValueError("unsupported workbench config section")
@@ -903,6 +1134,14 @@ class WorkbenchConfigService:
                 "backtest_preset_catalog": _build_backtest_preset_catalog(),
                 "threshold_presets": list(SUPPORTED_THRESHOLD_PRESETS),
                 "threshold_preset_catalog": _build_threshold_preset_catalog(),
+                "candidate_pool_presets": list(SUPPORTED_CANDIDATE_POOL_PRESETS),
+                "candidate_pool_preset_catalog": _build_candidate_pool_preset_catalog(),
+                "live_subset_presets": list(SUPPORTED_LIVE_SUBSET_PRESETS),
+                "live_subset_preset_catalog": _build_live_subset_preset_catalog(),
+                "operations_presets": list(SUPPORTED_OPERATIONS_PRESETS),
+                "operations_preset_catalog": _build_operations_preset_catalog(),
+                "automation_presets": list(SUPPORTED_AUTOMATION_PRESETS),
+                "automation_preset_catalog": _build_automation_preset_catalog(),
                 "all_symbols": list(DEFAULT_MARKET_SYMBOLS),
                 "primary_factors": list(PRIMARY_FEATURE_COLUMNS),
                 "auxiliary_factors": list(AUXILIARY_FEATURE_COLUMNS),
@@ -1036,6 +1275,12 @@ class WorkbenchConfigService:
         """整理数据工作台配置。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
+        candidate_pool_preset_key = self._normalize_choice(
+            payload.get("candidate_pool_preset_key"),
+            default="top10_liquid",
+            allowed=SUPPORTED_CANDIDATE_POOL_PRESETS,
+        )
+        payload = {**{"selected_symbols": CANDIDATE_POOL_PRESET_VALUES.get(candidate_pool_preset_key, list(DEFAULT_MARKET_SYMBOLS))}, **payload}
         selected_symbols = self._normalize_symbol_list(
             payload.get("selected_symbols"),
             fallback=DEFAULT_MARKET_SYMBOLS,
@@ -1055,6 +1300,7 @@ class WorkbenchConfigService:
         start_date = self._normalize_date(payload.get("start_date"))
         end_date = self._normalize_date(payload.get("end_date"))
         return {
+            "candidate_pool_preset_key": candidate_pool_preset_key,
             "selected_symbols": list(selected_symbols),
             "primary_symbol": primary_symbol,
             "timeframes": list(timeframes),
@@ -1293,6 +1539,15 @@ class WorkbenchConfigService:
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
         has_explicit_live_allowed_symbols = "live_allowed_symbols" in payload
+        live_subset_preset_key = self._normalize_choice(
+            payload.get("live_subset_preset_key"),
+            default="core_live",
+            allowed=SUPPORTED_LIVE_SUBSET_PRESETS,
+        )
+        payload = {
+            **{"live_allowed_symbols": LIVE_SUBSET_PRESET_VALUES.get(live_subset_preset_key, list(DEFAULT_LIVE_ALLOWED_SYMBOLS))},
+            **payload,
+        }
         normalized_live_allowed_symbols = self._normalize_symbol_list(
             payload.get("live_allowed_symbols"),
             fallback=DEFAULT_LIVE_ALLOWED_SYMBOLS,
@@ -1310,6 +1565,7 @@ class WorkbenchConfigService:
         else:
             live_allowed_symbols = ()
         return {
+            "live_subset_preset_key": live_subset_preset_key,
             "live_allowed_symbols": list(live_allowed_symbols),
             "live_max_stake_usdt": self._normalize_decimal(
                 payload.get("live_max_stake_usdt"),
@@ -1372,7 +1628,14 @@ class WorkbenchConfigService:
         """整理长期运行参数。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
+        operations_preset_key = self._normalize_choice(
+            payload.get("operations_preset_key"),
+            default="balanced_guard",
+            allowed=SUPPORTED_OPERATIONS_PRESETS,
+        )
+        payload = {**OPERATIONS_PRESET_VALUES.get(operations_preset_key, {}), **payload}
         return {
+            "operations_preset_key": operations_preset_key,
             "pause_after_consecutive_failures": str(
                 self._normalize_int(payload.get("pause_after_consecutive_failures"), default=2, minimum=1, maximum=20)
             ),
@@ -1396,7 +1659,14 @@ class WorkbenchConfigService:
         """整理自动化长期运行和告警窗口。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
+        automation_preset_key = self._normalize_choice(
+            payload.get("automation_preset_key"),
+            default="balanced_runtime",
+            allowed=SUPPORTED_AUTOMATION_PRESETS,
+        )
+        payload = {**AUTOMATION_PRESET_VALUES.get(automation_preset_key, {}), **payload}
         return {
+            "automation_preset_key": automation_preset_key,
             "long_run_seconds": str(
                 self._normalize_int(payload.get("long_run_seconds"), default=300, minimum=60, maximum=86400)
             ),

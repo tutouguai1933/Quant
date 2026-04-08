@@ -27,6 +27,10 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const candidateScope = asRecord(workspace.candidate_scope);
   const candidateSymbols = toStringArray(candidateScope.candidate_symbols);
   const liveAllowedSymbols = toStringArray(candidateScope.live_allowed_symbols);
+  const candidatePoolPresetKey = readText(candidateScope.candidate_pool_preset_key, "top10_liquid");
+  const candidatePoolPresetDetail = readText(candidateScope.candidate_pool_preset_detail, "当前还没有候选池预设说明。");
+  const liveSubsetPresetKey = readText(candidateScope.live_subset_preset_key, "core_live");
+  const liveSubsetPresetDetail = readText(candidateScope.live_subset_preset_detail, "当前还没有 live 子集预设说明。");
   const candidateStatus = asRecord(evaluation.candidate_status);
   const eliminationRules = asRecord(evaluation.elimination_rules);
   const recommendedCandidate = asRecord(evaluation.recommended_candidate);
@@ -40,6 +44,10 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
   const operations = asRecord(workspace.operations);
+  const operationsPresetKey = readText(operations.operations_preset_key, "balanced_guard");
+  const operationsPresetDetail = readText(operations.operations_preset_detail, "当前还没有长期运行预设说明。");
+  const automationPresetKey = readText(operations.automation_preset_key, "balanced_runtime");
+  const automationPresetDetail = readText(operations.automation_preset_detail, "当前还没有自动化运行预设说明。");
   const bestExperiment = asRecord(workspace.best_experiment);
   const bestStageCandidates = asRecord(workspace.best_stage_candidates);
   const bestDryRunCandidate = asRecord(bestStageCandidates.dry_run);
@@ -383,10 +391,12 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
                 label="研究候选池"
                 value={candidateSymbols.length ? candidateSymbols.join(" / ") : "当前未配置"}
               />
+              <InfoBlock label="候选池预设" value={`${candidatePoolPresetKey} / ${candidatePoolPresetDetail}`} />
               <InfoBlock
                 label="live 子集"
                 value={liveAllowedSymbols.length ? liveAllowedSymbols.join(" / ") : "当前未配置"}
               />
+              <InfoBlock label="live 子集预设" value={`${liveSubsetPresetKey} / ${liveSubsetPresetDetail}`} />
               <InfoBlock label="推荐标的" value={String((recommendedCandidate.symbol ?? workspace.overview.recommended_symbol) || "未推荐")} />
               <InfoBlock label="推荐动作" value={String((researchReview.next_action ?? workspace.overview.recommended_action) || "继续研究")} />
               <InfoBlock label="推荐分数" value={String(recommendedCandidate.score ?? "n/a")} />
@@ -396,11 +406,30 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>运行口径对照</CardTitle>
+              <CardDescription>把候选池、live 子集、长期运行预设和自动化运行预设放在一起看，方便直接判断这轮为什么推荐、为什么还不能继续放量。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="候选池预设" value={`${candidatePoolPresetKey} / ${candidatePoolPresetDetail}`} />
+              <InfoBlock label="live 子集预设" value={`${liveSubsetPresetKey} / ${liveSubsetPresetDetail}`} />
+              <InfoBlock label="长期运行预设" value={`${operationsPresetKey} / ${operationsPresetDetail}`} />
+              <InfoBlock label="自动化运行预设" value={`${automationPresetKey} / ${automationPresetDetail}`} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <p className="eyebrow">推荐摘要</p>
               <CardTitle>{String(recommendationExplanation.headline ?? "当前还没有推荐摘要")}</CardTitle>
               <CardDescription>{String(recommendationExplanation.detail ?? "先完成训练和推理，系统才会把推荐理由压成一句话。")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+            <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoBlock label="这一轮更值得推进什么" value={String(recommendationExplanation.headline ?? workspace.overview.recommended_symbol ?? "当前还没有明确推荐")} />
+                <InfoBlock label="先推荐谁" value={String(workspace.overview.recommended_symbol ?? recommendedCandidate.symbol ?? "当前还没有推荐标的")} />
+                <InfoBlock label="为什么推荐" value={String(recommendationExplanation.detail ?? researchReview.result ?? "当前还没有推荐理由说明。")} />
+                <InfoBlock label="推荐下一步" value={String(researchReview.next_action ?? workspace.overview.recommended_action ?? "继续研究")} />
+              </div>
               {(Array.isArray(recommendationExplanation.evidence) ? recommendationExplanation.evidence : []).length ? (
                 (recommendationExplanation.evidence as unknown[]).map((item, index) => (
                   <p key={`recommendation-evidence-${index}`}>{String(item)}</p>
@@ -529,7 +558,11 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <CardTitle>{String(eliminationExplanation.headline ?? "当前还没有淘汰摘要")}</CardTitle>
               <CardDescription>{String(eliminationExplanation.detail ?? "先积累足够候选，系统才会把淘汰原因压成一句话。")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+            <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoBlock label="先淘汰谁" value={String(eliminationExplanation.primary_symbol ?? eliminationExplanation.symbol ?? "当前还没有淘汰标的")} />
+                <InfoBlock label="为什么淘汰" value={String(eliminationExplanation.detail ?? "当前还没有淘汰原因说明。")} />
+              </div>
               {(Array.isArray(eliminationExplanation.evidence) ? eliminationExplanation.evidence : []).length ? (
                 (eliminationExplanation.evidence as unknown[]).map((item, index) => (
                   <p key={`elimination-evidence-${index}`}>{String(item)}</p>
@@ -891,6 +924,8 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <CardDescription>这里不只显示 matched / unmatched，而是把对齐结论、对齐解释、最近执行摘要和建议动作直接讲清楚。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="研究和执行差几步" value={String(alignmentStory.headline ?? executionAlignmentNarrative.result ?? "当前还没有阶段差异说明")} />
+              <InfoBlock label="研究和执行差在哪里" value={String(alignmentStory.detail ?? executionAlignmentNarrative.detail ?? "当前还没有差异说明")} />
               <InfoBlock label="对齐结论" value={executionAlignmentNarrative.result} />
               <InfoBlock label="研究结论" value={executionAlignmentNarrative.researchSummary} />
               <InfoBlock label="执行现状" value={executionAlignmentNarrative.executionSummary} />

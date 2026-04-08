@@ -17,6 +17,8 @@ class ExecutionWorkspaceFinishTests(unittest.TestCase):
         self.assertIn("研究工作台", content)
         self.assertIn("回测工作台", content)
         self.assertIn("评估与实验中心", content)
+        self.assertIn("为什么现在先推进这个币", content)
+        self.assertIn("候选池先筛，live 子集后放", content)
 
     def test_tasks_page_links_back_to_research_chain(self) -> None:
         content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")

@@ -7,7 +7,14 @@ from __future__ import annotations
 
 from services.api.app.services.research_service import research_service
 from services.api.app.services.validation_workflow_service import validation_workflow_service
-from services.api.app.services.workbench_config_service import workbench_config_service
+from services.api.app.services.workbench_config_service import (
+    _build_automation_preset_catalog,
+    _build_candidate_pool_preset_catalog,
+    _build_live_subset_preset_catalog,
+    _build_operations_preset_catalog,
+    _describe_catalog_item,
+    workbench_config_service,
+)
 
 
 class EvaluationWorkspaceService:
@@ -36,6 +43,7 @@ class EvaluationWorkspaceService:
         validation_reviews = dict(review_report.get("reviews") or {})
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
         configured_operations = dict((controls.get("config") or {}).get("operations") or {})
+        configured_automation = dict((controls.get("config") or {}).get("automation") or {})
         configured_data = dict((controls.get("config") or {}).get("data") or {})
         configured_execution = dict((controls.get("config") or {}).get("execution") or {})
         candidate_symbols = [str(item) for item in list(configured_data.get("selected_symbols") or []) if str(item).strip()]
@@ -88,7 +96,19 @@ class EvaluationWorkspaceService:
                 "candidate_count": int(overview.get("candidate_count", 0) or 0),
             },
             "candidate_scope": {
+                "candidate_pool_preset_key": str(configured_data.get("candidate_pool_preset_key", "top10_liquid")),
+                "candidate_pool_preset_detail": _describe_catalog_item(
+                    _build_candidate_pool_preset_catalog(),
+                    key=str(configured_data.get("candidate_pool_preset_key", "top10_liquid")),
+                    title="候选池预设",
+                ),
                 "candidate_symbols": candidate_symbols,
+                "live_subset_preset_key": str(configured_execution.get("live_subset_preset_key", "core_live")),
+                "live_subset_preset_detail": _describe_catalog_item(
+                    _build_live_subset_preset_catalog(),
+                    key=str(configured_execution.get("live_subset_preset_key", "core_live")),
+                    title="live 子集预设",
+                ),
                 "live_allowed_symbols": live_allowed_symbols,
             },
             "controls": {
@@ -130,10 +150,22 @@ class EvaluationWorkspaceService:
                 "threshold_preset_catalog": [dict(item) for item in list((controls.get("options") or {}).get("threshold_preset_catalog") or []) if isinstance(item, dict)],
             },
             "operations": {
+                "operations_preset_key": str(configured_operations.get("operations_preset_key", "balanced_guard")),
+                "operations_preset_detail": _describe_catalog_item(
+                    _build_operations_preset_catalog(),
+                    key=str(configured_operations.get("operations_preset_key", "balanced_guard")),
+                    title="长期运行预设",
+                ),
                 "review_limit": str(configured_operations.get("review_limit", "10")),
                 "comparison_run_limit": str(configured_operations.get("comparison_run_limit", "5")),
                 "cycle_cooldown_minutes": str(configured_operations.get("cycle_cooldown_minutes", "15")),
                 "max_daily_cycle_count": str(configured_operations.get("max_daily_cycle_count", "8")),
+                "automation_preset_key": str(configured_automation.get("automation_preset_key", "balanced_runtime")),
+                "automation_preset_detail": _describe_catalog_item(
+                    _build_automation_preset_catalog(),
+                    key=str(configured_automation.get("automation_preset_key", "balanced_runtime")),
+                    title="自动化运行预设",
+                ),
             },
             "evaluation": evaluation,
             "reviews": {

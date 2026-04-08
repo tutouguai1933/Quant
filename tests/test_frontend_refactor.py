@@ -97,8 +97,8 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
-            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "双栏布局", "左边看判断", "右边看执行", "当前推荐执行候选", "研究候选", "自动化判断", "自动化推荐", "下一步动作", "执行器状态", "当前配置摘要", "研究范围", "研究 / dry-run 候选池", "live 子集", "验证策略", "自动化策略", "执行安全门配置", "live_allowed_symbols", "账户收口", "执行动作", "候选池摘要", "最近执行结果", "research_cockpit", "推荐策略", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "是否允许进入 dry-run", "运行中…"],
-            WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "自动化控制台", "自动化模式", "统一调度入口", "统一复盘", "健康摘要", "最近告警", "今日摘要", "调度顺序", "失败规则", "dry-run only", "Kill Switch", "当前阻塞", "接管建议", "恢复步骤", "告警摘要", "风险等级摘要", "恢复清单", "执行安全门", "研究 / dry-run 候选池", "live 子集", "当前放行口径", "自动化冷却时间", "每日最大轮次", "自动化运行参数", "长时间接管阈值", "活跃告警窗口", "最近告警历史", "活跃告警", "comparison_run_limit", "运行中…"],
+            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "双栏布局", "左边看判断", "右边看执行", "当前推荐执行候选", "研究候选", "自动化判断", "自动化推荐", "下一步动作", "执行器状态", "当前配置摘要", "研究范围", "研究 / dry-run 候选池", "live 子集", "验证策略", "自动化策略", "执行安全门配置", "live_allowed_symbols", "账户收口", "执行动作", "候选池摘要", "最近执行结果", "research_cockpit", "推荐策略", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "是否允许进入 dry-run", "为什么现在先推进这个币", "候选池先筛，live 子集后放", "运行中…"],
+            WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "自动化控制台", "自动化模式", "统一调度入口", "统一复盘", "健康摘要", "最近告警", "今日摘要", "调度顺序", "失败规则", "dry-run only", "Kill Switch", "当前阻塞", "接管建议", "恢复步骤", "告警摘要", "风险等级摘要", "恢复清单", "执行安全门", "研究 / dry-run 候选池", "live 子集", "当前放行口径", "自动化冷却时间", "每日最大轮次", "自动化运行参数", "长时间接管阈值", "活跃告警窗口", "最近告警历史", "活跃告警", "comparison_run_limit", "现在先处理什么", "调度什么时候继续", "人工接管后怎么恢复", "运行中…"],
             WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "自动化入口", "当前模式", "下一步动作", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要", "筛选通过率", "当前最佳候选", "运行中…"],
         }
         for file_path, patterns in expectations.items():
@@ -180,6 +180,8 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("自动化策略", content)
         self.assertIn("执行安全门配置", content)
         self.assertIn("live_allowed_symbols", content)
+        self.assertIn("为什么现在先推进这个币", content)
+        self.assertIn("候选池先筛，live 子集后放", content)
         self.assertIn("执行动作", content)
         self.assertIn("最近执行结果", content)
         self.assertIn("推荐策略", content)
@@ -262,6 +264,10 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("因子明细表", features_content)
         self.assertIn("当前选中角色", features_content)
         self.assertIn("为什么现在更适合", evaluation_content)
+        self.assertIn("这一轮更值得推进什么", evaluation_content)
+        self.assertIn("先推荐谁", evaluation_content)
+        self.assertIn("先淘汰谁", evaluation_content)
+        self.assertIn("研究和执行差几步", evaluation_content)
         self.assertIn("还差什么才能进入下一阶段", evaluation_content)
         self.assertIn("研究与执行差异", evaluation_content)
         self.assertIn("name=\"timeframe_profiles.4h.trend_window\"", features_content)
@@ -348,6 +354,9 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("活跃错误", content)
         self.assertIn("最近复盘记录", content)
         self.assertIn("这里最多显示最近", content)
+        self.assertIn("现在先处理什么", content)
+        self.assertIn("调度什么时候继续", content)
+        self.assertIn("人工接管后怎么恢复", content)
 
     def test_evaluation_page_explains_research_vs_execution_alignment(self) -> None:
         content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
@@ -358,6 +367,10 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("差异说明", content)
         self.assertIn("建议动作", content)
         self.assertIn("执行对齐明细", content)
+        self.assertIn("这一轮更值得推进什么", content)
+        self.assertIn("先推荐谁", content)
+        self.assertIn("先淘汰谁", content)
+        self.assertIn("研究和执行差几步", content)
         self.assertIn("最近订单标的", content)
         self.assertIn("最近持仓标的", content)
         self.assertIn("实验对齐概况", content)

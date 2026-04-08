@@ -18,6 +18,8 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("自动化推荐").first()).toBeVisible();
   await expect(page.getByText("下一步动作").first()).toBeVisible();
   await expect(page.getByText("当前配置摘要")).toBeVisible();
+  await expect(page.getByText("为什么现在先推进这个币")).toBeVisible();
+  await expect(page.getByText("候选池先筛，live 子集后放")).toBeVisible();
   await expect(page.getByText("研究范围").first()).toBeVisible();
   await expect(page.getByText("自动化策略").first()).toBeVisible();
   await expect(page.getByText("执行安全门配置")).toBeVisible();
@@ -46,6 +48,9 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("最近复盘记录").first()).toBeVisible();
   await expect(page.getByText("当前处理队列").first()).toBeVisible();
   await expect(page.getByText("恢复检查项").first()).toBeVisible();
+  await expect(page.getByText("现在先处理什么", { exact: true })).toBeVisible();
+  await expect(page.getByText("调度什么时候继续", { exact: true })).toBeVisible();
+  await expect(page.getByText("人工接管后怎么恢复", { exact: true })).toBeVisible();
   await expect(page.getByText("告警快捷处理")).toBeVisible();
   await expect(page.getByRole("button", { name: "确认头号告警" })).toBeVisible();
   await expect(page.getByRole("button", { name: "清理非错误告警" })).toBeVisible();
@@ -55,9 +60,13 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("实验对比与复盘窗口")).toBeVisible();
   await expect(page.getByRole("heading", { name: "准入预设", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "自选实验对比", exact: true })).toBeVisible();
+  await expect(page.getByText("这一轮更值得推进什么")).toBeVisible();
+  await expect(page.getByText("先推荐谁")).toBeVisible();
+  await expect(page.getByText("先淘汰谁")).toBeVisible();
+  await expect(page.getByText("研究和执行差几步")).toBeVisible();
   await expect(page.getByText("分阶段最佳候选")).toBeVisible();
   await expect(page.getByText("研究候选池")).toBeVisible();
-  await expect(page.getByText("live 子集")).toBeVisible();
+  await expect(page.getByText("live 子集", { exact: true })).toBeVisible();
   await expect(page.getByText("为什么这里只到 dry-run")).toBeVisible();
   await expect(page.getByText("研究 / 回测 / 执行对照")).toBeVisible();
   await expect(page.getByText("最近复盘记录").first()).toBeVisible();

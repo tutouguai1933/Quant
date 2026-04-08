@@ -214,6 +214,16 @@ export default async function DataPage({ searchParams }: PageProps) {
             disabled={!configEditable}
             disabledReason={unavailableConfigReason}
           >
+            <ConfigField label="候选池预设" hint="先选一套候选池口径，再决定要不要继续手动勾选币种。研究和 dry-run 会共用这组候选池。">
+              <ConfigSelect
+                name="candidate_pool_preset_key"
+                defaultValue={String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid")}
+                options={(workspace.controls.available_candidate_pool_presets || []).map((item) => ({
+                  value: item,
+                  label: item,
+                }))}
+              />
+            </ConfigField>
             <ConfigField label="研究标的" hint="只勾选这轮真正要纳入训练、推理和回测的币种。">
               <ConfigCheckboxGrid
                 name="selected_symbols"
@@ -298,7 +308,38 @@ export default async function DataPage({ searchParams }: PageProps) {
                     : "当前配置完整，可进入研究训练"
                 }
               />
+              <InfoBlock
+                label="候选池预设"
+                value={String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid")}
+              />
               <InfoBlock label="预览状态" value={workspace.preview.status === "ready" ? "样本预览正常" : workspace.preview.detail || "当前预览不可用"} />
+            </CardContent>
+          </Card>
+
+          <DataTable
+            columns={["候选池预设", "适用场景", "当前是否选中", "说明"]}
+            rows={(workspace.controls.candidate_pool_preset_catalog || []).map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "当前没有适用场景说明"),
+                String(item.key ?? "") === String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid") ? "当前候选池预设" : "可切换",
+                String(item.detail ?? "当前没有候选池说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有候选池预设目录"
+            emptyDetail="先恢复数据工作台，系统才会给出候选池预设说明。"
+          />
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>候选池怎么走到 live</CardTitle>
+              <CardDescription>先把研究和 dry-run 的共享候选池讲清楚，再决定哪些币继续进入更严格的 live 子集。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-3">
+              <InfoBlock label="第一层：候选池" value="研究和 dry-run 会共用这组更大的候选池，先尽量找出值得继续比较的币。" />
+              <InfoBlock label="第二层：评估门" value="候选池里的币会继续经过规则门、验证门、回测门和一致性门，不是进池就直接执行。" />
+              <InfoBlock label="第三层：live 子集" value="只有候选池里通过更严门控的一小部分币，后面才会继续进入 live 子集做小额真实验证。" />
             </CardContent>
           </Card>
 

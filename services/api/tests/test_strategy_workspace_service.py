@@ -54,6 +54,8 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("configuration", workspace)
         self.assertIn("research_scope", workspace["configuration"])
         self.assertIn("automation_policy", workspace["configuration"])
+        self.assertIn("candidate_pool_preset", workspace["configuration"])
+        self.assertIn("live_subset_preset", workspace["configuration"])
 
     def test_workspace_cards_include_runtime_status_signal_and_evaluation(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
@@ -188,6 +190,7 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(workspace["whitelist"], ["ETHUSDT", "XRPUSDT", "DOGEUSDT"])
         self.assertEqual(workspace["overview"]["whitelist_count"], 3)
         self.assertEqual(workspace["strategies"][0]["symbols"], ["ETHUSDT", "XRPUSDT", "DOGEUSDT"])
+        self.assertIn("候选池预设", workspace["configuration"]["candidate_pool_preset"])
 
 
 class _FakeCatalogService:

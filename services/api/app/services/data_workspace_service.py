@@ -97,6 +97,7 @@ class DataWorkspaceService:
                 holding_window=str((self._extract_training_window(research_report) or {}).get("holding_window", "")),
             ),
             "controls": {
+                "candidate_pool_preset_key": str(configured_data.get("candidate_pool_preset_key", "top10_liquid")),
                 "selected_symbols": list(configured_data.get("selected_symbols") or []),
                 "primary_symbol": str(configured_data.get("primary_symbol", "")),
                 "timeframes": list(configured_data.get("timeframes") or []),
@@ -108,6 +109,14 @@ class DataWorkspaceService:
                 "available_symbols": whitelist,
                 "available_timeframes": list(get_supported_market_intervals()),
                 "available_window_modes": [str(item) for item in list((workbench_controls.get("options") or {}).get("window_modes") or [])],
+                "available_candidate_pool_presets": [
+                    str(item) for item in list((workbench_controls.get("options") or {}).get("candidate_pool_presets") or [])
+                ],
+                "candidate_pool_preset_catalog": [
+                    dict(item)
+                    for item in list((workbench_controls.get("options") or {}).get("candidate_pool_preset_catalog") or [])
+                    if isinstance(item, dict)
+                ],
             },
             "snapshot": training_snapshot,
             "snapshot_consistency": self._build_snapshot_consistency(

@@ -5,6 +5,17 @@ const { WEB_BASE_URL } = require("./test-urls.cjs");
 
 test.use(getPlaywrightUseOptions());
 
+async function expectPipelineFeedback(page) {
+  await expect(page.getByRole("heading", { name: "动作反馈" })).toBeVisible();
+  const successMessage = page.getByText("Qlib 信号流水线已进入后台");
+  const runningMessage = page.getByText("研究任务正在运行，请等当前这一轮结束后再发起新的研究动作。");
+  await expect(async () => {
+    const successCount = await successMessage.count();
+    const runningCount = await runningMessage.count();
+    expect(successCount + runningCount).toBeGreaterThan(0);
+  }).toPass({ timeout: 20000 });
+}
+
 test("signals page shows pending feedback before pipeline form leaves the page", async ({ page }) => {
   await loginAsAdmin(page, "/signals");
   await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "load" });
@@ -46,15 +57,14 @@ test("signals page can start qlib pipeline without proxy unavailable feedback", 
     timeout: 20000,
   });
   await expect(page.getByText("客户端代理暂时不可用。")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "动作反馈" })).toBeVisible();
-  await expect(page.getByText("Qlib 信号流水线已进入后台")).toBeVisible();
+  await expectPipelineFeedback(page);
 });
 
 test("manual qlib pipeline is reflected in tasks workspace", async ({ page }) => {
   await loginAsAdmin(page, "/signals");
 
   await page.getByRole("button", { name: "运行 Qlib 信号流水线" }).click();
-  await expect(page.getByText("Qlib 信号流水线已进入后台")).toBeVisible();
+  await expectPipelineFeedback(page);
 
   await page.goto(`${WEB_BASE_URL}/tasks`, { waitUntil: "load" });
   await page.waitForFunction(() => document.body.innerText.includes("任务"));

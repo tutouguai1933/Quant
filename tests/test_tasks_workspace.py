@@ -96,6 +96,9 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("头号告警怎么先处理", content)
         self.assertIn("当前先做什么", content)
         self.assertIn("恢复前还差什么", content)
+        self.assertIn("现在先处理什么", content)
+        self.assertIn("调度什么时候继续", content)
+        self.assertIn("人工接管后怎么恢复", content)
         self.assertIn("最近复盘记录", content)
         self.assertIn("这里最多显示最近", content)
 

@@ -211,6 +211,32 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 </Card>
               ) : null}
 
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">候选池摘要</p>
+                  <CardTitle>为什么现在先推进这个币</CardTitle>
+                  <CardDescription>先把共享候选池、评估门和 live 子集讲清楚，再决定这一轮先推进谁。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  <AutomationInfo
+                    label="候选池先筛，live 子集后放"
+                    value={readText(configuration.candidate_pool_preset, "研究和 dry-run 先共用候选池，再由更严格的 live 子集继续放行。")}
+                  />
+                  <AutomationInfo
+                    label="这一轮先推进谁"
+                    value={workspace.research_recommendation?.symbol || readText(evaluation.overview.recommended_symbol, "当前还没有推荐标的")}
+                  />
+                  <AutomationInfo
+                    label="为什么先推进"
+                    value={workspace.research_recommendation?.next_action || readText(evaluationReview.next_action, "先继续研究，确认门控和执行差异")}
+                  />
+                  <AutomationInfo
+                    label="还差什么"
+                    value={readText(configuration.live_subset_preset, "先通过候选池和评估门，再进入更严格的 live 子集")}
+                  />
+                </CardContent>
+              </Card>
+
               <ResearchCandidateBoard
                 title="研究候选"
                 summary={candidateSnapshot.summary}

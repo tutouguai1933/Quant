@@ -13,7 +13,14 @@ from typing import Any
 from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.core.settings import Settings
 from services.api.app.services.risk_service import risk_service
-from services.api.app.services.workbench_config_service import workbench_config_service
+from services.api.app.services.workbench_config_service import (
+    _build_automation_preset_catalog,
+    _build_candidate_pool_preset_catalog,
+    _build_live_subset_preset_catalog,
+    _build_operations_preset_catalog,
+    _describe_catalog_item,
+    workbench_config_service,
+)
 
 
 AUTOMATION_MODES = {"manual", "auto_dry_run", "auto_live"}
@@ -987,7 +994,16 @@ class AutomationService:
 
         config = workbench_config_service.get_config()
         operations = dict(config.get("operations") or {})
+        preset_key = str(operations.get("operations_preset_key", "balanced_guard"))
         return {
+            "operations_preset_key": preset_key,
+            "operations_preset_detail": _describe_catalog_item(
+                _build_operations_preset_catalog(),
+                key=preset_key,
+                title="长期运行预设",
+            ),
+            "available_operations_presets": [str(item.get("key", "")) for item in _build_operations_preset_catalog() if str(item.get("key", "")).strip()],
+            "operations_preset_catalog": _build_operations_preset_catalog(),
             "pause_after_consecutive_failures": int(operations.get("pause_after_consecutive_failures", 2) or 2),
             "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
             "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
@@ -1003,8 +1019,24 @@ class AutomationService:
         config = workbench_config_service.get_config()
         data = dict(config.get("data") or {})
         execution = dict(config.get("execution") or {})
+        candidate_preset_key = str(data.get("candidate_pool_preset_key", "top10_liquid"))
+        live_subset_preset_key = str(execution.get("live_subset_preset_key", "core_live"))
         return {
+            "candidate_pool_preset_key": candidate_preset_key,
+            "candidate_pool_preset_detail": _describe_catalog_item(
+                _build_candidate_pool_preset_catalog(),
+                key=candidate_preset_key,
+                title="候选池预设",
+            ),
+            "candidate_pool_preset_catalog": _build_candidate_pool_preset_catalog(),
             "candidate_symbols": [str(item) for item in list(data.get("selected_symbols") or []) if str(item).strip()],
+            "live_subset_preset_key": live_subset_preset_key,
+            "live_subset_preset_detail": _describe_catalog_item(
+                _build_live_subset_preset_catalog(),
+                key=live_subset_preset_key,
+                title="live 子集预设",
+            ),
+            "live_subset_preset_catalog": _build_live_subset_preset_catalog(),
             "live_allowed_symbols": [str(item) for item in list(execution.get("live_allowed_symbols") or []) if str(item).strip()],
             "live_max_stake_usdt": str(execution.get("live_max_stake_usdt", "")),
             "live_max_open_trades": str(execution.get("live_max_open_trades", "")),
@@ -1016,7 +1048,16 @@ class AutomationService:
 
         config = workbench_config_service.get_config()
         automation = dict(config.get("automation") or {})
+        preset_key = str(automation.get("automation_preset_key", "balanced_runtime"))
         return {
+            "automation_preset_key": preset_key,
+            "automation_preset_detail": _describe_catalog_item(
+                _build_automation_preset_catalog(),
+                key=preset_key,
+                title="自动化运行预设",
+            ),
+            "available_automation_presets": [str(item.get("key", "")) for item in _build_automation_preset_catalog() if str(item.get("key", "")).strip()],
+            "automation_preset_catalog": _build_automation_preset_catalog(),
             "long_run_seconds": int(automation.get("long_run_seconds", 300) or 300),
             "alert_cleanup_minutes": int(automation.get("alert_cleanup_minutes", 15) or 15),
         }
