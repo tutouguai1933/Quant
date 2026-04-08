@@ -27,6 +27,13 @@ class _FakeResearchService:
     def get_latest_result(self) -> dict[str, object]:
         return {"latest_training": {"model_version": "model-demo"} if self.has_training else {}}
 
+    def get_research_recommendation(self) -> dict[str, object]:
+        return {
+            "symbol": "ETHUSDT",
+            "next_action": "enter_dry_run",
+            "strategy_id": 1,
+        }
+
 
 class _FakeSignalService:
     def __init__(self) -> None:
@@ -37,12 +44,76 @@ class _FakeSignalService:
         return {"signal_count": 1, "source": "qlib"}
 
 
+class _FakeScheduler:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def run_named_task(
+        self,
+        task_type: str,
+        source: str = "user",
+        target_type: str = "system",
+        target_id: int | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(task_type)
+        return {
+            "id": len(self.calls),
+            "task_type": task_type,
+            "status": "succeeded",
+            "source": source,
+            "target_type": target_type,
+            "target_id": target_id,
+            "payload": payload or {},
+            "result": {"task_type": task_type},
+        }
+
+
+class _FakeReviewer:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        self.calls += 1
+        return {
+            "overview": {
+                "recommended_symbol": "ETHUSDT",
+                "recommended_action": "enter_dry_run",
+                "candidate_count": 1,
+                "ready_count": 1,
+            }
+        }
+
+
+class _FakeAutomation:
+    def __init__(self) -> None:
+        self.cycles: list[tuple[dict[str, object], bool]] = []
+        self.alerts: list[dict[str, object]] = []
+
+    def record_cycle(self, payload: dict[str, object], *, count_towards_daily: bool = True) -> None:
+        self.cycles.append((dict(payload), count_towards_daily))
+
+    def record_alert(self, *, level: str, code: str, message: str, source: str, detail: str = "") -> dict[str, object]:
+        item = {
+            "level": level,
+            "code": code,
+            "message": message,
+            "source": source,
+            "detail": detail,
+        }
+        self.alerts.append(item)
+        return item
+
+
 class ResearchRuntimeServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
         self.runtime_root = Path(self._temp_dir.name)
         self.research_service = _FakeResearchService()
         self.signal_service = _FakeSignalService()
+        self.scheduler = _FakeScheduler()
+        self.reviewer = _FakeReviewer()
+        self.automation = _FakeAutomation()
 
     def tearDown(self) -> None:
         self._temp_dir.cleanup()
@@ -52,7 +123,21 @@ class ResearchRuntimeServiceTests(unittest.TestCase):
             config_loader=lambda: load_qlib_config(env={"QUANT_QLIB_RUNTIME_ROOT": str(self.runtime_root)}),
             research_service_instance=self.research_service,
             signal_service_instance=self.signal_service,
+            scheduler_instance=self.scheduler,
+            reviewer_instance=self.reviewer,
+            automation_instance=self.automation,
             async_runner=lambda fn: fn(),
+        )
+
+    def _build_deferred_service(self, sink: list[object]) -> ResearchRuntimeService:
+        return ResearchRuntimeService(
+            config_loader=lambda: load_qlib_config(env={"QUANT_QLIB_RUNTIME_ROOT": str(self.runtime_root)}),
+            research_service_instance=self.research_service,
+            signal_service_instance=self.signal_service,
+            scheduler_instance=self.scheduler,
+            reviewer_instance=self.reviewer,
+            automation_instance=self.automation,
+            async_runner=lambda fn: sink.append(fn),
         )
 
     def test_start_training_records_running_then_success(self) -> None:
@@ -64,7 +149,8 @@ class ResearchRuntimeServiceTests(unittest.TestCase):
         self.assertEqual(accepted["action"], "training")
         self.assertEqual(latest["status"], "succeeded")
         self.assertEqual(latest["last_completed_action"], "training")
-        self.assertEqual(self.research_service.training_runs, 1)
+        self.assertEqual(self.scheduler.calls, ["research_train"])
+        self.assertEqual(self.research_service.training_runs, 0)
         self.assertEqual(latest["progress_pct"], 100)
         self.assertIn("/research", latest["result_paths"])
 
@@ -76,10 +162,48 @@ class ResearchRuntimeServiceTests(unittest.TestCase):
 
         self.assertEqual(latest["status"], "succeeded")
         self.assertEqual(latest["last_completed_action"], "pipeline")
-        self.assertEqual(self.research_service.training_runs, 1)
-        self.assertEqual(self.research_service.inference_runs, 1)
-        self.assertEqual(self.signal_service.refresh_runs, 1)
+        self.assertEqual(self.scheduler.calls, ["research_train", "research_infer", "signal_output", "review"])
+        self.assertEqual(self.research_service.training_runs, 0)
+        self.assertEqual(self.research_service.inference_runs, 0)
+        self.assertEqual(self.signal_service.refresh_runs, 0)
         self.assertEqual(latest["current_stage"], "completed")
+        self.assertEqual(len(self.automation.cycles), 2)
+        recorded_cycle, count_towards_daily = self.automation.cycles[-1]
+        self.assertFalse(count_towards_daily)
+        self.assertEqual(recorded_cycle["source"], "manual_pipeline")
+        self.assertEqual(recorded_cycle["recommended_symbol"], "ETHUSDT")
+        self.assertEqual(recorded_cycle["next_action"], "enter_dry_run")
+
+    def test_start_pipeline_records_manual_cycle_as_running_before_background_job_finishes(self) -> None:
+        deferred_jobs: list[object] = []
+        service = self._build_deferred_service(deferred_jobs)
+
+        accepted = service.start_pipeline()
+
+        self.assertEqual(len(self.automation.cycles), 1)
+        recorded_cycle, count_towards_daily = self.automation.cycles[0]
+        self.assertFalse(count_towards_daily)
+        self.assertEqual(recorded_cycle["source"], "manual_pipeline")
+        self.assertEqual(recorded_cycle["status"], "running")
+        self.assertEqual(recorded_cycle["next_action"], "wait_pipeline_completion")
+        self.assertEqual(recorded_cycle["recommended_symbol"], "ETHUSDT")
+        self.assertEqual(len(deferred_jobs), 1)
+        self.assertEqual(accepted["action"], "pipeline")
+
+        deferred_jobs[0]()
+        final_cycle, _ = self.automation.cycles[-1]
+        self.assertEqual(final_cycle["status"], "succeeded")
+        self.assertEqual(final_cycle["next_action"], "enter_dry_run")
+
+    def test_start_training_records_scheduler_task_without_counting_automatic_cycles(self) -> None:
+        service = self._build_service()
+
+        service.start_training()
+        latest = service.get_status()
+
+        self.assertEqual(latest["status"], "succeeded")
+        self.assertEqual(self.scheduler.calls, ["research_train"])
+        self.assertEqual(len(self.automation.cycles), 0)
 
     def test_next_estimate_uses_previous_duration(self) -> None:
         service = self._build_service()

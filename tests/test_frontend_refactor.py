@@ -56,7 +56,7 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_frontend_redirect_routes_share_same_host_helper(self) -> None:
         actions_content = (WEB_APP / "actions" / "route.ts").read_text(encoding="utf-8")
-        logout_content = (WEB_APP / "logout" / "route.ts").read_text(encoding="utf-8")
+        logout_content = (WEB_APP / "logout" / "submit" / "route.ts").read_text(encoding="utf-8")
         redirect_helper = (REPO_ROOT / "apps" / "web" / "lib" / "redirect.ts").read_text(encoding="utf-8")
         proxy_route = (WEB_APP / "api" / "control" / "[...path]" / "route.ts").read_text(encoding="utf-8")
 

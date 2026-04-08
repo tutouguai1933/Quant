@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_APP = REPO_ROOT / "apps" / "web" / "app"
 WEB_COMPONENTS = REPO_ROOT / "apps" / "web" / "components"
+CONFIG_SERVICE = REPO_ROOT / "services" / "api" / "app" / "services" / "workbench_config_service.py"
 
 
 class EvaluationWorkspaceTests(unittest.TestCase):
@@ -19,6 +20,7 @@ class EvaluationWorkspaceTests(unittest.TestCase):
 
     def test_evaluation_workspace_page_mentions_key_sections(self) -> None:
         content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
+        config_content = CONFIG_SERVICE.read_text(encoding="utf-8")
         self.assertIn("评估与实验中心", content)
         self.assertIn("实验排行榜", content)
         self.assertIn("推荐原因", content)
@@ -27,8 +29,10 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("研究与执行对齐", content)
         self.assertIn("实验对照", content)
         self.assertIn("门控分解", content)
+        self.assertIn("候选推进板", content)
         self.assertIn("实验一致性", content)
         self.assertIn("最近两轮对比", content)
+        self.assertIn("自选实验对比", content)
         self.assertIn("配置变化", content)
         self.assertIn("参数与结果一起看", content)
         self.assertIn("关键变化", content)
@@ -45,6 +49,15 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("工作台暂时不可用", content)
         self.assertIn("进入 dry-run", content)
         self.assertIn("准入门槛配置", content)
+        self.assertIn("准入预设", content)
+        self.assertIn("threshold_preset_key", content)
+        self.assertIn("standard_gate", content)
+        self.assertIn("strict_live_gate", config_content)
+        self.assertIn("exploratory_dry_run", config_content)
+        self.assertIn("自选实验对比", content)
+        self.assertIn("compareA", content)
+        self.assertIn("compareB", content)
+        self.assertIn("更新对比", content)
         self.assertIn("研究结果 vs 执行结果", content)
         self.assertIn("对齐解释", content)
         self.assertIn("最近执行摘要", content)

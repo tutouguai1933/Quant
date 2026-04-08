@@ -92,6 +92,19 @@ class AutomationServiceTests(unittest.TestCase):
             [mock.call(1, "pause"), mock.call(1, "pause"), mock.call(1, "stop")],
         )
 
+    def test_confirm_and_clear_alerts(self) -> None:
+        service = AutomationService()
+        alert = service.record_alert(level="warning", code="sync", message="fail", source="sync")
+        confirmed = service.confirm_alert(alert["id"], actor="tester")
+        self.assertEqual(confirmed["code"], "sync")
+        self.assertEqual(service.get_state()["alerts"], [])
+        with self.assertRaises(ValueError):
+            service.confirm_alert(999)
+        service.record_alert(level="info", code="tip", message="ok", source="tester")
+        cleared = service.clear_alerts(levels=["info"], actor="tester")
+        self.assertGreaterEqual(len(cleared), 1)
+        self.assertEqual(service.get_state()["alerts"], [])
+
     def test_pause_uses_all_executor_strategy_ids_when_available(self) -> None:
         service = AutomationService()
         with mock.patch("services.api.app.services.automation_service.risk_service") as fake_risk, mock.patch(

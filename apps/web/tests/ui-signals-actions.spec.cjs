@@ -6,6 +6,7 @@ const { WEB_BASE_URL } = require("./test-urls.cjs");
 test.use(getPlaywrightUseOptions());
 
 test("signals page shows pending feedback before pipeline form leaves the page", async ({ page }) => {
+  await loginAsAdmin(page, "/signals");
   await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "load" });
   await page.evaluate(() => {
     const forms = Array.from(document.querySelectorAll('form[action="/actions"]'));
@@ -28,19 +29,10 @@ test("signals page shows pending feedback before pipeline form leaves the page",
 });
 
 test("signals page shows final feedback after qlib pipeline submission", async ({ page }) => {
-  await page.route("**/actions", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    await route.fulfill({
-      status: 303,
-      headers: {
-        location: "/signals?tone=success&title=%E5%8A%A8%E4%BD%9C%E5%8F%8D%E9%A6%88&message=%E6%B5%8B%E8%AF%95%E6%8F%90%E4%BA%A4%E6%88%90%E5%8A%9F%E3%80%82",
-      },
-      body: "",
-    });
-  });
-
-  await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "load" });
-  await page.getByRole("button", { name: "运行 Qlib 信号流水线" }).click();
+  await page.goto(
+    `${WEB_BASE_URL}/signals?tone=success&title=%E5%8A%A8%E4%BD%9C%E5%8F%8D%E9%A6%88&message=%E6%B5%8B%E8%AF%95%E6%8F%90%E4%BA%A4%E6%88%90%E5%8A%9F%E3%80%82`,
+    { waitUntil: "load" },
+  );
   await expect(page.getByRole("heading", { name: "动作反馈" })).toBeVisible();
   await expect(page.getByText("测试提交成功。")).toBeVisible();
 });
@@ -56,4 +48,15 @@ test("signals page can start qlib pipeline without proxy unavailable feedback", 
   await expect(page.getByText("客户端代理暂时不可用。")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "动作反馈" })).toBeVisible();
   await expect(page.getByText("Qlib 信号流水线已进入后台")).toBeVisible();
+});
+
+test("manual qlib pipeline is reflected in tasks workspace", async ({ page }) => {
+  await loginAsAdmin(page, "/signals");
+
+  await page.getByRole("button", { name: "运行 Qlib 信号流水线" }).click();
+  await expect(page.getByText("Qlib 信号流水线已进入后台")).toBeVisible();
+
+  await page.goto(`${WEB_BASE_URL}/tasks`, { waitUntil: "load" });
+  await page.waitForFunction(() => document.body.innerText.includes("任务"));
+  await expect(page.getByText("最近工作流来源：手动信号流水线")).toBeVisible({ timeout: 15000 });
 });

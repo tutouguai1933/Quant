@@ -72,6 +72,7 @@ class EvaluationWorkspaceService:
                 "candidate_count": int(overview.get("candidate_count", 0) or 0),
             },
             "controls": {
+                "threshold_preset_key": str(configured_thresholds.get("threshold_preset_key", "standard_gate") or "standard_gate"),
                 "dry_run_min_score": str(configured_thresholds.get("dry_run_min_score", "")),
                 "dry_run_min_positive_rate": str(configured_thresholds.get("dry_run_min_positive_rate", "")),
                 "dry_run_min_net_return_pct": str(configured_thresholds.get("dry_run_min_net_return_pct", "")),
@@ -105,6 +106,8 @@ class EvaluationWorkspaceService:
                 "live_min_win_rate": str(configured_thresholds.get("live_min_win_rate", "0.55")),
                 "live_max_turnover": str(configured_thresholds.get("live_max_turnover", "0.45")),
                 "live_min_sample_count": str(configured_thresholds.get("live_min_sample_count", "24")),
+                "available_threshold_presets": [str(item) for item in list((controls.get("options") or {}).get("threshold_presets") or [])],
+                "threshold_preset_catalog": [dict(item) for item in list((controls.get("options") or {}).get("threshold_preset_catalog") or []) if isinstance(item, dict)],
             },
             "operations": {
                 "review_limit": str(configured_operations.get("review_limit", "10")),

@@ -64,6 +64,7 @@ class FeatureWorkspaceService:
                 "auxiliary": [str(item) for item in auxiliary],
             },
             "controls": {
+                "feature_preset_key": str(configured_features.get("feature_preset_key", "balanced_default") or "balanced_default"),
                 "primary_factors": [str(item) for item in list(configured_features.get("primary_factors") or [])],
                 "auxiliary_factors": [str(item) for item in list(configured_features.get("auxiliary_factors") or [])],
                 "missing_policy": str(configured_features.get("missing_policy", "neutral_fill") or "neutral_fill"),
@@ -78,6 +79,8 @@ class FeatureWorkspaceService:
                 "available_missing_policies": [str(item) for item in list((controls.get("options") or {}).get("missing_policies") or [])],
                 "available_outlier_policies": [str(item) for item in list((controls.get("options") or {}).get("outlier_policies") or [])],
                 "available_normalization_policies": [str(item) for item in list((controls.get("options") or {}).get("normalization_policies") or [])],
+                "available_feature_presets": [str(item) for item in list((controls.get("options") or {}).get("feature_presets") or [])],
+                "feature_preset_catalog": [dict(item) for item in list((controls.get("options") or {}).get("feature_preset_catalog") or []) if isinstance(item, dict)],
             },
             "preprocessing": {
                 "missing_policy": str((factor_protocol.get("preprocessing") or {}).get("missing_policy", "")),

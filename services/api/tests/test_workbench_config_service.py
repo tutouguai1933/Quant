@@ -49,6 +49,10 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["features"]["outlier_policy"], "clip")
         self.assertEqual(config["features"]["normalization_policy"], "fixed_4dp")
         self.assertEqual(config["features"]["missing_policy"], "neutral_fill")
+        self.assertEqual(config["features"]["feature_preset_key"], "balanced_default")
+        self.assertEqual(config["research"]["research_preset_key"], "baseline_balanced")
+        self.assertEqual(config["backtest"]["backtest_preset_key"], "realistic_standard")
+        self.assertEqual(config["thresholds"]["threshold_preset_key"], "standard_gate")
         self.assertEqual(config["thresholds"]["live_min_score"], "0.65")
         self.assertEqual(config["thresholds"]["dry_run_min_win_rate"], "0.5")
         self.assertEqual(config["thresholds"]["dry_run_max_turnover"], "0.6")
@@ -256,6 +260,48 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_WIN_RATE"], "0.61")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MAX_TURNOVER"], "0.42")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT"], "30")
+
+    def test_workspace_controls_include_rich_option_catalogs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            controls = service.build_workspace_controls()
+
+        options = controls["options"]
+        self.assertEqual(options["model_catalog"][0]["key"], "heuristic_v1")
+        self.assertIn("detail", options["model_catalog"][0])
+        self.assertEqual(options["label_mode_catalog"][0]["key"], "earliest_hit")
+        self.assertEqual(options["label_trigger_catalog"][0]["key"], "close")
+        self.assertEqual(options["holding_window_catalog"][0]["key"], "1-3d")
+        self.assertEqual(options["cost_model_catalog"][0]["key"], "round_trip_basis_points")
+        self.assertEqual(options["feature_preset_catalog"][0]["key"], "balanced_default")
+        self.assertEqual(options["research_preset_catalog"][0]["key"], "baseline_balanced")
+        self.assertEqual(options["backtest_preset_catalog"][0]["key"], "realistic_standard")
+        self.assertEqual(options["threshold_preset_catalog"][0]["key"], "standard_gate")
+
+    def test_update_section_can_apply_feature_research_backtest_and_threshold_presets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            features = service.update_section("features", {"feature_preset_key": "trend_focus"})
+            research = service.update_section("research", {"research_preset_key": "trend_following"})
+            backtest = service.update_section("backtest", {"backtest_preset_key": "cost_stress"})
+            thresholds = service.update_section("thresholds", {"threshold_preset_key": "strict_live_gate"})
+
+        self.assertEqual(features["features"]["feature_preset_key"], "trend_focus")
+        self.assertEqual(features["features"]["primary_factors"], ["trend_gap_pct", "ema20_gap_pct", "ema55_gap_pct", "breakout_strength", "volume_ratio"])
+        self.assertEqual(features["features"]["auxiliary_factors"], ["rsi14", "cci20"])
+        self.assertEqual(research["research"]["research_preset_key"], "trend_following")
+        self.assertEqual(research["research"]["model_key"], "trend_bias_v2")
+        self.assertEqual(research["research"]["holding_window_label"], "2-4d")
+        self.assertEqual(research["research"]["label_trigger_basis"], "high_low")
+        self.assertEqual(backtest["backtest"]["backtest_preset_key"], "cost_stress")
+        self.assertEqual(backtest["backtest"]["fee_bps"], "16")
+        self.assertEqual(backtest["backtest"]["slippage_bps"], "9")
+        self.assertEqual(thresholds["thresholds"]["threshold_preset_key"], "strict_live_gate")
+        self.assertEqual(thresholds["thresholds"]["dry_run_min_score"], "0.6")
+        self.assertEqual(thresholds["thresholds"]["live_min_score"], "0.72")
+        self.assertEqual(thresholds["thresholds"]["dry_run_min_sample_count"], "28")
 
     def test_update_features_section_accepts_timeframe_profile_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

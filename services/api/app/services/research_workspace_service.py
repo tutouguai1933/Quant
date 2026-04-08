@@ -85,6 +85,7 @@ class ResearchWorkspaceService:
                 "backend": str(report.get("backend", "qlib-fallback") or "qlib-fallback"),
             },
             "controls": {
+                "research_preset_key": str(configured_research.get("research_preset_key", "baseline_balanced")),
                 "research_template": str(configured_research.get("research_template", "")),
                 "model_key": str(configured_research.get("model_key", "")),
                 "label_mode": label_mode,
@@ -108,10 +109,16 @@ class ResearchWorkspaceService:
                 "volatility_weight": str(configured_research.get("volatility_weight", "0.9")),
                 "strict_penalty_weight": str(configured_research.get("strict_penalty_weight", "1")),
                 "available_models": [str(item) for item in list((controls.get("options") or {}).get("models") or [])],
+                "model_catalog": [dict(item) for item in list((controls.get("options") or {}).get("model_catalog") or []) if isinstance(item, dict)],
+                "available_research_presets": [str(item) for item in list((controls.get("options") or {}).get("research_presets") or [])],
+                "research_preset_catalog": [dict(item) for item in list((controls.get("options") or {}).get("research_preset_catalog") or []) if isinstance(item, dict)],
                 "available_research_templates": [str(item) for item in list((controls.get("options") or {}).get("research_templates") or [])],
                 "available_label_modes": [str(item) for item in list((controls.get("options") or {}).get("label_modes") or [])],
+                "label_mode_catalog": [dict(item) for item in list((controls.get("options") or {}).get("label_mode_catalog") or []) if isinstance(item, dict)],
                 "available_label_trigger_bases": [str(item) for item in list((controls.get("options") or {}).get("label_trigger_bases") or [])],
+                "label_trigger_catalog": [dict(item) for item in list((controls.get("options") or {}).get("label_trigger_catalog") or []) if isinstance(item, dict)],
                 "available_holding_windows": [str(item) for item in list((controls.get("options") or {}).get("holding_windows") or [])],
+                "holding_window_catalog": [dict(item) for item in list((controls.get("options") or {}).get("holding_window_catalog") or []) if isinstance(item, dict)],
             },
             "parameters": {
                 str(name): str(value)

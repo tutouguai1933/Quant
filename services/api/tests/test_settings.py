@@ -155,6 +155,14 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.binance_account_base_url, "https://api1.binance.com")
         self.assertEqual(settings.binance_timeout_seconds, 6.5)
 
+    def test_default_market_base_url_uses_public_data_api(self) -> None:
+        self._clear_runtime_env()
+
+        settings = Settings.from_env()
+
+        self.assertEqual(settings.binance_market_base_url, "https://data-api.binance.vision")
+        self.assertEqual(settings.binance_account_base_url, "https://api.binance.com")
+
     def test_binance_timeout_requires_positive_number(self) -> None:
         self._clear_runtime_env()
         os.environ["QUANT_BINANCE_TIMEOUT_SECONDS"] = "0"

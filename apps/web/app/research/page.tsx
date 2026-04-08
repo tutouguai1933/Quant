@@ -30,6 +30,8 @@ const LABEL_TRIGGER_BASIS_LABELS: Record<string, string> = {
   high_low: "high_low / 按高低点命中",
 };
 
+const DEFAULT_RESEARCH_PRESETS = ["baseline_balanced", "trend_following", "conservative_validation"];
+
 export default async function ResearchPage() {
   const session = await getControlSessionState();
   const [workspaceResponse, runtimeResponse] = await Promise.allSettled([getResearchWorkspace(), getResearchRuntimeStatus()]);
@@ -73,6 +75,21 @@ export default async function ResearchPage() {
   const selectedModelKey = String(controls.model_key ?? workspace.model.model_version ?? "heuristic_v1");
   const labelTargetPctValue = displayValue(workspace.controls.label_target_pct, "未设置");
   const labelStopPctValue = displayValue(workspace.controls.label_stop_pct, "未设置");
+  const modelCatalog = Array.isArray(controls.model_catalog)
+    ? controls.model_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const researchPresetCatalog = Array.isArray(controls.research_preset_catalog)
+    ? controls.research_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const labelModeCatalog = Array.isArray(controls.label_mode_catalog)
+    ? controls.label_mode_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const labelTriggerCatalog = Array.isArray(controls.label_trigger_catalog)
+    ? controls.label_trigger_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const holdingWindowCatalog = Array.isArray(controls.holding_window_catalog)
+    ? controls.holding_window_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
   const weightSummaries = [
     { label: "趋势权重", value: workspace.controls.trend_weight },
     { label: "动量权重", value: workspace.controls.momentum_weight },
@@ -211,6 +228,41 @@ export default async function ResearchPage() {
 
         <div className="space-y-5">
           <WorkbenchConfigCard
+            title="研究预设"
+            description="先套用一整套研究配置，再继续微调模型、标签和权重。"
+            scope="research"
+            returnTo="/research"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="一键套用" hint="预设会一起改研究模板、模型、标签方式、持有窗口和主要权重。">
+              <ConfigSelect
+                name="research_preset_key"
+                defaultValue={String(controls.research_preset_key ?? "baseline_balanced")}
+                options={((workspace.controls.available_research_presets?.length
+                  ? workspace.controls.available_research_presets
+                  : DEFAULT_RESEARCH_PRESETS) || []).map((item) => ({
+                  value: item,
+                  label: item,
+                }))}
+              />
+            </ConfigField>
+            <DataTable
+              columns={["研究预设", "适用场景", "说明"]}
+              rows={researchPresetCatalog.map((item, index) => ({
+                id: `${item.key ?? index}`,
+                cells: [
+                  String(item.key ?? "n/a"),
+                  String(item.fit ?? "当前没有适用场景说明"),
+                  String(item.detail ?? "当前没有预设说明"),
+                ],
+              }))}
+              emptyTitle="当前还没有研究预设"
+              emptyDetail="先恢复研究工作台，系统才会给出一键研究预设。"
+            />
+          </WorkbenchConfigCard>
+
+          <WorkbenchConfigCard
             title="研究参数配置"
             description="这里改的是训练、推理和标签定义本身，保存后下一轮研究会按这里的参数运行。"
             scope="research"
@@ -340,6 +392,66 @@ export default async function ResearchPage() {
               <InfoBlock label="持有窗口说明" value={describeHoldingWindow(String(controls.holding_window_label ?? workspace.overview.holding_window ?? "1-3d"))} />
             </CardContent>
           </Card>
+
+          <DataTable
+            columns={["模型说明", "适合什么场景", "当前是否选中", "说明"]}
+            rows={modelCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "n/a"),
+                String(item.key ?? "") === selectedModelKey ? "当前模型" : "可切换",
+                String(item.detail ?? "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有模型目录"
+            emptyDetail="先恢复工作台配置选项，模型说明才会在这里出现。"
+          />
+
+          <DataTable
+            columns={["标签方式说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={labelModeCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "n/a"),
+                String(item.key ?? "") === String(controls.label_mode ?? workspace.labeling.label_mode ?? "") ? "当前方式" : "可切换",
+                String(item.detail ?? "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有标签方式目录"
+            emptyDetail="先恢复工作台配置选项，标签方式说明才会在这里出现。"
+          />
+
+          <DataTable
+            columns={["触发基础说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={labelTriggerCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "n/a"),
+                String(item.key ?? "") === String(controls.label_trigger_basis ?? "close") ? "当前方式" : "可切换",
+                String(item.detail ?? "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有触发基础目录"
+            emptyDetail="先恢复工作台配置选项，触发基础说明才会在这里出现。"
+          />
+
+          <DataTable
+            columns={["持有窗口说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={holdingWindowCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "n/a"),
+                String(item.key ?? "") === String(controls.holding_window_label ?? workspace.overview.holding_window ?? "1-3d") ? "当前窗口" : "可切换",
+                String(item.detail ?? "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有持有窗口目录"
+            emptyDetail="先恢复工作台配置选项，持有窗口说明才会在这里出现。"
+          />
 
           <DataTable
             columns={["参数名", "参数值"]}

@@ -165,7 +165,7 @@ export type AutomationStatusModel = {
   armedSymbol: string;
   runtimeMode: string;
   allowLiveExecution: boolean;
-  alerts: Array<{ level: string; code: string; message: string; createdAt: string }>;
+  alerts: Array<{ id: number; level: string; code: string; message: string; createdAt: string }>;
   lastCycle: Record<string, unknown>;
   reviewOverview: Record<string, unknown>;
   researchOverview: Record<string, unknown>;
@@ -483,6 +483,7 @@ export type FeatureWorkspaceModel = {
     auxiliary: string[];
   };
   controls: {
+    feature_preset_key?: string;
     primary_factors: string[];
     auxiliary_factors: string[];
     missing_policy: string;
@@ -494,6 +495,8 @@ export type FeatureWorkspaceModel = {
     available_missing_policies: string[];
     available_outlier_policies: string[];
     available_normalization_policies: string[];
+    available_feature_presets?: string[];
+    feature_preset_catalog?: Array<Record<string, unknown>>;
   };
   preprocessing: {
     missing_policy: string;
@@ -531,6 +534,7 @@ export type ResearchWorkspaceModel = {
     backend: string;
   };
   controls: {
+    research_preset_key?: string;
     research_template: string;
     model_key: string;
     label_mode: string;
@@ -556,6 +560,8 @@ export type ResearchWorkspaceModel = {
     available_label_modes: string[];
     available_label_trigger_bases: string[];
     available_holding_windows: string[];
+    available_research_presets?: string[];
+    research_preset_catalog?: Array<Record<string, unknown>>;
   };
   parameters: Record<string, string>;
   selectors: {
@@ -589,10 +595,13 @@ export type BacktestWorkspaceModel = {
   };
   assumptions: Record<string, string>;
   controls: {
+    backtest_preset_key?: string;
     fee_bps: string;
     slippage_bps: string;
     cost_model: string;
     available_cost_models: string[];
+    available_backtest_presets?: string[];
+    backtest_preset_catalog?: Array<Record<string, unknown>>;
     enable_rule_gate: boolean;
     enable_validation_gate: boolean;
     enable_backtest_gate: boolean;
@@ -647,6 +656,7 @@ export type EvaluationWorkspaceModel = {
     candidate_count: number;
   };
   controls: {
+    threshold_preset_key?: string;
     dry_run_min_score: string;
     dry_run_min_positive_rate: string;
     dry_run_min_net_return_pct: string;
@@ -680,6 +690,8 @@ export type EvaluationWorkspaceModel = {
     live_min_win_rate: string;
     live_max_turnover: string;
     live_min_sample_count: string;
+    available_threshold_presets?: string[];
+    threshold_preset_catalog?: Array<Record<string, unknown>>;
   };
   operations: {
     review_limit: string;
@@ -1196,6 +1208,7 @@ export async function getAutomationStatus(
           ? state.alerts.map((entry) => {
               const row = isPlainObject(entry) ? entry : {};
               return {
+                id: Number(row.id ?? 0),
                 level: String(row.level ?? ""),
                 code: String(row.code ?? ""),
                 message: String(row.message ?? ""),

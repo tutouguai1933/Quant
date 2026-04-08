@@ -25,6 +25,17 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("研究链入口")).toBeVisible();
   await expect(page.getByText("评估与实验中心").first()).toBeVisible();
 
+  await page.goto(`${WEB_BASE_URL}/research`, { waitUntil: "load" });
+  await page.waitForFunction(() => document.body.innerText.includes("模型说明"));
+  await expect(page.getByText("模型说明").first()).toBeVisible();
+  await expect(page.getByText("标签方式说明").first()).toBeVisible();
+  await expect(page.getByText("持有窗口说明").first()).toBeVisible();
+
+  await page.goto(`${WEB_BASE_URL}/backtest`, { waitUntil: "load" });
+  await page.waitForFunction(() => document.body.innerText.includes("成本模型说明"));
+  await expect(page.getByText("成本模型说明").first()).toBeVisible();
+  await expect(page.getByText("准入阶段").first()).toBeVisible();
+
   await page.goto(`${WEB_BASE_URL}/tasks`, { waitUntil: "load" });
   await page.waitForFunction(() => document.body.innerText.includes("回到研究链"));
   await expect(page.getByRole("link", { name: "回到研究链" })).toBeVisible();
@@ -33,12 +44,20 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByRole("button", { name: "Kill Switch" })).toBeVisible();
   await expect(page.getByText("活跃告警").first()).toBeVisible();
   await expect(page.getByText("最近复盘记录").first()).toBeVisible();
+  await expect(page.getByText("当前处理队列").first()).toBeVisible();
+  await expect(page.getByText("恢复检查项").first()).toBeVisible();
+  await expect(page.getByText("告警快捷处理")).toBeVisible();
+  await expect(page.getByRole("button", { name: "确认头号告警" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "清理非错误告警" })).toBeVisible();
 
   await page.goto(`${WEB_BASE_URL}/evaluation`, { waitUntil: "load" });
   await page.waitForFunction(() => document.body.innerText.includes("最近复盘记录"));
   await expect(page.getByText("实验对比与复盘窗口")).toBeVisible();
+  await expect(page.getByText("准入预设")).toBeVisible();
+  await expect(page.getByText("自选实验对比")).toBeVisible();
   await expect(page.getByText("最近复盘记录").first()).toBeVisible();
   await expect(page.getByText("最近训练实验快照").first()).toBeVisible();
   await expect(page.getByText("最近推理实验快照").first()).toBeVisible();
+  await expect(page.getByText("候选推进板").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "去任务页看自动化" })).toBeVisible();
 });

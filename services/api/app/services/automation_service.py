@@ -52,7 +52,7 @@ class AutomationService:
         """返回当前自动化状态。"""
 
         settings = Settings.from_env()
-        last_cycle = dict(self._last_cycle)
+        last_cycle = self._build_cycle_summary(self._last_cycle)
         return {
             "mode": self._mode,
             "paused": self._paused,
@@ -71,6 +71,39 @@ class AutomationService:
             "last_failure_at": self._last_failure_at,
             "paused_at": self._paused_at,
             "manual_takeover_at": self._manual_takeover_at,
+        }
+
+    @staticmethod
+    def _build_cycle_summary(payload: dict[str, object]) -> dict[str, object]:
+        """只返回任务页真正需要的最近工作流摘要。"""
+
+        row = dict(payload or {})
+        dispatch = dict(row.get("dispatch") or {})
+        dispatch_meta = dict(dispatch.get("meta") or {})
+        dispatch_item = dict(dispatch.get("item") or {})
+        dispatch_order = dict(dispatch_item.get("order") or {})
+        return {
+            "status": str(row.get("status", "")).strip() or "unknown",
+            "mode": str(row.get("mode", "")).strip(),
+            "source": str(row.get("source", "")).strip(),
+            "recommended_symbol": str(row.get("recommended_symbol", "")).strip().upper(),
+            "recommended_strategy_id": row.get("recommended_strategy_id") or "",
+            "next_action": str(row.get("next_action", "")).strip(),
+            "message": str(row.get("message", "")).strip(),
+            "failure_reason": str(row.get("failure_reason", "")).strip(),
+            "recorded_at": str(row.get("recorded_at", "")).strip(),
+            "dispatch": {
+                "status": str(dispatch.get("status", "")).strip(),
+                "meta": {
+                    "source": str(dispatch_meta.get("source", "")).strip(),
+                },
+                "item": {
+                    "order": {
+                        "symbol": str(dispatch_order.get("symbol", "")).strip().upper(),
+                        "status": str(dispatch_order.get("status", "")).strip(),
+                    }
+                },
+            },
         }
 
     def get_status(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
@@ -263,8 +296,8 @@ class AutomationService:
         self._persist_state()
         return self.get_state()
 
-    def record_cycle(self, payload: dict[str, object]) -> None:
-        """记录最近一次自动化工作流结果。"""
+    def record_cycle(self, payload: dict[str, object], *, count_towards_daily: bool = True) -> None:
+        """记录最近一次工作流结果。"""
 
         self._ensure_daily_summary()
         self._last_cycle = {
@@ -278,10 +311,11 @@ class AutomationService:
         elif status == "attention_required":
             self._consecutive_failure_count += 1
             self._last_failure_at = _utc_now()
-        self._daily_summary["cycle_count"] = int(self._daily_summary.get("cycle_count", 0)) + 1
-        status_counts = dict(self._daily_summary.get("status_counts") or {})
-        status_counts[status] = int(status_counts.get(status, 0) or 0) + 1
-        self._daily_summary["status_counts"] = status_counts
+        if count_towards_daily:
+            self._daily_summary["cycle_count"] = int(self._daily_summary.get("cycle_count", 0)) + 1
+            status_counts = dict(self._daily_summary.get("status_counts") or {})
+            status_counts[status] = int(status_counts.get(status, 0) or 0) + 1
+            self._daily_summary["status_counts"] = status_counts
         self._updated_at = _utc_now()
         self._persist_state()
 
@@ -308,6 +342,47 @@ class AutomationService:
         self._updated_at = _utc_now()
         self._persist_state()
         return dict(item)
+
+    def _pop_alert(self, alert_id: int) -> dict[str, object] | None:
+        """按 ID 弹出告警项。"""
+
+        remaining: list[dict[str, object]] = []
+        found: dict[str, object] | None = None
+        for alert in self._alerts:
+            if alert.get("id") == alert_id and found is None:
+                found = alert
+                continue
+            remaining.append(alert)
+        self._alerts = remaining
+        return found
+
+    def confirm_alert(self, alert_id: int, *, actor: str = "user") -> dict[str, object]:
+        """确认单条告警并记录操作提醒。"""
+
+        alert = self._pop_alert(alert_id)
+        if alert is None:
+            raise ValueError("alert not found")
+        self._updated_at = _utc_now()
+        self._persist_state()
+        return alert
+
+    def clear_alerts(self, *, levels: list[str] | None = None, actor: str = "user") -> list[dict[str, object]]:
+        """按级别清空告警并记录清理信息。"""
+
+        levels_set = {item.lower() for item in (levels or ["info", "warning"])}
+        removed = []
+        kept = []
+        for alert in self._alerts:
+            if str(alert.get("level", "")).lower() in levels_set:
+                removed.append(alert)
+            else:
+                kept.append(alert)
+        if not removed:
+            return []
+        self._alerts = kept
+        self._updated_at = _utc_now()
+        self._persist_state()
+        return removed
 
     def build_health_summary(self, *, task_health: dict[str, object]) -> dict[str, Any]:
         """构造自动化健康摘要。"""

@@ -13,8 +13,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from services.api.app.services.automation_service import automation_service
 from services.api.app.services.research_service import research_service
 from services.api.app.services.signal_service import signal_service
+from services.api.app.services.validation_workflow_service import validation_workflow_service
+from services.api.app.services.workbench_config_service import workbench_config_service
+from services.api.app.tasks.scheduler import task_scheduler
 from services.worker.qlib_config import load_qlib_config
 
 
@@ -33,11 +37,17 @@ class ResearchRuntimeService:
         config_loader: Callable[[], object] | None = None,
         research_service_instance=None,
         signal_service_instance=None,
+        scheduler_instance=None,
+        reviewer_instance=None,
+        automation_instance=None,
         async_runner: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
         self._config_loader = config_loader or load_qlib_config
         self._research_service = research_service_instance or research_service
         self._signal_service = signal_service_instance or signal_service
+        self._scheduler = scheduler_instance or task_scheduler
+        self._reviewer = reviewer_instance or validation_workflow_service
+        self._automation = automation_instance or automation_service
         self._lock = threading.Lock()
         self._active_thread: threading.Thread | None = None
         self._async_runner = async_runner or self._spawn_thread
@@ -111,6 +121,8 @@ class ResearchRuntimeService:
                 "history": dict(current.get("history") or {}),
             }
             self._write_state(self._status_path(config), state)
+            if action == "pipeline":
+                self._record_manual_cycle_started()
         self._async_runner(lambda: self._run_job(action))
         return self.get_status()
 
@@ -121,26 +133,143 @@ class ResearchRuntimeService:
         try:
             if action == "training":
                 self._update_state(action, "preparing_dataset", 15, "正在准备训练样本和特征。")
-                self._research_service.run_training()
+                task = self._scheduler.run_named_task(task_type="research_train", source="manual_training", target_type="system")
+                self._ensure_task_succeeded(task, "研究训练失败")
                 self._mark_success(action, started_at, "研究训练已完成，可继续运行研究推理。")
                 return
             if action == "inference":
                 self._update_state(action, "loading_model", 20, "正在读取最新模型并准备推理。")
-                self._research_service.run_inference()
+                task = self._scheduler.run_named_task(task_type="research_infer", source="manual_inference", target_type="system")
+                self._ensure_task_succeeded(task, "研究推理失败")
                 self._mark_success(action, started_at, "研究推理已完成，可查看候选排行和统一研究报告。")
                 return
             if action == "pipeline":
                 self._update_state(action, "training_model", 20, "正在训练研究模型。")
-                self._research_service.run_training()
+                train_task = self._scheduler.run_named_task(task_type="research_train", source="manual_pipeline", target_type="system")
+                self._ensure_task_succeeded(train_task, "研究训练失败")
                 self._update_state(action, "running_inference", 65, "训练完成，正在生成候选和推荐动作。")
-                self._research_service.run_inference()
+                infer_task = self._scheduler.run_named_task(task_type="research_infer", source="manual_pipeline", target_type="system")
+                self._ensure_task_succeeded(infer_task, "研究推理失败")
                 self._update_state(action, "writing_signals", 85, "候选已生成，正在回写统一信号。")
-                self._signal_service.refresh_qlib_signals_from_latest_result()
+                signal_task = self._scheduler.run_named_task(task_type="signal_output", source="manual_pipeline", target_type="system")
+                self._ensure_task_succeeded(signal_task, "统一信号回写失败")
+                review_task = self._scheduler.run_named_task(
+                    task_type="review",
+                    source="manual_pipeline",
+                    target_type="system",
+                    payload={"limit": self._resolve_review_limit()},
+                )
+                review_report = self._reviewer.build_report(limit=self._resolve_review_limit())
+                self._record_manual_cycle(
+                    review_report=review_report,
+                    train_task=train_task,
+                    infer_task=infer_task,
+                    signal_task=signal_task,
+                    review_task=review_task,
+                )
                 self._mark_success(action, started_at, "Qlib 信号流水线已完成，可去信号页、评估页和策略页查看结果。")
                 return
             raise RuntimeError(f"unsupported research runtime action: {action}")
         except Exception as exc:
+            if action == "pipeline":
+                self._record_manual_failure(message=str(exc))
             self._mark_failed(action, started_at, str(exc))
+
+    @staticmethod
+    def _ensure_task_succeeded(task: dict[str, object], fallback_message: str) -> None:
+        """确保任务成功，否则抛出统一错误。"""
+
+        if str(task.get("status", "")) == "succeeded":
+            return
+        result = task.get("result")
+        detail = result.get("detail") if isinstance(result, dict) else ""
+        message = str(task.get("error_message") or detail or fallback_message)
+        raise RuntimeError(message)
+
+    def _record_manual_cycle(
+        self,
+        *,
+        review_report: dict[str, object],
+        train_task: dict[str, object],
+        infer_task: dict[str, object],
+        signal_task: dict[str, object],
+        review_task: dict[str, object],
+    ) -> None:
+        """把手动流水线写进统一工作流摘要。"""
+
+        overview = dict(review_report.get("overview") or {})
+        recommendation = self._research_service.get_research_recommendation() or {}
+        summary = {
+            "status": "succeeded" if str(review_task.get("status", "")) == "succeeded" else "attention_required",
+            "mode": "manual",
+            "source": "manual_pipeline",
+            "recommended_symbol": str(recommendation.get("symbol") or overview.get("recommended_symbol") or ""),
+            "recommended_strategy_id": recommendation.get("strategy_id") or "",
+            "next_action": str(overview.get("next_action") or recommendation.get("next_action") or "continue_research"),
+            "message": "手动信号流水线已完成，这一轮结果已经同步进统一复盘和任务页。",
+            "failure_reason": "",
+            "dispatch": {"status": "manual_pipeline", "meta": {"source": "manual_pipeline"}},
+            "train_task": train_task,
+            "infer_task": infer_task,
+            "signal_task": signal_task,
+            "review_task": review_task,
+            "review_overview": overview,
+        }
+        self._automation.record_cycle(summary, count_towards_daily=False)
+
+    def _record_manual_cycle_started(self) -> None:
+        """把手动流水线已进入后台的状态提前写进统一工作流摘要。"""
+
+        recommendation = self._research_service.get_research_recommendation() or {}
+        self._automation.record_cycle(
+            {
+                "status": "running",
+                "mode": "manual",
+                "source": "manual_pipeline",
+                "recommended_symbol": str(recommendation.get("symbol") or ""),
+                "recommended_strategy_id": recommendation.get("strategy_id") or "",
+                "next_action": "wait_pipeline_completion",
+                "message": "手动信号流水线已进入后台，当前可以去研究页、评估页和任务页跟进阶段变化。",
+                "failure_reason": "",
+                "dispatch": {"status": "running", "meta": {"source": "manual_pipeline"}},
+            },
+            count_towards_daily=False,
+        )
+
+    def _record_manual_failure(self, *, message: str) -> None:
+        """把手动流水线失败写入统一告警和工作流摘要。"""
+
+        self._automation.record_alert(
+            level="error",
+            code="manual_pipeline_failed",
+            message="手动 Qlib 信号流水线失败",
+            source="manual_pipeline",
+            detail=message,
+        )
+        self._automation.record_cycle(
+            {
+                "status": "attention_required",
+                "mode": "manual",
+                "source": "manual_pipeline",
+                "recommended_symbol": "",
+                "recommended_strategy_id": "",
+                "next_action": "manual_review",
+                "message": message,
+                "failure_reason": "manual_pipeline_failed",
+                "dispatch": {"status": "failed", "meta": {"source": "manual_pipeline"}},
+            },
+            count_towards_daily=False,
+        )
+
+    @staticmethod
+    def _resolve_review_limit() -> int:
+        """读取统一复盘条数。"""
+
+        try:
+            operations = dict(workbench_config_service.get_config().get("operations") or {})
+            return max(int(operations.get("review_limit") or 10), 1)
+        except (TypeError, ValueError):
+            return 10
 
     def _mark_success(self, action: str, started_at: float, message: str) -> None:
         """记录成功状态。"""

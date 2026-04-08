@@ -29,26 +29,26 @@ export async function POST(request: Request) {
     return handleWorkbenchConfigUpdate({ request, params, returnTo, token, cookieStore });
   }
 
-  const config = resolveActionConfig(action, strategyId);
+  const config = resolveActionConfig(action, strategyId, params);
 
   if (!config) {
-    return NextResponse.redirect(buildRedirectUrl(request, `${returnTo}?tone=error&title=动作反馈&message=未识别的操作请求。`));
+    return redirectAfterPost(request, `${returnTo}?tone=error&title=动作反馈&message=未识别的操作请求。`);
   }
 
   if (config.requiresToken && !token) {
-    return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=请先登录后再执行受保护操作。`));
+    return redirectAfterPost(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=请先登录后再执行受保护操作。`);
   }
 
   if (config.requiresToken) {
     try {
-      const session = await getAdminSession(token);
+        const session = await getAdminSession(token);
       if (session.error) {
         cookieStore.delete(SESSION_COOKIE_NAME);
-        return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话已失效，请重新登录。`));
+        return redirectAfterPost(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话已失效，请重新登录。`);
       }
     } catch {
       cookieStore.delete(SESSION_COOKIE_NAME);
-      return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话校验失败，请重新登录。`));
+      return redirectAfterPost(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话校验失败，请重新登录。`);
     }
   }
 
@@ -69,6 +69,7 @@ export async function POST(request: Request) {
           request,
           `${returnTo}?tone=error&title=${encodeURIComponent("动作反馈")}&message=${encodeURIComponent(payload.error.message)}`,
         ),
+        303,
       );
     }
 
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
           request,
           `${returnTo}?tone=${encodeURIComponent(feedback.tone)}&title=${encodeURIComponent(feedback.title)}&message=${encodeURIComponent(feedback.message)}`,
         ),
+        303,
       );
     }
 
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
         request,
         `${returnTo}?tone=success&title=${encodeURIComponent(config.successTitle)}&message=${encodeURIComponent(config.successMessage)}`,
       ),
+      303,
     );
   } catch {
     return NextResponse.redirect(
@@ -94,6 +97,7 @@ export async function POST(request: Request) {
         request,
         `${returnTo}?tone=error&title=${encodeURIComponent("动作反馈")}&message=${encodeURIComponent("控制平面暂时不可达，请稍后重试。")}`,
       ),
+      303,
     );
   }
 }
@@ -112,18 +116,18 @@ async function handleWorkbenchConfigUpdate({
   cookieStore: Awaited<ReturnType<typeof cookies>>;
 }) {
   if (!token) {
-    return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=请先登录后再保存工作台配置。`));
+    return redirectAfterPost(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=请先登录后再保存工作台配置。`);
   }
 
   try {
     const session = await getAdminSession(token);
     if (session.error) {
       cookieStore.delete(SESSION_COOKIE_NAME);
-      return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话已失效，请重新登录。`));
+      return redirectAfterPost(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话已失效，请重新登录。`);
     }
   } catch {
     cookieStore.delete(SESSION_COOKIE_NAME);
-    return NextResponse.redirect(buildRedirectUrl(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话校验失败，请重新登录。`));
+    return redirectAfterPost(request, `/login?next=${encodeURIComponent(returnTo)}&tone=warning&title=登录反馈&message=当前会话校验失败，请重新登录。`);
   }
 
   const section = String(params.get("section") ?? "").trim();
@@ -146,6 +150,7 @@ async function handleWorkbenchConfigUpdate({
           request,
           `${returnTo}?tone=error&title=${encodeURIComponent("配置反馈")}&message=${encodeURIComponent(payload.error.message)}`,
         ),
+        303,
       );
     }
     return NextResponse.redirect(
@@ -153,6 +158,7 @@ async function handleWorkbenchConfigUpdate({
         request,
         `${returnTo}?tone=success&title=${encodeURIComponent("配置反馈")}&message=${encodeURIComponent("工作台配置已更新，当前页面和后续研究链都会按新配置刷新。")}`,
       ),
+      303,
     );
   } catch {
     return NextResponse.redirect(
@@ -160,18 +166,27 @@ async function handleWorkbenchConfigUpdate({
         request,
         `${returnTo}?tone=error&title=${encodeURIComponent("配置反馈")}&message=${encodeURIComponent("工作台配置暂时保存失败，请稍后重试。")}`,
       ),
+      303,
     );
   }
 }
 
 /* 服务端动作直接连控制面 API，避免再绕一层前端代理。 */
-function buildActionUpstreamUrl(request: Request, path: string): string {
+function buildProxyUrl(request: Request, path: string): string {
   const [pathname, search = ""] = path.split("?", 2);
   const upstreamUrl = new URL(buildUpstreamApiUrl(pathname, request));
   if (search) {
     upstreamUrl.search = search;
   }
   return upstreamUrl.toString();
+}
+
+function buildActionUpstreamUrl(request: Request, path: string): string {
+  return buildProxyUrl(request, path);
+}
+
+function redirectAfterPost(request: Request, targetPath: string) {
+  return NextResponse.redirect(buildRedirectUrl(request, targetPath), 303);
 }
 
 function resolveActionFeedback(
@@ -270,7 +285,10 @@ function serializeWorkbenchValues(params: URLSearchParams): Record<string, unkno
 }
 
 /* 将表单动作映射到控制平面 API。 */
-function resolveActionConfig(action: string, strategyId: string): ActionConfig | null {
+function resolveActionConfig(action: string, strategyId: string, params: URLSearchParams): ActionConfig | null {
+  const alertId = String(params.get("alert_id") ?? "").trim();
+  const alertLevels = String(params.get("levels") ?? "").trim();
+  const alertLevelQuery = alertLevels ? `?levels=${encodeURIComponent(alertLevels)}` : "";
   const map: Record<string, ActionConfig> = {
     run_pipeline: {
       path: "/signals/pipeline/run?source=qlib",
@@ -412,6 +430,20 @@ function resolveActionConfig(action: string, strategyId: string): ActionConfig |
       successTitle: "自动化反馈",
       successMessage: "Kill Switch 已触发，自动化已停机。",
     },
+    automation_confirm_alert: {
+      path: alertId ? `/tasks/automation/alerts/${alertId}/confirm` : "",
+      method: "POST",
+      requiresToken: true,
+      successTitle: "自动化反馈",
+      successMessage: "头号告警已确认，任务页会按最新状态刷新。",
+    },
+    automation_clear_non_error_alerts: {
+      path: `/tasks/automation/alerts/clear${alertLevelQuery}`,
+      method: "POST",
+      requiresToken: true,
+      successTitle: "自动化反馈",
+      successMessage: "非错误告警已清理，当前风险摘要已刷新。",
+    },
     automation_run_cycle: {
       path: "/tasks/automation/run",
       method: "POST",
@@ -421,5 +453,9 @@ function resolveActionConfig(action: string, strategyId: string): ActionConfig |
     },
   };
 
-  return map[action] ?? null;
+  const item = map[action] ?? null;
+  if (!item || !item.path) {
+    return null;
+  }
+  return item;
 }

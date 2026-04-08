@@ -101,7 +101,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
                 </Badge>
 
                 {isAuthenticated ? (
-                  <form action="/logout" method="post">
+                  <form action="/logout/submit" method="post">
                     <FormSubmitButton
                       type="submit"
                       variant="outline"

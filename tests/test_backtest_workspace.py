@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WEB_APP = REPO_ROOT / "apps" / "web" / "app"
 WEB_COMPONENTS = REPO_ROOT / "apps" / "web" / "components"
+CONFIG_SERVICE = REPO_ROOT / "services" / "api" / "app" / "services" / "workbench_config_service.py"
 
 
 class BacktestWorkspaceTests(unittest.TestCase):
@@ -19,6 +20,7 @@ class BacktestWorkspaceTests(unittest.TestCase):
 
     def test_backtest_workspace_page_mentions_key_sections(self) -> None:
         content = (WEB_APP / "backtest" / "page.tsx").read_text(encoding="utf-8")
+        config_content = CONFIG_SERVICE.read_text(encoding="utf-8")
         self.assertIn("回测工作台", content)
         self.assertIn("成本模型", content)
         self.assertIn("净收益", content)
@@ -31,9 +33,15 @@ class BacktestWorkspaceTests(unittest.TestCase):
         self.assertIn("当前口径", content)
         self.assertIn("会影响什么", content)
         self.assertIn("回测参数配置", content)
+        self.assertIn("回测预设", content)
+        self.assertIn("realistic_standard", config_content)
+        self.assertIn("cost_stress", config_content)
+        self.assertIn("signal_baseline", config_content)
         self.assertIn("fee_bps", content)
-        self.assertIn("准入门槛预览", content)
-        self.assertIn("完整准入门槛", content)
+        self.assertIn("成本与过滤拆解", content)
+        self.assertIn("dry-run 门槛", content)
+        self.assertIn("验证与 live 门槛", content)
+        self.assertIn("规则门与一致性门", content)
         self.assertIn("dry_run_min_score", content)
         self.assertIn("dry_run_min_positive_rate", content)
         self.assertIn("dry_run_min_net_return_pct", content)

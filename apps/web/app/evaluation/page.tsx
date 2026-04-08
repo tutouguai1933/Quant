@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
+import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
@@ -13,7 +14,12 @@ import { getEvaluationWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 
-export default async function EvaluationPage() {
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function EvaluationPage({ searchParams }: PageProps) {
+  const params = (await searchParams) ?? {};
   const session = await getControlSessionState();
   const response = await getEvaluationWorkspace();
   const workspace = response.data.item;
@@ -39,6 +45,12 @@ export default async function EvaluationPage() {
   const comparisonRunLimit = readText(operations.comparison_run_limit, "5");
   const executionMetrics = asRecord(executionAlignment.execution);
   const executionBacktest = asRecord(executionAlignment.backtest);
+  const gateMatrixRows = Array.isArray(workspace.gate_matrix)
+    ? workspace.gate_matrix.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const gateMatrixBySymbol = new Map(
+    gateMatrixRows.map((item) => [String(item.symbol ?? ""), item] as const).filter(([key]) => key.length > 0),
+  );
   const recentReviewTasks = Array.isArray(workspace.recent_review_tasks)
     ? workspace.recent_review_tasks.filter((item) => item && typeof item === "object")
     : [];
@@ -57,6 +69,23 @@ export default async function EvaluationPage() {
       : configAlignmentStatus === "unavailable"
         ? "评估系统还没拿到配置快照，无法确认与当前门槛的关系。"
         : "检测到配置与研究结果之间可能存在漂移，请参照右侧字段进一步核对。";
+  const thresholdPresetCatalog = Array.isArray(controls.threshold_preset_catalog)
+    ? controls.threshold_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const comparisonOptions = buildExperimentCompareOptions({
+    trainingRuns: workspace.recent_training_runs,
+    inferenceRuns: workspace.recent_inference_runs,
+    limit: Number(comparisonRunLimit),
+  });
+  const compareA = readSearchParam(params.compareA, comparisonOptions[0]?.id ?? "");
+  const compareB = readSearchParam(
+    params.compareB,
+    comparisonOptions.find((item) => item.id !== compareA)?.id ?? comparisonOptions[0]?.id ?? "",
+  );
+  const manualCompare = buildManualExperimentComparison({
+    left: comparisonOptions.find((item) => item.id === compareA),
+    right: comparisonOptions.find((item) => item.id === compareB),
+  });
   const executionAlignmentNarrative = buildExecutionAlignmentNarrative({
     executionAlignment,
     executionMetrics,
@@ -102,6 +131,39 @@ export default async function EvaluationPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="准入预设"
+            description="先切换一整套放行口径，再决定要不要继续手动微调 dry-run 和 live 的每个门。"
+            scope="thresholds"
+            returnTo="/evaluation"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="一键套用" hint="预设会一起改 dry-run、验证、一致性和 live 门槛，适合先快速切到标准、严格或探索口径。">
+              <ConfigSelect
+                name="threshold_preset_key"
+                defaultValue={String(controls.threshold_preset_key ?? "standard_gate")}
+                options={(workspace.controls.available_threshold_presets || []).map((item) => ({
+                  value: item,
+                  label: item,
+                }))}
+              />
+            </ConfigField>
+            <DataTable
+              columns={["准入预设", "适用场景", "说明"]}
+              rows={thresholdPresetCatalog.map((item, index) => ({
+                id: `${item.key ?? index}`,
+                cells: [
+                  String(item.key ?? "n/a"),
+                  String(item.fit ?? "当前没有适用场景说明"),
+                  String(item.detail ?? "当前没有预设说明"),
+                ],
+              }))}
+              emptyTitle="当前还没有准入预设"
+              emptyDetail="先恢复评估工作台，系统才会给出一键门槛预设。"
+            />
+          </WorkbenchConfigCard>
+
           <WorkbenchConfigCard
             title="准入门槛配置"
             description="这里改的是进入 dry-run 和进入小额 live 的门槛，保存后候选排序和自动化放行都会按新规则执行。"
@@ -410,7 +472,7 @@ export default async function EvaluationPage() {
 
           <DataTable
             columns={["门控分解", "规则门", "验证门", "回测门", "一致性门", "当前卡点"]}
-            rows={workspace.gate_matrix.map((item, index) => {
+            rows={gateMatrixRows.map((item, index) => {
               const row = asRecord(item);
               return {
                 id: `${row.symbol ?? index}`,
@@ -426,6 +488,38 @@ export default async function EvaluationPage() {
             })}
             emptyTitle="当前还没有门控分解"
             emptyDetail="先完成训练和推理，系统才会把每个候选卡在哪一层门槛拆开给你看。"
+          />
+
+          <DataTable
+            columns={["候选推进板", "更适合去哪一层", "dry-run / live", "当前卡点", "为什么推荐或淘汰", "下一步"]}
+            rows={workspace.leaderboard.map((item, index) => {
+              const row = asRecord(item);
+              const symbol = String(row.symbol ?? `candidate-${index}`);
+              const gateRow = gateMatrixBySymbol.get(symbol) ?? {};
+              const nextAction = String(row.next_action ?? "continue_research");
+              const suggestedStage = nextAction.includes("live")
+                ? "live"
+                : nextAction.includes("dry")
+                  ? "dry-run"
+                  : "继续研究";
+              const dryRunFit = gateRow.allowed_to_dry_run ? "可进" : "未过";
+              const liveFit = gateRow.allowed_to_live ? "可进" : "未过";
+              const why = String(row.recommendation_reason ?? row.elimination_reason ?? row.review_status ?? "当前没有额外说明");
+              const block = String(gateRow.primary_reason ?? gateRow.blocking_gate ?? row.elimination_reason ?? "当前没有明显阻断");
+              return {
+                id: symbol,
+                cells: [
+                  `${symbol} / ${String(row.score ?? "n/a")}`,
+                  suggestedStage,
+                  `${dryRunFit} / ${liveFit}`,
+                  block,
+                  why,
+                  nextAction,
+                ],
+              };
+            })}
+            emptyTitle="当前还没有候选推进板"
+            emptyDetail="先完成研究训练和推理，系统才会告诉你哪一轮更适合继续研究、dry-run 或 live。"
           />
 
           <Card className="bg-card/90">
@@ -553,6 +647,70 @@ export default async function EvaluationPage() {
               ) : (
                 <p className="text-sm leading-6 text-muted-foreground">当前还没有足够的实验账本，暂时无法比较最近两轮差异。</p>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>自选实验对比</CardTitle>
+              <CardDescription>不只看系统默认最近两轮，你也可以手动挑两轮训练或推理，直接比较哪一轮更值得继续推进。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form method="get" action="/evaluation" className="grid gap-3 rounded-2xl border border-border/60 bg-background/40 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <div className="space-y-2">
+                  <p className="eyebrow">对比对象 A</p>
+                  <select
+                    name="compareA"
+                    defaultValue={compareA}
+                    className="flex h-11 w-full rounded-xl border border-border/70 bg-background px-3 text-sm text-foreground shadow-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    {comparisonOptions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <p className="eyebrow">对比对象 B</p>
+                  <select
+                    name="compareB"
+                    defaultValue={compareB}
+                    className="flex h-11 w-full rounded-xl border border-border/70 bg-background px-3 text-sm text-foreground shadow-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    {comparisonOptions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <FormSubmitButton
+                    type="submit"
+                    variant="terminal"
+                    size="sm"
+                    idleLabel="更新对比"
+                    pendingLabel="更新对比中…"
+                    pendingHint="页面会按你选的两轮实验重新整理对比结果。"
+                    disabled={comparisonOptions.length < 2}
+                  />
+                </div>
+              </form>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoBlock label="可比性判断" value={manualCompare.readiness} />
+                <InfoBlock label="说明" value={manualCompare.note} />
+                <InfoBlock label="更值得推进哪一轮" value={manualCompare.preferredRun} />
+                <InfoBlock label="当前建议" value={manualCompare.nextAction} />
+              </div>
+
+              <DataTable
+                columns={["自选实验对比", "对比对象 A", "对比对象 B", "变化说明"]}
+                rows={manualCompare.rows}
+                emptyTitle="当前还没有足够实验可供手动对比"
+                emptyDetail="先至少积累两轮训练或推理，再回来挑选你想比较的两轮。"
+              />
             </CardContent>
           </Card>
 
@@ -896,6 +1054,128 @@ function formatGapSeverity(value: string): string {
     unknown: "待确认",
   };
   return mapping[value] ?? "待确认";
+}
+
+function readSearchParam(value: string | string[] | undefined, fallback: string): string {
+  if (Array.isArray(value)) {
+    return String(value[0] ?? fallback).trim() || fallback;
+  }
+  return String(value ?? fallback).trim() || fallback;
+}
+
+function buildExperimentCompareOptions({
+  trainingRuns,
+  inferenceRuns,
+  limit,
+}: {
+  trainingRuns: unknown[];
+  inferenceRuns: unknown[];
+  limit: number;
+}) {
+  const rows = [...(Array.isArray(trainingRuns) ? trainingRuns : []), ...(Array.isArray(inferenceRuns) ? inferenceRuns : [])]
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .slice(0, Math.max(limit, 2));
+
+  return rows.map((row, index) => {
+    const runType = readText(row.run_type, index < (Array.isArray(trainingRuns) ? trainingRuns.length : 0) ? "training" : "inference");
+    const runId = readText(row.run_id, `run-${index + 1}`);
+    const model = readText(row.model_key, "n/a");
+    const snapshot = readText(row.dataset_snapshot_id, "n/a");
+    return {
+      id: `${runType}:${runId}`,
+      runType,
+      runId,
+      label: `${runType} / ${runId} / ${model} / ${snapshot}`,
+      row,
+    };
+  });
+}
+
+function buildManualExperimentComparison({
+  left,
+  right,
+}: {
+  left: { id: string; runType: string; runId: string; label: string; row: Record<string, unknown> } | undefined;
+  right: { id: string; runType: string; runId: string; label: string; row: Record<string, unknown> } | undefined;
+}) {
+  if (!left || !right) {
+    return {
+      readiness: "当前还不能直接比",
+      note: "先至少保留两轮训练或推理快照，再回来手动挑选。",
+      preferredRun: "当前没有可比较的实验",
+      nextAction: "继续积累实验",
+      rows: [] as Array<{ id: string; cells: string[] }>,
+    };
+  }
+
+  const comparable = left.runType === right.runType;
+  const leftNet = readMetric(left.row.net_return_pct);
+  const rightNet = readMetric(right.row.net_return_pct);
+  const leftSharpe = readMetric(left.row.sharpe);
+  const rightSharpe = readMetric(right.row.sharpe);
+  const leftWin = readMetric(left.row.win_rate);
+  const rightWin = readMetric(right.row.win_rate);
+  const preferredRun =
+    comparable && leftNet !== null && rightNet !== null
+      ? leftNet >= rightNet
+        ? left.label
+        : right.label
+      : "先按同类型实验比较后再决定";
+  const nextAction = comparable ? "先看净收益和 Sharpe，再决定是否继续推进。" : "当前建议先挑同类型实验再比较。";
+
+  return {
+    readiness: comparable ? "可以直接比" : "只能看方向，不能直接归因",
+    note: comparable
+      ? "当前两轮属于同一种实验类型，可以直接比较收益、Sharpe 和配置差异。"
+      : "当前选择的是不同类型实验，只适合先看方向差异，不适合直接归因到模型或标签。",
+    preferredRun,
+    nextAction,
+    rows: [
+      buildManualCompareRow("实验类型", left.runType, right.runType, comparable ? "同类型，可直接比较。" : "不同类型，只适合先看方向。"),
+      buildManualCompareRow("模型选择", readText(left.row.model_key, "n/a"), readText(right.row.model_key, "n/a"), compareText(readText(left.row.model_key, "n/a"), readText(right.row.model_key, "n/a"))),
+      buildManualCompareRow("标签方式", readText(left.row.label_mode, "n/a"), readText(right.row.label_mode, "n/a"), compareText(readText(left.row.label_mode, "n/a"), readText(right.row.label_mode, "n/a"))),
+      buildManualCompareRow("持有窗口", readText(left.row.holding_window, "n/a"), readText(right.row.holding_window, "n/a"), compareText(readText(left.row.holding_window, "n/a"), readText(right.row.holding_window, "n/a"))),
+      buildManualCompareRow("数据快照", readText(left.row.dataset_snapshot_id, "n/a"), readText(right.row.dataset_snapshot_id, "n/a"), compareText(readText(left.row.dataset_snapshot_id, "n/a"), readText(right.row.dataset_snapshot_id, "n/a"))),
+      buildManualCompareRow("净收益", formatMetricValue(left.row.net_return_pct), formatMetricValue(right.row.net_return_pct), compareNumericText(leftNet, rightNet, "%")),
+      buildManualCompareRow("Sharpe", formatMetricValue(left.row.sharpe), formatMetricValue(right.row.sharpe), compareNumericText(leftSharpe, rightSharpe, "")),
+      buildManualCompareRow("胜率", formatMetricValue(left.row.win_rate), formatMetricValue(right.row.win_rate), compareNumericText(leftWin, rightWin, "")),
+      buildManualCompareRow(
+        "当前建议",
+        readText(left.row.force_validation_top_candidate, "否"),
+        readText(right.row.force_validation_top_candidate, "否"),
+        "如果两轮都稳，再继续看推荐原因和执行对齐。",
+      ),
+    ],
+  };
+}
+
+function buildManualCompareRow(label: string, left: string, right: string, note: string) {
+  return {
+    id: label,
+    cells: [label, left, right, note],
+  };
+}
+
+function readMetric(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function formatMetricValue(value: unknown): string {
+  const numeric = readMetric(value);
+  return numeric === null ? readText(value, "n/a") : `${numeric}`;
+}
+
+function compareText(left: string, right: string): string {
+  return left === right ? "两轮一致。" : `A=${left}，B=${right}。`;
+}
+
+function compareNumericText(left: number | null, right: number | null, suffix: string): string {
+  if (left === null || right === null) {
+    return "当前没有足够数值可比较。";
+  }
+  const diff = (left - right).toFixed(2);
+  return `A-B=${diff}${suffix}`.replace("..", ".");
 }
 
 function buildChangedFieldSummary(row: Record<string, unknown>) {

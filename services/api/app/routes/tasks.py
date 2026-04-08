@@ -214,6 +214,44 @@ def enable_dry_run_only(actor: str = "user", token: str = "", authorization: str
     return _success({"item": item}, {"source": "automation-service", "action": "dry-run-only"})
 
 
+@router.post("/automation/alerts/{alert_id}/confirm")
+def confirm_automation_alert(
+    alert_id: int,
+    token: str = "",
+    authorization: str = Header(""),
+    actor: str = "user",
+) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    try:
+        item = automation_service.confirm_alert(alert_id, actor=actor)
+        return _success({"item": item}, {"source": "automation-service", "action": "confirm-alert", "alert_id": alert_id})
+    except ValueError as exc:
+        return {
+            "data": None,
+            "error": {"code": "alert_not_found", "message": str(exc)},
+            "meta": {"source": "automation-service", "alert_id": alert_id},
+        }
+
+
+@router.post("/automation/alerts/clear")
+def clear_automation_alerts(
+    levels: str = "",
+    token: str = "",
+    authorization: str = Header(""),
+    actor: str = "user",
+) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    level_list = [item.strip() for item in levels.split(",") if item.strip()]
+    item = automation_service.clear_alerts(levels=level_list or None, actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "clear-alerts", "levels": level_list})
+
+
 @router.post("/automation/kill-switch")
 def trigger_kill_switch(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
     try:

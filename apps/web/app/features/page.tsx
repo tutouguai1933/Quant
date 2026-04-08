@@ -15,6 +15,9 @@ export default async function FeaturePage() {
   const session = await getControlSessionState();
   const response = await getFeatureWorkspace();
   const workspace = response.data.item;
+  const featurePresetCatalog = Array.isArray(workspace.controls.feature_preset_catalog)
+    ? workspace.controls.feature_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
   const featureStatus = workspace.status || "unavailable";
@@ -163,6 +166,39 @@ export default async function FeaturePage() {
         </div>
 
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="因子预设"
+            description="先选一套因子组合预设，再决定要不要继续手动勾选具体因子。"
+            scope="features"
+            returnTo="/features"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="一键套用" hint="预设会先改主判断、辅助因子和预处理规则，再由下面的细项继续微调。">
+              <ConfigSelect
+                name="feature_preset_key"
+                defaultValue={String(workspace.controls.feature_preset_key ?? "balanced_default")}
+                options={(workspace.controls.available_feature_presets || []).map((item: string) => ({
+                  value: item,
+                  label: item,
+                }))}
+              />
+            </ConfigField>
+            <DataTable
+              columns={["因子预设", "适用场景", "说明"]}
+              rows={featurePresetCatalog.map((item, index) => ({
+                id: `${item.key ?? index}`,
+                cells: [
+                  String(item.key ?? "n/a"),
+                  String(item.fit ?? "当前没有适用场景说明"),
+                  String(item.detail ?? "当前没有预设说明"),
+                ],
+              }))}
+              emptyTitle="当前还没有因子预设"
+              emptyDetail="先恢复特征工作台，系统才会给出一键预设。"
+            />
+          </WorkbenchConfigCard>
+
           <WorkbenchConfigCard
             title="因子组合配置"
             description="这里选的主判断因子和辅助因子，会真正进入研究评分和解释，不只是页面展示。"

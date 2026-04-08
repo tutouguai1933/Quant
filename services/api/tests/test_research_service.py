@@ -18,6 +18,7 @@ import services.api.app.services.research_service as research_service_module  # 
 from services.api.app.services.auth_service import auth_service  # noqa: E402
 from services.api.app.services.research_runtime_service import ResearchRuntimeService  # noqa: E402
 from services.api.app.services.research_service import ResearchService  # noqa: E402
+from services.worker.qlib_config import QlibConfigurationError  # noqa: E402
 
 
 class ResearchServiceTests(unittest.TestCase):
@@ -89,6 +90,51 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(snapshot["summary"]["candidate_count"], 0)
         self.assertEqual(report["experiments"]["training"]["status"], "unavailable")
         self.assertEqual(report["experiments"]["inference"]["status"], "unavailable")
+
+    def test_research_service_reports_symbol_interval_and_reason_when_market_samples_are_missing(self) -> None:
+        service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_AlwaysEmptyMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaises(QlibConfigurationError) as captured:
+            service.run_training()
+
+        self.assertIn("BTCUSDT@4h=empty_chart", str(captured.exception))
+
+    def test_research_service_does_not_cache_empty_market_samples(self) -> None:
+        service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_EmptyThenReadyMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaises(QlibConfigurationError):
+            service.run_training()
+
+        result = service.run_training()
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(service._market_reader.calls, [("BTCUSDT", "4h", 180), ("BTCUSDT", "4h", 180)])
 
     def test_research_service_returns_symbol_candidate_summary(self) -> None:
         self.service.run_training()
@@ -675,6 +721,61 @@ class _FakeMarketReader:
         step_ms = 4 * 3600000 if interval == "4h" else 3600000
         for index in range(120):
             close = base_price + index * 0.8
+            items.append(
+                {
+                    "open_time": 1712016000000 + (index * step_ms),
+                    "open": str(close - 1),
+                    "high": str(close + 2),
+                    "low": str(close - 2),
+                    "close": str(close),
+                    "volume": str(1000 + (index * 100)),
+                    "close_time": 1712019599999 + (index * step_ms),
+                }
+            )
+        return {"items": items, "overlays": {}, "markers": {"signals": [], "entries": [], "stops": []}}
+
+
+class _AlwaysEmptyMarketReader:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+
+    def get_symbol_chart(
+        self,
+        symbol: str,
+        interval: str = "1h",
+        limit: int = 120,
+        allowed_symbols: tuple[str, ...] | None = None,
+    ) -> dict[str, object]:
+        self.calls.append((symbol, interval, limit))
+        return {
+            "items": [],
+            "strategy_context": {"primary_reason": "empty_chart"},
+            "overlays": {},
+            "markers": {"signals": [], "entries": [], "stops": []},
+        }
+
+
+class _EmptyThenReadyMarketReader(_AlwaysEmptyMarketReader):
+    def get_symbol_chart(
+        self,
+        symbol: str,
+        interval: str = "1h",
+        limit: int = 120,
+        allowed_symbols: tuple[str, ...] | None = None,
+    ) -> dict[str, object]:
+        self.calls.append((symbol, interval, limit))
+        if len(self.calls) == 1:
+            return {
+                "items": [],
+                "strategy_context": {"primary_reason": "empty_chart"},
+                "overlays": {},
+                "markers": {"signals": [], "entries": [], "stops": []},
+            }
+
+        step_ms = 4 * 3600000 if interval == "4h" else 3600000
+        items = []
+        for index in range(120):
+            close = 100 + index * 0.8
             items.append(
                 {
                     "open_time": 1712016000000 + (index * step_ms),

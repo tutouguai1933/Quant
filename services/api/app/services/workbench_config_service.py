@@ -39,6 +39,471 @@ SUPPORTED_BACKTEST_COST_MODELS = (
     "single_side_basis_points",
     "zero_cost_baseline",
 )
+SUPPORTED_FEATURE_PRESETS = ("balanced_default", "trend_focus", "confirmation_focus")
+SUPPORTED_RESEARCH_PRESETS = ("baseline_balanced", "trend_following", "conservative_validation")
+SUPPORTED_BACKTEST_PRESETS = ("realistic_standard", "cost_stress", "signal_baseline")
+SUPPORTED_THRESHOLD_PRESETS = ("standard_gate", "strict_live_gate", "exploratory_dry_run")
+
+
+FEATURE_PRESET_VALUES = {
+    "balanced_default": {
+        "primary_factors": list(PRIMARY_FEATURE_COLUMNS),
+        "auxiliary_factors": list(AUXILIARY_FEATURE_COLUMNS),
+        "missing_policy": "neutral_fill",
+        "outlier_policy": "clip",
+        "normalization_policy": "fixed_4dp",
+    },
+    "trend_focus": {
+        "primary_factors": ["trend_gap_pct", "ema20_gap_pct", "ema55_gap_pct", "breakout_strength", "volume_ratio"],
+        "auxiliary_factors": ["rsi14", "cci20"],
+        "missing_policy": "neutral_fill",
+        "outlier_policy": "clip",
+        "normalization_policy": "fixed_4dp",
+    },
+    "confirmation_focus": {
+        "primary_factors": ["volume_ratio", "ema20_gap_pct", "atr_pct", "range_pct", "close_return_pct"],
+        "auxiliary_factors": ["rsi14", "stoch_k14"],
+        "missing_policy": "strict_drop",
+        "outlier_policy": "raw",
+        "normalization_policy": "zscore_by_symbol",
+    },
+}
+
+RESEARCH_PRESET_VALUES = {
+    "baseline_balanced": {
+        "research_template": "single_asset_timing",
+        "model_key": "heuristic_v1",
+        "label_mode": "earliest_hit",
+        "label_trigger_basis": "close",
+        "holding_window_label": "1-3d",
+        "force_validation_top_candidate": False,
+        "label_target_pct": "1",
+        "label_stop_pct": "-1",
+        "signal_confidence_floor": "0.55",
+        "trend_weight": "1.3",
+        "momentum_weight": "1",
+        "volume_weight": "1.1",
+        "oscillator_weight": "0.7",
+        "volatility_weight": "0.9",
+        "strict_penalty_weight": "1",
+    },
+    "trend_following": {
+        "research_template": "single_asset_timing_strict",
+        "model_key": "trend_bias_v2",
+        "label_mode": "earliest_hit",
+        "label_trigger_basis": "high_low",
+        "holding_window_label": "2-4d",
+        "force_validation_top_candidate": False,
+        "label_target_pct": "1.4",
+        "label_stop_pct": "-0.9",
+        "signal_confidence_floor": "0.6",
+        "trend_weight": "1.8",
+        "momentum_weight": "1.2",
+        "volume_weight": "1.4",
+        "oscillator_weight": "0.4",
+        "volatility_weight": "0.7",
+        "strict_penalty_weight": "1.2",
+    },
+    "conservative_validation": {
+        "research_template": "single_asset_timing_strict",
+        "model_key": "balanced_v3",
+        "label_mode": "close_only",
+        "label_trigger_basis": "close",
+        "holding_window_label": "2-4d",
+        "force_validation_top_candidate": True,
+        "label_target_pct": "0.8",
+        "label_stop_pct": "-0.6",
+        "signal_confidence_floor": "0.62",
+        "trend_weight": "1.4",
+        "momentum_weight": "0.9",
+        "volume_weight": "1.2",
+        "oscillator_weight": "0.8",
+        "volatility_weight": "1",
+        "strict_penalty_weight": "1.4",
+    },
+}
+
+BACKTEST_PRESET_VALUES = {
+    "realistic_standard": {
+        "fee_bps": "10",
+        "slippage_bps": "5",
+        "cost_model": "round_trip_basis_points",
+    },
+    "cost_stress": {
+        "fee_bps": "16",
+        "slippage_bps": "9",
+        "cost_model": "round_trip_basis_points",
+    },
+    "signal_baseline": {
+        "fee_bps": "0",
+        "slippage_bps": "0",
+        "cost_model": "zero_cost_baseline",
+    },
+}
+
+THRESHOLD_PRESET_VALUES = {
+    "standard_gate": {
+        "dry_run_min_score": "0.55",
+        "dry_run_min_positive_rate": "0.45",
+        "dry_run_min_net_return_pct": "0",
+        "dry_run_min_sharpe": "0.5",
+        "dry_run_max_drawdown_pct": "15",
+        "dry_run_max_loss_streak": "3",
+        "dry_run_min_win_rate": "0.5",
+        "dry_run_max_turnover": "0.6",
+        "dry_run_min_sample_count": "20",
+        "validation_min_sample_count": "12",
+        "validation_min_avg_future_return_pct": "-0.1",
+        "live_min_score": "0.65",
+        "live_min_positive_rate": "0.50",
+        "live_min_net_return_pct": "0.20",
+        "live_min_win_rate": "0.55",
+        "live_max_turnover": "0.45",
+        "live_min_sample_count": "24",
+        "enable_rule_gate": True,
+        "enable_validation_gate": True,
+        "enable_backtest_gate": True,
+        "enable_consistency_gate": True,
+        "enable_live_gate": True,
+    },
+    "strict_live_gate": {
+        "dry_run_min_score": "0.6",
+        "dry_run_min_positive_rate": "0.5",
+        "dry_run_min_net_return_pct": "0.15",
+        "dry_run_min_sharpe": "0.7",
+        "dry_run_max_drawdown_pct": "12",
+        "dry_run_max_loss_streak": "2",
+        "dry_run_min_win_rate": "0.54",
+        "dry_run_max_turnover": "0.5",
+        "dry_run_min_sample_count": "28",
+        "validation_min_sample_count": "18",
+        "validation_min_avg_future_return_pct": "0.1",
+        "live_min_score": "0.72",
+        "live_min_positive_rate": "0.56",
+        "live_min_net_return_pct": "0.35",
+        "live_min_win_rate": "0.6",
+        "live_max_turnover": "0.38",
+        "live_min_sample_count": "32",
+        "enable_rule_gate": True,
+        "enable_validation_gate": True,
+        "enable_backtest_gate": True,
+        "enable_consistency_gate": True,
+        "enable_live_gate": True,
+    },
+    "exploratory_dry_run": {
+        "dry_run_min_score": "0.48",
+        "dry_run_min_positive_rate": "0.4",
+        "dry_run_min_net_return_pct": "-0.1",
+        "dry_run_min_sharpe": "0.2",
+        "dry_run_max_drawdown_pct": "18",
+        "dry_run_max_loss_streak": "4",
+        "dry_run_min_win_rate": "0.46",
+        "dry_run_max_turnover": "0.75",
+        "dry_run_min_sample_count": "12",
+        "validation_min_sample_count": "8",
+        "validation_min_avg_future_return_pct": "-0.3",
+        "live_min_score": "0.68",
+        "live_min_positive_rate": "0.52",
+        "live_min_net_return_pct": "0.25",
+        "live_min_win_rate": "0.57",
+        "live_max_turnover": "0.45",
+        "live_min_sample_count": "24",
+        "enable_rule_gate": True,
+        "enable_validation_gate": True,
+        "enable_backtest_gate": True,
+        "enable_consistency_gate": False,
+        "enable_live_gate": True,
+    },
+}
+
+FEATURE_PRESET_FIELDS = {
+    "primary_factors",
+    "auxiliary_factors",
+    "missing_policy",
+    "outlier_policy",
+    "normalization_policy",
+}
+
+RESEARCH_PRESET_FIELDS = {
+    "research_template",
+    "model_key",
+    "label_mode",
+    "label_trigger_basis",
+    "holding_window_label",
+    "force_validation_top_candidate",
+    "min_holding_days",
+    "max_holding_days",
+    "label_target_pct",
+    "label_stop_pct",
+    "signal_confidence_floor",
+    "trend_weight",
+    "momentum_weight",
+    "volume_weight",
+    "oscillator_weight",
+    "volatility_weight",
+    "strict_penalty_weight",
+}
+
+BACKTEST_PRESET_FIELDS = {
+    "fee_bps",
+    "slippage_bps",
+    "cost_model",
+}
+
+THRESHOLD_PRESET_FIELDS = {
+    "dry_run_min_score",
+    "dry_run_min_positive_rate",
+    "dry_run_min_net_return_pct",
+    "dry_run_min_sharpe",
+    "dry_run_max_drawdown_pct",
+    "dry_run_max_loss_streak",
+    "dry_run_min_win_rate",
+    "dry_run_max_turnover",
+    "dry_run_min_sample_count",
+    "validation_min_sample_count",
+    "validation_min_avg_future_return_pct",
+    "consistency_max_validation_backtest_return_gap_pct",
+    "consistency_max_training_validation_positive_rate_gap",
+    "consistency_max_training_validation_return_gap_pct",
+    "rule_min_ema20_gap_pct",
+    "rule_min_ema55_gap_pct",
+    "rule_max_atr_pct",
+    "rule_min_volume_ratio",
+    "strict_rule_min_ema20_gap_pct",
+    "strict_rule_min_ema55_gap_pct",
+    "strict_rule_max_atr_pct",
+    "strict_rule_min_volume_ratio",
+    "enable_rule_gate",
+    "enable_validation_gate",
+    "enable_backtest_gate",
+    "enable_consistency_gate",
+    "enable_live_gate",
+    "live_min_score",
+    "live_min_positive_rate",
+    "live_min_net_return_pct",
+    "live_min_win_rate",
+    "live_max_turnover",
+    "live_min_sample_count",
+}
+
+
+def _build_feature_preset_catalog() -> list[dict[str, str]]:
+    """返回因子预设目录。"""
+
+    return [
+        {
+            "key": "balanced_default",
+            "label": "balanced_default / 均衡默认",
+            "fit": "适合先确认整体链路",
+            "detail": "保留默认主因子和辅助因子，适合先把训练、推理、回测和评估串起来。",
+        },
+        {
+            "key": "trend_focus",
+            "label": "trend_focus / 趋势优先",
+            "fit": "更重视顺趋势候选",
+            "detail": "会把趋势位置、突破强度和量能放在更靠前的位置，适合先找明显顺趋势机会。",
+        },
+        {
+            "key": "confirmation_focus",
+            "label": "confirmation_focus / 确认优先",
+            "fit": "更适合保守验证",
+            "detail": "会更强调成交量、波动和确认因子，适合先过滤噪音再比较候选。",
+        },
+    ]
+
+
+def _build_research_preset_catalog() -> list[dict[str, str]]:
+    """返回研究预设目录。"""
+
+    return [
+        {
+            "key": "baseline_balanced",
+            "label": "baseline_balanced / 均衡基线",
+            "fit": "先做默认研究",
+            "detail": "适合跑第一轮训练和推理，方便和其他预设做对照。",
+        },
+        {
+            "key": "trend_following",
+            "label": "trend_following / 趋势跟随",
+            "fit": "更偏顺趋势推进",
+            "detail": "会提高趋势和量能权重，研究模板也更严格，适合先看明显强势标的。",
+        },
+        {
+            "key": "conservative_validation",
+            "label": "conservative_validation / 保守验证",
+            "fit": "更重视稳定性",
+            "detail": "会提高放行门槛并偏向收盘确认，适合先验证候选是否真的稳。",
+        },
+    ]
+
+
+def _build_threshold_preset_catalog() -> list[dict[str, str]]:
+    """返回门槛预设目录。"""
+
+    return [
+        {
+            "key": "standard_gate",
+            "label": "standard_gate / 标准门槛",
+            "fit": "默认放行口径",
+            "detail": "适合先跑统一研究链，再看哪些候选可以进 dry-run。",
+        },
+        {
+            "key": "strict_live_gate",
+            "label": "strict_live_gate / 严格 live",
+            "fit": "更适合小额 live 前复核",
+            "detail": "会抬高收益、胜率和样本数门槛，适合做更严格的放行判断。",
+        },
+        {
+            "key": "exploratory_dry_run",
+            "label": "exploratory_dry_run / 探索型 dry-run",
+            "fit": "先扩大 dry-run 候选池",
+            "detail": "会放宽 dry-run 的一部分限制，但 live 门仍然保持较严口径。",
+        },
+    ]
+
+
+def _build_model_catalog() -> list[dict[str, str]]:
+    """返回模型说明目录。"""
+
+    return [
+        {
+            "key": "heuristic_v1",
+            "label": "heuristic_v1 / 基础启发式",
+            "fit": "先跑通最小研究闭环",
+            "detail": "更适合先确认数据、标签和回测链路是否稳定，方便快速比较配置变化带来的影响。",
+        },
+        {
+            "key": "trend_bias_v2",
+            "label": "trend_bias_v2 / 趋势偏置",
+            "fit": "更偏顺趋势确认",
+            "detail": "会更重视趋势、量能和突破一致性，适合把明显顺趋势的标的优先排前。",
+        },
+        {
+            "key": "balanced_v3",
+            "label": "balanced_v3 / 平衡评分",
+            "fit": "适合多状态横向比较",
+            "detail": "会同时看趋势、动量、波动和震荡，适合比较不同市场状态下哪一轮更稳。",
+        },
+    ]
+
+
+def _build_label_mode_catalog() -> list[dict[str, str]]:
+    """返回标签方式目录。"""
+
+    return [
+        {
+            "key": "earliest_hit",
+            "label": "earliest_hit / 最早命中",
+            "fit": "更接近真实退出逻辑",
+            "detail": "谁先命中目标或止损就按谁记账，适合 1 到 3 天择时验证。",
+        },
+        {
+            "key": "close_only",
+            "label": "close_only / 只看窗口结束",
+            "fit": "更看重收盘稳定性",
+            "detail": "只在窗口结束时按收盘结果记账，能弱化盘中波动，但会忽略中途先命中的路径差异。",
+        },
+        {
+            "key": "window_majority",
+            "label": "window_majority / 多数窗口表决",
+            "fit": "更保守的标签判断",
+            "detail": "按整个窗口里的多数结果来定标签，适合过滤单根极端波动。",
+        },
+    ]
+
+
+def _build_label_trigger_catalog() -> list[dict[str, str]]:
+    """返回标签触发基础目录。"""
+
+    return [
+        {
+            "key": "close",
+            "label": "close / 按收盘价判断",
+            "fit": "口径更稳",
+            "detail": "只看收盘价是否达到目标或止损，更适合日内波动较大但最终收盘更可信的场景。",
+        },
+        {
+            "key": "high_low",
+            "label": "high_low / 按高低点命中",
+            "fit": "更接近盘中触发",
+            "detail": "只要窗口里的最高价或最低价先命中目标或止损，就会记成已触发。",
+        },
+    ]
+
+
+def _build_holding_window_catalog() -> list[dict[str, str]]:
+    """返回持有窗口目录。"""
+
+    return [
+        {
+            "key": "1-3d",
+            "label": "1-3d / 默认窗口",
+            "fit": "兼顾节奏和稳定性",
+            "detail": "适合当前单币择时主线，也是默认研究口径。",
+        },
+        {
+            "key": "2-4d",
+            "label": "2-4d / 更耐心持有",
+            "fit": "更偏中短波段",
+            "detail": "会让研究更看重持有稳定性，但短线信号的反应会更慢。",
+        },
+        {
+            "key": "3-5d",
+            "label": "3-5d / 更完整走势",
+            "fit": "更看重完整一段行情",
+            "detail": "适合验证较完整的趋势段，但更容易错过很短的快节奏机会。",
+        },
+    ]
+
+
+def _build_cost_model_catalog() -> list[dict[str, str]]:
+    """返回成本模型目录。"""
+
+    return [
+        {
+            "key": "round_trip_basis_points",
+            "label": "round_trip_basis_points / 双边成本",
+            "fit": "最贴近真实交易",
+            "detail": "买入和卖出都会扣手续费和滑点，适合用来判断真实可执行性。",
+        },
+        {
+            "key": "single_side_basis_points",
+            "label": "single_side_basis_points / 单边成本",
+            "fit": "适合看单边成本影响",
+            "detail": "只按单边成本估算，更适合先拆出手续费和滑点分别影响多大。",
+        },
+        {
+            "key": "zero_cost_baseline",
+            "label": "zero_cost_baseline / 零成本基线",
+            "fit": "只看策略裸表现",
+            "detail": "不计手续费和滑点，只适合做基线对照，不能直接拿来放行到实盘。",
+        },
+    ]
+
+
+def _build_backtest_preset_catalog() -> list[dict[str, str]]:
+    """返回回测预设目录。"""
+
+    return [
+        {
+            "key": "realistic_standard",
+            "label": "realistic_standard / 真实标准",
+            "fit": "默认回测口径",
+            "detail": "按常用双边成本估算，更适合直接和 dry-run 结果对照。",
+        },
+        {
+            "key": "cost_stress",
+            "label": "cost_stress / 成本压力",
+            "fit": "先看高成本下还能不能站住",
+            "detail": "会抬高手续费和滑点，更适合先验证策略是不是只靠低成本假设。",
+        },
+        {
+            "key": "signal_baseline",
+            "label": "signal_baseline / 信号基线",
+            "fit": "先看策略裸表现",
+            "detail": "不计手续费和滑点，只适合做基线对照，不能直接拿来放行到 live。",
+        },
+    ]
 
 
 def _default_config() -> dict[str, object]:
@@ -57,6 +522,7 @@ def _default_config() -> dict[str, object]:
             "end_date": "",
         },
         "features": {
+            "feature_preset_key": "balanced_default",
             "primary_factors": list(PRIMARY_FEATURE_COLUMNS),
             "auxiliary_factors": list(AUXILIARY_FEATURE_COLUMNS),
             "missing_policy": "neutral_fill",
@@ -68,6 +534,7 @@ def _default_config() -> dict[str, object]:
             },
         },
         "research": {
+            "research_preset_key": "baseline_balanced",
             "research_template": "single_asset_timing",
             "model_key": "heuristic_v1",
             "label_mode": "earliest_hit",
@@ -90,6 +557,7 @@ def _default_config() -> dict[str, object]:
             "strict_penalty_weight": "1",
         },
         "backtest": {
+            "backtest_preset_key": "realistic_standard",
             "fee_bps": "10",
             "slippage_bps": "5",
             "cost_model": "round_trip_basis_points",
@@ -100,6 +568,7 @@ def _default_config() -> dict[str, object]:
             "live_max_open_trades": "1",
         },
         "thresholds": {
+            "threshold_preset_key": "standard_gate",
             "dry_run_min_score": "0.55",
             "dry_run_min_positive_rate": "0.45",
             "dry_run_min_net_return_pct": "0",
@@ -171,23 +640,53 @@ class WorkbenchConfigService:
         current = self.get_config()
         merged = deepcopy(current)
         current_section = dict(current.get(normalized_section) or {})
-        next_section = {**current_section, **self._expand_nested_values(dict(values or {}))}
+        explicit_values = self._expand_nested_values(dict(values or {}))
+        next_section = {**current_section, **explicit_values}
 
         if normalized_section == "data":
             merged["data"] = self._normalize_data_section(next_section)
         elif normalized_section == "features":
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="feature_preset_key",
+                managed_fields=FEATURE_PRESET_FIELDS,
+            )
             merged["features"] = self._normalize_features_section(next_section)
         elif normalized_section == "research":
-            if "holding_window_label" not in values and (
-                "min_holding_days" in values or "max_holding_days" in values
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="research_preset_key",
+                managed_fields=RESEARCH_PRESET_FIELDS,
+            )
+            if "holding_window_label" not in explicit_values and (
+                "min_holding_days" in explicit_values or "max_holding_days" in explicit_values
             ):
-                next_section.pop("holding_window_label", None)
+                next_section["holding_window_label"] = self._format_explicit_holding_window(
+                    min_days=explicit_values.get("min_holding_days"),
+                    max_days=explicit_values.get("max_holding_days"),
+                    fallback_min=next_section.get("min_holding_days"),
+                    fallback_max=next_section.get("max_holding_days"),
+                )
             merged["research"] = self._normalize_research_section(next_section)
         elif normalized_section == "backtest":
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="backtest_preset_key",
+                managed_fields=BACKTEST_PRESET_FIELDS,
+            )
             merged["backtest"] = self._normalize_backtest_section(next_section)
         elif normalized_section == "execution":
             merged["execution"] = self._normalize_execution_section(next_section)
         elif normalized_section == "thresholds":
+            next_section = self._apply_preset_reset(
+                current_section=next_section,
+                explicit_values=explicit_values,
+                preset_key="threshold_preset_key",
+                managed_fields=THRESHOLD_PRESET_FIELDS,
+            )
             merged["thresholds"] = self._normalize_thresholds_section(next_section)
         elif normalized_section == "operations":
             merged["operations"] = self._normalize_operations_section(next_section)
@@ -199,6 +698,42 @@ class WorkbenchConfigService:
         normalized = self._normalize_config(merged)
         self._write_config_file(normalized)
         return normalized
+
+    @staticmethod
+    def _apply_preset_reset(
+        *,
+        current_section: dict[str, object],
+        explicit_values: dict[str, object],
+        preset_key: str,
+        managed_fields: set[str],
+    ) -> dict[str, object]:
+        """切换预设时，先清掉预设负责的旧字段，避免旧值压住新预设。"""
+
+        if preset_key not in explicit_values:
+            return current_section
+        next_section = dict(current_section)
+        explicit_keys = {str(key) for key in explicit_values.keys()}
+        for field in managed_fields:
+            if field in explicit_keys:
+                continue
+            next_section.pop(field, None)
+        return next_section
+
+    def _format_explicit_holding_window(
+        self,
+        *,
+        min_days: object,
+        max_days: object,
+        fallback_min: object,
+        fallback_max: object,
+    ) -> str:
+        """把手动输入的最小/最大持有天数整理成窗口标签。"""
+
+        resolved_min = self._normalize_int(min_days if min_days is not None else fallback_min, default=1, minimum=1, maximum=7)
+        resolved_max = self._normalize_int(max_days if max_days is not None else fallback_max, default=3, minimum=1, maximum=7)
+        if resolved_min > resolved_max:
+            resolved_min, resolved_max = resolved_max, resolved_min
+        return f"{resolved_min}-{resolved_max}d"
 
     def _expand_nested_values(self, values: dict[str, object]) -> dict[str, object]:
         """把点分隔的表单字段还原成嵌套结构。"""
@@ -251,11 +786,24 @@ class WorkbenchConfigService:
             "options": {
                 "timeframes": list(SUPPORTED_TIMEFRAMES),
                 "models": list(SUPPORTED_MODELS),
+                "model_catalog": _build_model_catalog(),
                 "research_templates": list(SUPPORTED_RESEARCH_TEMPLATES),
                 "label_modes": list(SUPPORTED_LABEL_MODES),
+                "label_mode_catalog": _build_label_mode_catalog(),
                 "label_trigger_bases": list(SUPPORTED_LABEL_TRIGGER_BASES),
+                "label_trigger_catalog": _build_label_trigger_catalog(),
                 "holding_windows": list(SUPPORTED_HOLDING_WINDOWS),
+                "holding_window_catalog": _build_holding_window_catalog(),
                 "backtest_cost_models": list(SUPPORTED_BACKTEST_COST_MODELS),
+                "cost_model_catalog": _build_cost_model_catalog(),
+                "feature_presets": list(SUPPORTED_FEATURE_PRESETS),
+                "feature_preset_catalog": _build_feature_preset_catalog(),
+                "research_presets": list(SUPPORTED_RESEARCH_PRESETS),
+                "research_preset_catalog": _build_research_preset_catalog(),
+                "backtest_presets": list(SUPPORTED_BACKTEST_PRESETS),
+                "backtest_preset_catalog": _build_backtest_preset_catalog(),
+                "threshold_presets": list(SUPPORTED_THRESHOLD_PRESETS),
+                "threshold_preset_catalog": _build_threshold_preset_catalog(),
                 "all_symbols": list(DEFAULT_MARKET_SYMBOLS),
                 "primary_factors": list(PRIMARY_FEATURE_COLUMNS),
                 "auxiliary_factors": list(AUXILIARY_FEATURE_COLUMNS),
@@ -418,6 +966,12 @@ class WorkbenchConfigService:
         """整理特征工作台配置。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
+        feature_preset_key = self._normalize_choice(
+            payload.get("feature_preset_key"),
+            default="balanced_default",
+            allowed=SUPPORTED_FEATURE_PRESETS,
+        )
+        payload = {**FEATURE_PRESET_VALUES.get(feature_preset_key, {}), **payload}
         primary_factors = self._normalize_factor_list(
             payload.get("primary_factors"),
             allowed=PRIMARY_FEATURE_COLUMNS,
@@ -431,6 +985,7 @@ class WorkbenchConfigService:
             allow_empty=True,
         )
         return {
+            "feature_preset_key": feature_preset_key,
             "primary_factors": list(primary_factors),
             "auxiliary_factors": list(auxiliary_factors),
             "missing_policy": self._normalize_choice(
@@ -455,6 +1010,12 @@ class WorkbenchConfigService:
         """整理研究工作台配置。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
+        research_preset_key = self._normalize_choice(
+            payload.get("research_preset_key"),
+            default="baseline_balanced",
+            allowed=SUPPORTED_RESEARCH_PRESETS,
+        )
+        payload = {**RESEARCH_PRESET_VALUES.get(research_preset_key, {}), **payload}
         model_key = str(payload.get("model_key", "heuristic_v1")).strip() or "heuristic_v1"
         if model_key not in SUPPORTED_MODELS:
             model_key = "heuristic_v1"
@@ -492,6 +1053,7 @@ class WorkbenchConfigService:
             test_ratio=test_ratio,
         )
         return {
+            "research_preset_key": research_preset_key,
             "research_template": research_template,
             "model_key": model_key,
             "label_mode": label_mode,
@@ -556,7 +1118,14 @@ class WorkbenchConfigService:
         """整理回测配置。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
+        backtest_preset_key = self._normalize_choice(
+            payload.get("backtest_preset_key"),
+            default="realistic_standard",
+            allowed=SUPPORTED_BACKTEST_PRESETS,
+        )
+        payload = {**BACKTEST_PRESET_VALUES.get(backtest_preset_key, {}), **payload}
         return {
+            "backtest_preset_key": backtest_preset_key,
             "fee_bps": self._normalize_decimal(payload.get("fee_bps"), default=Decimal("10"), minimum=Decimal("0")),
             "slippage_bps": self._normalize_decimal(payload.get("slippage_bps"), default=Decimal("5"), minimum=Decimal("0")),
             "cost_model": self._normalize_choice(
@@ -625,7 +1194,14 @@ class WorkbenchConfigService:
         """整理 dry-run / live 门槛。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
+        threshold_preset_key = self._normalize_choice(
+            payload.get("threshold_preset_key"),
+            default="standard_gate",
+            allowed=SUPPORTED_THRESHOLD_PRESETS,
+        )
+        payload = {**THRESHOLD_PRESET_VALUES.get(threshold_preset_key, {}), **payload}
         return {
+            "threshold_preset_key": threshold_preset_key,
             "dry_run_min_score": self._normalize_decimal(payload.get("dry_run_min_score"), default=Decimal("0.55"), minimum=Decimal("0"), maximum=Decimal("1")),
             "dry_run_min_positive_rate": self._normalize_decimal(payload.get("dry_run_min_positive_rate"), default=Decimal("0.45"), minimum=Decimal("0"), maximum=Decimal("1")),
             "dry_run_min_net_return_pct": self._normalize_decimal(payload.get("dry_run_min_net_return_pct"), default=Decimal("0")),

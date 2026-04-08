@@ -193,6 +193,7 @@ class ResearchService:
             "scope": "service-instance",
             "refresh_rule": "service_restart",
         }
+        sample_issues: list[str] = []
         for symbol in selected_symbols:
             candles_1h: list[dict[str, object]] = []
             candles_4h: list[dict[str, object]] = []
@@ -215,6 +216,8 @@ class ResearchService:
                 )
                 candles_1h = list(chart_1h.get("items", []))
                 cache_summary["request_count"] += 1
+                if not candles_1h:
+                    sample_issues.append(self._build_empty_sample_issue(symbol=symbol, interval="1h", chart=chart_1h))
             if "4h" in selected_timeframes:
                 limit_4h = _resolve_research_fetch_limit(
                     timeframe="4h",
@@ -232,6 +235,8 @@ class ResearchService:
                 )
                 candles_4h = list(chart_4h.get("items", []))
                 cache_summary["request_count"] += 1
+                if not candles_4h:
+                    sample_issues.append(self._build_empty_sample_issue(symbol=symbol, interval="4h", chart=chart_4h))
             cache_summary["reused_count"] += int(reused_1h) + int(reused_4h)
             cache_summary["fresh_count"] += int(("1h" in selected_timeframes) and not reused_1h) + int(("4h" in selected_timeframes) and not reused_4h)
             if candles_1h or candles_4h:
@@ -240,7 +245,10 @@ class ResearchService:
                     "candles_4h": candles_4h,
                 }
         if not dataset:
-            raise QlibConfigurationError("研究层没有拿到可用市场样本")
+            issue_text = "；".join(sample_issues) if sample_issues else "当前没有拿到任何标的和周期的样本。"
+            raise QlibConfigurationError(
+                f"研究层没有拿到可用市场样本，请先检查数据工作台里的标的、周期和日期范围。当前尝试：{issue_text}"
+            )
         return dataset, cache_summary
 
     @staticmethod
@@ -302,7 +310,7 @@ class ResearchService:
         )
         cached = self._market_cache.get(cache_key)
         if cached is not None:
-            return {"items": list(cached)}, True
+            return {"items": list(cached), "strategy_context": {}}, True
         chart = self._market_reader.get_symbol_chart(
             symbol=symbol,
             interval=interval,
@@ -310,8 +318,20 @@ class ResearchService:
             allowed_symbols=allowed_symbols,
         )
         items = list(chart.get("items", []))
-        self._market_cache[cache_key] = list(items)
-        return {"items": items}, False
+        if items:
+            self._market_cache[cache_key] = list(items)
+        return {
+            "items": items,
+            "strategy_context": dict(chart.get("strategy_context") or {}),
+        }, False
+
+    @staticmethod
+    def _build_empty_sample_issue(*, symbol: str, interval: str, chart: dict[str, object]) -> str:
+        """整理没有样本时的可读提示。"""
+
+        strategy_context = dict(chart.get("strategy_context") or {})
+        reason = str(strategy_context.get("primary_reason") or "empty_chart")
+        return f"{symbol}@{interval}={reason}"
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, object] | None:

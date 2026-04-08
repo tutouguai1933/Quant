@@ -21,7 +21,18 @@ export default async function BacktestPage() {
       ? `净收益 ${metric(workspace.training_backtest.metrics, "net_return_pct")} / Sharpe ${metric(workspace.training_backtest.metrics, "sharpe")}`
       : "当前还没有回测结果";
   const metrics = workspace.training_backtest.metrics;
-  const gatePreview = asRecord(workspace.controls);
+  const workspaceRecord = asRecord(workspace);
+  const backtestControls = asRecord(workspace.controls);
+  const gatePreview = backtestControls;
+  const costModelCatalog = Array.isArray(backtestControls.cost_model_catalog)
+    ? backtestControls.cost_model_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const backtestPresetCatalog = Array.isArray(backtestControls.backtest_preset_catalog)
+    ? backtestControls.backtest_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const stageAssessment = Array.isArray(workspaceRecord.stage_assessment)
+    ? workspaceRecord.stage_assessment.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
   const gateStates = [
@@ -137,6 +148,39 @@ export default async function BacktestPage() {
         </div>
 
         <div className="space-y-5">
+          <WorkbenchConfigCard
+            title="回测预设"
+            description="先套用一套回测口径，再继续微调手续费、滑点和门槛。"
+            scope="backtest"
+            returnTo="/backtest"
+            disabled={!configEditable}
+            disabledReason={unavailableConfigReason}
+          >
+            <ConfigField label="一键套用" hint="预设会先改成本模型、手续费和滑点，让你快速切换到标准、压力或基线口径。">
+              <ConfigSelect
+                name="backtest_preset_key"
+                defaultValue={String(workspace.controls.backtest_preset_key ?? "realistic_standard")}
+                options={(workspace.controls.available_backtest_presets || []).map((item) => ({
+                  value: item,
+                  label: item,
+                }))}
+              />
+            </ConfigField>
+            <DataTable
+              columns={["回测预设", "适用场景", "说明"]}
+              rows={backtestPresetCatalog.map((item, index) => ({
+                id: `${item.key ?? index}`,
+                cells: [
+                  String(item.key ?? "n/a"),
+                  String(item.fit ?? "当前没有适用场景说明"),
+                  String(item.detail ?? "当前没有预设说明"),
+                ],
+              }))}
+              emptyTitle="当前还没有回测预设"
+              emptyDetail="先恢复回测工作台，系统才会给出一键回测预设。"
+            />
+          </WorkbenchConfigCard>
+
           <WorkbenchConfigCard
             title="回测参数配置"
             description="这里改的是成本模型，保存后下一轮训练、回测和评估都会按这里的口径重算。"
@@ -256,6 +300,36 @@ export default async function BacktestPage() {
               <InfoBlock label="成本模型" value={valueOrFallback(workspace.assumptions.cost_model)} />
             </CardContent>
           </Card>
+
+          <DataTable
+            columns={["成本模型说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={costModelCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "n/a"),
+                String(item.key ?? "") === String(workspace.controls.cost_model ?? "") ? "当前口径" : "可切换",
+                String(item.detail ?? "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有成本模型目录"
+            emptyDetail="先恢复工作台配置选项，成本模型说明才会在这里出现。"
+          />
+
+          <DataTable
+            columns={["准入阶段", "先看什么", "当前结果", "说明"]}
+            rows={stageAssessment.map((item, index) => ({
+              id: `${String(item.stage ?? index)}`,
+              cells: [
+                String(item.stage ?? "n/a"),
+                String(item.focus ?? "当前没有门槛摘要"),
+                String(item.current ?? "当前没有结果"),
+                String(item.headline ?? "当前没有阶段说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有阶段门槛对照"
+            emptyDetail="先生成一轮回测结果，系统才会按 dry-run / 验证 / live 三层给出对照。"
+          />
 
           <Card className="bg-card/90">
             <CardHeader>

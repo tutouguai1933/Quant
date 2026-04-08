@@ -29,11 +29,13 @@ export async function GET(request: Request, context: RouteContext) {
   const { path } = await context.params;
   const upstreamUrl = new URL(buildUpstreamApiUrl(`/${path.join("/")}`, request));
   upstreamUrl.search = new URL(request.url).search;
+  const authorization = resolveAuthorizationHeader(request);
 
   try {
     const response = await fetch(upstreamUrl, {
       headers: {
         Accept: "application/json",
+        ...(authorization ? { Authorization: authorization } : {}),
       },
       cache: "no-store",
     });

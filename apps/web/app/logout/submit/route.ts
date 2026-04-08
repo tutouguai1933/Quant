@@ -3,9 +3,9 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { logoutAdmin } from "../../lib/api";
-import { buildRedirectUrl } from "../../lib/redirect";
-import { SESSION_COOKIE_NAME } from "../../lib/session";
+import { logoutAdmin } from "../../../lib/api";
+import { buildRedirectUrl } from "../../../lib/redirect";
+import { SESSION_COOKIE_NAME } from "../../../lib/session";
 
 
 /* 处理退出登录。 */
@@ -15,12 +15,12 @@ export async function POST(request: Request) {
 
   if (token) {
     try {
-    await logoutAdmin(token, request);
+      await logoutAdmin(token, request);
     } catch {
       // 即使 API 退出失败，也优先清掉本地会话。
     }
   }
 
   cookieStore.delete(SESSION_COOKIE_NAME);
-  return NextResponse.redirect(buildRedirectUrl(request, "/login?tone=info&title=退出成功&message=当前会话已经清除。"));
+  return NextResponse.redirect(buildRedirectUrl(request, "/login?tone=info&title=退出成功&message=当前会话已经清除。"), 303);
 }

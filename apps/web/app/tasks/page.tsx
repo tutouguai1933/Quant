@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
+import { AutomationLastCycleCard } from "../../components/automation-last-cycle-card";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FormSubmitButton } from "../../components/form-submit-button";
@@ -184,6 +185,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
     checked: executionAllowedSymbols.includes(item),
   }));
   const activeAlerts = filterActiveAlerts(automation.alerts, automationConfigSummary.alertCleanupMinutes);
+  const latestAlertId = Number(latestAlert?.id ?? 0);
+  const latestAlertIdValue = latestAlertId > 0 ? String(latestAlertId) : "";
+  const hasClearableAlerts = activeAlerts.some((item) => {
+    const level = String(item.level ?? "").toLowerCase();
+    return level === "info" || level === "warning";
+  });
   const takeoverTimelineRows = buildTakeoverTimelineRows({
     lastFailureAt,
     pausedSince,
@@ -407,6 +414,46 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardContent>
               </Card>
 
+              <DataTable
+                columns={["当前处理队列", "建议动作", "为什么先做", "下一步去哪里"]}
+                rows={operatorActions.map((item, index) => {
+                  const row = asRecord(item);
+                  const action = String(row.action ?? `step-${index}`);
+                  return {
+                    id: `${action}-${index}`,
+                    cells: [
+                      String(row.label ?? "继续处理"),
+                      action,
+                      String(row.detail ?? "当前没有额外说明"),
+                      action.includes("sync")
+                        ? "/tasks"
+                        : action.includes("takeover")
+                          ? "/tasks"
+                          : action.includes("resume")
+                            ? "/tasks"
+                            : "/evaluation",
+                    ],
+                  };
+                })}
+                emptyTitle="当前没有额外处理队列"
+                emptyDetail="最近没有新的高风险告警时，这里会保持空白。"
+              />
+
+              <DataTable
+                columns={["恢复检查项", "当前状态", "为什么重要", "当前值"]}
+                rows={resumeChecklist.map((item, index) => ({
+                  id: `${String(item.label ?? index)}-${index}`,
+                  cells: [
+                    readText(item.label, "检查项"),
+                    readText(item.status, "ready"),
+                    readText(item.detail, "当前没有额外说明"),
+                    readText(item.value, "n/a"),
+                  ],
+                }))}
+                emptyTitle="当前没有恢复检查项"
+                emptyDetail="当前没有新的阻塞时，这里会保持空白。"
+              />
+
               <Card>
                 <CardHeader>
                   <p className="eyebrow">头号告警</p>
@@ -480,23 +527,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
             </section>
 
             <aside className="grid gap-5">
-              <Card>
-                <CardHeader>
-                  <p className="eyebrow">本轮自动化判断</p>
-                  <CardTitle>先看为什么推荐、为什么阻塞、为什么执行</CardTitle>
-                  <CardDescription>这里直接收口最近一轮自动化工作流的关键判断，不需要自己翻任务列表和复盘结果去拼。</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p>推荐标的：{readText(lastCycle.recommended_symbol, "n/a")}</p>
-                  <p>推荐策略实例：{readText(lastCycle.recommended_strategy_id, "n/a")}</p>
-                  <p>派发结果：{readText(dispatch.status, "waiting")}</p>
-                  <p>最近订单：{readText(dispatchOrder.symbol, "n/a")} / {readText(dispatchOrder.status, "n/a")}</p>
-                  <p>失败原因：{failureReason}</p>
-                  <p>本轮说明：{cycleMessage}</p>
-                  <p>下一步：{readText(lastCycle.next_action, "n/a")}</p>
-                  <p>触发来源：{readText(dispatchMeta.source, "n/a")}</p>
-                </CardContent>
-              </Card>
+              <AutomationLastCycleCard initialCycle={lastCycle} />
 
               <Card>
                 <CardHeader>
@@ -780,6 +811,32 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardContent>
               </Card>
 
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">告警快捷处理</p>
+                  <CardTitle>先把最会干扰判断的告警处理掉</CardTitle>
+                  <CardDescription>错误告警先人工处理；信息和警告告警可以在这里直接确认或清理，避免它们一直挂在任务页上干扰判断。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  <ActionCard
+                    action="automation_confirm_alert"
+                    label="确认头号告警"
+                    detail="把当前最靠前那条告警标记为已处理，适合告警已经人工确认、不需要继续占住头号位置的时候使用。"
+                    hiddenFields={{ alert_id: latestAlertIdValue }}
+                    disabled={!latestAlertIdValue}
+                    disabledHint="当前没有可确认的头号告警。"
+                  />
+                  <ActionCard
+                    action="automation_clear_non_error_alerts"
+                    label="清理非错误告警"
+                    detail="批量清掉 info 和 warning，只把真正需要人工处理的 error 留在列表里。"
+                    hiddenFields={{ levels: "info,warning" }}
+                    disabled={!hasClearableAlerts}
+                    disabledHint="当前没有可清理的 info / warning 告警。"
+                  />
+                </CardContent>
+              </Card>
+
               <DataTable
                 columns={["活跃告警", "级别", "时间", "说明"]}
                 rows={activeAlerts.map((item, index) => ({
@@ -918,11 +975,17 @@ function ActionCard({
   label,
   detail,
   danger = false,
+  hiddenFields = {},
+  disabled = false,
+  disabledHint = "",
 }: {
   action: string;
   label: string;
   detail: string;
   danger?: boolean;
+  hiddenFields?: Record<string, string>;
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
   return (
     <Card className={danger ? "border-rose-500/30 bg-rose-500/10" : "bg-[color:var(--panel-strong)]/80"}>
@@ -930,6 +993,9 @@ function ActionCard({
         <form action="/actions" method="post" className="space-y-4">
           <input type="hidden" name="action" value={action} />
           <input type="hidden" name="returnTo" value="/tasks" />
+          {Object.entries(hiddenFields).map(([name, value]) => (
+            <input key={name} type="hidden" name={name} value={value} />
+          ))}
           <div className="space-y-2">
             <p className="text-sm font-semibold text-foreground">{label}</p>
             <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
@@ -941,7 +1007,9 @@ function ActionCard({
             idleLabel={label}
             pendingLabel={`${label}运行中…`}
             pendingHint="自动化动作已提交，页面会在状态更新后自动刷新。"
+            disabled={disabled}
           />
+          {disabled && disabledHint ? <p className="text-xs leading-5 text-muted-foreground">{disabledHint}</p> : null}
         </form>
       </CardContent>
     </Card>
@@ -1302,6 +1370,20 @@ function resolveAlertTarget(source: string, nextAction: string, blockedReason: s
   return { actionLabel: "先留在任务页处理", page: "任务页", href: "/tasks" };
 }
 
+function formatWorkflowSource(value: string): string {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "自动化工作流";
+  }
+  if (normalized === "manual_pipeline") {
+    return "手动信号流水线";
+  }
+  if (normalized === "automation") {
+    return "自动化工作流";
+  }
+  return normalized;
+}
+
 function formatAlertLevel(level: string) {
   const mapping: Record<string, string> = {
     error: "错误告警",
@@ -1313,7 +1395,7 @@ function formatAlertLevel(level: string) {
 }
 
 function filterActiveAlerts(
-  alerts: Array<{ level: string; code: string; message: string; createdAt: string }>,
+  alerts: Array<{ id?: number; level: string; code: string; message: string; createdAt: string }>,
   cleanupMinutes: string,
 ) {
   const minutes = Number.parseInt(cleanupMinutes, 10);

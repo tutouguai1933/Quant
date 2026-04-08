@@ -31,6 +31,10 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["controls"]["train_split_ratio"], "0.6")
         self.assertEqual(item["controls"]["validation_split_ratio"], "0.2")
         self.assertEqual(item["controls"]["test_split_ratio"], "0.2")
+        self.assertEqual(item["controls"]["model_catalog"][0]["key"], "heuristic_v1")
+        self.assertEqual(item["controls"]["label_mode_catalog"][0]["key"], "earliest_hit")
+        self.assertEqual(item["controls"]["label_trigger_catalog"][0]["key"], "close")
+        self.assertEqual(item["controls"]["holding_window_catalog"][0]["key"], "1-3d")
         self.assertEqual(item["controls"]["signal_confidence_floor"], "0.55")
         self.assertTrue(item["controls"]["force_validation_top_candidate"])
         self.assertEqual(item["controls"]["trend_weight"], "1.3")
@@ -150,8 +154,14 @@ def _fake_controls() -> dict[str, object]:
         },
         "options": {
             "models": ["heuristic_v1", "trend_bias_v2"],
+            "model_catalog": [{"key": "heuristic_v1", "label": "基础启发式", "fit": "最小闭环", "detail": "先跑通"}],
             "research_templates": ["single_asset_timing", "single_asset_timing_strict"],
             "label_modes": ["earliest_hit", "close_only"],
+            "label_mode_catalog": [{"key": "earliest_hit", "label": "最早命中", "fit": "更接近真实退出", "detail": "先命中先记账"}],
+            "label_trigger_bases": ["close", "high_low"],
+            "label_trigger_catalog": [{"key": "close", "label": "按收盘价判断", "fit": "口径更稳", "detail": "只看收盘"}],
+            "holding_windows": ["1-3d", "2-4d"],
+            "holding_window_catalog": [{"key": "1-3d", "label": "默认窗口", "fit": "平衡节奏", "detail": "当前默认"}],
         },
     }
 
