@@ -602,6 +602,42 @@ export default async function EvaluationPage() {
             </CardContent>
           </Card>
 
+          <DataTable
+            columns={["差异条目", "当前差在哪", "会影响什么", "修复优先级"]}
+            rows={alignmentGaps.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${String(row.code ?? "gap")}-${index}`,
+                cells: [
+                  String(row.label ?? row.code ?? "差异"),
+                  String(row.detail ?? "当前没有差异说明"),
+                  String(row.impact ?? "当前没有影响说明"),
+                  String(row.priority ?? "normal"),
+                ],
+              };
+            })}
+            emptyTitle="当前没有研究与执行差异条目"
+            emptyDetail="如果研究结果和执行结果一致，这里会保持为空。"
+          />
+
+          <DataTable
+            columns={["修复动作", "先处理什么", "为什么要先做", "下一步去哪"]}
+            rows={alignmentActions.map((item, index) => {
+              const row = asRecord(item);
+              return {
+                id: `${String(row.code ?? "action")}-${index}`,
+                cells: [
+                  String(row.label ?? row.code ?? "动作"),
+                  String(row.detail ?? "当前没有动作说明"),
+                  String(row.reason ?? "当前没有原因说明"),
+                  String(row.target ?? row.next_step ?? "继续评估"),
+                ],
+              };
+            })}
+            emptyTitle="当前没有额外修复动作"
+            emptyDetail="如果当前研究和执行已经对齐，这里不会再给额外修复动作。"
+          />
+
           <Card className="bg-card/90">
             <CardHeader>
               <p className="eyebrow">差异摘要</p>
