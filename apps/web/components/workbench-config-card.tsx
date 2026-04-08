@@ -99,7 +99,8 @@ export function ConfigSelect({
     <select
       name={name}
       defaultValue={defaultValue}
-      className="flex h-11 w-full rounded-xl border border-border/70 bg-background/70 px-3 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      style={{ colorScheme: "dark" }}
+      className="flex h-11 w-full appearance-none rounded-xl border border-border/70 bg-background/70 px-3 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {!options.length ? (
         <option value={defaultValue || ""}>{defaultValue || "当前暂无可选项"}</option>

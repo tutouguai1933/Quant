@@ -35,6 +35,13 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("fixed", item["controls"]["available_window_modes"])
         self.assertEqual(item["snapshot"]["snapshot_id"], "dataset-abc123")
         self.assertEqual(item["snapshot"]["data_states"]["current"], "feature-ready")
+        self.assertEqual(item["quality"]["raw_rows"], 240)
+        self.assertEqual(item["quality"]["cleaned_rows"], 220)
+        self.assertEqual(item["quality"]["feature_ready_rows"], 200)
+        self.assertEqual(item["quality"]["total_drop_rows"], 40)
+        self.assertAlmostEqual(item["quality"]["retention_ratio_pct"], 83.3, places=1)
+        self.assertEqual(item["source_explanations"][0]["label"], "市场预览样本")
+        self.assertIn("持有窗口", item["source_explanations"][2]["detail"])
         self.assertEqual(item["preview"]["symbol"], "ETHUSDT")
         self.assertEqual(item["preview"]["total_rows"], 3)
         self.assertIn("first_open_time", item["preview"])
@@ -54,6 +61,8 @@ class DataWorkspaceServiceTests(unittest.TestCase):
 
         self.assertEqual(item["status"], "unavailable")
         self.assertEqual(item["snapshot"]["snapshot_id"], "")
+        self.assertEqual(item["quality"]["raw_rows"], 0)
+        self.assertEqual(item["source_explanations"][1]["value"], "未生成")
         self.assertEqual(item["preview"]["total_rows"], 3)
 
     def test_workspace_marks_preview_failure_as_degraded_when_research_is_ready(self) -> None:

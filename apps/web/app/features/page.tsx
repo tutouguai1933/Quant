@@ -48,6 +48,15 @@ export default async function FeaturePage() {
     ? categorySummaries.reduce((prev, current) => (current.total > prev.total ? current : prev))
     : undefined;
   const averagePerGroup = totalCategoryCount ? Math.round(totalFactorCount / totalCategoryCount) : 0;
+  const categoryWeightRows = categorySummaries.map((summary) => ({
+    id: summary.name,
+    cells: [
+      summary.name,
+      `${summary.primaryCount} 主判断 / ${summary.auxiliaryCount} 辅助`,
+      describeCategoryWeight(summary.name).weightEntry,
+      describeCategoryWeight(summary.name).effect,
+    ],
+  }));
 
   return (
     <AppShell
@@ -134,6 +143,13 @@ export default async function FeaturePage() {
               />
             </CardContent>
           </Card>
+
+          <DataTable
+            columns={["因子类别", "当前角色分布", "研究页权重入口", "主要影响什么"]}
+            rows={categoryWeightRows}
+            emptyTitle="当前还没有类别权重解释"
+            emptyDetail="先生成一轮特征协议，再回来看每个因子类别在研究页里由哪一档权重控制。"
+          />
 
           <DataTable
             columns={["因子名", "类别", "角色", "说明"]}
@@ -281,6 +297,44 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 function formatProfile(profile: Record<string, unknown>) {
   const items = Object.entries(profile).map(([key, value]) => `${key}=${String(value)}`);
   return items.join(" / ") || "当前没有参数";
+}
+
+function describeCategoryWeight(category: string) {
+  const name = category.toLowerCase();
+  if (name.includes("trend") || category.includes("趋势")) {
+    return {
+      weightEntry: "研究页 trend_weight",
+      effect: "决定顺势强弱，通常最先影响能不能继续跟随趋势。",
+    };
+  }
+  if (name.includes("momentum") || category.includes("动量")) {
+    return {
+      weightEntry: "研究页 momentum_weight",
+      effect: "决定加速和放缓的分数，影响什么时候追、什么时候收手。",
+    };
+  }
+  if (name.includes("volume") || category.includes("量")) {
+    return {
+      weightEntry: "研究页 volume_weight",
+      effect: "决定量价是否配合，常用来确认突破是不是有真成交支撑。",
+    };
+  }
+  if (name.includes("osc") || name.includes("oscillator") || category.includes("震荡")) {
+    return {
+      weightEntry: "研究页 oscillator_weight",
+      effect: "决定超买超卖和反转提示，更适合提醒什么时候不要追。",
+    };
+  }
+  if (name.includes("vol") || category.includes("波动")) {
+    return {
+      weightEntry: "研究页 volatility_weight",
+      effect: "决定波动惩罚和风险折扣，直接影响这轮信号敢不敢放行。",
+    };
+  }
+  return {
+    weightEntry: "研究页统一评分",
+    effect: "当前先按统一评分处理，后面再继续拆得更细。",
+  };
 }
 
 function TimeframeProfile4hCard({ params }: { params: Record<string, unknown> }) {

@@ -95,6 +95,21 @@ export default async function BacktestPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>成本与过滤拆解</CardTitle>
+              <CardDescription>把成本来源、动作段明细和过滤影响拆开讲清楚，避免只看到一串净收益。</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <DataTable
+                columns={["拆解项", "当前口径", "会影响什么"]}
+                rows={buildBacktestBreakdownRows(workspace, metrics, gateStates)}
+                emptyTitle="当前还没有回测拆解"
+                emptyDetail="先保存回测参数并跑一轮训练，这里才会按当前配置解释成本和过滤影响。"
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <CardTitle>严格规则</CardTitle>
               <CardDescription>研究候选只有同时满足这四条严格规则，才会被认为有突破辨识度。</CardDescription>
             </CardHeader>
@@ -334,4 +349,64 @@ function asOptionalString(value: unknown): string | undefined {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function buildBacktestBreakdownRows(
+  workspace: {
+    assumptions: Record<string, string>;
+  },
+  metrics: Record<string, string>,
+  gateStates: Array<{ label: string; key: string; enabled: boolean }>,
+) {
+  const gateSummary = gateStates.map((gate) => `${gate.label}${gate.enabled ? "开启" : "关闭"}`).join(" / ") || "当前没有门控说明";
+  return [
+    {
+      id: "cost-model",
+      cells: [
+        "成本来源",
+        valueOrFallback(workspace.assumptions.cost_model),
+        "决定净收益是按零成本、单边成本还是双边回合成本来扣减。",
+      ],
+    },
+    {
+      id: "fee",
+      cells: [
+        "手续费",
+        valueOrFallback(workspace.assumptions.fee_bps),
+        "直接影响每次开平仓后的净收益，频繁切换时影响更明显。",
+      ],
+    },
+    {
+      id: "slippage",
+      cells: [
+        "滑点",
+        valueOrFallback(workspace.assumptions.slippage_bps),
+        "用来模拟真实成交时拿不到理想价格的那部分损耗。",
+      ],
+    },
+    {
+      id: "round-trip",
+      cells: [
+        "回合成本",
+        valueOrFallback(workspace.assumptions.round_trip_cost_pct),
+        "把一开一平的总摩擦成本压成一项，方便和毛收益直接对照。",
+      ],
+    },
+    {
+      id: "action-segments",
+      cells: [
+        "动作段明细",
+        `${metric(metrics, "action_segment_count")} / 切换 ${metric(metrics, "direction_switch_count")}`,
+        "动作段越多、切换越频繁，越容易把成本模型放大成净收益压力。",
+      ],
+    },
+    {
+      id: "loss-streak",
+      cells: [
+        "过滤影响",
+        gateSummary,
+        "规则门、验证门、回测门、一致性门和 live 门共同决定这轮结果能不能继续进入验证或执行。",
+      ],
+    },
+  ];
 }

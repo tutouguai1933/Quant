@@ -87,6 +87,13 @@ class DataWorkspaceService:
                 "research": str(research_report.get("backend", "qlib-fallback")),
                 "market": "binance",
             },
+            "source_explanations": self._build_source_explanations(
+                symbol=selected_symbol,
+                interval=normalized_interval,
+                preview=preview,
+                training_snapshot=training_snapshot,
+                holding_window=str((self._extract_training_window(research_report) or {}).get("holding_window", "")),
+            ),
             "controls": {
                 "selected_symbols": list(configured_data.get("selected_symbols") or []),
                 "primary_symbol": str(configured_data.get("primary_symbol", "")),
@@ -101,6 +108,7 @@ class DataWorkspaceService:
                 "available_window_modes": [str(item) for item in list((workbench_controls.get("options") or {}).get("window_modes") or [])],
             },
             "snapshot": training_snapshot,
+            "quality": self._build_quality_snapshot(training_snapshot),
             "preview": preview,
             "training_window": self._extract_training_window(research_report),
             "symbols": self._build_symbol_rows(whitelist=whitelist, selected_symbol=selected_symbol),
@@ -231,6 +239,79 @@ class DataWorkspaceService:
             for symbol in whitelist
         ]
 
+    @staticmethod
+    def _build_quality_snapshot(snapshot: dict[str, object]) -> dict[str, object]:
+        """把数据层级行数整理成人能看懂的质量摘要。"""
+
+        data_states = dict(snapshot.get("data_states") or {})
+        raw_rows = _read_state_row_count(data_states, "raw")
+        cleaned_rows = _read_state_row_count(data_states, "cleaned")
+        feature_ready_rows = _read_state_row_count(data_states, "feature-ready")
+        cleaned_drop_rows = max(raw_rows - cleaned_rows, 0)
+        feature_drop_rows = max(cleaned_rows - feature_ready_rows, 0)
+        total_drop_rows = max(raw_rows - feature_ready_rows, 0)
+        retention_ratio = round((feature_ready_rows / raw_rows) * 100, 2) if raw_rows > 0 else 0.0
+        if raw_rows <= 0:
+            summary = "当前还没有可计算的数据质量摘要。"
+        elif total_drop_rows <= 0:
+            summary = "当前原始样本没有明显清洗损耗，可以直接进入特征层。"
+        elif retention_ratio >= 90:
+            summary = "当前只做了轻度清洗，绝大多数样本都保留下来了。"
+        else:
+            summary = "当前清洗损耗偏高，进入研究前要先确认时间窗口和预处理规则。"
+        return {
+            "raw_rows": raw_rows,
+            "cleaned_rows": cleaned_rows,
+            "feature_ready_rows": feature_ready_rows,
+            "cleaned_drop_rows": cleaned_drop_rows,
+            "feature_drop_rows": feature_drop_rows,
+            "total_drop_rows": total_drop_rows,
+            "retention_ratio_pct": retention_ratio,
+            "missing_rows": None,
+            "invalid_rows": None,
+            "detail": "当前快照先按 raw → cleaned → feature-ready 三层汇总；缺失行和坏行还没有单独拆出，只能先看清洗丢弃总量。",
+            "summary": summary,
+        }
+
+    @staticmethod
+    def _build_source_explanations(
+        *,
+        symbol: str,
+        interval: str,
+        preview: dict[str, object],
+        training_snapshot: dict[str, object],
+        holding_window: str,
+    ) -> list[dict[str, object]]:
+        """整理快照来源解释，避免只看到结果看不到口径。"""
+
+        return [
+            {
+                "label": "市场预览样本",
+                "value": f"binance / {symbol or 'n/a'} / {interval or 'n/a'}",
+                "detail": "这里跟着当前页面筛选实时变化，用来回答“现在这页看到的是哪段原始行情”。",
+            },
+            {
+                "label": "研究训练快照",
+                "value": str(training_snapshot.get('snapshot_id', '') or "未生成"),
+                "detail": "训练完成后会把数据冻结成快照，后面的研究、回测和评估都会优先回指这一份快照。",
+            },
+            {
+                "label": "训练窗口口径",
+                "value": holding_window or "未写入",
+                "detail": "这里说明最近一次研究训练到底按多长的持有窗口切训练、验证和回测。",
+            },
+            {
+                "label": "快照落盘位置",
+                "value": str(training_snapshot.get('dataset_snapshot_path', '') or "当前未落盘"),
+                "detail": "如果这里为空，说明当前结果还没有写出独立快照，先不要把它当成稳定实验基线。",
+            },
+            {
+                "label": "预览一致性",
+                "value": str(preview.get('status', '') or "unknown"),
+                "detail": str(preview.get("detail", "") or "预览可用时，当前过滤条件和页面展示会按同一批样本刷新。"),
+            },
+        ]
+
 
 def _format_timestamp(value: object) -> str:
     """把毫秒时间戳格式化成 UTC 字符串。"""
@@ -242,6 +323,13 @@ def _format_timestamp(value: object) -> str:
     if numeric <= 0:
         return ""
     return datetime.fromtimestamp(numeric / 1000, tz=timezone.utc).isoformat()
+
+
+def _read_state_row_count(data_states: dict[str, object], key: str) -> int:
+    """读取某一层的样本行数。"""
+
+    payload = dict(data_states.get(key) or {})
+    return max(int(payload.get("row_count", 0) or 0), 0)
 
 
 data_workspace_service = DataWorkspaceService()

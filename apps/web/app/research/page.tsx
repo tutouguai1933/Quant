@@ -70,6 +70,7 @@ export default async function ResearchPage() {
   const resolvedLabelMode = LABEL_MODE_LABELS[workspace.labeling.label_mode] || workspace.labeling.label_mode || "未设置";
   const resolvedLabelTriggerBasis =
     LABEL_TRIGGER_BASIS_LABELS[String(controls.label_trigger_basis ?? "close")] || String(controls.label_trigger_basis ?? "close");
+  const selectedModelKey = String(controls.model_key ?? workspace.model.model_version ?? "heuristic_v1");
   const labelTargetPctValue = displayValue(workspace.controls.label_target_pct, "未设置");
   const labelStopPctValue = displayValue(workspace.controls.label_stop_pct, "未设置");
   const weightSummaries = [
@@ -327,6 +328,19 @@ export default async function ResearchPage() {
             </CardContent>
           </Card>
 
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>模型和标签怎么影响结果</CardTitle>
+              <CardDescription>先看模型适合什么场景，再看标签方式会把哪种走势优先判成 buy / sell / watch。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <InfoBlock label="当前模型说明" value={describeModel(selectedModelKey)} />
+              <InfoBlock label="标签方式说明" value={describeLabelMode(String(controls.label_mode ?? workspace.labeling.label_mode ?? ""))} />
+              <InfoBlock label="触发基础说明" value={describeLabelTriggerBasis(String(controls.label_trigger_basis ?? "close"))} />
+              <InfoBlock label="持有窗口说明" value={describeHoldingWindow(String(controls.holding_window_label ?? workspace.overview.holding_window ?? "1-3d"))} />
+            </CardContent>
+          </Card>
+
           <DataTable
             columns={["参数名", "参数值"]}
             rows={Object.entries(workspace.parameters).map(([name, value]) => ({
@@ -398,6 +412,52 @@ function formatWindow(payload: Record<string, unknown>) {
     parts.push(`count=${String(payload.count)}`);
   }
   return parts.join(" / ") || "当前没有窗口信息";
+}
+
+function describeModel(modelKey: string) {
+  switch (modelKey) {
+    case "trend_bias_v2":
+      return "更偏顺趋势确认，适合把趋势、量能和突破一致的标的优先排前。";
+    case "balanced_v3":
+      return "会同时看趋势、动量、波动和震荡，适合拿来比较多种市场状态下的均衡表现。";
+    case "heuristic_v1":
+    default:
+      return "最基础的启发式模型，适合先跑通一轮研究，再观察配置变化会怎么影响推荐。";
+  }
+}
+
+function describeLabelMode(labelMode: string) {
+  switch (labelMode) {
+    case "close_only":
+      return "只看窗口结束时的最终结果，更适合验证持有到期的稳定性，但对中间命中的走势不敏感。";
+    case "window_majority":
+      return "按整个窗口里的多数结果表决，更适合过滤单根极端波动，但信号会更保守。";
+    case "earliest_hit":
+    default:
+      return "谁先命中目标或止损就优先按谁记账，更接近当前 1 到 3 天择时的真实退出逻辑。";
+  }
+}
+
+function describeLabelTriggerBasis(triggerBasis: string) {
+  switch (triggerBasis) {
+    case "high_low":
+      return "按窗口内的高低点命中来判断，更接近盘中先碰目标或止损就退出。";
+    case "close":
+    default:
+      return "按收盘价判断，口径更稳，但会弱化盘中先冲高或先下探的路径差异。";
+  }
+}
+
+function describeHoldingWindow(holdingWindow: string) {
+  switch (holdingWindow) {
+    case "1-2d":
+      return "更短，更偏快节奏择时，推荐会更敏感，但也更容易被短期波动影响。";
+    case "2-4d":
+      return "更长，更偏耐心持有，推荐会更稳，但对短期强信号的反应会慢一点。";
+    case "1-3d":
+    default:
+      return "当前默认窗口，兼顾快速命中和持有稳定性，也是这套单币择时研究的主目标。";
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

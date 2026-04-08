@@ -88,6 +88,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
     : [];
   const operations = asRecord(automation.operations);
   const runtimeWindow = asRecord(automation.runtimeWindow);
+  const primaryOperatorAction = asRecord(operatorActions[0]);
+  const primaryOperatorLabel = readText(primaryOperatorAction.label, "当前可以继续下一轮自动化");
+  const primaryOperatorDetail = readText(primaryOperatorAction.detail, "当前没有额外阻塞说明。");
   const pauseReasonRaw = readText(automation.pauseReason, "");
   const takeoverReason = pauseReasonRaw || "当前没有接管原因。";
   const recoveryAction = readText(executionHealth.recovery_action, "healthy");
@@ -150,6 +153,18 @@ export default async function TasksPage({ searchParams }: PageProps) {
     note: readText(runtimeWindow.note, "当前没有额外长期运行说明。"),
     readyForCycle: Boolean(runtimeWindow.ready_for_cycle),
   };
+  const resumeReadyCount = resumeChecklist.filter((item) => String(item.status ?? "ready") === "ready").length;
+  const resumeBlockedItems = resumeChecklist
+    .filter((item) => String(item.status ?? "ready") !== "ready")
+    .map((item) => readText(item.label, "检查项"));
+  const schedulerPreview = automation.schedulerPlan.slice(0, 3);
+  const restoreConclusion = buildRestoreConclusion({
+    readyForCycle: runtimeWindowSummary.readyForCycle,
+    nextAction: runtimeWindowSummary.nextAction,
+    blockedItems: resumeBlockedItems,
+    manualTakeover: automation.manualTakeover,
+    latestAlert,
+  });
   const executionPolicy = asRecord(automation.executionPolicy);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
   const executionSymbolOptions = Array.from(new Set([...executionAllowedSymbols, "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])).map((item) => ({
@@ -462,6 +477,73 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     <p>同步新鲜度：{String(runHealth.stale_sync_state ?? "fresh")}，同步失败次数：{String(syncFailureCount)}</p>
                     <p>最后成功时间：{readText(runHealth.last_success_at, "当前还没有成功记录")}，最近失败时间：{lastFailureAt || "当前还没有失败记录"}</p>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">接管快捷动作</p>
+                  <CardTitle>先去最该处理的那一页</CardTitle>
+                  <CardDescription>这里不再只告诉你有问题，而是直接给出下一步最短路径。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4 text-sm leading-6 text-muted-foreground">
+                    <p>当前首要动作：{primaryOperatorLabel}</p>
+                    <p>为什么先做它：{primaryOperatorDetail}</p>
+                    <p>当前结论：{restoreConclusion.summary}</p>
+                  </div>
+                  <div className="grid gap-3">
+                    <ActionCard action="automation_manual_takeover" label="先人工接管" detail="出现执行器异常、同步失败或高风险告警时，先停在人工接管，不再继续自动推进。" danger />
+                    <ActionCard action="automation_dry_run_only" label="只恢复到 dry-run" detail="如果研究链已经恢复，但你还不想放开真实资金，先切回只保留 dry-run。" />
+                    <ActionCard action="automation_resume" label="确认后恢复自动化" detail="只有在告警已处理、同步已恢复、接管原因已清除后，才恢复当前自动化模式。" />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/evaluation">去评估页看淘汰原因</Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/research">去研究页重跑训练</Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/backtest">去回测页看门槛</Link>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href="/strategies">去策略页确认执行</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">恢复确认</p>
+                  <CardTitle>恢复自动化前先把这几项过一遍</CardTitle>
+                  <CardDescription>把恢复清单、调度状态和下一步动作压在一起，先确认现在适不适合继续放开自动化。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3">
+                  <GuidanceBlock
+                    label="清单通过情况"
+                    value={`${resumeReadyCount} / ${resumeChecklist.length || 0} 项已通过`}
+                    detail={resumeBlockedItems.length ? `还没通过：${resumeBlockedItems.join(" / ")}` : "当前恢复清单已经全部通过。"}
+                    tone={resumeBlockedItems.length ? "warning" : "supportive"}
+                  />
+                  <GuidanceBlock
+                    label="调度状态"
+                    value={runtimeWindowSummary.readyForCycle ? "可以继续下一轮" : formatRuntimeWindowAction(runtimeWindowSummary.nextAction)}
+                    detail={runtimeWindowSummary.note}
+                    tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
+                  />
+                  <GuidanceBlock
+                    label="调度预览"
+                    value={schedulerPreview.length ? schedulerPreview.map((step) => String(step.task_type ?? "task")).join(" -> ") : "当前没有调度步骤"}
+                    detail={schedulerPreview.length ? "恢复后会按这条顺序继续推进。" : "当前还没有可用调度顺序。"}
+                  />
+                  <GuidanceBlock
+                    label="恢复前先做什么"
+                    value={readText(takeoverSummary.next_step, primaryOperatorLabel)}
+                    detail={`${restoreConclusion.detail} ${readText(takeoverSummary.note, primaryOperatorDetail)}`}
+                    tone={resumeBlockedItems.length ? "warning" : "default"}
+                  />
                 </CardContent>
               </Card>
 
@@ -864,6 +946,49 @@ function buildReviewSteps(review: Record<string, unknown>) {
       detail: String(row.detail ?? ""),
     };
   });
+}
+
+function buildRestoreConclusion({
+  readyForCycle,
+  nextAction,
+  blockedItems,
+  manualTakeover,
+  latestAlert,
+}: {
+  readyForCycle: boolean;
+  nextAction: string;
+  blockedItems: string[];
+  manualTakeover: boolean;
+  latestAlert: { level?: string; message?: string } | undefined;
+}) {
+  if (manualTakeover) {
+    return {
+      summary: "建议先人工接管，确认执行器、同步和接管原因都已收口。",
+      detail: "告警已处理、同步已恢复、接管原因已清除后，再点恢复。",
+    };
+  }
+  if (blockedItems.length) {
+    return {
+      summary: `现在先不要恢复，原因：${blockedItems.join(" / ")} 还没处理完。`,
+      detail: "先把恢复清单里未通过的检查项处理完，再考虑继续自动化。",
+    };
+  }
+  if (latestAlert?.level === "error") {
+    return {
+      summary: "建议立即人工接管，先处理执行器或同步异常。",
+      detail: latestAlert.message || "最近仍有错误级告警，先不要继续放开自动化。",
+    };
+  }
+  if (!readyForCycle) {
+    return {
+      summary: `调度状态：${formatRuntimeWindowAction(nextAction)}。`,
+      detail: "当前还在等待冷却、轮次窗口或调度恢复，不需要额外重复点击。",
+    };
+  }
+  return {
+    summary: "当前可以继续自动化，最近没有高风险告警。",
+    detail: "如果你已经看过评估、研究和回测结果，这一轮可以继续按当前模式推进。",
+  };
 }
 
 function buildCurrentBlockSummary({

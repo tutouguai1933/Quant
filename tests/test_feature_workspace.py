@@ -31,6 +31,9 @@ class FeatureWorkspaceTests(unittest.TestCase):
         self.assertIn("因子组合配置", content)
         self.assertIn("primary_factors", content)
         self.assertIn("当前配置", content)
+        self.assertIn("当前还没有类别权重解释", content)
+        self.assertIn("研究页权重入口", content)
+        self.assertIn("主要影响什么", content)
         self.assertIn("工作台暂时不可用", content)
         self.assertIn("WorkbenchConfigStatusCard", content)
 

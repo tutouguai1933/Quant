@@ -57,6 +57,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
                 <Link
                   key={item.href}
                   href={target}
+                  prefetch={false}
                   className={[
                     "flex items-center justify-between rounded-xl border px-3 py-3 text-sm transition-colors",
                     isActive
@@ -111,7 +112,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
                   </form>
                 ) : (
                   <Button asChild variant="outline">
-                    <Link href="/login">前往登录</Link>
+                    <Link href="/login" prefetch={false}>前往登录</Link>
                   </Button>
                 )}
               </div>

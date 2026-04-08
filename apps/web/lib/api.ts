@@ -214,6 +214,11 @@ export type DataWorkspaceModel = {
     research: string;
     market: string;
   };
+  source_explanations: Array<{
+    label: string;
+    value: string;
+    detail: string;
+  }>;
   controls: {
     selected_symbols: string[];
     primary_symbol: string;
@@ -233,6 +238,19 @@ export type DataWorkspaceModel = {
     active_data_state: string;
     data_states: Record<string, unknown>;
     dataset_snapshot_path: string;
+  };
+  quality: {
+    raw_rows: number;
+    cleaned_rows: number;
+    feature_ready_rows: number;
+    cleaned_drop_rows: number;
+    feature_drop_rows: number;
+    total_drop_rows: number;
+    retention_ratio_pct: number;
+    missing_rows: number | null;
+    invalid_rows: number | null;
+    detail: string;
+    summary: string;
   };
   preview: {
     symbol: string;
@@ -1449,12 +1467,26 @@ export function getDataWorkspaceFallback(symbol?: string, interval?: string, lim
       research: "qlib-fallback",
       market: "binance",
     },
+    source_explanations: [],
     snapshot: {
       snapshot_id: "",
       cache_signature: "",
       active_data_state: "",
       data_states: {},
       dataset_snapshot_path: "",
+    },
+    quality: {
+      raw_rows: 0,
+      cleaned_rows: 0,
+      feature_ready_rows: 0,
+      cleaned_drop_rows: 0,
+      feature_drop_rows: 0,
+      total_drop_rows: 0,
+      retention_ratio_pct: 0,
+      missing_rows: null,
+      invalid_rows: null,
+      detail: "当前还没有可用质量摘要。",
+      summary: "当前还没有可用质量摘要。",
     },
     preview: {
       symbol: String(symbol ?? "").trim() || "BTCUSDT",
@@ -1831,6 +1863,11 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       research: String(sources.research ?? "qlib-fallback"),
       market: String(sources.market ?? "binance"),
     },
+    source_explanations: normalizeObjectArray(row.source_explanations).map((value) => ({
+      label: String(value.label ?? ""),
+      value: String(value.value ?? ""),
+      detail: String(value.detail ?? ""),
+    })),
     snapshot: {
       snapshot_id: String(snapshot.snapshot_id ?? ""),
       cache_signature: String(snapshot.cache_signature ?? ""),
@@ -1838,6 +1875,7 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
       data_states: isPlainObject(snapshot.data_states) ? snapshot.data_states : {},
       dataset_snapshot_path: String(snapshot.dataset_snapshot_path ?? ""),
     },
+    quality: normalizeDataWorkspaceQuality(row.quality),
     preview: {
       symbol: String(preview.symbol ?? ""),
       interval: String(preview.interval ?? "4h"),
@@ -1862,6 +1900,23 @@ function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
         };
       })
       .filter((value) => value.symbol.length > 0),
+  };
+}
+
+function normalizeDataWorkspaceQuality(value: unknown): DataWorkspaceModel["quality"] {
+  const row: Record<string, unknown> = isPlainObject(value) ? value : {};
+  return {
+    raw_rows: Number(row.raw_rows ?? 0),
+    cleaned_rows: Number(row.cleaned_rows ?? 0),
+    feature_ready_rows: Number(row.feature_ready_rows ?? 0),
+    cleaned_drop_rows: Number(row.cleaned_drop_rows ?? 0),
+    feature_drop_rows: Number(row.feature_drop_rows ?? 0),
+    total_drop_rows: Number(row.total_drop_rows ?? 0),
+    retention_ratio_pct: Number(row.retention_ratio_pct ?? 0),
+    missing_rows: row.missing_rows === null || row.missing_rows === undefined ? null : Number(row.missing_rows ?? 0),
+    invalid_rows: row.invalid_rows === null || row.invalid_rows === undefined ? null : Number(row.invalid_rows ?? 0),
+    detail: String(row.detail ?? "当前还没有可用质量摘要。"),
+    summary: String(row.summary ?? "当前还没有可用质量摘要。"),
   };
 }
 

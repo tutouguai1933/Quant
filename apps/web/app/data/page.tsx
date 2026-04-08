@@ -35,6 +35,11 @@ export default async function DataPage({ searchParams }: PageProps) {
 
   const stateSummary = formatDataStates(workspace.snapshot.data_states);
   const sampleRows = buildSampleRows(workspace.training_window.sample_window);
+  const qualityRows = buildQualityRows(workspace.quality);
+  const sourceRows = workspace.source_explanations.map((item, index) => ({
+    id: `${item.label}-${index}`,
+    cells: [item.label, item.value || "n/a", item.detail || "当前没有额外说明"],
+  }));
   const configAlignment = asRecord(workspace.config_alignment);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
@@ -97,6 +102,36 @@ export default async function DataPage({ searchParams }: PageProps) {
             </CardContent>
           </Card>
 
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>数据质量</CardTitle>
+              <CardDescription>先看原始样本经过清洗后还剩多少，再决定要不要继续训练。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="原始样本" value={String(workspace.quality.raw_rows)} />
+              <InfoBlock label="清洗后样本" value={String(workspace.quality.cleaned_rows)} />
+              <InfoBlock label="特征就绪样本" value={String(workspace.quality.feature_ready_rows)} />
+              <InfoBlock label="总丢弃行" value={String(workspace.quality.total_drop_rows)} />
+              <InfoBlock label="保留率" value={formatPercent(workspace.quality.retention_ratio_pct)} />
+              <InfoBlock
+                label="缺失 / 坏行"
+                value={`${formatOptionalCount(workspace.quality.missing_rows)} / ${formatOptionalCount(workspace.quality.invalid_rows)}`}
+              />
+              <InfoBlock label="当前判断" value={workspace.quality.summary} />
+              <InfoBlock label="补充说明" value={workspace.quality.detail} />
+            </CardContent>
+          </Card>
+
+          <DataTable
+            columns={["质量阶段", "当前摘要"]}
+            rows={qualityRows.map((item) => ({
+              id: item.label,
+              cells: [item.label, item.summary],
+            }))}
+            emptyTitle="当前还没有质量明细"
+            emptyDetail="先生成一轮研究快照，系统才能算出样本在各层之间掉了多少。"
+          />
+
           <DataTable
             columns={["状态层", "摘要"]}
             rows={stateSummary.map((item) => ({
@@ -115,6 +150,13 @@ export default async function DataPage({ searchParams }: PageProps) {
             }))}
             emptyTitle="时间范围暂不可用"
             emptyDetail="当前还没有训练窗口信息，先运行研究训练再回到这里。"
+          />
+
+          <DataTable
+            columns={["来源层", "当前来源", "为什么这样读"]}
+            rows={sourceRows}
+            emptyTitle="当前还没有来源解释"
+            emptyDetail="先运行一次研究训练，系统才会把研究快照和窗口口径写出来。"
           />
 
           <Card className="bg-card/90">
@@ -318,6 +360,29 @@ function formatTimeRange(first: string, last: string): string {
     return "当前没有样本预览";
   }
   return `${first || "n/a"} → ${last || "n/a"}`;
+}
+
+function buildQualityRows(quality: {
+  raw_rows: number;
+  cleaned_rows: number;
+  feature_ready_rows: number;
+  cleaned_drop_rows: number;
+  feature_drop_rows: number;
+  total_drop_rows: number;
+}) {
+  return [
+    { label: "raw → cleaned", summary: `原始 ${quality.raw_rows} / 丢弃 ${quality.cleaned_drop_rows}` },
+    { label: "cleaned → feature-ready", summary: `清洗后 ${quality.cleaned_rows} / 再丢弃 ${quality.feature_drop_rows}` },
+    { label: "最终可研究样本", summary: `feature-ready ${quality.feature_ready_rows} / 总丢弃 ${quality.total_drop_rows}` },
+  ];
+}
+
+function formatPercent(value: number) {
+  return Number.isFinite(value) ? `${value.toFixed(2)}%` : "n/a";
+}
+
+function formatOptionalCount(value: number | null) {
+  return value === null ? "暂未单独记录" : String(value);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
