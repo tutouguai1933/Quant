@@ -54,7 +54,24 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(configured["mode"], "auto_dry_run")
         self.assertTrue(paused["paused"])
         self.assertEqual(paused["paused_reason"], "manual_stop")
-        self.assertFalse(resumed["paused"])
+        self.assertTrue(resumed["paused"])
+        self.assertEqual(resumed["status"], "blocked")
+        self.assertEqual(resumed["blocked_reason"], "resume_checklist_pending")
+        self.assertTrue(resumed["pending_items"])
+
+    def test_resume_refuses_when_resume_checklist_has_pending_items(self) -> None:
+        service = AutomationService()
+
+        service.configure_mode("auto_dry_run", actor="tester")
+        service.pause("manual_stop", actor="tester")
+        service.record_alert(level="error", code="sync_failed", message="同步失败", source="sync")
+
+        resumed = service.resume(actor="tester")
+
+        self.assertTrue(resumed["paused"])
+        self.assertEqual(resumed["status"], "blocked")
+        self.assertEqual(resumed["blocked_reason"], "resume_checklist_pending")
+        self.assertTrue(resumed["pending_items"])
 
     def test_pause_manual_takeover_kill_and_resume_sync_global_pause_and_executor(self) -> None:
         service = AutomationService()
@@ -68,7 +85,7 @@ class AutomationServiceTests(unittest.TestCase):
 
         self.assertEqual(
             fake_risk.set_global_pause.call_args_list,
-            [mock.call(True), mock.call(True), mock.call(True), mock.call(False)],
+            [mock.call(True), mock.call(True), mock.call(True)],
         )
         self.assertEqual(
             fake_executor.control_strategy.call_args_list,
@@ -358,6 +375,23 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["active_blockers"][0]["code"], "paused")
         self.assertIn("恢复自动化", [item["label"] for item in health["operator_actions"]])
         self.assertIn("查看执行器", [item["label"] for item in health["operator_actions"]])
+
+    def test_alert_summary_exposes_lifecycle_groups(self) -> None:
+        service = AutomationService()
+
+        service.record_alert(level="error", code="sync_failed", message="同步失败", source="sync")
+        service.record_alert(level="error", code="sync_failed", message="同步失败", source="sync")
+        service.record_alert(level="warning", code="stale_data", message="数据陈旧", source="watchdog")
+
+        status = service.get_status(task_health={})
+
+        health = status["health"]
+        groups = status["health"]["alert_summary"]["groups"]
+        self.assertEqual(len(groups), 2)
+        self.assertEqual(groups[0]["code"], "sync_failed")
+        self.assertEqual(groups[0]["occurrence_count"], 2)
+        self.assertIn("first_seen_at", groups[0])
+        self.assertIn("last_seen_at", groups[0])
         self.assertIn("focus_cards", health)
         self.assertEqual(health["focus_cards"]["alert"]["tone"], "critical")
         self.assertIn("执行器离线", health["focus_cards"]["alert"]["detail"])

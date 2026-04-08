@@ -380,6 +380,34 @@ class QlibRankingTests(unittest.TestCase):
         self.assertIn("validation_training_drift_too_large", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
+    def test_rank_candidates_respects_custom_consistency_thresholds(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.7900",
+                    "backtest": {"metrics": _passing_metrics()},
+                }
+            ],
+            validation={
+                "sample_count": 20,
+                "positive_rate": "0.48",
+                "avg_future_return_pct": "0.20",
+            },
+            training_metrics={
+                "positive_rate": "0.62",
+                "avg_future_return_pct": "1.10",
+            },
+            thresholds={
+                "consistency_max_training_validation_positive_rate_gap": "0.20",
+                "consistency_max_training_validation_return_gap_pct": "1.2",
+            },
+        )
+
+        self.assertEqual(result["items"][0]["consistency_gate"]["status"], "passed")
+        self.assertTrue(result["items"][0]["allowed_to_dry_run"])
+
     def test_rank_candidates_marks_ready_candidate_with_execution_priority(self) -> None:
         result = rank_candidates(
             [

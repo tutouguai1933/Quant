@@ -84,6 +84,44 @@ class QlibRuleGateTests(unittest.TestCase):
         self.assertFalse(decision["allowed"])
         self.assertEqual(decision["reason"], "strict_template_not_confirmed")
 
+    def test_rule_gate_accepts_runtime_threshold_overrides(self) -> None:
+        decision = evaluate_rule_gate(
+            {
+                "ema20_gap_pct": "0.2000",
+                "ema55_gap_pct": "0.4000",
+                "atr_pct": "4.1000",
+                "volume_ratio": "1.0100",
+            },
+            thresholds={
+                "rule_min_ema20_gap_pct": "0.1",
+                "rule_min_ema55_gap_pct": "0.3",
+                "rule_max_atr_pct": "4.2",
+                "rule_min_volume_ratio": "1.0",
+            },
+        )
+
+        self.assertTrue(decision["allowed"])
+        self.assertEqual(decision["reason"], "ready")
+
+    def test_rule_gate_accepts_runtime_threshold_override(self) -> None:
+        decision = evaluate_rule_gate(
+            {
+                "ema20_gap_pct": "0.2500",
+                "ema55_gap_pct": "0.3500",
+                "atr_pct": "4.1000",
+                "volume_ratio": "1.0100",
+            },
+            thresholds={
+                "rule_min_ema20_gap_pct": "0.20",
+                "rule_min_ema55_gap_pct": "0.30",
+                "rule_max_atr_pct": "4.20",
+                "rule_min_volume_ratio": "1.00",
+            },
+        )
+
+        self.assertTrue(decision["allowed"])
+        self.assertEqual(decision["reason"], "ready")
+
 
 if __name__ == "__main__":
     unittest.main()

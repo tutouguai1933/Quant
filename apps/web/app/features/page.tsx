@@ -4,7 +4,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
-import { ConfigCheckboxGrid, ConfigField, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
+import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
@@ -30,6 +30,24 @@ export default async function FeaturePage() {
     id: interval,
     cells: [interval, formatProfile(params)],
   }));
+  const primaryFactorSet = new Set(workspace.controls.primary_factors ?? []);
+  const auxiliaryFactorSet = new Set(workspace.controls.auxiliary_factors ?? []);
+  const categorySummaries = Object.entries(workspace.categories).map(([name, items]) => {
+    const primaryCount = items.filter((factor) => primaryFactorSet.has(factor)).length;
+    const auxiliaryCount = items.filter((factor) => auxiliaryFactorSet.has(factor)).length;
+    return {
+      name,
+      total: items.length,
+      primaryCount,
+      auxiliaryCount,
+    };
+  });
+  const totalCategoryCount = categorySummaries.length;
+  const totalFactorCount = categorySummaries.reduce((sum, current) => sum + current.total, 0);
+  const dominantCategory = totalCategoryCount
+    ? categorySummaries.reduce((prev, current) => (current.total > prev.total ? current : prev))
+    : undefined;
+  const averagePerGroup = totalCategoryCount ? Math.round(totalFactorCount / totalCategoryCount) : 0;
 
   return (
     <AppShell
@@ -69,6 +87,54 @@ export default async function FeaturePage() {
             emptyDetail="先运行一次 Qlib 研究训练，特征协议才会在这里出现。"
           />
 
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>按类别看当前启用情况</CardTitle>
+              <CardDescription>实时展示每个因子类目里现在有多少被设置为主判断、多少被设置为辅助确认。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {categorySummaries.length ? (
+                categorySummaries.map((summary) => (
+                  <div key={summary.name} className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+                    <p className="text-sm font-semibold text-foreground">{summary.name}</p>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      主判断 {summary.primaryCount} / {summary.total} · 辅助 {summary.auxiliaryCount} / {summary.total}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm leading-6 text-muted-foreground">当前还没有任何因子分组。</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>分组摘要</CardTitle>
+              <CardDescription>这里汇总因子协议的分组规模与主/辅助比例。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-3">
+              <InfoBlock label="分组数量" value={String(totalCategoryCount || 0)} />
+              <InfoBlock label="因子总数" value={String(totalFactorCount || workspace.overview.factor_count)} />
+              <InfoBlock
+                label="主判断 / 总数"
+                value={`${workspace.overview.primary_count} / ${workspace.overview.factor_count}`}
+              />
+              <InfoBlock
+                label="辅助确认 / 总数"
+                value={`${workspace.overview.auxiliary_count} / ${workspace.overview.factor_count}`}
+              />
+              <InfoBlock
+                label="最密集分组"
+                value={dominantCategory ? `${dominantCategory.name} (${dominantCategory.total} 因子)` : "n/a"}
+              />
+              <InfoBlock
+                label="平均每组"
+                value={totalCategoryCount ? `${averagePerGroup} 个因子` : "n/a"}
+              />
+            </CardContent>
+          </Card>
+
           <DataTable
             columns={["因子名", "类别", "角色", "说明"]}
             rows={workspace.factors.map((item) => ({
@@ -89,25 +155,37 @@ export default async function FeaturePage() {
             disabled={!configEditable}
             disabledReason={unavailableConfigReason}
           >
-            <ConfigField label="主判断因子" hint="这些因子会直接参与当前模型的打分。">
-              <ConfigCheckboxGrid
-                name="primary_factors"
-                options={workspace.controls.available_primary_factors.map((item) => ({
-                  value: item,
-                  label: item,
-                  checked: workspace.controls.primary_factors.includes(item),
-                }))}
-              />
-            </ConfigField>
-            <ConfigField label="辅助因子" hint="这些因子只做确认和解释，不单独决定最终推荐。">
-              <ConfigCheckboxGrid
-                name="auxiliary_factors"
-                options={workspace.controls.available_auxiliary_factors.map((item) => ({
-                  value: item,
-                  label: item,
-                  checked: workspace.controls.auxiliary_factors.includes(item),
-                }))}
-              />
+            <ConfigField label="按因子类别选择" hint="按类别浏览因子，并在主判断 / 辅助之间批量配置。">
+              <p className="text-xs leading-5 text-muted-foreground">按类别看当前启用情况，再决定哪些因子放进主判断、哪些只做辅助确认。</p>
+              {Object.entries(workspace.categories).length ? (
+                <div className="space-y-4">
+                  {Object.entries(workspace.categories).map(([category, items]) => (
+                    <div key={category} className="rounded-2xl border border-border/60 bg-background/40 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-foreground">{category}</p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">{items.length} 个因子</p>
+                      </div>
+                      <p className="text-xs leading-5 text-muted-foreground">{items.length ? items.join(" / ") : "当前没有因子"}</p>
+                      <div className="grid gap-2 pt-3 md:grid-cols-2">
+                        <CategoryCheckboxGroup
+                          title="主判断因子"
+                          name="primary_factors"
+                          factors={items}
+                          selected={workspace.controls.primary_factors}
+                        />
+                        <CategoryCheckboxGroup
+                          title="辅助因子"
+                          name="auxiliary_factors"
+                          factors={items}
+                          selected={workspace.controls.auxiliary_factors}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm leading-6 text-muted-foreground">当前还没有因子类别。</p>
+              )}
             </ConfigField>
             <ConfigField label="预处理规则" hint="这里改的是因子进入训练前的清洗方式，保存后下一轮训练和推理都会按这里重算。">
               <div className="grid gap-3 md:grid-cols-3">
@@ -129,6 +207,12 @@ export default async function FeaturePage() {
                   defaultValue={workspace.controls.normalization_policy}
                   options={workspace.controls.available_normalization_policies.map((item) => ({ value: item, label: item }))}
                 />
+              </div>
+            </ConfigField>
+            <ConfigField label="周期参数" hint="这里可以直接调整 1h 和 4h 的趋势、动量、震荡、量能和突破窗口，让同一组因子更贴近当前节奏。">
+              <div className="grid gap-4">
+                <TimeframeProfile4hCard params={workspace.controls.timeframe_profiles["4h"] ?? {}} />
+                <TimeframeProfile1hCard params={workspace.controls.timeframe_profiles["1h"] ?? {}} />
               </div>
             </ConfigField>
           </WorkbenchConfigCard>
@@ -197,4 +281,130 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 function formatProfile(profile: Record<string, unknown>) {
   const items = Object.entries(profile).map(([key, value]) => `${key}=${String(value)}`);
   return items.join(" / ") || "当前没有参数";
+}
+
+function TimeframeProfile4hCard({ params }: { params: Record<string, unknown> }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+      <p className="eyebrow">4h 参数</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <ConfigInput
+          name="timeframe_profiles.4h.trend_window"
+          defaultValue={String(params.trend_window ?? "")}
+          placeholder="趋势窗口"
+        />
+        <ConfigInput
+          name="timeframe_profiles.4h.volume_window"
+          defaultValue={String(params.volume_window ?? "")}
+          placeholder="量能窗口"
+        />
+        <ConfigInput
+          name="timeframe_profiles.4h.atr_period"
+          defaultValue={String(params.atr_period ?? "")}
+          placeholder="ATR 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.4h.rsi_period"
+          defaultValue={String(params.rsi_period ?? "")}
+          placeholder="RSI 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.4h.roc_period"
+          defaultValue={String(params.roc_period ?? "")}
+          placeholder="ROC 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.4h.cci_period"
+          defaultValue={String(params.cci_period ?? "")}
+          placeholder="CCI 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.4h.stoch_period"
+          defaultValue={String(params.stoch_period ?? "")}
+          placeholder="随机指标周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.4h.breakout_lookback"
+          defaultValue={String(params.breakout_lookback ?? "")}
+          placeholder="突破回看窗口"
+        />
+      </div>
+    </div>
+  );
+}
+
+function TimeframeProfile1hCard({ params }: { params: Record<string, unknown> }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+      <p className="eyebrow">1h 参数</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <ConfigInput
+          name="timeframe_profiles.1h.trend_window"
+          defaultValue={String(params.trend_window ?? "")}
+          placeholder="趋势窗口"
+        />
+        <ConfigInput
+          name="timeframe_profiles.1h.volume_window"
+          defaultValue={String(params.volume_window ?? "")}
+          placeholder="量能窗口"
+        />
+        <ConfigInput
+          name="timeframe_profiles.1h.atr_period"
+          defaultValue={String(params.atr_period ?? "")}
+          placeholder="ATR 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.1h.rsi_period"
+          defaultValue={String(params.rsi_period ?? "")}
+          placeholder="RSI 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.1h.roc_period"
+          defaultValue={String(params.roc_period ?? "")}
+          placeholder="ROC 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.1h.cci_period"
+          defaultValue={String(params.cci_period ?? "")}
+          placeholder="CCI 周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.1h.stoch_period"
+          defaultValue={String(params.stoch_period ?? "")}
+          placeholder="随机指标周期"
+        />
+        <ConfigInput
+          name="timeframe_profiles.1h.breakout_lookback"
+          defaultValue={String(params.breakout_lookback ?? "")}
+          placeholder="突破回看窗口"
+        />
+      </div>
+    </div>
+  );
+}
+
+function CategoryCheckboxGroup({
+  title,
+  name,
+  factors,
+  selected,
+}: {
+  title: string;
+  name: string;
+  factors: string[];
+  selected: string[];
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
+      <ConfigCheckboxGrid
+        name={name}
+        options={factors.map((item) => ({
+          value: item,
+          label: item,
+          checked: selected.includes(item),
+        }))}
+      />
+    </div>
+  );
 }

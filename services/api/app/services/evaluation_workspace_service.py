@@ -36,6 +36,27 @@ class EvaluationWorkspaceService:
         validation_reviews = dict(review_report.get("reviews") or {})
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
         configured_operations = dict((controls.get("config") or {}).get("operations") or {})
+        best_experiment = self._build_best_experiment(
+            leaderboard=leaderboard,
+            overview=overview,
+            research_reviews=reviews,
+            validation_reviews=validation_reviews,
+        )
+        recommendation_explanation = self._build_recommendation_explanation(
+            leaderboard=leaderboard,
+            best_experiment=best_experiment,
+            review_result=str(dict(reviews.get("research") or {}).get("result", "") or ""),
+        )
+        elimination_explanation = self._build_elimination_explanation(leaderboard=leaderboard)
+        alignment_details = self._build_alignment_details(
+            overview=overview,
+            execution_alignment=execution_alignment,
+        )
+        alignment_actions = self._build_alignment_actions(execution_alignment=execution_alignment)
+        alignment_story = self._build_alignment_story(
+            alignment_details=alignment_details,
+            alignment_actions=alignment_actions,
+        )
 
         status = str(report.get("status", "unavailable") or "unavailable")
         if evaluation or leaderboard or reviews:
@@ -61,6 +82,18 @@ class EvaluationWorkspaceService:
                 "dry_run_max_turnover": str(configured_thresholds.get("dry_run_max_turnover", "0.6")),
                 "dry_run_min_sample_count": str(configured_thresholds.get("dry_run_min_sample_count", "20")),
                 "validation_min_sample_count": str(configured_thresholds.get("validation_min_sample_count", "12")),
+                "validation_min_avg_future_return_pct": str(configured_thresholds.get("validation_min_avg_future_return_pct", "-0.1")),
+                "consistency_max_validation_backtest_return_gap_pct": str(configured_thresholds.get("consistency_max_validation_backtest_return_gap_pct", "1.5")),
+                "consistency_max_training_validation_positive_rate_gap": str(configured_thresholds.get("consistency_max_training_validation_positive_rate_gap", "0.2")),
+                "consistency_max_training_validation_return_gap_pct": str(configured_thresholds.get("consistency_max_training_validation_return_gap_pct", "1.5")),
+                "rule_min_ema20_gap_pct": str(configured_thresholds.get("rule_min_ema20_gap_pct", "0")),
+                "rule_min_ema55_gap_pct": str(configured_thresholds.get("rule_min_ema55_gap_pct", "0")),
+                "rule_max_atr_pct": str(configured_thresholds.get("rule_max_atr_pct", "5")),
+                "rule_min_volume_ratio": str(configured_thresholds.get("rule_min_volume_ratio", "1")),
+                "strict_rule_min_ema20_gap_pct": str(configured_thresholds.get("strict_rule_min_ema20_gap_pct", "1.2")),
+                "strict_rule_min_ema55_gap_pct": str(configured_thresholds.get("strict_rule_min_ema55_gap_pct", "1.8")),
+                "strict_rule_max_atr_pct": str(configured_thresholds.get("strict_rule_max_atr_pct", "4.5")),
+                "strict_rule_min_volume_ratio": str(configured_thresholds.get("strict_rule_min_volume_ratio", "1.05")),
                 "enable_rule_gate": bool(configured_thresholds.get("enable_rule_gate", True)),
                 "enable_validation_gate": bool(configured_thresholds.get("enable_validation_gate", True)),
                 "enable_backtest_gate": bool(configured_thresholds.get("enable_backtest_gate", True)),
@@ -86,6 +119,9 @@ class EvaluationWorkspaceService:
             },
             "recent_review_tasks": recent_review_tasks,
             "leaderboard": leaderboard,
+            "best_experiment": best_experiment,
+            "recommendation_explanation": recommendation_explanation,
+            "elimination_explanation": elimination_explanation,
             "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)][:comparison_run_limit],
             "recent_training_runs": self._build_recent_run_history(report=report, run_type="training", limit=comparison_run_limit),
             "recent_inference_runs": self._build_recent_run_history(report=report, run_type="inference", limit=comparison_run_limit),
@@ -100,15 +136,13 @@ class EvaluationWorkspaceService:
                 execution_alignment=execution_alignment,
             ),
             "execution_alignment": execution_alignment,
-            "alignment_details": self._build_alignment_details(
-                overview=overview,
-                execution_alignment=execution_alignment,
-            ),
+            "alignment_details": alignment_details,
+            "alignment_story": alignment_story,
             "alignment_gaps": self._build_alignment_gaps(
                 overview=overview,
                 execution_alignment=execution_alignment,
             ),
-            "alignment_actions": self._build_alignment_actions(execution_alignment=execution_alignment),
+            "alignment_actions": alignment_actions,
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -173,6 +207,117 @@ class EvaluationWorkspaceService:
             row["elimination_reason"] = elimination_reason
             rows.append(row)
         return rows
+
+    @staticmethod
+    def _build_best_experiment(
+        *,
+        leaderboard: list[dict[str, object]],
+        overview: dict[str, object],
+        research_reviews: dict[str, object],
+        validation_reviews: dict[str, object],
+    ) -> dict[str, object]:
+        """提炼当前最值得继续推进的一轮实验。"""
+
+        top = dict(leaderboard[0] or {}) if leaderboard else {}
+        research_review = dict(research_reviews.get("research") or {})
+        validation_review = dict(validation_reviews.get("validation") or {})
+        symbol = str(top.get("symbol", "") or overview.get("recommended_symbol", "")).strip()
+        next_action = str(
+            top.get("next_action", "")
+            or research_review.get("next_action", "")
+            or overview.get("recommended_action", "")
+        ).strip()
+        recommended_stage = "live" if "live" in next_action.lower() else "dry_run"
+        reason = str(
+            top.get("recommendation_reason", "")
+            or top.get("review_result", "")
+            or research_review.get("result", "")
+            or validation_review.get("result", "")
+        ).strip()
+        if not reason:
+            reason = "当前还没有足够结果判断哪一轮更适合继续推进。"
+        elif "更适合" not in reason:
+            target = "live" if recommended_stage == "live" else "dry-run"
+            reason = f"{symbol or '当前候选'} 更适合进入 {target}：{reason}"
+        score = str(top.get("score", "")).strip()
+        return {
+            "symbol": symbol,
+            "recommended_stage": recommended_stage,
+            "next_action": next_action or ("go_live" if recommended_stage == "live" else "go_dry_run"),
+            "reason": reason,
+            "score": score,
+        }
+
+    @staticmethod
+    def _build_recommendation_explanation(
+        *,
+        leaderboard: list[dict[str, object]],
+        best_experiment: dict[str, object],
+        review_result: str,
+    ) -> dict[str, str]:
+        """把推荐理由整理成前端可直接显示的解释摘要。"""
+
+        top = dict(leaderboard[0] or {}) if leaderboard else {}
+        symbol = str(best_experiment.get("symbol", "") or top.get("symbol", "")).strip() or "当前候选"
+        stage = str(best_experiment.get("recommended_stage", "dry_run") or "dry_run")
+        target = "live" if stage == "live" else "dry-run"
+        score = str(best_experiment.get("score", "") or top.get("score", "")).strip() or "n/a"
+        action = str(best_experiment.get("next_action", "") or top.get("next_action", "")).strip() or "continue_research"
+        reason = str(best_experiment.get("reason", "") or top.get("recommendation_reason", "")).strip()
+        if not reason:
+            reason = f"{symbol} 当前是候选里最稳的一轮，优先继续进入 {target}。"
+        return {
+            "headline": f"{symbol} 更值得进入 {target}",
+            "detail": reason,
+            "evidence": [
+                f"分数 {score}",
+                f"下一步 {action}",
+                f"研究复盘 {review_result or 'n/a'}",
+            ],
+        }
+
+    @staticmethod
+    def _build_elimination_explanation(*, leaderboard: list[dict[str, object]]) -> dict[str, str]:
+        """把淘汰原因压成一段更直白的说明。"""
+
+        blocked_rows = [dict(item) for item in leaderboard if str(item.get("elimination_reason", "已通过")) != "已通过"]
+        if not blocked_rows:
+            return {
+                "headline": "当前没有明显淘汰项",
+                "detail": "这一轮候选要么已通过，要么还没有生成足够多的阻断记录。",
+                "top_reason": "当前没有主要淘汰原因",
+            }
+        top_row = blocked_rows[0]
+        top_reason = str(top_row.get("elimination_reason", "")).strip() or "当前没有主要淘汰原因"
+        return {
+            "headline": f"这轮主要卡在 {top_reason}",
+            "detail": f"当前共有 {len(blocked_rows)} 个候选被拦下，先处理最靠前的阻断原因，再决定要不要继续放量。",
+            "top_reason": top_reason,
+            "evidence": [
+                f"当前被拦下 {len(blocked_rows)} 个候选",
+                f"主要原因：{top_reason}",
+            ],
+        }
+
+    @staticmethod
+    def _build_alignment_story(
+        *,
+        alignment_details: dict[str, object],
+        alignment_actions: list[dict[str, object]],
+    ) -> dict[str, str]:
+        """把研究和执行之间的差异压成一句结论。"""
+
+        reasons = [str(item) for item in list(alignment_details.get("difference_reasons") or []) if str(item).strip()]
+        first_action = dict(alignment_actions[0] or {}) if alignment_actions else {}
+        summary = str(alignment_details.get("difference_summary", "") or "当前还没有足够结果可对齐")
+        if "研究和执行" not in summary:
+            summary = f"研究和执行：{summary}"
+        return {
+            "headline": summary,
+            "detail": " / ".join(reasons[:3]) if reasons else "当前没有明显差异。",
+            "evidence": reasons if reasons else [summary],
+            "next_step": str(alignment_details.get("next_step", "") or first_action.get("detail", "") or "先继续观察。"),
+        }
 
     @staticmethod
     def _resolve_elimination_reason(*, row: dict[str, object], failure_reasons: list[str]) -> str:
@@ -543,6 +688,7 @@ class EvaluationWorkspaceService:
             "test_split_ratio",
             "signal_confidence_floor",
             "trend_weight",
+            "momentum_weight",
             "volume_weight",
             "oscillator_weight",
             "volatility_weight",
@@ -664,6 +810,7 @@ class EvaluationWorkspaceService:
             "research_template": "研究模板",
             "model_key": "模型选择",
             "label_mode": "标签口径",
+            "label_trigger_basis": "标签触发口径",
             "holding_window_label": "持有窗口",
             "force_validation_top_candidate": "强制验证当前最优候选",
             "holding_window_min_days": "最短持有天数",
@@ -673,6 +820,7 @@ class EvaluationWorkspaceService:
             "test_split_ratio": "测试比例",
             "signal_confidence_floor": "最低置信度",
             "trend_weight": "趋势权重",
+            "momentum_weight": "动量权重",
             "volume_weight": "量能权重",
             "oscillator_weight": "震荡权重",
             "volatility_weight": "波动权重",
@@ -700,6 +848,18 @@ class EvaluationWorkspaceService:
             "dry_run_max_turnover": "dry-run 最高换手",
             "dry_run_min_sample_count": "dry-run 最低样本数",
             "validation_min_sample_count": "验证最少样本数",
+            "validation_min_avg_future_return_pct": "验证最低未来收益",
+            "consistency_max_validation_backtest_return_gap_pct": "验证与回测最大收益差",
+            "consistency_max_training_validation_positive_rate_gap": "训练与验证最大正收益比例差",
+            "consistency_max_training_validation_return_gap_pct": "训练与验证最大收益差",
+            "rule_min_ema20_gap_pct": "规则门最小 EMA20 偏离",
+            "rule_min_ema55_gap_pct": "规则门最小 EMA55 偏离",
+            "rule_max_atr_pct": "规则门最大 ATR 波动",
+            "rule_min_volume_ratio": "规则门最小量能比",
+            "strict_rule_min_ema20_gap_pct": "严格模板最小 EMA20 偏离",
+            "strict_rule_min_ema55_gap_pct": "严格模板最小 EMA55 偏离",
+            "strict_rule_max_atr_pct": "严格模板最大 ATR 波动",
+            "strict_rule_min_volume_ratio": "严格模板最小量能比",
             "enable_rule_gate": "规则门开关",
             "enable_validation_gate": "验证门开关",
             "enable_backtest_gate": "回测门开关",

@@ -52,6 +52,9 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("冷却剩余", content)
         self.assertIn("最近告警历史", content)
         self.assertIn("活跃告警", content)
+        self.assertIn("首次出现", content)
+        self.assertIn("最近一次出现", content)
+        self.assertIn("重复次数", content)
         self.assertIn("最近复盘记录", content)
         self.assertIn("这里最多显示最近", content)
 

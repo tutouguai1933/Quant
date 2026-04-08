@@ -216,6 +216,7 @@ def build_feature_rows(
     missing_policy: str = DEFAULT_MISSING_POLICY,
     outlier_policy: str = DEFAULT_OUTLIER_POLICY,
     normalization_policy: str = DEFAULT_NORMALIZATION_POLICY,
+    timeframe_profiles: dict[str, dict[str, int | str]] | None = None,
 ) -> list[dict[str, object]]:
     """把 K 线样本转成统一因子行。"""
 
@@ -225,7 +226,7 @@ def build_feature_rows(
         return []
 
     timeframe = _infer_timeframe(valid_candles)
-    profile = _resolve_timeframe_profile(timeframe)
+    profile = _resolve_timeframe_profile(timeframe, timeframe_profiles=timeframe_profiles)
     rows: list[dict[str, object]] = []
     rolling_closes: list[Decimal] = []
     rolling_volumes: list[Decimal] = []
@@ -365,10 +366,29 @@ def _infer_timeframe(candles: list[dict[str, Decimal | int]]) -> str:
     return "1h"
 
 
-def _resolve_timeframe_profile(timeframe: str) -> dict[str, int | str]:
+def _resolve_timeframe_profile(
+    timeframe: str,
+    *,
+    timeframe_profiles: dict[str, dict[str, int | str]] | None = None,
+) -> dict[str, int | str]:
     """返回当前周期应该使用的因子参数。"""
 
-    return dict(TIMEFRAME_PROFILES.get(timeframe, TIMEFRAME_PROFILES["4h"]))
+    defaults = dict(TIMEFRAME_PROFILES.get(timeframe, TIMEFRAME_PROFILES["4h"]))
+    incoming = dict((timeframe_profiles or {}).get(timeframe) or {})
+    merged = dict(defaults)
+    for key, default in defaults.items():
+        if key not in incoming:
+            continue
+        candidate = incoming.get(key, default)
+        if isinstance(default, int):
+            try:
+                merged[key] = max(1, int(candidate))
+            except (TypeError, ValueError):
+                merged[key] = default
+        else:
+            text = str(candidate or default).strip()
+            merged[key] = text or default
+    return merged
 
 
 def _resolve_warmup_bars(profile: dict[str, int | str]) -> int:

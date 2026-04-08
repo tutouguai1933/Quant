@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -34,6 +35,18 @@ DEFAULT_DRY_RUN_MIN_WIN_RATE = Decimal("0.5")
 DEFAULT_DRY_RUN_MAX_TURNOVER = Decimal("0.6")
 DEFAULT_DRY_RUN_MIN_SAMPLE_COUNT = 20
 DEFAULT_VALIDATION_MIN_SAMPLE_COUNT = 12
+DEFAULT_VALIDATION_MIN_AVG_FUTURE_RETURN_PCT = Decimal("-0.1")
+DEFAULT_CONSISTENCY_MAX_VALIDATION_BACKTEST_RETURN_GAP_PCT = Decimal("1.5")
+DEFAULT_CONSISTENCY_MAX_TRAINING_VALIDATION_POSITIVE_RATE_GAP = Decimal("0.2")
+DEFAULT_CONSISTENCY_MAX_TRAINING_VALIDATION_RETURN_GAP_PCT = Decimal("1.5")
+DEFAULT_RULE_MIN_EMA20_GAP_PCT = Decimal("0")
+DEFAULT_RULE_MIN_EMA55_GAP_PCT = Decimal("0")
+DEFAULT_RULE_MAX_ATR_PCT = Decimal("5")
+DEFAULT_RULE_MIN_VOLUME_RATIO = Decimal("1")
+DEFAULT_STRICT_RULE_MIN_EMA20_GAP_PCT = Decimal("1.2")
+DEFAULT_STRICT_RULE_MIN_EMA55_GAP_PCT = Decimal("1.8")
+DEFAULT_STRICT_RULE_MAX_ATR_PCT = Decimal("4.5")
+DEFAULT_STRICT_RULE_MIN_VOLUME_RATIO = Decimal("1.05")
 DEFAULT_LIVE_MIN_SCORE = Decimal("0.65")
 DEFAULT_LIVE_MIN_POSITIVE_RATE = Decimal("0.50")
 DEFAULT_LIVE_MIN_NET_RETURN_PCT = Decimal("0.20")
@@ -42,18 +55,21 @@ DEFAULT_LIVE_MAX_TURNOVER = Decimal("0.45")
 DEFAULT_LIVE_MIN_SAMPLE_COUNT = 24
 DEFAULT_RESEARCH_TEMPLATE = "single_asset_timing"
 DEFAULT_LABEL_MODE = "earliest_hit"
+DEFAULT_LABEL_TRIGGER_BASIS = "close"
 DEFAULT_OUTLIER_POLICY = "clip"
 DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
 DEFAULT_MISSING_POLICY = "neutral_fill"
 DEFAULT_WINDOW_MODE = "rolling"
 DEFAULT_SIGNAL_CONFIDENCE_FLOOR = Decimal("0.55")
 DEFAULT_TREND_WEIGHT = Decimal("1.3")
+DEFAULT_MOMENTUM_WEIGHT = Decimal("1")
 DEFAULT_VOLUME_WEIGHT = Decimal("1.1")
 DEFAULT_OSCILLATOR_WEIGHT = Decimal("0.7")
 DEFAULT_VOLATILITY_WEIGHT = Decimal("0.9")
 DEFAULT_STRICT_PENALTY_WEIGHT = Decimal("1")
 SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
-SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only")
+SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only", "window_majority")
+SUPPORTED_LABEL_TRIGGER_BASES = ("close", "high_low")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
 SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
@@ -112,7 +128,9 @@ class QlibRuntimeConfig:
     missing_policy: str
     outlier_policy: str
     normalization_policy: str
+    timeframe_profiles: dict[str, dict[str, int | str]]
     label_mode: str
+    label_trigger_basis: str
     label_target_pct: Decimal
     label_stop_pct: Decimal
     holding_window_min_days: int
@@ -132,6 +150,18 @@ class QlibRuntimeConfig:
     dry_run_max_turnover: Decimal
     dry_run_min_sample_count: int
     validation_min_sample_count: int
+    validation_min_avg_future_return_pct: Decimal
+    consistency_max_validation_backtest_return_gap_pct: Decimal
+    consistency_max_training_validation_positive_rate_gap: Decimal
+    consistency_max_training_validation_return_gap_pct: Decimal
+    rule_min_ema20_gap_pct: Decimal
+    rule_min_ema55_gap_pct: Decimal
+    rule_max_atr_pct: Decimal
+    rule_min_volume_ratio: Decimal
+    strict_rule_min_ema20_gap_pct: Decimal
+    strict_rule_min_ema55_gap_pct: Decimal
+    strict_rule_max_atr_pct: Decimal
+    strict_rule_min_volume_ratio: Decimal
     enable_rule_gate: bool
     enable_validation_gate: bool
     enable_backtest_gate: bool
@@ -145,6 +175,7 @@ class QlibRuntimeConfig:
     live_min_sample_count: int
     signal_confidence_floor: Decimal
     trend_weight: Decimal
+    momentum_weight: Decimal
     volume_weight: Decimal
     oscillator_weight: Decimal
     volatility_weight: Decimal
@@ -225,10 +256,16 @@ def load_qlib_config(
         default=DEFAULT_NORMALIZATION_POLICY,
         allowed=SUPPORTED_NORMALIZATION_POLICIES,
     )
+    timeframe_profiles = _read_timeframe_profiles(values.get("QUANT_QLIB_TIMEFRAME_PROFILES"))
     label_mode = _read_choice(
         values.get("QUANT_QLIB_LABEL_MODE"),
         default=DEFAULT_LABEL_MODE,
         allowed=SUPPORTED_LABEL_MODES,
+    )
+    label_trigger_basis = _read_choice(
+        values.get("QUANT_QLIB_LABEL_TRIGGER_BASIS"),
+        default=DEFAULT_LABEL_TRIGGER_BASIS,
+        allowed=SUPPORTED_LABEL_TRIGGER_BASES,
     )
     label_target_pct = _read_decimal(
         values.get("QUANT_QLIB_LABEL_TARGET_PCT"),
@@ -343,6 +380,74 @@ def load_qlib_config(
         env_name="QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT",
         minimum=3,
     )
+    validation_min_avg_future_return_pct = _read_decimal(
+        values.get("QUANT_QLIB_VALIDATION_MIN_AVG_FUTURE_RETURN_PCT"),
+        default=DEFAULT_VALIDATION_MIN_AVG_FUTURE_RETURN_PCT,
+        env_name="QUANT_QLIB_VALIDATION_MIN_AVG_FUTURE_RETURN_PCT",
+    )
+    consistency_max_validation_backtest_return_gap_pct = _read_decimal(
+        values.get("QUANT_QLIB_CONSISTENCY_MAX_VALIDATION_BACKTEST_RETURN_GAP_PCT"),
+        default=DEFAULT_CONSISTENCY_MAX_VALIDATION_BACKTEST_RETURN_GAP_PCT,
+        env_name="QUANT_QLIB_CONSISTENCY_MAX_VALIDATION_BACKTEST_RETURN_GAP_PCT",
+        minimum=Decimal("0"),
+    )
+    consistency_max_training_validation_positive_rate_gap = _read_decimal(
+        values.get("QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_POSITIVE_RATE_GAP"),
+        default=DEFAULT_CONSISTENCY_MAX_TRAINING_VALIDATION_POSITIVE_RATE_GAP,
+        env_name="QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_POSITIVE_RATE_GAP",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
+    consistency_max_training_validation_return_gap_pct = _read_decimal(
+        values.get("QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_RETURN_GAP_PCT"),
+        default=DEFAULT_CONSISTENCY_MAX_TRAINING_VALIDATION_RETURN_GAP_PCT,
+        env_name="QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_RETURN_GAP_PCT",
+        minimum=Decimal("0"),
+    )
+    rule_min_ema20_gap_pct = _read_decimal(
+        values.get("QUANT_QLIB_RULE_MIN_EMA20_GAP_PCT"),
+        default=DEFAULT_RULE_MIN_EMA20_GAP_PCT,
+        env_name="QUANT_QLIB_RULE_MIN_EMA20_GAP_PCT",
+    )
+    rule_min_ema55_gap_pct = _read_decimal(
+        values.get("QUANT_QLIB_RULE_MIN_EMA55_GAP_PCT"),
+        default=DEFAULT_RULE_MIN_EMA55_GAP_PCT,
+        env_name="QUANT_QLIB_RULE_MIN_EMA55_GAP_PCT",
+    )
+    rule_max_atr_pct = _read_decimal(
+        values.get("QUANT_QLIB_RULE_MAX_ATR_PCT"),
+        default=DEFAULT_RULE_MAX_ATR_PCT,
+        env_name="QUANT_QLIB_RULE_MAX_ATR_PCT",
+        minimum=Decimal("0"),
+    )
+    rule_min_volume_ratio = _read_decimal(
+        values.get("QUANT_QLIB_RULE_MIN_VOLUME_RATIO"),
+        default=DEFAULT_RULE_MIN_VOLUME_RATIO,
+        env_name="QUANT_QLIB_RULE_MIN_VOLUME_RATIO",
+        minimum=Decimal("0"),
+    )
+    strict_rule_min_ema20_gap_pct = _read_decimal(
+        values.get("QUANT_QLIB_STRICT_RULE_MIN_EMA20_GAP_PCT"),
+        default=DEFAULT_STRICT_RULE_MIN_EMA20_GAP_PCT,
+        env_name="QUANT_QLIB_STRICT_RULE_MIN_EMA20_GAP_PCT",
+    )
+    strict_rule_min_ema55_gap_pct = _read_decimal(
+        values.get("QUANT_QLIB_STRICT_RULE_MIN_EMA55_GAP_PCT"),
+        default=DEFAULT_STRICT_RULE_MIN_EMA55_GAP_PCT,
+        env_name="QUANT_QLIB_STRICT_RULE_MIN_EMA55_GAP_PCT",
+    )
+    strict_rule_max_atr_pct = _read_decimal(
+        values.get("QUANT_QLIB_STRICT_RULE_MAX_ATR_PCT"),
+        default=DEFAULT_STRICT_RULE_MAX_ATR_PCT,
+        env_name="QUANT_QLIB_STRICT_RULE_MAX_ATR_PCT",
+        minimum=Decimal("0"),
+    )
+    strict_rule_min_volume_ratio = _read_decimal(
+        values.get("QUANT_QLIB_STRICT_RULE_MIN_VOLUME_RATIO"),
+        default=DEFAULT_STRICT_RULE_MIN_VOLUME_RATIO,
+        env_name="QUANT_QLIB_STRICT_RULE_MIN_VOLUME_RATIO",
+        minimum=Decimal("0"),
+    )
     enable_rule_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_RULE_GATE"), default=True)
     enable_validation_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_VALIDATION_GATE"), default=True)
     enable_backtest_gate = _read_bool(values.get("QUANT_QLIB_ENABLE_BACKTEST_GATE"), default=True)
@@ -399,6 +504,12 @@ def load_qlib_config(
         env_name="QUANT_QLIB_TREND_WEIGHT",
         minimum=Decimal("0"),
     )
+    momentum_weight = _read_decimal(
+        values.get("QUANT_QLIB_MOMENTUM_WEIGHT"),
+        default=DEFAULT_MOMENTUM_WEIGHT,
+        env_name="QUANT_QLIB_MOMENTUM_WEIGHT",
+        minimum=Decimal("0"),
+    )
     volume_weight = _read_decimal(
         values.get("QUANT_QLIB_VOLUME_WEIGHT"),
         default=DEFAULT_VOLUME_WEIGHT,
@@ -429,10 +540,23 @@ def load_qlib_config(
             "train_split_ratio": format(train_split_ratio.normalize(), "f"),
             "validation_split_ratio": format(validation_split_ratio.normalize(), "f"),
             "test_split_ratio": format(test_split_ratio.normalize(), "f"),
+            "label_trigger_basis": label_trigger_basis,
             "dry_run_min_win_rate": format(dry_run_min_win_rate.normalize(), "f"),
             "dry_run_max_turnover": format(dry_run_max_turnover.normalize(), "f"),
             "dry_run_min_sample_count": str(dry_run_min_sample_count),
             "validation_min_sample_count": str(validation_min_sample_count),
+            "validation_min_avg_future_return_pct": format(validation_min_avg_future_return_pct.normalize(), "f"),
+            "consistency_max_validation_backtest_return_gap_pct": format(consistency_max_validation_backtest_return_gap_pct.normalize(), "f"),
+            "consistency_max_training_validation_positive_rate_gap": format(consistency_max_training_validation_positive_rate_gap.normalize(), "f"),
+            "consistency_max_training_validation_return_gap_pct": format(consistency_max_training_validation_return_gap_pct.normalize(), "f"),
+            "rule_min_ema20_gap_pct": format(rule_min_ema20_gap_pct.normalize(), "f"),
+            "rule_min_ema55_gap_pct": format(rule_min_ema55_gap_pct.normalize(), "f"),
+            "rule_max_atr_pct": format(rule_max_atr_pct.normalize(), "f"),
+            "rule_min_volume_ratio": format(rule_min_volume_ratio.normalize(), "f"),
+            "strict_rule_min_ema20_gap_pct": format(strict_rule_min_ema20_gap_pct.normalize(), "f"),
+            "strict_rule_min_ema55_gap_pct": format(strict_rule_min_ema55_gap_pct.normalize(), "f"),
+            "strict_rule_max_atr_pct": format(strict_rule_max_atr_pct.normalize(), "f"),
+            "strict_rule_min_volume_ratio": format(strict_rule_min_volume_ratio.normalize(), "f"),
             "backtest_cost_model": backtest_cost_model,
             "enable_rule_gate": "true" if enable_rule_gate else "false",
             "enable_validation_gate": "true" if enable_validation_gate else "false",
@@ -449,6 +573,7 @@ def load_qlib_config(
             "missing_policy": missing_policy,
             "signal_confidence_floor": format(signal_confidence_floor.normalize(), "f"),
             "trend_weight": format(trend_weight.normalize(), "f"),
+            "momentum_weight": format(momentum_weight.normalize(), "f"),
             "volume_weight": format(volume_weight.normalize(), "f"),
             "oscillator_weight": format(oscillator_weight.normalize(), "f"),
             "volatility_weight": format(volatility_weight.normalize(), "f"),
@@ -478,7 +603,9 @@ def load_qlib_config(
             missing_policy=missing_policy,
             outlier_policy=outlier_policy,
             normalization_policy=normalization_policy,
+            timeframe_profiles=timeframe_profiles,
             label_mode=label_mode,
+            label_trigger_basis=label_trigger_basis,
             label_target_pct=label_target_pct,
             label_stop_pct=label_stop_pct,
             holding_window_min_days=holding_window_min_days,
@@ -498,6 +625,18 @@ def load_qlib_config(
             dry_run_max_turnover=dry_run_max_turnover,
             dry_run_min_sample_count=dry_run_min_sample_count,
             validation_min_sample_count=validation_min_sample_count,
+            validation_min_avg_future_return_pct=validation_min_avg_future_return_pct,
+            consistency_max_validation_backtest_return_gap_pct=consistency_max_validation_backtest_return_gap_pct,
+            consistency_max_training_validation_positive_rate_gap=consistency_max_training_validation_positive_rate_gap,
+            consistency_max_training_validation_return_gap_pct=consistency_max_training_validation_return_gap_pct,
+            rule_min_ema20_gap_pct=rule_min_ema20_gap_pct,
+            rule_min_ema55_gap_pct=rule_min_ema55_gap_pct,
+            rule_max_atr_pct=rule_max_atr_pct,
+            rule_min_volume_ratio=rule_min_volume_ratio,
+            strict_rule_min_ema20_gap_pct=strict_rule_min_ema20_gap_pct,
+            strict_rule_min_ema55_gap_pct=strict_rule_min_ema55_gap_pct,
+            strict_rule_max_atr_pct=strict_rule_max_atr_pct,
+            strict_rule_min_volume_ratio=strict_rule_min_volume_ratio,
             enable_rule_gate=enable_rule_gate,
             enable_validation_gate=enable_validation_gate,
             enable_backtest_gate=enable_backtest_gate,
@@ -511,6 +650,7 @@ def load_qlib_config(
             live_min_sample_count=live_min_sample_count,
             signal_confidence_floor=signal_confidence_floor,
             trend_weight=trend_weight,
+            momentum_weight=momentum_weight,
             volume_weight=volume_weight,
             oscillator_weight=oscillator_weight,
             volatility_weight=volatility_weight,
@@ -544,7 +684,9 @@ def load_qlib_config(
         missing_policy=missing_policy,
         outlier_policy=outlier_policy,
         normalization_policy=normalization_policy,
+        timeframe_profiles=timeframe_profiles,
         label_mode=label_mode,
+        label_trigger_basis=label_trigger_basis,
         label_target_pct=label_target_pct,
         label_stop_pct=label_stop_pct,
         holding_window_min_days=holding_window_min_days,
@@ -564,6 +706,18 @@ def load_qlib_config(
         dry_run_max_turnover=dry_run_max_turnover,
         dry_run_min_sample_count=dry_run_min_sample_count,
         validation_min_sample_count=validation_min_sample_count,
+        validation_min_avg_future_return_pct=validation_min_avg_future_return_pct,
+        consistency_max_validation_backtest_return_gap_pct=consistency_max_validation_backtest_return_gap_pct,
+        consistency_max_training_validation_positive_rate_gap=consistency_max_training_validation_positive_rate_gap,
+        consistency_max_training_validation_return_gap_pct=consistency_max_training_validation_return_gap_pct,
+        rule_min_ema20_gap_pct=rule_min_ema20_gap_pct,
+        rule_min_ema55_gap_pct=rule_min_ema55_gap_pct,
+        rule_max_atr_pct=rule_max_atr_pct,
+        rule_min_volume_ratio=rule_min_volume_ratio,
+        strict_rule_min_ema20_gap_pct=strict_rule_min_ema20_gap_pct,
+        strict_rule_min_ema55_gap_pct=strict_rule_min_ema55_gap_pct,
+        strict_rule_max_atr_pct=strict_rule_max_atr_pct,
+        strict_rule_min_volume_ratio=strict_rule_min_volume_ratio,
         enable_rule_gate=enable_rule_gate,
         enable_validation_gate=enable_validation_gate,
         enable_backtest_gate=enable_backtest_gate,
@@ -577,6 +731,7 @@ def load_qlib_config(
         live_min_sample_count=live_min_sample_count,
         signal_confidence_floor=signal_confidence_floor,
         trend_weight=trend_weight,
+        momentum_weight=momentum_weight,
         volume_weight=volume_weight,
         oscillator_weight=oscillator_weight,
         volatility_weight=volatility_weight,
@@ -606,7 +761,9 @@ def _build_config(
     missing_policy: str,
     outlier_policy: str,
     normalization_policy: str,
+    timeframe_profiles: dict[str, dict[str, int | str]],
     label_mode: str,
+    label_trigger_basis: str,
     label_target_pct: Decimal,
     label_stop_pct: Decimal,
     holding_window_min_days: int,
@@ -626,6 +783,18 @@ def _build_config(
     dry_run_max_turnover: Decimal,
     dry_run_min_sample_count: int,
     validation_min_sample_count: int,
+    validation_min_avg_future_return_pct: Decimal,
+    consistency_max_validation_backtest_return_gap_pct: Decimal,
+    consistency_max_training_validation_positive_rate_gap: Decimal,
+    consistency_max_training_validation_return_gap_pct: Decimal,
+    rule_min_ema20_gap_pct: Decimal,
+    rule_min_ema55_gap_pct: Decimal,
+    rule_max_atr_pct: Decimal,
+    rule_min_volume_ratio: Decimal,
+    strict_rule_min_ema20_gap_pct: Decimal,
+    strict_rule_min_ema55_gap_pct: Decimal,
+    strict_rule_max_atr_pct: Decimal,
+    strict_rule_min_volume_ratio: Decimal,
     enable_rule_gate: bool,
     enable_validation_gate: bool,
     enable_backtest_gate: bool,
@@ -639,6 +808,7 @@ def _build_config(
     live_min_sample_count: int,
     signal_confidence_floor: Decimal,
     trend_weight: Decimal,
+    momentum_weight: Decimal,
     volume_weight: Decimal,
     oscillator_weight: Decimal,
     volatility_weight: Decimal,
@@ -683,7 +853,9 @@ def _build_config(
         missing_policy=missing_policy,
         outlier_policy=outlier_policy,
         normalization_policy=normalization_policy,
+        timeframe_profiles=timeframe_profiles,
         label_mode=label_mode,
+        label_trigger_basis=label_trigger_basis,
         label_target_pct=label_target_pct,
         label_stop_pct=label_stop_pct,
         holding_window_min_days=holding_window_min_days,
@@ -703,6 +875,18 @@ def _build_config(
         dry_run_max_turnover=dry_run_max_turnover,
         dry_run_min_sample_count=dry_run_min_sample_count,
         validation_min_sample_count=validation_min_sample_count,
+        validation_min_avg_future_return_pct=validation_min_avg_future_return_pct,
+        consistency_max_validation_backtest_return_gap_pct=consistency_max_validation_backtest_return_gap_pct,
+        consistency_max_training_validation_positive_rate_gap=consistency_max_training_validation_positive_rate_gap,
+        consistency_max_training_validation_return_gap_pct=consistency_max_training_validation_return_gap_pct,
+        rule_min_ema20_gap_pct=rule_min_ema20_gap_pct,
+        rule_min_ema55_gap_pct=rule_min_ema55_gap_pct,
+        rule_max_atr_pct=rule_max_atr_pct,
+        rule_min_volume_ratio=rule_min_volume_ratio,
+        strict_rule_min_ema20_gap_pct=strict_rule_min_ema20_gap_pct,
+        strict_rule_min_ema55_gap_pct=strict_rule_min_ema55_gap_pct,
+        strict_rule_max_atr_pct=strict_rule_max_atr_pct,
+        strict_rule_min_volume_ratio=strict_rule_min_volume_ratio,
         enable_rule_gate=enable_rule_gate,
         enable_validation_gate=enable_validation_gate,
         enable_backtest_gate=enable_backtest_gate,
@@ -716,6 +900,7 @@ def _build_config(
         live_min_sample_count=live_min_sample_count,
         signal_confidence_floor=signal_confidence_floor,
         trend_weight=trend_weight,
+        momentum_weight=momentum_weight,
         volume_weight=volume_weight,
         oscillator_weight=oscillator_weight,
         volatility_weight=volatility_weight,
@@ -829,6 +1014,47 @@ def _read_choice(value: str | None, *, default: str, allowed: tuple[str, ...]) -
 
     normalized = str(value or "").strip()
     return normalized if normalized in allowed else default
+
+
+def _read_timeframe_profiles(value: str | None) -> dict[str, dict[str, int | str]]:
+    """读取周期参数覆盖。"""
+
+    from services.worker.qlib_features import TIMEFRAME_PROFILES
+
+    defaults = {
+        str(interval): dict(profile)
+        for interval, profile in TIMEFRAME_PROFILES.items()
+    }
+    raw = str(value or "").strip()
+    if not raw:
+        return defaults
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return defaults
+    if not isinstance(payload, dict):
+        return defaults
+
+    normalized = {
+        str(interval): dict(profile)
+        for interval, profile in defaults.items()
+    }
+    for interval, profile in payload.items():
+        if interval not in normalized or not isinstance(profile, dict):
+            continue
+        merged = dict(normalized[interval])
+        for key, default in merged.items():
+            candidate = profile.get(key, default)
+            if isinstance(default, int):
+                try:
+                    merged[key] = max(1, int(candidate))
+                except (TypeError, ValueError):
+                    merged[key] = default
+            else:
+                text = str(candidate or default).strip()
+                merged[key] = text or default
+        normalized[interval] = merged
+    return normalized
 
 
 def _read_bool(value: str | None, *, default: bool) -> bool:

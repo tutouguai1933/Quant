@@ -13,6 +13,23 @@ import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearch
 import { getControlSessionState } from "../../lib/session";
 import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 
+const MODEL_LABELS: Record<string, string> = {
+  heuristic_v1: "heuristic_v1 / 基础启发式",
+  trend_bias_v2: "trend_bias_v2 / 趋势偏置",
+  balanced_v3: "balanced_v3 / 平衡评分",
+};
+
+const LABEL_MODE_LABELS: Record<string, string> = {
+  earliest_hit: "earliest_hit / 最早命中",
+  close_only: "close_only / 只看窗口结束",
+  window_majority: "window_majority / 多数窗口表决",
+};
+
+const LABEL_TRIGGER_BASIS_LABELS: Record<string, string> = {
+  close: "close / 按收盘价判断",
+  high_low: "high_low / 按高低点命中",
+};
+
 export default async function ResearchPage() {
   const session = await getControlSessionState();
   const [workspaceResponse, runtimeResponse] = await Promise.allSettled([getResearchWorkspace(), getResearchRuntimeStatus()]);
@@ -50,6 +67,20 @@ export default async function ResearchPage() {
   const researchNote =
     String(configAlignment.note ?? "") || readinessNextStep || "当前还没有可用对齐说明。";
   const researchStaleFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
+  const resolvedLabelMode = LABEL_MODE_LABELS[workspace.labeling.label_mode] || workspace.labeling.label_mode || "未设置";
+  const resolvedLabelTriggerBasis =
+    LABEL_TRIGGER_BASIS_LABELS[String(controls.label_trigger_basis ?? "close")] || String(controls.label_trigger_basis ?? "close");
+  const labelTargetPctValue = displayValue(workspace.controls.label_target_pct, "未设置");
+  const labelStopPctValue = displayValue(workspace.controls.label_stop_pct, "未设置");
+  const weightSummaries = [
+    { label: "趋势权重", value: workspace.controls.trend_weight },
+    { label: "动量权重", value: workspace.controls.momentum_weight },
+    { label: "量能权重", value: workspace.controls.volume_weight },
+    { label: "震荡权重", value: workspace.controls.oscillator_weight },
+    { label: "波动权重", value: workspace.controls.volatility_weight },
+    { label: "严格惩罚权重", value: workspace.controls.strict_penalty_weight },
+    { label: "信心阈值", value: workspace.controls.signal_confidence_floor },
+  ];
 
   return (
     <AppShell
@@ -118,8 +149,22 @@ export default async function ResearchPage() {
             </CardHeader>
             <CardContent className="grid gap-3">
               <InfoBlock label="标签列" value={workspace.labeling.label_columns.join(" / ") || "未生成"} />
-              <InfoBlock label="标签模式" value={workspace.labeling.label_mode || "未设置"} />
+              <InfoBlock label="标签模式" value={resolvedLabelMode} />
+              <InfoBlock label="标签触发基础" value={resolvedLabelTriggerBasis} />
+              <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
               <InfoBlock label="定义" value={workspace.labeling.definition || "当前没有标签定义"} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>研究分数与权重</CardTitle>
+              <CardDescription>把趋势、动量、量能和严格模板的权重直接看出来，不用再猜当前研究偏向。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              {weightSummaries.map((row) => (
+                <InfoBlock key={row.label} label={row.label} value={displayValue(row.value)} />
+              ))}
             </CardContent>
           </Card>
 
@@ -183,7 +228,10 @@ export default async function ResearchPage() {
               <ConfigSelect
                 name="model_key"
                 defaultValue={workspace.controls.model_key}
-                options={workspace.controls.available_models.map((item) => ({ value: item, label: item }))}
+                options={workspace.controls.available_models.map((item) => ({
+                  value: item,
+                  label: MODEL_LABELS[item] || item,
+                }))}
               />
             </ConfigField>
             <ConfigField label="标签方式" hint="用未来窗口里的目标收益和止损阈值定义 buy / sell / watch。">
@@ -191,7 +239,18 @@ export default async function ResearchPage() {
                 <ConfigSelect
                   name="label_mode"
                   defaultValue={workspace.controls.label_mode}
-                  options={workspace.controls.available_label_modes.map((item) => ({ value: item, label: item }))}
+                  options={workspace.controls.available_label_modes.map((item) => ({
+                    value: item,
+                    label: LABEL_MODE_LABELS[item] || item,
+                  }))}
+                />
+                <ConfigSelect
+                  name="label_trigger_basis"
+                  defaultValue={String(controls.label_trigger_basis ?? "close")}
+                  options={(workspace.controls.available_label_trigger_bases || ["close", "high_low"]).map((item) => ({
+                    value: item,
+                    label: LABEL_TRIGGER_BASIS_LABELS[item] || item,
+                  }))}
                 />
               </div>
               <div className="grid gap-3 md:grid-cols-2">
@@ -232,6 +291,7 @@ export default async function ResearchPage() {
                 <ConfigInput name="signal_confidence_floor" defaultValue={String(controls.signal_confidence_floor ?? "0.55")} placeholder="最低置信度" />
                 <ConfigInput name="strict_penalty_weight" defaultValue={String(controls.strict_penalty_weight ?? "1")} placeholder="严格模板惩罚权重" />
                 <ConfigInput name="trend_weight" defaultValue={String(controls.trend_weight ?? "1.3")} placeholder="趋势权重" />
+                <ConfigInput name="momentum_weight" defaultValue={String(controls.momentum_weight ?? "1")} placeholder="动量权重" />
                 <ConfigInput name="volume_weight" defaultValue={String(controls.volume_weight ?? "1.1")} placeholder="量能权重" />
                 <ConfigInput name="oscillator_weight" defaultValue={String(controls.oscillator_weight ?? "0.7")} placeholder="震荡权重" />
                 <ConfigInput name="volatility_weight" defaultValue={String(controls.volatility_weight ?? "0.9")} placeholder="波动权重" />
@@ -316,6 +376,14 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value}</p>
     </div>
   );
+}
+
+function displayValue(value: unknown, fallback = "n/a") {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const normalized = String(value).trim();
+  return normalized.length ? normalized : fallback;
 }
 
 function formatWindow(payload: Record<string, unknown>) {

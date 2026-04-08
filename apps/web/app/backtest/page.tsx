@@ -5,6 +5,7 @@ import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
+import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getBacktestWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -23,6 +24,13 @@ export default async function BacktestPage() {
   const gatePreview = asRecord(workspace.controls);
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
+  const gateStates = [
+    { label: "规则门", key: "enable_rule_gate", enabled: workspace.controls.enable_rule_gate },
+    { label: "验证门", key: "enable_validation_gate", enabled: workspace.controls.enable_validation_gate },
+    { label: "回测门", key: "enable_backtest_gate", enabled: workspace.controls.enable_backtest_gate },
+    { label: "一致性门", key: "enable_consistency_gate", enabled: workspace.controls.enable_consistency_gate },
+    { label: "live 门", key: "enable_live_gate", enabled: workspace.controls.enable_live_gate },
+  ];
 
   return (
     <AppShell
@@ -84,6 +92,33 @@ export default async function BacktestPage() {
               <InfoBlock label="连续亏损段" value={metric(metrics, "max_loss_streak")} />
             </CardContent>
           </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>严格规则</CardTitle>
+              <CardDescription>研究候选只有同时满足这四条严格规则，才会被认为有突破辨识度。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="EMA20 最低偏离" value={valueOrFallback(workspace.controls.strict_rule_min_ema20_gap_pct)} />
+              <InfoBlock label="EMA55 最低偏离" value={valueOrFallback(workspace.controls.strict_rule_min_ema55_gap_pct)} />
+              <InfoBlock label="最高 ATR 波动" value={valueOrFallback(workspace.controls.strict_rule_max_atr_pct)} />
+              <InfoBlock label="最低量能比" value={valueOrFallback(workspace.controls.strict_rule_min_volume_ratio)} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>门控开关</CardTitle>
+              <CardDescription>五个门控可以临时开/关，用来快速排查是哪一层阻止了候选。</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {gateStates.map((gate) => (
+                <Badge key={gate.key} variant={gate.enabled ? undefined : "outline"}>
+                  {gate.label}: {gate.enabled ? "开启" : "关闭"}
+                </Badge>
+              ))}
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-5">
@@ -106,6 +141,90 @@ export default async function BacktestPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <ConfigInput name="fee_bps" defaultValue={workspace.controls.fee_bps} placeholder="手续费 bps" />
                 <ConfigInput name="slippage_bps" defaultValue={workspace.controls.slippage_bps} placeholder="滑点 bps" />
+              </div>
+            </ConfigField>
+            <ConfigField label="dry-run 门槛" hint="这里控制一轮回测至少要达到什么水平，才允许继续进入 dry-run。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="dry_run_min_score" defaultValue={workspace.controls.dry_run_min_score} placeholder="最低分数" />
+                <ConfigInput name="dry_run_min_positive_rate" defaultValue={workspace.controls.dry_run_min_positive_rate} placeholder="最低正收益比例" />
+                <ConfigInput name="dry_run_min_net_return_pct" defaultValue={workspace.controls.dry_run_min_net_return_pct} placeholder="最低净收益 %" />
+                <ConfigInput name="dry_run_min_sharpe" defaultValue={workspace.controls.dry_run_min_sharpe} placeholder="最低 Sharpe" />
+                <ConfigInput name="dry_run_max_drawdown_pct" defaultValue={workspace.controls.dry_run_max_drawdown_pct} placeholder="最大回撤 %" />
+                <ConfigInput name="dry_run_max_loss_streak" defaultValue={workspace.controls.dry_run_max_loss_streak} placeholder="最大连续亏损段" />
+                <ConfigInput name="dry_run_min_win_rate" defaultValue={workspace.controls.dry_run_min_win_rate} placeholder="最低胜率" />
+                <ConfigInput name="dry_run_max_turnover" defaultValue={workspace.controls.dry_run_max_turnover} placeholder="最高换手" />
+                <ConfigInput name="dry_run_min_sample_count" defaultValue={workspace.controls.dry_run_min_sample_count} placeholder="最低样本数" />
+              </div>
+            </ConfigField>
+            <ConfigField label="验证与 live 门槛" hint="这里继续补齐验证和 live 的最小放行条件。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="validation_min_sample_count" defaultValue={workspace.controls.validation_min_sample_count} placeholder="验证最少样本数" />
+                <ConfigInput name="validation_min_avg_future_return_pct" defaultValue={workspace.controls.validation_min_avg_future_return_pct} placeholder="验证最低未来收益 %" />
+                <ConfigInput name="live_min_score" defaultValue={workspace.controls.live_min_score} placeholder="live 最低分数" />
+                <ConfigInput name="live_min_positive_rate" defaultValue={workspace.controls.live_min_positive_rate} placeholder="live 最低正收益比例" />
+                <ConfigInput name="live_min_net_return_pct" defaultValue={workspace.controls.live_min_net_return_pct} placeholder="live 最低净收益 %" />
+                <ConfigInput name="live_min_win_rate" defaultValue={workspace.controls.live_min_win_rate} placeholder="live 最低胜率" />
+                <ConfigInput name="live_max_turnover" defaultValue={workspace.controls.live_max_turnover} placeholder="live 最高换手" />
+                <ConfigInput name="live_min_sample_count" defaultValue={workspace.controls.live_min_sample_count} placeholder="live 最低样本数" />
+              </div>
+            </ConfigField>
+            <ConfigField label="规则门与一致性门" hint="这里控制趋势确认、波动上限、量能要求，以及训练/验证/回测之间允许出现多大漂移。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="rule_min_ema20_gap_pct" defaultValue={workspace.controls.rule_min_ema20_gap_pct} placeholder="EMA20 最低偏离 %" />
+                <ConfigInput name="rule_min_ema55_gap_pct" defaultValue={workspace.controls.rule_min_ema55_gap_pct} placeholder="EMA55 最低偏离 %" />
+                <ConfigInput name="rule_max_atr_pct" defaultValue={workspace.controls.rule_max_atr_pct} placeholder="ATR 最高波动 %" />
+                <ConfigInput name="rule_min_volume_ratio" defaultValue={workspace.controls.rule_min_volume_ratio} placeholder="最低量能比" />
+                <ConfigInput name="strict_rule_min_ema20_gap_pct" defaultValue={String(workspace.controls.strict_rule_min_ema20_gap_pct ?? "1.2")} placeholder="严格模板 EMA20 最低偏离 %" />
+                <ConfigInput name="strict_rule_min_ema55_gap_pct" defaultValue={String(workspace.controls.strict_rule_min_ema55_gap_pct ?? "1.8")} placeholder="严格模板 EMA55 最低偏离 %" />
+                <ConfigInput name="strict_rule_max_atr_pct" defaultValue={String(workspace.controls.strict_rule_max_atr_pct ?? "4.5")} placeholder="严格模板 ATR 最高波动 %" />
+                <ConfigInput name="strict_rule_min_volume_ratio" defaultValue={String(workspace.controls.strict_rule_min_volume_ratio ?? "1.05")} placeholder="严格模板最低量能比" />
+                <ConfigInput name="consistency_max_validation_backtest_return_gap_pct" defaultValue={workspace.controls.consistency_max_validation_backtest_return_gap_pct} placeholder="验证/回测最大收益差 %" />
+                <ConfigInput name="consistency_max_training_validation_positive_rate_gap" defaultValue={workspace.controls.consistency_max_training_validation_positive_rate_gap} placeholder="训练/验证最大正收益比例差" />
+                <ConfigInput name="consistency_max_training_validation_return_gap_pct" defaultValue={workspace.controls.consistency_max_training_validation_return_gap_pct} placeholder="训练/验证最大收益差 %" />
+              </div>
+            </ConfigField>
+            <ConfigField label="门控开关" hint="这里可以临时关闭某一层门控，方便判断到底是规则、验证、回测还是一致性在拦住候选。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigSelect
+                  name="enable_rule_gate"
+                  defaultValue={String(Boolean(workspace.controls.enable_rule_gate))}
+                  options={[
+                    { value: "true", label: "开启规则门" },
+                    { value: "false", label: "关闭规则门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_validation_gate"
+                  defaultValue={String(Boolean(workspace.controls.enable_validation_gate))}
+                  options={[
+                    { value: "true", label: "开启验证门" },
+                    { value: "false", label: "关闭验证门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_backtest_gate"
+                  defaultValue={String(Boolean(workspace.controls.enable_backtest_gate))}
+                  options={[
+                    { value: "true", label: "开启回测门" },
+                    { value: "false", label: "关闭回测门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_consistency_gate"
+                  defaultValue={String(Boolean(workspace.controls.enable_consistency_gate))}
+                  options={[
+                    { value: "true", label: "开启一致性门" },
+                    { value: "false", label: "关闭一致性门" },
+                  ]}
+                />
+                <ConfigSelect
+                  name="enable_live_gate"
+                  defaultValue={String(Boolean(workspace.controls.enable_live_gate))}
+                  options={[
+                    { value: "true", label: "开启 live 门" },
+                    { value: "false", label: "关闭 live 门" },
+                  ]}
+                />
               </div>
             </ConfigField>
           </WorkbenchConfigCard>
@@ -167,6 +286,14 @@ export default async function BacktestPage() {
               <InfoBlock label="dry_run_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_turnover))} />
               <InfoBlock label="dry_run_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_sample_count))} />
               <InfoBlock label="validation_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.validation_min_sample_count))} />
+              <InfoBlock label="validation_min_avg_future_return_pct" value={valueOrFallback(asOptionalString(gatePreview.validation_min_avg_future_return_pct))} />
+              <InfoBlock label="rule_min_ema20_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.rule_min_ema20_gap_pct))} />
+              <InfoBlock label="rule_min_ema55_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.rule_min_ema55_gap_pct))} />
+              <InfoBlock label="rule_max_atr_pct" value={valueOrFallback(asOptionalString(gatePreview.rule_max_atr_pct))} />
+              <InfoBlock label="rule_min_volume_ratio" value={valueOrFallback(asOptionalString(gatePreview.rule_min_volume_ratio))} />
+              <InfoBlock label="consistency_max_validation_backtest_return_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.consistency_max_validation_backtest_return_gap_pct))} />
+              <InfoBlock label="consistency_max_training_validation_positive_rate_gap" value={valueOrFallback(asOptionalString(gatePreview.consistency_max_training_validation_positive_rate_gap))} />
+              <InfoBlock label="consistency_max_training_validation_return_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.consistency_max_training_validation_return_gap_pct))} />
               <InfoBlock label="live_min_score" value={valueOrFallback(asOptionalString(gatePreview.live_min_score))} />
               <InfoBlock label="live_min_positive_rate" value={valueOrFallback(asOptionalString(gatePreview.live_min_positive_rate))} />
               <InfoBlock label="live_min_net_return_pct" value={valueOrFallback(asOptionalString(gatePreview.live_min_net_return_pct))} />

@@ -23,7 +23,7 @@ test.use(getPlaywrightUseOptions());
 
 for (const path of PATHS) {
   test(`ui audit ${path}`, async ({ page }) => {
-    await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "networkidle" });
+    await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "load" });
     const report = await page.evaluate(() => {
       const viewportWidth = window.innerWidth;
       const bright = [];

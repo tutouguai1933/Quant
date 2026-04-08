@@ -91,6 +91,13 @@ class MarketWorkspaceTests(unittest.TestCase):
         self.assertIn("返回信号页继续研究", page_content)
         self.assertIn('<section className="space-y-6">', page_content)
 
+    def test_symbol_page_has_timeout_fallback_for_slow_market_chart(self) -> None:
+        page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("withTimeout(getMarketChart", page_content)
+        self.assertIn("market_chart_timeout", page_content)
+        self.assertIn("图表加载较慢", page_content)
+
     def test_symbol_page_uses_client_trading_workspace_and_not_static_svg_main_chart(self) -> None:
         page_content = (WEB_APP / "market" / "[symbol]" / "page.tsx").read_text(encoding="utf-8")
         chart_content = (WEB_COMPONENTS / "pro-kline-chart.tsx").read_text(encoding="utf-8")

@@ -149,6 +149,91 @@ class ResearchServiceTests(unittest.TestCase):
             report["snapshots"]["inference"]["cache_signature"],
         )
 
+    def test_config_alignment_marks_backtest_and_gate_drift_as_stale(self) -> None:
+        service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                    "window_mode": "rolling",
+                    "start_date": "",
+                    "end_date": "",
+                },
+                "features": {
+                    "primary_factors": ["ema20_gap_pct"],
+                    "auxiliary_factors": ["rsi14"],
+                    "missing_policy": "neutral_fill",
+                    "outlier_policy": "clip",
+                    "normalization_policy": "fixed_4dp",
+                },
+                "research": {
+                    "research_template": "single_asset_timing",
+                    "model_key": "balanced_v3",
+                    "label_mode": "window_majority",
+                    "holding_window_label": "2-4d",
+                    "force_validation_top_candidate": True,
+                    "min_holding_days": 2,
+                    "max_holding_days": 4,
+                    "label_target_pct": "1.5",
+                    "label_stop_pct": "-0.8",
+                    "train_split_ratio": "0.5",
+                    "validation_split_ratio": "0.3",
+                    "test_split_ratio": "0.2",
+                    "signal_confidence_floor": "0.62",
+                    "trend_weight": "1.8",
+                    "volume_weight": "1.4",
+                    "oscillator_weight": "0.5",
+                    "volatility_weight": "0.6",
+                    "strict_penalty_weight": "1.4",
+                },
+                "backtest": {
+                    "fee_bps": "12",
+                    "slippage_bps": "7",
+                    "cost_model": "zero_cost_baseline",
+                },
+                "thresholds": {
+                    "dry_run_min_score": "0.6",
+                    "dry_run_min_positive_rate": "0.45",
+                    "dry_run_min_net_return_pct": "0",
+                    "dry_run_min_sharpe": "0.5",
+                    "dry_run_max_drawdown_pct": "15",
+                    "dry_run_max_loss_streak": "3",
+                    "dry_run_min_win_rate": "0.57",
+                    "dry_run_max_turnover": "0.5",
+                    "dry_run_min_sample_count": "26",
+                    "validation_min_sample_count": "18",
+                    "enable_rule_gate": False,
+                    "enable_validation_gate": False,
+                    "enable_backtest_gate": True,
+                    "enable_consistency_gate": False,
+                    "enable_live_gate": True,
+                    "live_min_score": "0.8",
+                    "live_min_positive_rate": "0.50",
+                    "live_min_net_return_pct": "0.20",
+                    "live_min_win_rate": "0.61",
+                    "live_max_turnover": "0.42",
+                    "live_min_sample_count": "30",
+                },
+            },
+            runtime_override_provider=lambda: {},
+        )
+        service.run_training()
+        service.run_inference()
+
+        report = service.get_factory_report()
+
+        self.assertEqual(report["config_alignment"]["status"], "stale")
+        self.assertIn("holding_window_label", report["config_alignment"]["stale_fields"])
+        self.assertIn("backtest_cost_model", report["config_alignment"]["stale_fields"])
+        self.assertIn("force_validation_top_candidate", report["config_alignment"]["stale_fields"])
+        self.assertIn("enable_rule_gate", report["config_alignment"]["stale_fields"])
+        self.assertIn("live_min_win_rate", report["config_alignment"]["stale_fields"])
+
     def test_research_service_report_uses_worker_experiment_builder(self) -> None:
         self.service.run_training()
         self.service.run_inference()

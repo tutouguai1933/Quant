@@ -33,6 +33,7 @@ from services.worker.qlib_features import (
     NORMALIZATION_POLICY_LABELS,
     OUTLIER_POLICY_LABELS,
     PRIMARY_FEATURE_COLUMNS,
+    TIMEFRAME_PROFILES,
 )
 from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
@@ -201,6 +202,14 @@ class QlibRunner:
                 "dry_run_max_turnover": self._config.dry_run_max_turnover,
                 "dry_run_min_sample_count": self._config.dry_run_min_sample_count,
                 "validation_min_sample_count": self._config.validation_min_sample_count,
+                "validation_min_avg_future_return_pct": self._config.validation_min_avg_future_return_pct,
+                "consistency_max_validation_backtest_return_gap_pct": self._config.consistency_max_validation_backtest_return_gap_pct,
+                "consistency_max_training_validation_positive_rate_gap": self._config.consistency_max_training_validation_positive_rate_gap,
+                "consistency_max_training_validation_return_gap_pct": self._config.consistency_max_training_validation_return_gap_pct,
+                "rule_min_ema20_gap_pct": self._config.rule_min_ema20_gap_pct,
+                "rule_min_ema55_gap_pct": self._config.rule_min_ema55_gap_pct,
+                "rule_max_atr_pct": self._config.rule_max_atr_pct,
+                "rule_min_volume_ratio": self._config.rule_min_volume_ratio,
                 "enable_rule_gate": self._config.enable_rule_gate,
                 "enable_validation_gate": self._config.enable_validation_gate,
                 "enable_backtest_gate": self._config.enable_backtest_gate,
@@ -316,26 +325,32 @@ class QlibRunner:
             }
             return bundle
         try:
+            build_kwargs = {
+                "symbol": symbol,
+                "candles_1h": candles_1h,
+                "candles_4h": candles_4h,
+                "label_mode": self._config.label_mode,
+                "trigger_basis": self._config.label_trigger_basis,
+                "missing_policy": self._config.missing_policy,
+                "outlier_policy": self._config.outlier_policy,
+                "normalization_policy": self._config.normalization_policy,
+                "label_target_pct": self._config.label_target_pct,
+                "label_stop_pct": self._config.label_stop_pct,
+                "min_window_days": self._config.holding_window_min_days,
+                "max_window_days": self._config.holding_window_max_days,
+                "holding_window_label": self._config.holding_window_label,
+                "lookback_days": self._config.lookback_days,
+                "window_mode": self._config.window_mode,
+                "start_date": self._config.start_date,
+                "end_date": self._config.end_date,
+                "train_split_ratio": self._config.train_split_ratio,
+                "validation_split_ratio": self._config.validation_split_ratio,
+                "test_split_ratio": self._config.test_split_ratio,
+            }
+            if self._config.timeframe_profiles != TIMEFRAME_PROFILES:
+                build_kwargs["timeframe_profiles"] = self._config.timeframe_profiles
             bundle = build_dataset_bundle(
-                symbol=symbol,
-                candles_1h=candles_1h,
-                candles_4h=candles_4h,
-                label_mode=self._config.label_mode,
-                missing_policy=self._config.missing_policy,
-                outlier_policy=self._config.outlier_policy,
-                normalization_policy=self._config.normalization_policy,
-                label_target_pct=self._config.label_target_pct,
-                label_stop_pct=self._config.label_stop_pct,
-                min_window_days=self._config.holding_window_min_days,
-                max_window_days=self._config.holding_window_max_days,
-                holding_window_label=self._config.holding_window_label,
-                lookback_days=self._config.lookback_days,
-                window_mode=self._config.window_mode,
-                start_date=self._config.start_date,
-                end_date=self._config.end_date,
-                train_split_ratio=self._config.train_split_ratio,
-                validation_split_ratio=self._config.validation_split_ratio,
-                test_split_ratio=self._config.test_split_ratio,
+                **build_kwargs,
             )
         except RuntimeError as exc:
             if "样本不足以切成训练/验证/测试三段" not in str(exc):
@@ -363,7 +378,20 @@ class QlibRunner:
     def _build_rule_gate(self, feature_row: dict[str, object]) -> dict[str, object]:
         """把规则门结果统一成候选结构。"""
 
-        decision = evaluate_rule_gate(feature_row, research_template=self._config.research_template)
+        decision = evaluate_rule_gate(
+            feature_row,
+            research_template=self._config.research_template,
+            thresholds={
+                "rule_min_ema20_gap_pct": self._config.rule_min_ema20_gap_pct,
+                "rule_min_ema55_gap_pct": self._config.rule_min_ema55_gap_pct,
+                "rule_max_atr_pct": self._config.rule_max_atr_pct,
+                "rule_min_volume_ratio": self._config.rule_min_volume_ratio,
+                "strict_rule_min_ema20_gap_pct": self._config.strict_rule_min_ema20_gap_pct,
+                "strict_rule_min_ema55_gap_pct": self._config.strict_rule_min_ema55_gap_pct,
+                "strict_rule_max_atr_pct": self._config.strict_rule_max_atr_pct,
+                "strict_rule_min_volume_ratio": self._config.strict_rule_min_volume_ratio,
+            },
+        )
         if bool(decision.get("allowed")):
             return {"status": "passed", "reasons": []}
         reason = str(decision.get("reason", "")).strip() or "rule_gate_blocked"
@@ -481,6 +509,15 @@ class QlibRunner:
                 raw_score += _to_float(feature_row.get(key)) * self._feature_weight(key) * 0.05
             raw_score += _to_float(metrics.get("avg_future_return_pct")) * 1.2
             raw_score += _to_float(metrics.get("positive_rate")) * 0.8
+        elif model_key == "balanced_v3":
+            for key in primary_columns:
+                delta = _to_float(feature_row.get(key)) - _to_float(averages.get(key))
+                raw_score += delta * self._feature_weight(key) * 0.9
+            for key in self._active_auxiliary_feature_columns():
+                raw_score += (_to_float(feature_row.get(key)) - _to_float(averages.get(key))) * self._feature_weight(key) * 0.08
+            raw_score += _to_float(metrics.get("avg_future_return_pct")) * 1.1
+            raw_score += _to_float(metrics.get("positive_rate")) * 0.9
+            raw_score -= max(0.0, _to_float(metrics.get("max_loss_streak")) - 2.0) * 0.4
         else:
             for key in primary_columns:
                 raw_score += (_to_float(feature_row.get(key)) - _to_float(averages.get(key))) * self._feature_weight(key)
@@ -521,6 +558,7 @@ class QlibRunner:
                 "research_template": str(self._config.research_template),
                 "model_key": str(self._config.model_key),
                 "label_mode": str(self._config.label_mode),
+                "label_trigger_basis": str(self._config.label_trigger_basis),
                 "holding_window_label": str(self._config.holding_window_label),
                 "label_target_pct": str(self._config.label_target_pct),
                 "label_stop_pct": str(self._config.label_stop_pct),
@@ -529,6 +567,10 @@ class QlibRunner:
                 "outlier_policy": str(self._config.outlier_policy),
                 "normalization_policy": str(self._config.normalization_policy),
                 "missing_policy": str(self._config.missing_policy),
+                "timeframe_profiles": {
+                    str(interval): dict(profile)
+                    for interval, profile in self._config.timeframe_profiles.items()
+                },
                 "sample_limit": self._config.sample_limit,
                 "lookback_days": self._config.lookback_days,
                 "window_mode": str(self._config.window_mode),
@@ -536,10 +578,29 @@ class QlibRunner:
                 "end_date": str(self._config.end_date),
                 "signal_confidence_floor": str(self._config.signal_confidence_floor),
                 "trend_weight": str(self._config.trend_weight),
+                "momentum_weight": str(self._config.momentum_weight),
                 "volume_weight": str(self._config.volume_weight),
                 "oscillator_weight": str(self._config.oscillator_weight),
                 "volatility_weight": str(self._config.volatility_weight),
                 "strict_penalty_weight": str(self._config.strict_penalty_weight),
+                "validation_min_avg_future_return_pct": str(self._config.validation_min_avg_future_return_pct),
+                "consistency_max_validation_backtest_return_gap_pct": str(
+                    self._config.consistency_max_validation_backtest_return_gap_pct
+                ),
+                "consistency_max_training_validation_positive_rate_gap": str(
+                    self._config.consistency_max_training_validation_positive_rate_gap
+                ),
+                "consistency_max_training_validation_return_gap_pct": str(
+                    self._config.consistency_max_training_validation_return_gap_pct
+                ),
+                "rule_min_ema20_gap_pct": str(self._config.rule_min_ema20_gap_pct),
+                "rule_min_ema55_gap_pct": str(self._config.rule_min_ema55_gap_pct),
+                "rule_max_atr_pct": str(self._config.rule_max_atr_pct),
+                "rule_min_volume_ratio": str(self._config.rule_min_volume_ratio),
+                "strict_rule_min_ema20_gap_pct": str(self._config.strict_rule_min_ema20_gap_pct),
+                "strict_rule_min_ema55_gap_pct": str(self._config.strict_rule_min_ema55_gap_pct),
+                "strict_rule_max_atr_pct": str(self._config.strict_rule_max_atr_pct),
+                "strict_rule_min_volume_ratio": str(self._config.strict_rule_min_volume_ratio),
                 "primary_factors": list(self._config.primary_feature_columns),
                 "auxiliary_factors": list(self._config.auxiliary_feature_columns),
             },
@@ -568,9 +629,14 @@ class QlibRunner:
                 "model_key": str(self._config.model_key),
                 "research_template": str(self._config.research_template),
                 "label_mode": str(self._config.label_mode),
+                "label_trigger_basis": str(self._config.label_trigger_basis),
                 "outlier_policy": str(self._config.outlier_policy),
                 "normalization_policy": str(self._config.normalization_policy),
                 "missing_policy": str(self._config.missing_policy),
+                "timeframe_profiles": {
+                    str(interval): dict(profile)
+                    for interval, profile in self._config.timeframe_profiles.items()
+                },
                 "sample_limit": str(self._config.sample_limit),
                 "lookback_days": str(self._config.lookback_days),
                 "window_mode": str(self._config.window_mode),
@@ -591,6 +657,24 @@ class QlibRunner:
                 "dry_run_max_turnover": str(self._config.dry_run_max_turnover),
                 "dry_run_min_sample_count": str(self._config.dry_run_min_sample_count),
                 "validation_min_sample_count": str(self._config.validation_min_sample_count),
+                "validation_min_avg_future_return_pct": str(self._config.validation_min_avg_future_return_pct),
+                "consistency_max_validation_backtest_return_gap_pct": str(
+                    self._config.consistency_max_validation_backtest_return_gap_pct
+                ),
+                "consistency_max_training_validation_positive_rate_gap": str(
+                    self._config.consistency_max_training_validation_positive_rate_gap
+                ),
+                "consistency_max_training_validation_return_gap_pct": str(
+                    self._config.consistency_max_training_validation_return_gap_pct
+                ),
+                "rule_min_ema20_gap_pct": str(self._config.rule_min_ema20_gap_pct),
+                "rule_min_ema55_gap_pct": str(self._config.rule_min_ema55_gap_pct),
+                "rule_max_atr_pct": str(self._config.rule_max_atr_pct),
+                "rule_min_volume_ratio": str(self._config.rule_min_volume_ratio),
+                "strict_rule_min_ema20_gap_pct": str(self._config.strict_rule_min_ema20_gap_pct),
+                "strict_rule_min_ema55_gap_pct": str(self._config.strict_rule_min_ema55_gap_pct),
+                "strict_rule_max_atr_pct": str(self._config.strict_rule_max_atr_pct),
+                "strict_rule_min_volume_ratio": str(self._config.strict_rule_min_volume_ratio),
                 "enable_rule_gate": self._config.enable_rule_gate,
                 "enable_validation_gate": self._config.enable_validation_gate,
                 "enable_backtest_gate": self._config.enable_backtest_gate,
@@ -604,6 +688,7 @@ class QlibRunner:
                 "live_min_sample_count": str(self._config.live_min_sample_count),
                 "signal_confidence_floor": str(self._config.signal_confidence_floor),
                 "trend_weight": str(self._config.trend_weight),
+                "momentum_weight": str(self._config.momentum_weight),
                 "volume_weight": str(self._config.volume_weight),
                 "oscillator_weight": str(self._config.oscillator_weight),
                 "volatility_weight": str(self._config.volatility_weight),
@@ -717,6 +802,8 @@ class QlibRunner:
         category = str((FACTOR_METADATA.get(name) or {}).get("category", ""))
         if category == "trend":
             return float(self._config.trend_weight)
+        if category == "momentum":
+            return float(self._config.momentum_weight)
         if category == "volume":
             return float(self._config.volume_weight)
         if category == "oscillator":

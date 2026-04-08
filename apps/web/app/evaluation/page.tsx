@@ -31,6 +31,10 @@ export default async function EvaluationPage() {
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
   const operations = asRecord(workspace.operations);
+  const bestExperiment = asRecord(workspace.best_experiment);
+  const recommendationExplanation = asRecord(workspace.recommendation_explanation);
+  const eliminationExplanation = asRecord(workspace.elimination_explanation);
+  const alignmentStory = asRecord(workspace.alignment_story);
   const reviewLimit = readText(operations.review_limit, "10");
   const comparisonRunLimit = readText(operations.comparison_run_limit, "5");
   const executionMetrics = asRecord(executionAlignment.execution);
@@ -118,6 +122,22 @@ export default async function EvaluationPage() {
                 <ConfigInput name="dry_run_max_turnover" defaultValue={String(controls.dry_run_max_turnover ?? "0.6")} placeholder="最高换手" />
                 <ConfigInput name="dry_run_min_sample_count" defaultValue={String(controls.dry_run_min_sample_count ?? "20")} placeholder="最低样本数" />
                 <ConfigInput name="validation_min_sample_count" defaultValue={String(controls.validation_min_sample_count ?? "12")} placeholder="验证最少样本数" />
+                <ConfigInput name="validation_min_avg_future_return_pct" defaultValue={String(controls.validation_min_avg_future_return_pct ?? "-0.1")} placeholder="验证最低未来收益 %" />
+              </div>
+            </ConfigField>
+            <ConfigField label="规则门与一致性门" hint="这里改的是趋势确认、波动限制和训练/验证/回测漂移容忍度。">
+              <div className="grid gap-3 md:grid-cols-2">
+                <ConfigInput name="rule_min_ema20_gap_pct" defaultValue={String(controls.rule_min_ema20_gap_pct ?? "0")} placeholder="EMA20 最低偏离 %" />
+                <ConfigInput name="rule_min_ema55_gap_pct" defaultValue={String(controls.rule_min_ema55_gap_pct ?? "0")} placeholder="EMA55 最低偏离 %" />
+                <ConfigInput name="rule_max_atr_pct" defaultValue={String(controls.rule_max_atr_pct ?? "5")} placeholder="ATR 最高波动 %" />
+                <ConfigInput name="rule_min_volume_ratio" defaultValue={String(controls.rule_min_volume_ratio ?? "1")} placeholder="最低量能比" />
+                <ConfigInput name="strict_rule_min_ema20_gap_pct" defaultValue={String(controls.strict_rule_min_ema20_gap_pct ?? "1.2")} placeholder="严格模板 EMA20 最低偏离 %" />
+                <ConfigInput name="strict_rule_min_ema55_gap_pct" defaultValue={String(controls.strict_rule_min_ema55_gap_pct ?? "1.8")} placeholder="严格模板 EMA55 最低偏离 %" />
+                <ConfigInput name="strict_rule_max_atr_pct" defaultValue={String(controls.strict_rule_max_atr_pct ?? "4.5")} placeholder="严格模板 ATR 最高波动 %" />
+                <ConfigInput name="strict_rule_min_volume_ratio" defaultValue={String(controls.strict_rule_min_volume_ratio ?? "1.05")} placeholder="严格模板最低量能比" />
+                <ConfigInput name="consistency_max_validation_backtest_return_gap_pct" defaultValue={String(controls.consistency_max_validation_backtest_return_gap_pct ?? "1.5")} placeholder="验证/回测最大收益差 %" />
+                <ConfigInput name="consistency_max_training_validation_positive_rate_gap" defaultValue={String(controls.consistency_max_training_validation_positive_rate_gap ?? "0.2")} placeholder="训练/验证最大正收益比例差" />
+                <ConfigInput name="consistency_max_training_validation_return_gap_pct" defaultValue={String(controls.consistency_max_training_validation_return_gap_pct ?? "1.5")} placeholder="训练/验证最大收益差 %" />
               </div>
             </ConfigField>
             <ConfigField label="live 门槛" hint="这里更严格，自动小额 live 会额外检查这些条件。">
@@ -283,6 +303,7 @@ export default async function EvaluationPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <p className="eyebrow">为什么推荐</p>
               <CardTitle>推荐原因</CardTitle>
               <CardDescription>这里直接展示系统为什么推荐这个币继续进入下一步。</CardDescription>
             </CardHeader>
@@ -293,11 +314,56 @@ export default async function EvaluationPage() {
               <InfoBlock label="进入 dry-run" value={String(candidateStatus.ready_count ?? 0)} />
             </CardContent>
           </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <p className="eyebrow">推荐摘要</p>
+              <CardTitle>{String(recommendationExplanation.headline ?? "当前还没有推荐摘要")}</CardTitle>
+              <CardDescription>{String(recommendationExplanation.detail ?? "先完成训练和推理，系统才会把推荐理由压成一句话。")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {(Array.isArray(recommendationExplanation.evidence) ? recommendationExplanation.evidence : []).length ? (
+                (recommendationExplanation.evidence as unknown[]).map((item, index) => (
+                  <p key={`recommendation-evidence-${index}`}>{String(item)}</p>
+                ))
+              ) : (
+                <p>当前还没有推荐证据。</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>当前最佳实验</CardTitle>
+              <CardDescription>这里直接说明哪一轮更值得进入 dry-run，哪一轮更值得进入 live。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="最佳标的" value={String(bestExperiment.symbol ?? "未推荐")} />
+              <InfoBlock label="推荐阶段" value={String(bestExperiment.recommended_stage ?? "dry_run")} />
+              <InfoBlock
+                label="更值得进入 dry-run"
+                value={
+                  String(bestExperiment.recommended_stage ?? "dry_run") === "dry_run"
+                    ? String(bestExperiment.reason ?? "当前这一轮更适合先进入 dry-run。")
+                    : "当前不是 dry-run 优先实验。"
+                }
+              />
+              <InfoBlock
+                label="更值得进入 live"
+                value={
+                  String(bestExperiment.recommended_stage ?? "") === "live"
+                    ? String(bestExperiment.reason ?? "当前这一轮更适合直接进入 live。")
+                    : "当前还没有实验足够稳到直接进入 live。"
+                }
+              />
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-5">
           <Card className="bg-card/90">
             <CardHeader>
+              <p className="eyebrow">为什么淘汰</p>
               <CardTitle>淘汰原因</CardTitle>
               <CardDescription>把主要阻断理由集中看，不用再回头翻各页细节。</CardDescription>
             </CardHeader>
@@ -305,6 +371,23 @@ export default async function EvaluationPage() {
               {Object.entries(asRecord(eliminationRules.blocked_reason_counts)).length ? Object.entries(asRecord(eliminationRules.blocked_reason_counts)).map(([key, value]) => (
                 <p key={key}>{key}：{String(value)}</p>
               )) : <p>当前没有淘汰原因，说明候选还没生成或都已通过。</p>}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <p className="eyebrow">淘汰摘要</p>
+              <CardTitle>{String(eliminationExplanation.headline ?? "当前还没有淘汰摘要")}</CardTitle>
+              <CardDescription>{String(eliminationExplanation.detail ?? "先积累足够候选，系统才会把淘汰原因压成一句话。")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {(Array.isArray(eliminationExplanation.evidence) ? eliminationExplanation.evidence : []).length ? (
+                (eliminationExplanation.evidence as unknown[]).map((item, index) => (
+                  <p key={`elimination-evidence-${index}`}>{String(item)}</p>
+                ))
+              ) : (
+                <p>当前还没有淘汰证据。</p>
+              )}
             </CardContent>
           </Card>
 
@@ -504,6 +587,24 @@ export default async function EvaluationPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <p className="eyebrow">研究和执行差在哪里</p>
+              <CardTitle>{String(alignmentStory.headline ?? "当前还没有差异摘要")}</CardTitle>
+              <CardDescription>{String(alignmentStory.detail ?? "先完成研究和执行，系统才会把差异压成一句话。")}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {(Array.isArray(alignmentStory.evidence) ? alignmentStory.evidence : []).length ? (
+                (alignmentStory.evidence as unknown[]).map((item, index) => (
+                  <p key={`alignment-story-${index}`}>{String(item)}</p>
+                ))
+              ) : (
+                <p>当前还没有研究和执行差异证据。</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <p className="eyebrow">差异摘要</p>
               <p className="eyebrow">研究与执行对齐</p>
               <CardTitle>研究结果 vs 执行结果</CardTitle>
               <CardDescription>这里不只显示 matched / unmatched，而是把对齐结论、对齐解释、最近执行摘要和建议动作直接讲清楚。</CardDescription>
@@ -868,6 +969,10 @@ function normalizeChangedFields(row: Record<string, unknown>) {
     backtest_fee_bps: "回测手续费",
     backtest_slippage_bps: "回测滑点",
     backtest_cost_model: "成本模型",
+    rule_min_ema20_gap_pct: "EMA20 最低偏离",
+    rule_min_ema55_gap_pct: "EMA55 最低偏离",
+    rule_max_atr_pct: "ATR 最高波动",
+    rule_min_volume_ratio: "最低量能比",
     enable_rule_gate: "规则门开关",
     enable_validation_gate: "验证门开关",
     enable_backtest_gate: "回测门开关",
@@ -883,6 +988,10 @@ function normalizeChangedFields(row: Record<string, unknown>) {
     dry_run_max_turnover: "dry-run 最高换手",
     dry_run_min_sample_count: "dry-run 最低样本数",
     validation_min_sample_count: "验证最少样本数",
+    validation_min_avg_future_return_pct: "验证最低未来收益",
+    consistency_max_validation_backtest_return_gap_pct: "验证/回测最大收益差",
+    consistency_max_training_validation_positive_rate_gap: "训练/验证最大正收益比例差",
+    consistency_max_training_validation_return_gap_pct: "训练/验证最大收益差",
     live_min_score: "live 最低分数",
     live_min_positive_rate: "live 最低正收益比例",
     live_min_net_return_pct: "live 最低净收益",

@@ -4,7 +4,29 @@ const { WEB_BASE_URL } = require("./test-urls.cjs");
 
 test.use(getPlaywrightUseOptions());
 
-test("signals page shows pending feedback while qlib pipeline is submitting", async ({ page }) => {
+test("signals page shows pending feedback before pipeline form leaves the page", async ({ page }) => {
+  await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "load" });
+  await page.evaluate(() => {
+    const forms = Array.from(document.querySelectorAll('form[action="/actions"]'));
+    const target = forms.find((form) => {
+      const input = form.querySelector('input[name="action"]');
+      return input instanceof HTMLInputElement && input.value === "run_pipeline";
+    });
+    target?.addEventListener(
+      "submit",
+      (event) => {
+        event.preventDefault();
+      },
+      { once: true },
+    );
+  });
+
+  await page.getByRole("button", { name: "运行 Qlib 信号流水线" }).click();
+  await expect(page.getByRole("button", { name: "运行 Qlib 信号流水线运行中…" })).toBeVisible();
+  await expect(page.getByText("研究动作已发出，页面会在结果返回后自动刷新。")).toBeVisible();
+});
+
+test("signals page shows final feedback after qlib pipeline submission", async ({ page }) => {
   await page.route("**/actions", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 800));
     await route.fulfill({
@@ -16,9 +38,8 @@ test("signals page shows pending feedback while qlib pipeline is submitting", as
     });
   });
 
-  await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "networkidle" });
+  await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "load" });
   await page.getByRole("button", { name: "运行 Qlib 信号流水线" }).click();
-
-  await expect(page.getByRole("button", { name: "运行 Qlib 信号流水线运行中…" })).toBeVisible();
-  await expect(page.getByText("研究动作已发出，页面会在结果返回后自动刷新。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "动作反馈" })).toBeVisible();
+  await expect(page.getByText("测试提交成功。")).toBeVisible();
 });

@@ -65,7 +65,12 @@ def _normalize_candidate(
     score_gate = _evaluate_score_gate(score=item.get("score"), thresholds=gate_thresholds)
     research_validation_gate = _evaluate_validation_gate(validation, thresholds=gate_thresholds)
     backtest_gate = _evaluate_backtest_gate(metrics, thresholds=gate_thresholds)
-    consistency_gate = _evaluate_consistency_gate(validation=validation, metrics=metrics, training_metrics=training_metrics)
+    consistency_gate = _evaluate_consistency_gate(
+        validation=validation,
+        metrics=metrics,
+        training_metrics=training_metrics,
+        thresholds=gate_thresholds,
+    )
     dry_run_gate = _merge_gates(
         score_gate,
         _apply_gate_toggle(rule_gate, enabled=_gate_enabled(gate_thresholds, "enable_rule_gate")),
@@ -213,7 +218,7 @@ def _evaluate_validation_gate(validation: dict[str, object] | None, *, threshold
         failures.append("validation_sample_count_too_low")
     if positive_rate < Decimal(str(thresholds["dry_run_min_positive_rate"])):
         failures.append("validation_positive_rate_too_low")
-    if avg_future_return_pct < Decimal("-0.1"):
+    if avg_future_return_pct < Decimal(str(thresholds["validation_min_avg_future_return_pct"])):
         failures.append("validation_future_return_not_positive")
 
     if failures:
@@ -269,6 +274,7 @@ def _evaluate_consistency_gate(
     validation: dict[str, object] | None,
     metrics: dict[str, object],
     training_metrics: dict[str, object] | None,
+    thresholds: dict[str, Decimal | int],
 ) -> dict[str, object]:
     """判断验证摘要和净回测之间是否出现明显漂移。"""
 
@@ -285,18 +291,22 @@ def _evaluate_consistency_gate(
     avg_net_return_pct = net_return_pct / Decimal(sample_count)
 
     failures: list[str] = []
+    max_validation_backtest_gap = Decimal(str(thresholds["consistency_max_validation_backtest_return_gap_pct"]))
+    max_training_validation_positive_rate_gap = Decimal(str(thresholds["consistency_max_training_validation_positive_rate_gap"]))
+    max_training_validation_return_gap_pct = Decimal(str(thresholds["consistency_max_training_validation_return_gap_pct"]))
+
     if validation_avg > Decimal("0") and avg_net_return_pct <= Decimal("0"):
         failures.append("validation_backtest_drift_too_large")
-    elif (validation_avg - avg_net_return_pct) > Decimal("1.5"):
+    elif (validation_avg - avg_net_return_pct) > max_validation_backtest_gap:
         failures.append("validation_backtest_drift_too_large")
     training_payload = dict(training_metrics or {})
     training_positive_rate = _to_decimal(training_payload.get("positive_rate"))
     validation_positive_rate = _to_decimal(payload.get("positive_rate"))
     training_avg = _to_decimal(training_payload.get("avg_future_return_pct"))
     if training_payload:
-        if (training_positive_rate - validation_positive_rate) > Decimal("0.20"):
+        if (training_positive_rate - validation_positive_rate) > max_training_validation_positive_rate_gap:
             failures.append("validation_training_drift_too_large")
-        if (training_avg - validation_avg) > Decimal("1.5"):
+        if (training_avg - validation_avg) > max_training_validation_return_gap_pct:
             failures.append("validation_training_drift_too_large")
 
     if failures:
@@ -412,6 +422,14 @@ def _resolve_thresholds(value: dict[str, object] | None, *, research_template: s
         "dry_run_max_turnover": _to_decimal(payload.get("dry_run_max_turnover") or _runtime_decimal("dry_run_max_turnover", "0.6")),
         "dry_run_min_sample_count": _to_int_or_none(payload.get("dry_run_min_sample_count") or _runtime_int("dry_run_min_sample_count", "20")) or 20,
         "validation_min_sample_count": _to_int_or_none(payload.get("validation_min_sample_count") or _runtime_int("validation_min_sample_count", "12")) or 12,
+        "validation_min_avg_future_return_pct": _to_decimal(payload.get("validation_min_avg_future_return_pct") or _runtime_decimal("validation_min_avg_future_return_pct", "-0.1")),
+        "consistency_max_validation_backtest_return_gap_pct": _to_decimal(payload.get("consistency_max_validation_backtest_return_gap_pct") or _runtime_decimal("consistency_max_validation_backtest_return_gap_pct", "1.5")),
+        "consistency_max_training_validation_positive_rate_gap": _to_decimal(payload.get("consistency_max_training_validation_positive_rate_gap") or _runtime_decimal("consistency_max_training_validation_positive_rate_gap", "0.2")),
+        "consistency_max_training_validation_return_gap_pct": _to_decimal(payload.get("consistency_max_training_validation_return_gap_pct") or _runtime_decimal("consistency_max_training_validation_return_gap_pct", "1.5")),
+        "rule_min_ema20_gap_pct": _to_decimal(payload.get("rule_min_ema20_gap_pct") or _runtime_decimal("rule_min_ema20_gap_pct", "0")),
+        "rule_min_ema55_gap_pct": _to_decimal(payload.get("rule_min_ema55_gap_pct") or _runtime_decimal("rule_min_ema55_gap_pct", "0")),
+        "rule_max_atr_pct": _to_decimal(payload.get("rule_max_atr_pct") or _runtime_decimal("rule_max_atr_pct", "5")),
+        "rule_min_volume_ratio": _to_decimal(payload.get("rule_min_volume_ratio") or _runtime_decimal("rule_min_volume_ratio", "1")),
         "enable_rule_gate": _to_bool(payload.get("enable_rule_gate"), _runtime_bool("enable_rule_gate", "true")),
         "enable_validation_gate": _to_bool(payload.get("enable_validation_gate"), _runtime_bool("enable_validation_gate", "true")),
         "enable_backtest_gate": _to_bool(payload.get("enable_backtest_gate"), _runtime_bool("enable_backtest_gate", "true")),

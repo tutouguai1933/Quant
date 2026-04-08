@@ -450,6 +450,7 @@ export type FeatureWorkspaceModel = {
     missing_policy: string;
     outlier_policy: string;
     normalization_policy: string;
+    timeframe_profiles: Record<string, Record<string, unknown>>;
     available_primary_factors: string[];
     available_auxiliary_factors: string[];
     available_missing_policies: string[];
@@ -495,6 +496,7 @@ export type ResearchWorkspaceModel = {
     research_template: string;
     model_key: string;
     label_mode: string;
+    label_trigger_basis: string;
     holding_window_label: string;
     force_validation_top_candidate: boolean;
     min_holding_days: number;
@@ -506,6 +508,7 @@ export type ResearchWorkspaceModel = {
     test_split_ratio: string;
     signal_confidence_floor: string;
     trend_weight: string;
+    momentum_weight: string;
     volume_weight: string;
     oscillator_weight: string;
     volatility_weight: string;
@@ -513,6 +516,7 @@ export type ResearchWorkspaceModel = {
     available_models: string[];
     available_research_templates: string[];
     available_label_modes: string[];
+    available_label_trigger_bases: string[];
     available_holding_windows: string[];
   };
   parameters: Record<string, string>;
@@ -556,9 +560,31 @@ export type BacktestWorkspaceModel = {
     enable_backtest_gate: boolean;
     enable_consistency_gate: boolean;
     enable_live_gate: boolean;
+    dry_run_min_score: string;
+    dry_run_min_positive_rate: string;
+    dry_run_min_net_return_pct: string;
+    dry_run_min_sharpe: string;
+    dry_run_max_drawdown_pct: string;
+    dry_run_max_loss_streak: string;
     dry_run_min_win_rate: string;
     dry_run_max_turnover: string;
     dry_run_min_sample_count: string;
+    validation_min_sample_count: string;
+    validation_min_avg_future_return_pct: string;
+    consistency_max_validation_backtest_return_gap_pct: string;
+    consistency_max_training_validation_positive_rate_gap: string;
+    consistency_max_training_validation_return_gap_pct: string;
+    rule_min_ema20_gap_pct: string;
+    rule_min_ema55_gap_pct: string;
+    rule_max_atr_pct: string;
+    rule_min_volume_ratio: string;
+    strict_rule_min_ema20_gap_pct: string;
+    strict_rule_min_ema55_gap_pct: string;
+    strict_rule_max_atr_pct: string;
+    strict_rule_min_volume_ratio: string;
+    live_min_score: string;
+    live_min_positive_rate: string;
+    live_min_net_return_pct: string;
     live_min_win_rate: string;
     live_max_turnover: string;
     live_min_sample_count: string;
@@ -593,6 +619,18 @@ export type EvaluationWorkspaceModel = {
     dry_run_max_turnover: string;
     dry_run_min_sample_count: string;
     validation_min_sample_count: string;
+    validation_min_avg_future_return_pct: string;
+    consistency_max_validation_backtest_return_gap_pct: string;
+    consistency_max_training_validation_positive_rate_gap: string;
+    consistency_max_training_validation_return_gap_pct: string;
+    rule_min_ema20_gap_pct: string;
+    rule_min_ema55_gap_pct: string;
+    rule_max_atr_pct: string;
+    rule_min_volume_ratio: string;
+    strict_rule_min_ema20_gap_pct: string;
+    strict_rule_min_ema55_gap_pct: string;
+    strict_rule_max_atr_pct: string;
+    strict_rule_min_volume_ratio: string;
     enable_rule_gate: boolean;
     enable_validation_gate: boolean;
     enable_backtest_gate: boolean;
@@ -615,6 +653,9 @@ export type EvaluationWorkspaceModel = {
   reviews: Record<string, unknown>;
   recent_review_tasks: Array<Record<string, unknown>>;
   leaderboard: Array<Record<string, unknown>>;
+  best_experiment: Record<string, unknown>;
+  recommendation_explanation: Record<string, unknown>;
+  elimination_explanation: Record<string, unknown>;
   recent_runs: Array<Record<string, unknown>>;
   recent_training_runs: Array<Record<string, unknown>>;
   recent_inference_runs: Array<Record<string, unknown>>;
@@ -625,6 +666,7 @@ export type EvaluationWorkspaceModel = {
   comparison_summary: Record<string, unknown>;
   execution_alignment: Record<string, unknown>;
   alignment_details: Record<string, unknown>;
+  alignment_story: Record<string, unknown>;
   alignment_gaps: Array<Record<string, unknown>>;
   alignment_actions: Array<Record<string, unknown>>;
   workflow_alignment_timeline: Array<Record<string, unknown>>;
@@ -1456,6 +1498,7 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
       missing_policy: "neutral_fill",
       outlier_policy: "clip",
       normalization_policy: "fixed_4dp",
+      timeframe_profiles: {},
       available_primary_factors: [],
       available_auxiliary_factors: [],
       available_missing_policies: ["neutral_fill", "strict_drop"],
@@ -1498,6 +1541,7 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       research_template: "single_asset_timing",
       model_key: "heuristic_v1",
       label_mode: "earliest_hit",
+      label_trigger_basis: "close",
       holding_window_label: "1-3d",
       force_validation_top_candidate: false,
       min_holding_days: 1,
@@ -1509,13 +1553,15 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       test_split_ratio: "0.2",
       signal_confidence_floor: "0.55",
       trend_weight: "1.3",
+      momentum_weight: "1",
       volume_weight: "1.1",
       oscillator_weight: "0.7",
       volatility_weight: "0.9",
       strict_penalty_weight: "1",
-      available_models: ["heuristic_v1", "trend_bias_v2"],
+      available_models: ["heuristic_v1", "trend_bias_v2", "balanced_v3"],
       available_research_templates: ["single_asset_timing", "single_asset_timing_strict"],
-      available_label_modes: ["earliest_hit", "close_only"],
+      available_label_modes: ["earliest_hit", "close_only", "window_majority"],
+      available_label_trigger_bases: ["close", "high_low"],
       available_holding_windows: ["1-3d", "2-4d", "3-5d"],
     },
     parameters: {},
@@ -1561,9 +1607,31 @@ export function getBacktestWorkspaceFallback(): BacktestWorkspaceModel {
       enable_backtest_gate: true,
       enable_consistency_gate: true,
       enable_live_gate: true,
+      dry_run_min_score: "0.55",
+      dry_run_min_positive_rate: "0.45",
+      dry_run_min_net_return_pct: "0",
+      dry_run_min_sharpe: "0.5",
+      dry_run_max_drawdown_pct: "15",
+      dry_run_max_loss_streak: "3",
       dry_run_min_win_rate: "0.5",
       dry_run_max_turnover: "0.6",
       dry_run_min_sample_count: "20",
+      validation_min_sample_count: "12",
+      validation_min_avg_future_return_pct: "-0.1",
+      consistency_max_validation_backtest_return_gap_pct: "1.5",
+      consistency_max_training_validation_positive_rate_gap: "0.2",
+      consistency_max_training_validation_return_gap_pct: "1.5",
+      rule_min_ema20_gap_pct: "0",
+      rule_min_ema55_gap_pct: "0",
+      rule_max_atr_pct: "5",
+      rule_min_volume_ratio: "1",
+      strict_rule_min_ema20_gap_pct: "1.2",
+      strict_rule_min_ema55_gap_pct: "1.8",
+      strict_rule_max_atr_pct: "4.5",
+      strict_rule_min_volume_ratio: "1.05",
+      live_min_score: "0.65",
+      live_min_positive_rate: "0.50",
+      live_min_net_return_pct: "0.20",
       live_min_win_rate: "0.55",
       live_max_turnover: "0.45",
       live_min_sample_count: "24",
@@ -1595,6 +1663,18 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       dry_run_max_turnover: "0.6",
       dry_run_min_sample_count: "20",
       validation_min_sample_count: "12",
+      validation_min_avg_future_return_pct: "-0.1",
+      consistency_max_validation_backtest_return_gap_pct: "1.5",
+      consistency_max_training_validation_positive_rate_gap: "0.2",
+      consistency_max_training_validation_return_gap_pct: "1.5",
+      rule_min_ema20_gap_pct: "0",
+      rule_min_ema55_gap_pct: "0",
+      rule_max_atr_pct: "5",
+      rule_min_volume_ratio: "1",
+      strict_rule_min_ema20_gap_pct: "1.2",
+      strict_rule_min_ema55_gap_pct: "1.8",
+      strict_rule_max_atr_pct: "4.5",
+      strict_rule_min_volume_ratio: "1.05",
       enable_rule_gate: true,
       enable_validation_gate: true,
       enable_backtest_gate: true,
@@ -1617,6 +1697,9 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     reviews: {},
     recent_review_tasks: [],
     leaderboard: [],
+    best_experiment: {},
+    recommendation_explanation: {},
+    elimination_explanation: {},
     recent_runs: [],
     recent_training_runs: [],
     recent_inference_runs: [],
@@ -1628,6 +1711,7 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     comparison_summary: {},
     execution_alignment: {},
     alignment_details: {},
+    alignment_story: {},
     alignment_gaps: [],
     alignment_actions: [],
   };
@@ -1815,6 +1899,12 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
       missing_policy: String(controls.missing_policy ?? "neutral_fill"),
       outlier_policy: String(controls.outlier_policy ?? ""),
       normalization_policy: String(controls.normalization_policy ?? ""),
+      timeframe_profiles: Object.fromEntries(
+        Object.entries(isPlainObject(controls.timeframe_profiles) ? controls.timeframe_profiles : {}).map(([name, values]) => [
+          String(name),
+          isPlainObject(values) ? values : {},
+        ]),
+      ),
       available_primary_factors: normalizeStringArray(controls.available_primary_factors, []),
       available_auxiliary_factors: normalizeStringArray(controls.available_auxiliary_factors, []),
       available_missing_policies: normalizeStringArray(controls.available_missing_policies, ["neutral_fill", "strict_drop"]),
@@ -1882,6 +1972,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       research_template: String(controls.research_template ?? ""),
       model_key: String(controls.model_key ?? ""),
       label_mode: String(controls.label_mode ?? ""),
+      label_trigger_basis: String(controls.label_trigger_basis ?? "close"),
       holding_window_label: String(controls.holding_window_label ?? ""),
       force_validation_top_candidate: Boolean(controls.force_validation_top_candidate),
       min_holding_days: Number(controls.min_holding_days ?? 1),
@@ -1893,6 +1984,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       test_split_ratio: String(controls.test_split_ratio ?? "0.2"),
       signal_confidence_floor: String(controls.signal_confidence_floor ?? "0.55"),
       trend_weight: String(controls.trend_weight ?? "1.3"),
+      momentum_weight: String(controls.momentum_weight ?? "1"),
       volume_weight: String(controls.volume_weight ?? "1.1"),
       oscillator_weight: String(controls.oscillator_weight ?? "0.7"),
       volatility_weight: String(controls.volatility_weight ?? "0.9"),
@@ -1900,6 +1992,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       available_models: normalizeStringArray(controls.available_models, []),
       available_research_templates: normalizeStringArray(controls.available_research_templates, []),
       available_label_modes: normalizeStringArray(controls.available_label_modes, []),
+      available_label_trigger_bases: normalizeStringArray(controls.available_label_trigger_bases, []),
       available_holding_windows: normalizeStringArray(controls.available_holding_windows, []),
     },
     parameters: Object.fromEntries(
@@ -1957,9 +2050,31 @@ function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel 
       enable_backtest_gate: Boolean(controls.enable_backtest_gate),
       enable_consistency_gate: Boolean(controls.enable_consistency_gate),
       enable_live_gate: Boolean(controls.enable_live_gate),
+      dry_run_min_score: String(controls.dry_run_min_score ?? "0.55"),
+      dry_run_min_positive_rate: String(controls.dry_run_min_positive_rate ?? "0.45"),
+      dry_run_min_net_return_pct: String(controls.dry_run_min_net_return_pct ?? "0"),
+      dry_run_min_sharpe: String(controls.dry_run_min_sharpe ?? "0.5"),
+      dry_run_max_drawdown_pct: String(controls.dry_run_max_drawdown_pct ?? "15"),
+      dry_run_max_loss_streak: String(controls.dry_run_max_loss_streak ?? "3"),
       dry_run_min_win_rate: String(controls.dry_run_min_win_rate ?? "0.5"),
       dry_run_max_turnover: String(controls.dry_run_max_turnover ?? "0.6"),
       dry_run_min_sample_count: String(controls.dry_run_min_sample_count ?? "20"),
+      validation_min_sample_count: String(controls.validation_min_sample_count ?? "12"),
+      validation_min_avg_future_return_pct: String(controls.validation_min_avg_future_return_pct ?? "-0.1"),
+      consistency_max_validation_backtest_return_gap_pct: String(controls.consistency_max_validation_backtest_return_gap_pct ?? "1.5"),
+      consistency_max_training_validation_positive_rate_gap: String(controls.consistency_max_training_validation_positive_rate_gap ?? "0.2"),
+      consistency_max_training_validation_return_gap_pct: String(controls.consistency_max_training_validation_return_gap_pct ?? "1.5"),
+      rule_min_ema20_gap_pct: String(controls.rule_min_ema20_gap_pct ?? "0"),
+      rule_min_ema55_gap_pct: String(controls.rule_min_ema55_gap_pct ?? "0"),
+      rule_max_atr_pct: String(controls.rule_max_atr_pct ?? "5"),
+      rule_min_volume_ratio: String(controls.rule_min_volume_ratio ?? "1"),
+      strict_rule_min_ema20_gap_pct: String(controls.strict_rule_min_ema20_gap_pct ?? "1.2"),
+      strict_rule_min_ema55_gap_pct: String(controls.strict_rule_min_ema55_gap_pct ?? "1.8"),
+      strict_rule_max_atr_pct: String(controls.strict_rule_max_atr_pct ?? "4.5"),
+      strict_rule_min_volume_ratio: String(controls.strict_rule_min_volume_ratio ?? "1.05"),
+      live_min_score: String(controls.live_min_score ?? "0.65"),
+      live_min_positive_rate: String(controls.live_min_positive_rate ?? "0.50"),
+      live_min_net_return_pct: String(controls.live_min_net_return_pct ?? "0.20"),
       live_min_win_rate: String(controls.live_min_win_rate ?? "0.55"),
       live_max_turnover: String(controls.live_max_turnover ?? "0.45"),
       live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
@@ -2011,6 +2126,18 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       dry_run_max_turnover: String(controls.dry_run_max_turnover ?? "0.6"),
       dry_run_min_sample_count: String(controls.dry_run_min_sample_count ?? "20"),
       validation_min_sample_count: String(controls.validation_min_sample_count ?? "12"),
+      validation_min_avg_future_return_pct: String(controls.validation_min_avg_future_return_pct ?? "-0.1"),
+      consistency_max_validation_backtest_return_gap_pct: String(controls.consistency_max_validation_backtest_return_gap_pct ?? "1.5"),
+      consistency_max_training_validation_positive_rate_gap: String(controls.consistency_max_training_validation_positive_rate_gap ?? "0.2"),
+      consistency_max_training_validation_return_gap_pct: String(controls.consistency_max_training_validation_return_gap_pct ?? "1.5"),
+      rule_min_ema20_gap_pct: String(controls.rule_min_ema20_gap_pct ?? "0"),
+      rule_min_ema55_gap_pct: String(controls.rule_min_ema55_gap_pct ?? "0"),
+      rule_max_atr_pct: String(controls.rule_max_atr_pct ?? "5"),
+      rule_min_volume_ratio: String(controls.rule_min_volume_ratio ?? "1"),
+      strict_rule_min_ema20_gap_pct: String(controls.strict_rule_min_ema20_gap_pct ?? "1.2"),
+      strict_rule_min_ema55_gap_pct: String(controls.strict_rule_min_ema55_gap_pct ?? "1.8"),
+      strict_rule_max_atr_pct: String(controls.strict_rule_max_atr_pct ?? "4.5"),
+      strict_rule_min_volume_ratio: String(controls.strict_rule_min_volume_ratio ?? "1.05"),
       enable_rule_gate: Boolean(controls.enable_rule_gate),
       enable_validation_gate: Boolean(controls.enable_validation_gate),
       enable_backtest_gate: Boolean(controls.enable_backtest_gate),
@@ -2033,6 +2160,9 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     reviews: isPlainObject(row.reviews) ? row.reviews : {},
     recent_review_tasks: Array.isArray(row.recent_review_tasks) ? row.recent_review_tasks.filter(isPlainObject) : [],
     leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
+    best_experiment: isPlainObject(row.best_experiment) ? row.best_experiment : {},
+    recommendation_explanation: isPlainObject(row.recommendation_explanation) ? row.recommendation_explanation : {},
+    elimination_explanation: isPlainObject(row.elimination_explanation) ? row.elimination_explanation : {},
     recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
     recent_training_runs: Array.isArray(row.recent_training_runs) ? row.recent_training_runs.filter(isPlainObject) : [],
     recent_inference_runs: Array.isArray(row.recent_inference_runs) ? row.recent_inference_runs.filter(isPlainObject) : [],
@@ -2044,6 +2174,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
     execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
     alignment_details: isPlainObject(row.alignment_details) ? row.alignment_details : {},
+    alignment_story: isPlainObject(row.alignment_story) ? row.alignment_story : {},
     alignment_gaps: Array.isArray(row.alignment_gaps) ? row.alignment_gaps.filter(isPlainObject) : [],
     alignment_actions: Array.isArray(row.alignment_actions) ? row.alignment_actions.filter(isPlainObject) : [],
   };
@@ -2852,7 +2983,7 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
         active_blockers: [],
         operator_actions: [],
         takeover_summary: {},
-        alert_summary: {},
+        alert_summary: { groups: [] },
       },
       executionHealth: {},
       dailySummary: {},

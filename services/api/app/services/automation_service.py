@@ -209,6 +209,22 @@ class AutomationService:
     def resume(self, *, actor: str = "user") -> dict[str, object]:
         """恢复自动化。"""
 
+        from services.api.app.tasks.scheduler import task_scheduler
+
+        task_health = task_scheduler.get_health_summary()
+        health_before = self.build_health_summary(task_health=task_health or {})
+        resume_checklist = [dict(item) for item in list(health_before.get("resume_checklist") or [])]
+        pending_items = [item for item in resume_checklist if str(item.get("status", "") or "").strip().lower() == "pending"]
+        if pending_items:
+            return {
+                **self.get_state(),
+                "actor": actor,
+                "status": "blocked",
+                "blocked_reason": "resume_checklist_pending",
+                "pending_items": pending_items,
+                "resume_checklist": resume_checklist,
+            }
+
         self._paused = False
         self._paused_reason = ""
         self._manual_takeover = self._mode == "manual"
@@ -219,9 +235,13 @@ class AutomationService:
         self._updated_at = _utc_now()
         self.record_alert(level="info", code="automation_resumed", message="自动化已恢复", source=actor)
         self._persist_state()
+        health_after = self.build_health_summary(task_health=task_health or {})
         return {
             **self.get_state(),
             "actor": actor,
+            "status": "succeeded",
+            "pending_items": [],
+            "resume_checklist": [dict(item) for item in list(health_after.get("resume_checklist") or [])],
         }
 
     def arm_symbol(self, symbol: str) -> dict[str, object]:
@@ -323,11 +343,13 @@ class AutomationService:
             active_blockers=active_blockers,
             last_alert=last_alert,
             run_health=run_health,
+            alert_summary=alert_summary,
         )
         resume_checklist = self._build_resume_checklist(
             latest_status=latest_status,
             active_blockers=active_blockers,
             last_alert=last_alert,
+            alert_summary=alert_summary,
         )
         return {
             "mode": self._mode,
@@ -374,6 +396,7 @@ class AutomationService:
             "latest_level": "",
             "latest_source": "",
             "cleanup_minutes": cleanup_minutes,
+            "groups": [],
         }
         if self._alerts:
             summary["latest_code"] = str(self._alerts[0].get("code", ""))
@@ -397,6 +420,39 @@ class AutomationService:
                 summary["active_warning_count"] = int(summary["active_warning_count"]) + 1
             elif level == "info":
                 summary["active_info_count"] = int(summary["active_info_count"]) + 1
+        groups: dict[str, dict[str, object]] = {}
+        for item in self._alerts:
+            code = str(item.get("code", "")).strip() or "unknown"
+            row = groups.get(code)
+            created_at = str(item.get("created_at", "")).strip()
+            if row is None:
+                row = {
+                    "code": code,
+                    "level": str(item.get("level", "")).strip().lower(),
+                    "message": str(item.get("message", "")).strip(),
+                    "source": str(item.get("source", "")).strip(),
+                    "occurrence_count": 0,
+                    "first_seen_at": created_at,
+                    "last_seen_at": created_at,
+                }
+                groups[code] = row
+            row["occurrence_count"] = int(row.get("occurrence_count", 0) or 0) + 1
+            if created_at:
+                first_seen = str(row.get("first_seen_at", "") or "")
+                last_seen = str(row.get("last_seen_at", "") or "")
+                if not first_seen or created_at < first_seen:
+                    row["first_seen_at"] = created_at
+                if not last_seen or created_at > last_seen:
+                    row["last_seen_at"] = created_at
+        summary["groups"] = sorted(
+            (dict(item) for item in groups.values()),
+            key=lambda item: (
+                -int(item.get("occurrence_count", 0) or 0),
+                str(item.get("last_seen_at", "") or ""),
+                str(item.get("code", "") or ""),
+            ),
+            reverse=False,
+        )
         return summary
 
     def _build_takeover_summary(self, *, active_blockers: list[dict[str, str]], run_health: dict[str, object]) -> dict[str, str]:
@@ -549,11 +605,16 @@ class AutomationService:
                 last_alert=last_alert,
                 run_health=run_health,
             ),
-            "takeover": self._build_takeover_focus_card(takeover_summary=takeover_summary),
+            "takeover": self._build_takeover_focus_card(
+                takeover_summary=takeover_summary,
+                run_health=run_health,
+                alert_summary=alert_summary,
+            ),
             "recovery": self._build_recovery_focus_card(
                 operator_actions=operator_actions,
                 takeover_summary=takeover_summary,
                 run_health=run_health,
+                alert_summary=alert_summary,
             ),
         }
 
@@ -572,11 +633,21 @@ class AutomationService:
         error_count = int(alert_summary.get("error_count", 0) or 0)
         warning_count = int(alert_summary.get("warning_count", 0) or 0)
         info_count = int(alert_summary.get("info_count", 0) or 0)
-        if latest_level == "error" or str(run_health.get("escalation_level", "")) == "critical":
+        groups = list(alert_summary.get("groups") or [])
+        group_codes = {str(item.get("code", "") or "") for item in groups}
+        if (
+            latest_level == "error"
+            or error_count > 0
+            or "sync_failed" in group_codes
+            or str(run_health.get("escalation_level", "")) == "critical"
+        ):
+            critical_detail = latest_message or f"当前已有 {error_count} 条错误告警，需要先人工处理。"
+            if "sync_failed" in group_codes or "stale_data" in group_codes:
+                critical_detail = "执行器离线或同步陈旧，先人工暂停自动化并确认同步链是否恢复。"
             return {
                 "tone": "critical",
                 "value": f"高风险 / {latest_code or '错误告警'}",
-                "detail": latest_message or f"当前已有 {error_count} 条错误告警，需要先人工处理。",
+                "detail": critical_detail,
             }
         if latest_level == "warning" or warning_count > 0 or str(run_health.get("stale_sync_state", "")) == "stale":
             return {
@@ -598,7 +669,12 @@ class AutomationService:
         }
 
     @staticmethod
-    def _build_takeover_focus_card(*, takeover_summary: dict[str, str]) -> dict[str, str]:
+    def _build_takeover_focus_card(
+        *,
+        takeover_summary: dict[str, str],
+        run_health: dict[str, object],
+        alert_summary: dict[str, object],
+    ) -> dict[str, str]:
         """整理人工接管原因，方便前端直接展示。"""
 
         state_label = str(takeover_summary.get("state_label", "") or "自动化运行中")
@@ -617,6 +693,18 @@ class AutomationService:
                 "value": state_label,
                 "detail": f"{reason_label}；{note or blocker_detail or '恢复前先确认暂停原因。'}",
             }
+        groups = list(alert_summary.get("groups") or [])
+        group_codes = {str(item.get("code", "") or "") for item in groups}
+        if (
+            str(run_health.get("escalation_level", "")) == "critical"
+            or int(alert_summary.get("error_count", 0) or 0) > 0
+            or "sync_failed" in group_codes
+        ):
+            return {
+                "tone": "critical",
+                "value": "建议立即人工接管",
+                "detail": "先人工暂停自动化，再处理执行器离线、同步失败或其他关键阻塞。",
+            }
         return {
             "tone": "ok",
             "value": "暂不需要人工接管",
@@ -629,6 +717,7 @@ class AutomationService:
         operator_actions: list[dict[str, str]],
         takeover_summary: dict[str, str],
         run_health: dict[str, object],
+        alert_summary: dict[str, object],
     ) -> dict[str, str]:
         """整理恢复前最该做的事。"""
 
@@ -639,13 +728,32 @@ class AutomationService:
             if not label:
                 continue
             action_summaries.append(f"{label}：{detail}" if detail else label)
+        groups = list(alert_summary.get("groups") or [])
+        group_codes = {str(item.get("code", "") or "") for item in groups}
+        should_escalate = (
+            str(run_health.get("escalation_level", "")) == "critical"
+            or int(alert_summary.get("error_count", 0) or 0) > 0
+            or "sync_failed" in group_codes
+        )
         if action_summaries:
-            tone = "critical" if str(run_health.get("escalation_level", "")) == "critical" else "warning"
+            if should_escalate:
+                return {
+                    "tone": "critical",
+                    "value": f"恢复前先做 {len(action_summaries)} 件事",
+                    "detail": "先人工暂停自动化并处理阻塞，确认无误后再恢复自动化。",
+                }
+            tone = "critical" if should_escalate else "warning"
             total = len(action_summaries)
             return {
                 "tone": tone,
                 "value": f"恢复前先做 {total} 件事",
                 "detail": " / ".join(action_summaries[:3]),
+            }
+        if should_escalate:
+            return {
+                "tone": "critical",
+                "value": "恢复前先人工确认",
+                "detail": "先人工暂停自动化并处理阻塞，确认无误后再恢复自动化。",
             }
         return {
             "tone": "ok",
@@ -659,10 +767,18 @@ class AutomationService:
         active_blockers: list[dict[str, str]],
         last_alert: dict[str, object] | None,
         run_health: dict[str, object],
+        alert_summary: dict[str, object],
     ) -> dict[str, str]:
         """整理当前风险等级，方便任务页直接判断是否该停手。"""
 
         escalation_level = str(run_health.get("escalation_level", "normal") or "normal")
+        groups = list(alert_summary.get("groups") or [])
+        group_codes = {str(item.get("code", "") or "") for item in groups}
+        if (
+            int(alert_summary.get("error_count", 0) or 0) > 0
+            or "sync_failed" in group_codes
+        ) and escalation_level == "normal":
+            escalation_level = "critical"
         if escalation_level == "critical":
             label = "需要立刻人工接管"
             detail = "当前已有关键阻塞或错误告警，先停下自动化并人工确认。"
@@ -687,14 +803,18 @@ class AutomationService:
         latest_status: dict[str, object],
         active_blockers: list[dict[str, str]],
         last_alert: dict[str, object] | None,
+        alert_summary: dict[str, object],
     ) -> list[dict[str, str]]:
         """给出恢复自动化前最小检查清单。"""
 
         latest_sync_status = str(latest_status.get("sync", "unknown") or "unknown")
+        groups = list(alert_summary.get("groups") or [])
+        group_codes = {str(item.get("code", "") or "") for item in groups}
+        has_error_alert = bool(last_alert and str(last_alert.get("level", "")).lower() == "error") or int(alert_summary.get("error_count", 0) or 0) > 0 or "sync_failed" in group_codes
         return [
             {
                 "label": "告警强度",
-                "status": "pending" if last_alert and str(last_alert.get("level", "")).lower() == "error" else "ready",
+                "status": "pending" if has_error_alert else "ready",
                 "detail": "如果最近告警还是 error，先处理它，再恢复自动化。",
             },
             {

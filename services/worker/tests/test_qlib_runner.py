@@ -63,11 +63,24 @@ class QlibConfigTests(unittest.TestCase):
                 "QUANT_QLIB_RESEARCH_TEMPLATE": "single_asset_timing_strict",
                 "QUANT_QLIB_LABEL_TARGET_PCT": "1.5",
                 "QUANT_QLIB_LABEL_STOP_PCT": "-0.8",
+                "QUANT_QLIB_LABEL_TRIGGER_BASIS": "high_low",
                 "QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS": "2",
                 "QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS": "4",
                 "QUANT_QLIB_MODEL_KEY": "trend_bias_v2",
                 "QUANT_QLIB_DRY_RUN_MIN_SCORE": "0.60",
                 "QUANT_QLIB_LIVE_MIN_SCORE": "0.80",
+                "QUANT_QLIB_VALIDATION_MIN_AVG_FUTURE_RETURN_PCT": "0.15",
+                "QUANT_QLIB_CONSISTENCY_MAX_VALIDATION_BACKTEST_RETURN_GAP_PCT": "1.2",
+                "QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_POSITIVE_RATE_GAP": "0.18",
+                "QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_RETURN_GAP_PCT": "1.1",
+                "QUANT_QLIB_RULE_MIN_EMA20_GAP_PCT": "0.3",
+                "QUANT_QLIB_RULE_MIN_EMA55_GAP_PCT": "0.4",
+                "QUANT_QLIB_RULE_MAX_ATR_PCT": "4.6",
+                "QUANT_QLIB_RULE_MIN_VOLUME_RATIO": "1.02",
+                "QUANT_QLIB_STRICT_RULE_MIN_EMA20_GAP_PCT": "1.4",
+                "QUANT_QLIB_STRICT_RULE_MIN_EMA55_GAP_PCT": "2.1",
+                "QUANT_QLIB_STRICT_RULE_MAX_ATR_PCT": "4.1",
+                "QUANT_QLIB_STRICT_RULE_MIN_VOLUME_RATIO": "1.07",
             },
             require_explicit=True,
         )
@@ -80,35 +93,55 @@ class QlibConfigTests(unittest.TestCase):
         self.assertEqual(config.auxiliary_feature_columns, ("rsi14",))
         self.assertEqual(config.research_template, "single_asset_timing_strict")
         self.assertEqual(config.label_mode, "earliest_hit")
+        self.assertEqual(config.label_trigger_basis, "high_low")
         self.assertEqual(str(config.label_target_pct), "1.5")
         self.assertEqual(str(config.label_stop_pct), "-0.8")
         self.assertEqual(config.holding_window_label, "2-4d")
         self.assertEqual(config.model_key, "trend_bias_v2")
         self.assertEqual(str(config.dry_run_min_score), "0.60")
         self.assertEqual(str(config.live_min_score), "0.80")
+        self.assertEqual(str(config.validation_min_avg_future_return_pct), "0.15")
+        self.assertEqual(str(config.consistency_max_validation_backtest_return_gap_pct), "1.2")
+        self.assertEqual(str(config.consistency_max_training_validation_positive_rate_gap), "0.18")
+        self.assertEqual(str(config.consistency_max_training_validation_return_gap_pct), "1.1")
+        self.assertEqual(str(config.rule_min_ema20_gap_pct), "0.3")
+        self.assertEqual(str(config.rule_min_ema55_gap_pct), "0.4")
+        self.assertEqual(str(config.rule_max_atr_pct), "4.6")
+        self.assertEqual(str(config.rule_min_volume_ratio), "1.02")
+        self.assertEqual(str(config.strict_rule_min_ema20_gap_pct), "1.4")
+        self.assertEqual(str(config.strict_rule_min_ema55_gap_pct), "2.1")
+        self.assertEqual(str(config.strict_rule_max_atr_pct), "4.1")
+        self.assertEqual(str(config.strict_rule_min_volume_ratio), "1.07")
 
     def test_runtime_controls_include_label_mode_and_preprocessing_policies(self) -> None:
         config = load_qlib_config(
             env={
                 "QUANT_QLIB_RUNTIME_ROOT": "/tmp/quant-qlib-runtime",
-                "QUANT_QLIB_LABEL_MODE": "close_only",
+                "QUANT_QLIB_LABEL_MODE": "window_majority",
+                "QUANT_QLIB_MODEL_KEY": "balanced_v3",
                 "QUANT_QLIB_OUTLIER_POLICY": "raw",
                 "QUANT_QLIB_NORMALIZATION_POLICY": "zscore_by_symbol",
                 "QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR": "0.63",
                 "QUANT_QLIB_TREND_WEIGHT": "1.8",
+                "QUANT_QLIB_MOMENTUM_WEIGHT": "1.2",
                 "QUANT_QLIB_VOLUME_WEIGHT": "1.4",
                 "QUANT_QLIB_OSCILLATOR_WEIGHT": "0.5",
                 "QUANT_QLIB_VOLATILITY_WEIGHT": "0.6",
                 "QUANT_QLIB_STRICT_PENALTY_WEIGHT": "1.4",
+                "QUANT_QLIB_TIMEFRAME_PROFILES": "{\"4h\":{\"trend_window\":\"5\",\"volume_window\":\"4\",\"atr_period\":\"16\",\"rsi_period\":\"18\",\"roc_period\":\"8\",\"cci_period\":\"24\",\"stoch_period\":\"16\",\"breakout_lookback\":\"22\"}}",
             },
             require_explicit=True,
         )
 
-        self.assertEqual(config.label_mode, "close_only")
+        self.assertEqual(config.label_mode, "window_majority")
+        self.assertEqual(config.model_key, "balanced_v3")
         self.assertEqual(config.outlier_policy, "raw")
         self.assertEqual(config.normalization_policy, "zscore_by_symbol")
+        self.assertEqual(config.timeframe_profiles["4h"]["trend_window"], 5)
+        self.assertEqual(config.timeframe_profiles["4h"]["breakout_lookback"], 22)
         self.assertEqual(str(config.signal_confidence_floor), "0.63")
         self.assertEqual(str(config.trend_weight), "1.8")
+        self.assertEqual(str(config.momentum_weight), "1.2")
         self.assertEqual(str(config.volume_weight), "1.4")
         self.assertEqual(str(config.oscillator_weight), "0.5")
         self.assertEqual(str(config.volatility_weight), "0.6")
@@ -204,6 +237,50 @@ class QlibFeatureTests(unittest.TestCase):
         self.assertTrue(rows[0]["is_trainable"])
         self.assertEqual(rows[0]["holding_window"], "1-3d")
         self.assertEqual(rows[0]["label"], "sell")
+
+    def test_label_builder_supports_window_majority_mode(self) -> None:
+        rows = build_label_rows(
+            "BTCUSDT",
+            _sample_window_majority_candles(),
+            label_mode="window_majority",
+        )
+
+        self.assertTrue(rows[0]["is_trainable"])
+        self.assertEqual(rows[0]["holding_window"], "1-3d")
+        self.assertEqual(rows[0]["label"], "buy")
+
+    def test_label_builder_supports_high_low_trigger_basis(self) -> None:
+        rows = build_label_rows(
+            "BTCUSDT",
+            _sample_intrabar_trigger_candles(),
+            label_mode="earliest_hit",
+            trigger_basis="high_low",
+        )
+
+        self.assertTrue(rows[0]["is_trainable"])
+        self.assertEqual(rows[0]["holding_window"], "1-3d")
+        self.assertEqual(rows[0]["label"], "buy")
+
+    def test_feature_builder_supports_timeframe_profile_override(self) -> None:
+        rows = build_feature_rows(
+            "BTCUSDT",
+            _sample_timing_candles(step_hours=4),
+            timeframe_profiles={
+                "4h": {
+                    "trend_window": 5,
+                    "volume_window": 4,
+                    "atr_period": 16,
+                    "rsi_period": 18,
+                    "roc_period": 8,
+                    "cci_period": 24,
+                    "stoch_period": 16,
+                    "breakout_lookback": 22,
+                }
+            },
+        )
+
+        self.assertEqual(len(rows), 80)
+        self.assertIn("breakout_strength", rows[-1])
 
     def test_dirty_candle_is_filtered_consistently_for_features_and_labels(self) -> None:
         candles = _sample_candles()
@@ -392,6 +469,7 @@ class QlibRunnerTests(unittest.TestCase):
             label_target_pct=config.label_target_pct,
             label_stop_pct=config.label_stop_pct,
             label_mode=config.label_mode,
+            trigger_basis=config.label_trigger_basis,
             missing_policy=config.missing_policy,
             outlier_policy=config.outlier_policy,
             normalization_policy=config.normalization_policy,
@@ -1071,6 +1149,49 @@ def _build_window_candles(closes: list[float]) -> list[dict[str, object]]:
             }
         )
         previous_close = close_price
+    return candles
+
+
+def _sample_window_majority_candles() -> list[dict[str, object]]:
+    candles = _sample_window_competing_hit_candles()
+    candles[7]["close"] = "102.5"
+    candles[8]["close"] = "102.8"
+    candles[9]["close"] = "103.0"
+    return candles
+
+
+def _sample_intrabar_trigger_candles() -> list[dict[str, object]]:
+    candles = _build_window_candles(
+        [
+            100.0,
+            100.1,
+            100.0,
+            100.2,
+            100.1,
+            100.0,
+            100.2,
+            100.3,
+            100.1,
+            100.0,
+            99.9,
+            99.8,
+            99.7,
+            99.6,
+            99.5,
+            99.4,
+            99.3,
+            99.2,
+            99.1,
+            99.0,
+            98.9,
+            98.8,
+            98.7,
+            98.6,
+            98.5,
+        ]
+    )
+    candles[6]["high"] = "101.20"
+    candles[7]["high"] = "101.40"
     return candles
 
 

@@ -76,6 +76,8 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("下一步动作", content)
         self.assertIn("最近训练实验", content)
         self.assertIn("最近推理实验", content)
+        self.assertIn("更值得进入 dry-run", content)
+        self.assertIn("更值得进入 live", content)
         self.assertIn("研究到执行时间线", content)
         self.assertIn("最近状态", content)
         self.assertIn("最近完成时间", content)

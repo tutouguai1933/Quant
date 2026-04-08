@@ -14,15 +14,21 @@ from pathlib import Path
 from typing import Iterable
 
 from services.api.app.core.settings import DEFAULT_MARKET_SYMBOLS
-from services.worker.qlib_features import AUXILIARY_FEATURE_COLUMNS, FEATURE_PROTOCOL, PRIMARY_FEATURE_COLUMNS
+from services.worker.qlib_features import (
+    AUXILIARY_FEATURE_COLUMNS,
+    FEATURE_PROTOCOL,
+    PRIMARY_FEATURE_COLUMNS,
+    TIMEFRAME_PROFILES,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_WORKBENCH_CONFIG_PATH = REPO_ROOT / ".runtime" / "workbench_config.json"
 SUPPORTED_TIMEFRAMES = ("4h", "1h")
-SUPPORTED_MODELS = ("heuristic_v1", "trend_bias_v2")
+SUPPORTED_MODELS = ("heuristic_v1", "trend_bias_v2", "balanced_v3")
 SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
-SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only")
+SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only", "window_majority")
+SUPPORTED_LABEL_TRIGGER_BASES = ("close", "high_low")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
 SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
@@ -56,11 +62,16 @@ def _default_config() -> dict[str, object]:
             "missing_policy": "neutral_fill",
             "outlier_policy": "clip",
             "normalization_policy": "fixed_4dp",
+            "timeframe_profiles": {
+                str(interval): dict(profile)
+                for interval, profile in TIMEFRAME_PROFILES.items()
+            },
         },
         "research": {
             "research_template": "single_asset_timing",
             "model_key": "heuristic_v1",
             "label_mode": "earliest_hit",
+            "label_trigger_basis": "close",
             "holding_window_label": "1-3d",
             "force_validation_top_candidate": False,
             "min_holding_days": 1,
@@ -72,6 +83,7 @@ def _default_config() -> dict[str, object]:
             "test_split_ratio": "0.2",
             "signal_confidence_floor": "0.55",
             "trend_weight": "1.3",
+            "momentum_weight": "1",
             "volume_weight": "1.1",
             "oscillator_weight": "0.7",
             "volatility_weight": "0.9",
@@ -98,6 +110,18 @@ def _default_config() -> dict[str, object]:
             "dry_run_max_turnover": "0.6",
             "dry_run_min_sample_count": "20",
             "validation_min_sample_count": "12",
+            "validation_min_avg_future_return_pct": "-0.1",
+            "consistency_max_validation_backtest_return_gap_pct": "1.5",
+            "consistency_max_training_validation_positive_rate_gap": "0.2",
+            "consistency_max_training_validation_return_gap_pct": "1.5",
+            "rule_min_ema20_gap_pct": "0",
+            "rule_min_ema55_gap_pct": "0",
+            "rule_max_atr_pct": "5",
+            "rule_min_volume_ratio": "1",
+            "strict_rule_min_ema20_gap_pct": "1.2",
+            "strict_rule_min_ema55_gap_pct": "1.8",
+            "strict_rule_max_atr_pct": "4.5",
+            "strict_rule_min_volume_ratio": "1.05",
             "enable_rule_gate": True,
             "enable_validation_gate": True,
             "enable_backtest_gate": True,
@@ -147,7 +171,7 @@ class WorkbenchConfigService:
         current = self.get_config()
         merged = deepcopy(current)
         current_section = dict(current.get(normalized_section) or {})
-        next_section = {**current_section, **dict(values or {})}
+        next_section = {**current_section, **self._expand_nested_values(dict(values or {}))}
 
         if normalized_section == "data":
             merged["data"] = self._normalize_data_section(next_section)
@@ -176,6 +200,34 @@ class WorkbenchConfigService:
         self._write_config_file(normalized)
         return normalized
 
+    def _expand_nested_values(self, values: dict[str, object]) -> dict[str, object]:
+        """把点分隔的表单字段还原成嵌套结构。"""
+
+        expanded: dict[str, object] = {}
+        for key, value in dict(values or {}).items():
+            field = str(key or "").strip()
+            if not field:
+                continue
+            if "." not in field:
+                expanded[field] = value
+                continue
+            self._assign_nested_value(expanded, field.split("."), value)
+        return expanded
+
+    def _assign_nested_value(self, target: dict[str, object], path: list[str], value: object) -> None:
+        """按路径写入嵌套字段。"""
+
+        if not path:
+            return
+        cursor = target
+        for name in path[:-1]:
+            current = cursor.get(name)
+            if not isinstance(current, dict):
+                current = {}
+                cursor[name] = current
+            cursor = current
+        cursor[path[-1]] = value
+
     def build_workspace_controls(self) -> dict[str, object]:
         """返回给前端工作台使用的配置和选项。"""
 
@@ -201,6 +253,7 @@ class WorkbenchConfigService:
                 "models": list(SUPPORTED_MODELS),
                 "research_templates": list(SUPPORTED_RESEARCH_TEMPLATES),
                 "label_modes": list(SUPPORTED_LABEL_MODES),
+                "label_trigger_bases": list(SUPPORTED_LABEL_TRIGGER_BASES),
                 "holding_windows": list(SUPPORTED_HOLDING_WINDOWS),
                 "backtest_cost_models": list(SUPPORTED_BACKTEST_COST_MODELS),
                 "all_symbols": list(DEFAULT_MARKET_SYMBOLS),
@@ -238,8 +291,13 @@ class WorkbenchConfigService:
             "QUANT_QLIB_MISSING_POLICY": str(features.get("missing_policy", "neutral_fill")),
             "QUANT_QLIB_OUTLIER_POLICY": str(features.get("outlier_policy", "clip")),
             "QUANT_QLIB_NORMALIZATION_POLICY": str(features.get("normalization_policy", "fixed_4dp")),
+            "QUANT_QLIB_TIMEFRAME_PROFILES": json.dumps(
+                self._stringify_timeframe_profiles(dict(features.get("timeframe_profiles") or {})),
+                ensure_ascii=False,
+            ),
             "QUANT_QLIB_RESEARCH_TEMPLATE": str(research.get("research_template", "single_asset_timing")),
             "QUANT_QLIB_LABEL_MODE": str(research.get("label_mode", "earliest_hit")),
+            "QUANT_QLIB_LABEL_TRIGGER_BASIS": str(research.get("label_trigger_basis", "close")),
             "QUANT_QLIB_LABEL_TARGET_PCT": str(research.get("label_target_pct", "1")),
             "QUANT_QLIB_LABEL_STOP_PCT": str(research.get("label_stop_pct", "-1")),
             "QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS": str(research.get("min_holding_days", 1)),
@@ -254,6 +312,7 @@ class WorkbenchConfigService:
             "QUANT_QLIB_TEST_SPLIT_RATIO": str(research.get("test_split_ratio", "0.2")),
             "QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR": str(research.get("signal_confidence_floor", "0.55")),
             "QUANT_QLIB_TREND_WEIGHT": str(research.get("trend_weight", "1.3")),
+            "QUANT_QLIB_MOMENTUM_WEIGHT": str(research.get("momentum_weight", "1")),
             "QUANT_QLIB_VOLUME_WEIGHT": str(research.get("volume_weight", "1.1")),
             "QUANT_QLIB_OSCILLATOR_WEIGHT": str(research.get("oscillator_weight", "0.7")),
             "QUANT_QLIB_VOLATILITY_WEIGHT": str(research.get("volatility_weight", "0.9")),
@@ -271,6 +330,18 @@ class WorkbenchConfigService:
             "QUANT_QLIB_DRY_RUN_MAX_TURNOVER": str(thresholds.get("dry_run_max_turnover", "0.6")),
             "QUANT_QLIB_DRY_RUN_MIN_SAMPLE_COUNT": str(thresholds.get("dry_run_min_sample_count", "20")),
             "QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT": str(thresholds.get("validation_min_sample_count", "12")),
+            "QUANT_QLIB_VALIDATION_MIN_AVG_FUTURE_RETURN_PCT": str(thresholds.get("validation_min_avg_future_return_pct", "-0.1")),
+            "QUANT_QLIB_CONSISTENCY_MAX_VALIDATION_BACKTEST_RETURN_GAP_PCT": str(thresholds.get("consistency_max_validation_backtest_return_gap_pct", "1.5")),
+            "QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_POSITIVE_RATE_GAP": str(thresholds.get("consistency_max_training_validation_positive_rate_gap", "0.2")),
+            "QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_RETURN_GAP_PCT": str(thresholds.get("consistency_max_training_validation_return_gap_pct", "1.5")),
+            "QUANT_QLIB_RULE_MIN_EMA20_GAP_PCT": str(thresholds.get("rule_min_ema20_gap_pct", "0")),
+            "QUANT_QLIB_RULE_MIN_EMA55_GAP_PCT": str(thresholds.get("rule_min_ema55_gap_pct", "0")),
+            "QUANT_QLIB_RULE_MAX_ATR_PCT": str(thresholds.get("rule_max_atr_pct", "5")),
+            "QUANT_QLIB_RULE_MIN_VOLUME_RATIO": str(thresholds.get("rule_min_volume_ratio", "1")),
+            "QUANT_QLIB_STRICT_RULE_MIN_EMA20_GAP_PCT": str(thresholds.get("strict_rule_min_ema20_gap_pct", "1.2")),
+            "QUANT_QLIB_STRICT_RULE_MIN_EMA55_GAP_PCT": str(thresholds.get("strict_rule_min_ema55_gap_pct", "1.8")),
+            "QUANT_QLIB_STRICT_RULE_MAX_ATR_PCT": str(thresholds.get("strict_rule_max_atr_pct", "4.5")),
+            "QUANT_QLIB_STRICT_RULE_MIN_VOLUME_RATIO": str(thresholds.get("strict_rule_min_volume_ratio", "1.05")),
             "QUANT_QLIB_ENABLE_RULE_GATE": "true"
             if self._normalize_bool(thresholds.get("enable_rule_gate"), default=True)
             else "false",
@@ -377,6 +448,7 @@ class WorkbenchConfigService:
                 default="fixed_4dp",
                 allowed=SUPPORTED_NORMALIZATION_POLICIES,
             ),
+            "timeframe_profiles": self._normalize_timeframe_profiles(payload.get("timeframe_profiles")),
         }
 
     def _normalize_research_section(self, value: object) -> dict[str, object]:
@@ -393,6 +465,11 @@ class WorkbenchConfigService:
             payload.get("label_mode"),
             default="earliest_hit",
             allowed=SUPPORTED_LABEL_MODES,
+        )
+        label_trigger_basis = self._normalize_choice(
+            payload.get("label_trigger_basis"),
+            default="close",
+            allowed=SUPPORTED_LABEL_TRIGGER_BASES,
         )
         normalized_label = self._normalize_holding_window_label(
             payload.get("holding_window_label"),
@@ -418,6 +495,7 @@ class WorkbenchConfigService:
             "research_template": research_template,
             "model_key": model_key,
             "label_mode": label_mode,
+            "label_trigger_basis": label_trigger_basis,
             "holding_window_label": normalized_label,
             "force_validation_top_candidate": self._normalize_bool(
                 payload.get("force_validation_top_candidate"),
@@ -439,6 +517,12 @@ class WorkbenchConfigService:
             "trend_weight": self._normalize_decimal(
                 payload.get("trend_weight"),
                 default=Decimal("1.3"),
+                minimum=Decimal("0"),
+                maximum=Decimal("5"),
+            ),
+            "momentum_weight": self._normalize_decimal(
+                payload.get("momentum_weight"),
+                default=Decimal("1"),
                 minimum=Decimal("0"),
                 maximum=Decimal("5"),
             ),
@@ -482,6 +566,40 @@ class WorkbenchConfigService:
             ),
         }
 
+    def _normalize_timeframe_profiles(self, value: object) -> dict[str, dict[str, object]]:
+        """整理周期参数配置。"""
+
+        payload = dict(value or {}) if isinstance(value, dict) else {}
+        normalized: dict[str, dict[str, object]] = {
+            str(interval): dict(profile)
+            for interval, profile in TIMEFRAME_PROFILES.items()
+        }
+        for interval, defaults in TIMEFRAME_PROFILES.items():
+            incoming = payload.get(interval)
+            if not isinstance(incoming, dict):
+                continue
+            merged = dict(normalized.get(interval) or {})
+            for key, default in defaults.items():
+                raw = incoming.get(key, merged.get(key, default))
+                if isinstance(default, int):
+                    merged[key] = self._normalize_int(raw, default=default, minimum=1, maximum=120)
+                else:
+                    text = str(raw or default).strip()
+                    merged[key] = text or default
+            normalized[interval] = merged
+        return normalized
+
+    def _stringify_timeframe_profiles(self, value: dict[str, dict[str, object]]) -> dict[str, dict[str, str]]:
+        """把周期参数转成适合环境变量传递的字符串结构。"""
+
+        result: dict[str, dict[str, str]] = {}
+        for interval, profile in dict(value or {}).items():
+            result[str(interval)] = {
+                str(name): str(raw)
+                for name, raw in dict(profile or {}).items()
+            }
+        return result
+
     def _normalize_execution_section(self, value: object) -> dict[str, object]:
         """整理执行安全门配置。"""
 
@@ -518,6 +636,18 @@ class WorkbenchConfigService:
             "dry_run_max_turnover": self._normalize_decimal(payload.get("dry_run_max_turnover"), default=Decimal("0.6"), minimum=Decimal("0")),
             "dry_run_min_sample_count": str(self._normalize_int(payload.get("dry_run_min_sample_count"), default=20, minimum=3, maximum=500)),
             "validation_min_sample_count": str(self._normalize_int(payload.get("validation_min_sample_count"), default=12, minimum=3, maximum=500)),
+            "validation_min_avg_future_return_pct": self._normalize_decimal(payload.get("validation_min_avg_future_return_pct"), default=Decimal("-0.1")),
+            "consistency_max_validation_backtest_return_gap_pct": self._normalize_decimal(payload.get("consistency_max_validation_backtest_return_gap_pct"), default=Decimal("1.5"), minimum=Decimal("0")),
+            "consistency_max_training_validation_positive_rate_gap": self._normalize_decimal(payload.get("consistency_max_training_validation_positive_rate_gap"), default=Decimal("0.2"), minimum=Decimal("0"), maximum=Decimal("1")),
+            "consistency_max_training_validation_return_gap_pct": self._normalize_decimal(payload.get("consistency_max_training_validation_return_gap_pct"), default=Decimal("1.5"), minimum=Decimal("0")),
+            "rule_min_ema20_gap_pct": self._normalize_decimal(payload.get("rule_min_ema20_gap_pct"), default=Decimal("0")),
+            "rule_min_ema55_gap_pct": self._normalize_decimal(payload.get("rule_min_ema55_gap_pct"), default=Decimal("0")),
+            "rule_max_atr_pct": self._normalize_decimal(payload.get("rule_max_atr_pct"), default=Decimal("5"), minimum=Decimal("0")),
+            "rule_min_volume_ratio": self._normalize_decimal(payload.get("rule_min_volume_ratio"), default=Decimal("1"), minimum=Decimal("0")),
+            "strict_rule_min_ema20_gap_pct": self._normalize_decimal(payload.get("strict_rule_min_ema20_gap_pct"), default=Decimal("1.2")),
+            "strict_rule_min_ema55_gap_pct": self._normalize_decimal(payload.get("strict_rule_min_ema55_gap_pct"), default=Decimal("1.8")),
+            "strict_rule_max_atr_pct": self._normalize_decimal(payload.get("strict_rule_max_atr_pct"), default=Decimal("4.5"), minimum=Decimal("0")),
+            "strict_rule_min_volume_ratio": self._normalize_decimal(payload.get("strict_rule_min_volume_ratio"), default=Decimal("1.05"), minimum=Decimal("0")),
             "enable_rule_gate": self._normalize_bool(payload.get("enable_rule_gate"), default=True),
             "enable_validation_gate": self._normalize_bool(payload.get("enable_validation_gate"), default=True),
             "enable_backtest_gate": self._normalize_bool(payload.get("enable_backtest_gate"), default=True),

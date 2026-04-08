@@ -28,6 +28,7 @@ def build_label_rows(
     candles: list[dict[str, object]],
     *,
     label_mode: str = "earliest_hit",
+    trigger_basis: str = "close",
     target_return_pct: Decimal = Decimal("1"),
     stop_return_pct: Decimal = Decimal("-1"),
     min_window_days: int = MIN_WINDOW_DAYS,
@@ -66,6 +67,7 @@ def build_label_rows(
                 entry_close=candle["close"],
                 future_window=future_window,
                 label_mode=label_mode,
+                trigger_basis=trigger_basis,
                 target_return_pct=normalized_target,
                 stop_return_pct=normalized_stop,
             )
@@ -129,15 +131,59 @@ def _classify_window_label(
     entry_close: Decimal,
     future_window: list[dict[str, Decimal | int]],
     label_mode: str,
+    trigger_basis: str,
     target_return_pct: Decimal,
     stop_return_pct: Decimal,
 ) -> tuple[Decimal, str]:
     """按 1-3 天窗口内的最早命中结果生成标签。"""
 
-    future_returns = [
-        ((candle["close"] - entry_close) / entry_close) * Decimal("100")
-        for candle in future_window
-    ]
+    future_returns = [_return_pct(entry_close=entry_close, value=candle["close"]) for candle in future_window]
+    trigger_high_returns = [_return_pct(entry_close=entry_close, value=candle["high"]) for candle in future_window]
+    trigger_low_returns = [_return_pct(entry_close=entry_close, value=candle["low"]) for candle in future_window]
+
+    def _buy_hit_index(values: list[Decimal]) -> int | None:
+        return next((index for index, value in enumerate(values) if value >= target_return_pct), None)
+
+    def _sell_hit_index(values: list[Decimal]) -> int | None:
+        return next((index for index, value in enumerate(values) if value <= stop_return_pct), None)
+
+    def _pick_buy_trigger(index: int) -> Decimal:
+        return trigger_high_returns[index] if trigger_basis == "high_low" else future_returns[index]
+
+    def _pick_sell_trigger(index: int) -> Decimal:
+        return trigger_low_returns[index] if trigger_basis == "high_low" else future_returns[index]
+
+    if label_mode == "window_majority":
+        checkpoints = []
+        total_bars = len(future_window)
+        for step in range(1, total_bars + 1):
+            candidate_returns = future_returns[:step]
+            candidate_high_returns = trigger_high_returns[:step]
+            candidate_low_returns = trigger_low_returns[:step]
+            buy_hit = _buy_hit_index(candidate_high_returns if trigger_basis == "high_low" else candidate_returns)
+            sell_hit = _sell_hit_index(candidate_low_returns if trigger_basis == "high_low" else candidate_returns)
+            if buy_hit is not None and (sell_hit is None or buy_hit <= sell_hit):
+                checkpoints.append(("buy", _pick_buy_trigger(buy_hit)))
+                continue
+            if sell_hit is not None:
+                checkpoints.append(("sell", _pick_sell_trigger(sell_hit)))
+                continue
+            checkpoints.append(("watch", candidate_returns[-1]))
+        buy_votes = [value for label, value in checkpoints if label == "buy"]
+        sell_votes = [value for label, value in checkpoints if label == "sell"]
+        watch_votes = [value for label, value in checkpoints if label == "watch"]
+        if len(buy_votes) > len(sell_votes) and len(buy_votes) >= len(watch_votes):
+            return buy_votes[0], "buy"
+        if len(sell_votes) > len(buy_votes) and len(sell_votes) >= len(watch_votes):
+            return sell_votes[0], "sell"
+        if watch_votes:
+            return watch_votes[-1], "watch"
+        final_return = future_returns[-1]
+        if final_return >= target_return_pct:
+            return final_return, "buy"
+        if final_return <= stop_return_pct:
+            return final_return, "sell"
+        return final_return, "watch"
     if label_mode == "close_only":
         final_return = future_returns[-1]
         if final_return >= target_return_pct:
@@ -145,20 +191,20 @@ def _classify_window_label(
         if final_return <= stop_return_pct:
             return final_return, "sell"
         return final_return, "watch"
-    first_buy_index = next(
-        (index for index, value in enumerate(future_returns) if value >= target_return_pct),
-        None,
-    )
-    first_sell_index = next(
-        (index for index, value in enumerate(future_returns) if value <= stop_return_pct),
-        None,
-    )
+    first_buy_index = _buy_hit_index(trigger_high_returns if trigger_basis == "high_low" else future_returns)
+    first_sell_index = _sell_hit_index(trigger_low_returns if trigger_basis == "high_low" else future_returns)
 
     if first_buy_index is not None and (first_sell_index is None or first_buy_index <= first_sell_index):
-        return future_returns[first_buy_index], "buy"
+        return _pick_buy_trigger(first_buy_index), "buy"
     if first_sell_index is not None:
-        return future_returns[first_sell_index], "sell"
+        return _pick_sell_trigger(first_sell_index), "sell"
     return future_returns[-1], "watch"
+
+
+def _return_pct(*, entry_close: Decimal, value: Decimal) -> Decimal:
+    """按入场价计算未来收益百分比。"""
+
+    return ((value - entry_close) / entry_close) * Decimal("100")
 
 
 def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int] | None:

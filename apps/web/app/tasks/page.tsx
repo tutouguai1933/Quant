@@ -78,6 +78,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const focusCards = asRecord(automationHealth.focus_cards);
   const takeoverSummary = asRecord(automationHealth.takeover_summary);
   const alertSummary = asRecord(automationHealth.alert_summary);
+  const alertGroups = Array.isArray(alertSummary.groups)
+    ? alertSummary.groups.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
   const runHealth = asRecord(automationHealth.run_health);
   const severitySummary = asRecord(automation.severitySummary);
   const resumeChecklist = Array.isArray(automation.resumeChecklist)
@@ -350,6 +353,21 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   />
                 </ConfigField>
               </WorkbenchConfigCard>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">当前自动化建议动作</p>
+                  <CardTitle>先处理最会影响下一轮自动化的那一件事</CardTitle>
+                  <CardDescription>这里把接管、告警和恢复建议压成一张卡，先告诉你当前最该先做什么。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>最该先做什么：{readText(asRecord(operatorActions[0]).label, "当前可以继续下一轮自动化")}</p>
+                  <p>原因：{readText(asRecord(operatorActions[0]).detail, "当前没有额外阻塞说明。")}</p>
+                  <p>最重要告警：{readText(asRecord(alertGroups[0]).message, "当前没有活跃告警")}</p>
+                  <p>当前接管：{readText(takeoverSummary.state_label, takeoverStateLabel)} / {readText(takeoverSummary.note, "当前没有额外接管说明。")}</p>
+                  <p>恢复前先做什么：{readText(takeoverSummary.next_step, "可以继续下一轮自动化")}</p>
+                </CardContent>
+              </Card>
 
               <WorkbenchConfigCard
                 title="执行安全门"
@@ -650,6 +668,21 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 }))}
                 emptyTitle="当前没有活跃告警"
                 emptyDetail={`这里按最近 ${automationConfigSummary.alertCleanupMinutes} 分钟窗口显示仍然算活跃的告警。`}
+              />
+
+              <DataTable
+                columns={["活跃告警", "首次出现", "最近一次出现", "重复次数"]}
+                rows={alertGroups.map((item, index) => ({
+                  id: `${String(item.code ?? "alert")}-${index}`,
+                  cells: [
+                    String(item.code ?? "alert"),
+                    String(item.first_seen_at ?? "n/a"),
+                    String(item.last_seen_at ?? "n/a"),
+                    String(item.occurrence_count ?? "1"),
+                  ],
+                }))}
+                emptyTitle="当前没有活跃告警生命周期记录"
+                emptyDetail="告警开始重复出现后，这里会帮你看出它是偶发问题还是持续性问题。"
               />
 
               <DataTable

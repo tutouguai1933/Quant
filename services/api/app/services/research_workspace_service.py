@@ -36,6 +36,7 @@ class ResearchWorkspaceService:
         label_target_pct = str(configured_research.get("label_target_pct", "1"))
         label_stop_pct = str(configured_research.get("label_stop_pct", "-1"))
         label_mode = str(configured_research.get("label_mode", "earliest_hit") or "earliest_hit")
+        label_trigger_basis = str(configured_research.get("label_trigger_basis", "close") or "close")
         strategy_templates = sorted(
             {
                 str(item.get("strategy_template", "")).strip()
@@ -64,6 +65,7 @@ class ResearchWorkspaceService:
                 "label_mode": label_mode,
                 "definition": self._build_label_definition(
                     label_mode=label_mode,
+                    label_trigger_basis=label_trigger_basis,
                     min_days=min_days,
                     max_days=max_days,
                     label_target_pct=label_target_pct,
@@ -86,6 +88,7 @@ class ResearchWorkspaceService:
                 "research_template": str(configured_research.get("research_template", "")),
                 "model_key": str(configured_research.get("model_key", "")),
                 "label_mode": label_mode,
+                "label_trigger_basis": label_trigger_basis,
                 "holding_window_label": str(configured_research.get("holding_window_label", "")),
                 "force_validation_top_candidate": bool(
                     configured_research.get("force_validation_top_candidate", False)
@@ -99,6 +102,7 @@ class ResearchWorkspaceService:
                 "test_split_ratio": str(configured_research.get("test_split_ratio", "0.2")),
                 "signal_confidence_floor": str(configured_research.get("signal_confidence_floor", "0.55")),
                 "trend_weight": str(configured_research.get("trend_weight", "1.3")),
+                "momentum_weight": str(configured_research.get("momentum_weight", "1")),
                 "volume_weight": str(configured_research.get("volume_weight", "1.1")),
                 "oscillator_weight": str(configured_research.get("oscillator_weight", "0.7")),
                 "volatility_weight": str(configured_research.get("volatility_weight", "0.9")),
@@ -106,6 +110,7 @@ class ResearchWorkspaceService:
                 "available_models": [str(item) for item in list((controls.get("options") or {}).get("models") or [])],
                 "available_research_templates": [str(item) for item in list((controls.get("options") or {}).get("research_templates") or [])],
                 "available_label_modes": [str(item) for item in list((controls.get("options") or {}).get("label_modes") or [])],
+                "available_label_trigger_bases": [str(item) for item in list((controls.get("options") or {}).get("label_trigger_bases") or [])],
                 "available_holding_windows": [str(item) for item in list((controls.get("options") or {}).get("holding_windows") or [])],
             },
             "parameters": {
@@ -144,6 +149,7 @@ class ResearchWorkspaceService:
     def _build_label_definition(
         *,
         label_mode: str,
+        label_trigger_basis: str,
         min_days: int,
         max_days: int,
         label_target_pct: str,
@@ -151,9 +157,10 @@ class ResearchWorkspaceService:
     ) -> str:
         """生成更直白的标签说明。"""
 
+        trigger_detail = "按收盘价判断" if label_trigger_basis == "close" else "按高低点命中判断"
         if label_mode == "close_only":
-            return f"未来 {min_days}-{max_days} 天窗口结束时，收盘达到 +{label_target_pct}% 记 buy，收盘低于 {label_stop_pct}% 记 sell，其余记 watch。"
-        return f"未来 {min_days}-{max_days} 天内最早达到 +{label_target_pct}% 记 buy，最早达到 {label_stop_pct}% 记 sell，其余记 watch。"
+            return f"未来 {min_days}-{max_days} 天窗口结束时，{trigger_detail}；窗口结束达到 +{label_target_pct}% 记 buy，低于 {label_stop_pct}% 记 sell，其余记 watch。"
+        return f"未来 {min_days}-{max_days} 天内，{trigger_detail}；最早达到 +{label_target_pct}% 记 buy，最早达到 {label_stop_pct}% 记 sell，其余记 watch。"
 
     @staticmethod
     def _build_readiness(
@@ -218,7 +225,7 @@ class ResearchWorkspaceService:
         return {
             "data_scope": f"{' / '.join(selected_symbols) or '未选择标的'} · {' / '.join(timeframes) or '未选择周期'} · 最近 {configured_data.get('lookback_days', 30)} 天 / {configured_data.get('sample_limit', 120)} 根样本",
             "factor_mix": f"主判断 {len(primary_factors)} 个 / 辅助确认 {len(auxiliary_factors)} 个",
-            "label_scope": f"{configured_research.get('label_mode', 'earliest_hit')} · {configured_research.get('min_holding_days', 1)}-{configured_research.get('max_holding_days', 3)} 天 · 目标 {configured_research.get('label_target_pct', '1')}% / 止损 {configured_research.get('label_stop_pct', '-1')}%",
+            "label_scope": f"{configured_research.get('label_mode', 'earliest_hit')} / {configured_research.get('label_trigger_basis', 'close')} · {configured_research.get('min_holding_days', 1)}-{configured_research.get('max_holding_days', 3)} 天 · 目标 {configured_research.get('label_target_pct', '1')}% / 止损 {configured_research.get('label_stop_pct', '-1')}%",
             "dry_run_gate": f"score ≥ {configured_thresholds.get('dry_run_min_score', '0.55')} / 净收益 ≥ {configured_thresholds.get('dry_run_min_net_return_pct', '0')}% / Sharpe ≥ {configured_thresholds.get('dry_run_min_sharpe', '0.5')}",
             "live_gate": f"score ≥ {configured_thresholds.get('live_min_score', '0.65')} / 净收益 ≥ {configured_thresholds.get('live_min_net_return_pct', '0.20')}% / 胜率 ≥ {configured_thresholds.get('live_min_win_rate', '0.55')}",
             "validation_policy": "当前最优候选会被强制送去验证"

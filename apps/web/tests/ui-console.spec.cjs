@@ -18,7 +18,7 @@ for (const path of PATHS) {
       errors.push(error.message);
     });
 
-    await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "networkidle" });
+    await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "load" });
     expect(errors, `${path} should not log console errors`).toEqual([]);
   });
 }

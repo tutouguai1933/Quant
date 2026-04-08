@@ -15,7 +15,7 @@ for (const path of PATHS) {
       }
     });
 
-    await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "networkidle" });
+    await page.goto(`${WEB_BASE_URL}${path}`, { waitUntil: "load" });
     console.log(`NETWORK ${path} => ${JSON.stringify(notFound)}`);
     expect(notFound, `${path} should not request missing resources`).toEqual([]);
   });

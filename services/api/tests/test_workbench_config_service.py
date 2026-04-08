@@ -29,12 +29,14 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["data"]["end_date"], "")
         self.assertEqual(config["research"]["model_key"], "heuristic_v1")
         self.assertEqual(config["research"]["label_mode"], "earliest_hit")
+        self.assertEqual(config["research"]["label_trigger_basis"], "close")
         self.assertFalse(config["research"]["force_validation_top_candidate"])
         self.assertEqual(config["research"]["train_split_ratio"], "0.6")
         self.assertEqual(config["research"]["validation_split_ratio"], "0.2")
         self.assertEqual(config["research"]["test_split_ratio"], "0.2")
         self.assertEqual(config["research"]["signal_confidence_floor"], "0.55")
         self.assertEqual(config["research"]["trend_weight"], "1.3")
+        self.assertEqual(config["research"]["momentum_weight"], "1")
         self.assertEqual(config["research"]["volume_weight"], "1.1")
         self.assertEqual(config["research"]["oscillator_weight"], "0.7")
         self.assertEqual(config["research"]["volatility_weight"], "0.9")
@@ -52,6 +54,18 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["thresholds"]["dry_run_max_turnover"], "0.6")
         self.assertEqual(config["thresholds"]["dry_run_min_sample_count"], "20")
         self.assertEqual(config["thresholds"]["validation_min_sample_count"], "12")
+        self.assertEqual(config["thresholds"]["validation_min_avg_future_return_pct"], "-0.1")
+        self.assertEqual(config["thresholds"]["consistency_max_validation_backtest_return_gap_pct"], "1.5")
+        self.assertEqual(config["thresholds"]["consistency_max_training_validation_positive_rate_gap"], "0.2")
+        self.assertEqual(config["thresholds"]["consistency_max_training_validation_return_gap_pct"], "1.5")
+        self.assertEqual(config["thresholds"]["rule_min_ema20_gap_pct"], "0")
+        self.assertEqual(config["thresholds"]["rule_min_ema55_gap_pct"], "0")
+        self.assertEqual(config["thresholds"]["rule_max_atr_pct"], "5")
+        self.assertEqual(config["thresholds"]["rule_min_volume_ratio"], "1")
+        self.assertEqual(config["thresholds"]["strict_rule_min_ema20_gap_pct"], "1.2")
+        self.assertEqual(config["thresholds"]["strict_rule_min_ema55_gap_pct"], "1.8")
+        self.assertEqual(config["thresholds"]["strict_rule_max_atr_pct"], "4.5")
+        self.assertEqual(config["thresholds"]["strict_rule_min_volume_ratio"], "1.05")
         self.assertTrue(config["thresholds"]["enable_rule_gate"])
         self.assertTrue(config["thresholds"]["enable_validation_gate"])
         self.assertTrue(config["thresholds"]["enable_backtest_gate"])
@@ -107,8 +121,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                 "research",
                 {
                     "research_template": "single_asset_timing_strict",
-                    "model_key": "trend_bias_v2",
-                    "label_mode": "close_only",
+                    "model_key": "balanced_v3",
+                    "label_mode": "window_majority",
+                    "label_trigger_basis": "high_low",
                     "force_validation_top_candidate": True,
                     "min_holding_days": "2",
                     "max_holding_days": "4",
@@ -119,6 +134,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "test_split_ratio": "0.2",
                     "signal_confidence_floor": "0.62",
                     "trend_weight": "1.8",
+                    "momentum_weight": "1.2",
                     "volume_weight": "1.4",
                     "oscillator_weight": "0.5",
                     "volatility_weight": "0.6",
@@ -131,6 +147,18 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "outlier_policy": "raw",
                     "normalization_policy": "zscore_by_symbol",
                     "missing_policy": "strict_drop",
+                    "timeframe_profiles": {
+                        "4h": {
+                            "trend_window": "5",
+                            "volume_window": "4",
+                            "atr_period": "16",
+                            "rsi_period": "18",
+                            "roc_period": "8",
+                            "cci_period": "24",
+                            "stoch_period": "16",
+                            "breakout_lookback": "22",
+                        }
+                    },
                 },
             )
             service.update_section(
@@ -150,6 +178,18 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
                     "dry_run_max_turnover": "0.5",
                     "dry_run_min_sample_count": "26",
                     "validation_min_sample_count": "18",
+                    "validation_min_avg_future_return_pct": "0.2",
+                    "consistency_max_validation_backtest_return_gap_pct": "1.2",
+                    "consistency_max_training_validation_positive_rate_gap": "0.15",
+                    "consistency_max_training_validation_return_gap_pct": "1.1",
+                    "rule_min_ema20_gap_pct": "0.3",
+                    "rule_min_ema55_gap_pct": "0.5",
+                    "rule_max_atr_pct": "4.2",
+                    "rule_min_volume_ratio": "1.08",
+                    "strict_rule_min_ema20_gap_pct": "1.4",
+                    "strict_rule_min_ema55_gap_pct": "2.1",
+                    "strict_rule_max_atr_pct": "4.0",
+                    "strict_rule_min_volume_ratio": "1.12",
                     "enable_rule_gate": False,
                     "enable_validation_gate": False,
                     "enable_backtest_gate": True,
@@ -163,9 +203,10 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
 
             overrides = service.get_research_runtime_overrides()
 
-        self.assertEqual(overrides["QUANT_QLIB_MODEL_KEY"], "trend_bias_v2")
+        self.assertEqual(overrides["QUANT_QLIB_MODEL_KEY"], "balanced_v3")
         self.assertEqual(overrides["QUANT_QLIB_RESEARCH_TEMPLATE"], "single_asset_timing_strict")
-        self.assertEqual(overrides["QUANT_QLIB_LABEL_MODE"], "close_only")
+        self.assertEqual(overrides["QUANT_QLIB_LABEL_MODE"], "window_majority")
+        self.assertEqual(overrides["QUANT_QLIB_LABEL_TRIGGER_BASIS"], "high_low")
         self.assertEqual(overrides["QUANT_QLIB_FORCE_TOP_CANDIDATE"], "true")
         self.assertEqual(overrides["QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS"], "2")
         self.assertEqual(overrides["QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS"], "4")
@@ -176,6 +217,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_TEST_SPLIT_RATIO"], "0.2")
         self.assertEqual(overrides["QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR"], "0.62")
         self.assertEqual(overrides["QUANT_QLIB_TREND_WEIGHT"], "1.8")
+        self.assertEqual(overrides["QUANT_QLIB_MOMENTUM_WEIGHT"], "1.2")
         self.assertEqual(overrides["QUANT_QLIB_VOLUME_WEIGHT"], "1.4")
         self.assertEqual(overrides["QUANT_QLIB_OSCILLATOR_WEIGHT"], "0.5")
         self.assertEqual(overrides["QUANT_QLIB_VOLATILITY_WEIGHT"], "0.6")
@@ -183,6 +225,9 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_OUTLIER_POLICY"], "raw")
         self.assertEqual(overrides["QUANT_QLIB_NORMALIZATION_POLICY"], "zscore_by_symbol")
         self.assertEqual(overrides["QUANT_QLIB_MISSING_POLICY"], "strict_drop")
+        self.assertIn("QUANT_QLIB_TIMEFRAME_PROFILES", overrides)
+        self.assertIn('"4h"', overrides["QUANT_QLIB_TIMEFRAME_PROFILES"])
+        self.assertIn('"trend_window": "5"', overrides["QUANT_QLIB_TIMEFRAME_PROFILES"])
         self.assertEqual(overrides["QUANT_QLIB_BACKTEST_FEE_BPS"], "12")
         self.assertEqual(overrides["QUANT_QLIB_BACKTEST_COST_MODEL"], "zero_cost_baseline")
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MIN_SCORE"], "0.6")
@@ -191,6 +236,18 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MAX_TURNOVER"], "0.5")
         self.assertEqual(overrides["QUANT_QLIB_DRY_RUN_MIN_SAMPLE_COUNT"], "26")
         self.assertEqual(overrides["QUANT_QLIB_VALIDATION_MIN_SAMPLE_COUNT"], "18")
+        self.assertEqual(overrides["QUANT_QLIB_VALIDATION_MIN_AVG_FUTURE_RETURN_PCT"], "0.2")
+        self.assertEqual(overrides["QUANT_QLIB_CONSISTENCY_MAX_VALIDATION_BACKTEST_RETURN_GAP_PCT"], "1.2")
+        self.assertEqual(overrides["QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_POSITIVE_RATE_GAP"], "0.15")
+        self.assertEqual(overrides["QUANT_QLIB_CONSISTENCY_MAX_TRAINING_VALIDATION_RETURN_GAP_PCT"], "1.1")
+        self.assertEqual(overrides["QUANT_QLIB_RULE_MIN_EMA20_GAP_PCT"], "0.3")
+        self.assertEqual(overrides["QUANT_QLIB_RULE_MIN_EMA55_GAP_PCT"], "0.5")
+        self.assertEqual(overrides["QUANT_QLIB_RULE_MAX_ATR_PCT"], "4.2")
+        self.assertEqual(overrides["QUANT_QLIB_RULE_MIN_VOLUME_RATIO"], "1.08")
+        self.assertEqual(overrides["QUANT_QLIB_STRICT_RULE_MIN_EMA20_GAP_PCT"], "1.4")
+        self.assertEqual(overrides["QUANT_QLIB_STRICT_RULE_MIN_EMA55_GAP_PCT"], "2.1")
+        self.assertEqual(overrides["QUANT_QLIB_STRICT_RULE_MAX_ATR_PCT"], "4")
+        self.assertEqual(overrides["QUANT_QLIB_STRICT_RULE_MIN_VOLUME_RATIO"], "1.12")
         self.assertEqual(overrides["QUANT_QLIB_ENABLE_RULE_GATE"], "false")
         self.assertEqual(overrides["QUANT_QLIB_ENABLE_VALIDATION_GATE"], "false")
         self.assertEqual(overrides["QUANT_QLIB_ENABLE_BACKTEST_GATE"], "true")
@@ -199,6 +256,33 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_WIN_RATE"], "0.61")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MAX_TURNOVER"], "0.42")
         self.assertEqual(overrides["QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT"], "30")
+
+    def test_update_features_section_accepts_timeframe_profile_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            config = service.update_section(
+                "features",
+                {
+                    "timeframe_profiles": {
+                        "4h": {
+                            "trend_window": "6",
+                            "volume_window": "5",
+                            "atr_period": "15",
+                            "rsi_period": "13",
+                            "roc_period": "7",
+                            "cci_period": "18",
+                            "stoch_period": "12",
+                            "breakout_lookback": "21",
+                        }
+                    }
+                },
+            )
+
+        profiles = config["features"]["timeframe_profiles"]
+        self.assertEqual(profiles["4h"]["trend_window"], 6)
+        self.assertEqual(profiles["4h"]["breakout_lookback"], 21)
+        self.assertEqual(profiles["1h"]["trend_window"], 12)
 
     def test_runtime_overrides_include_data_range_window(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

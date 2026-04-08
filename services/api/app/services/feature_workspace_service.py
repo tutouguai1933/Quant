@@ -69,6 +69,10 @@ class FeatureWorkspaceService:
                 "missing_policy": str(configured_features.get("missing_policy", "neutral_fill") or "neutral_fill"),
                 "outlier_policy": str(configured_features.get("outlier_policy", "clip") or "clip"),
                 "normalization_policy": str(configured_features.get("normalization_policy", "fixed_4dp") or "fixed_4dp"),
+                "timeframe_profiles": {
+                    str(interval): dict(profile or {})
+                    for interval, profile in dict(configured_features.get("timeframe_profiles") or {}).items()
+                },
                 "available_primary_factors": [str(item) for item in list((controls.get("options") or {}).get("primary_factors") or [])],
                 "available_auxiliary_factors": [str(item) for item in list((controls.get("options") or {}).get("auxiliary_factors") or [])],
                 "available_missing_policies": [str(item) for item in list((controls.get("options") or {}).get("missing_policies") or [])],

@@ -114,11 +114,13 @@ class QlibDatasetTests(unittest.TestCase):
             missing_policy="neutral_fill",
             outlier_policy="clip",
             normalization_policy="fixed_4dp",
+            timeframe_profiles=None,
         )
         mocked_labels.assert_called_once_with(
             "ETHUSDT",
             _sample_candles(3, step_hours=4),
             label_mode="earliest_hit",
+            trigger_basis="close",
             target_return_pct=None,
             stop_return_pct=None,
             min_window_days=1,

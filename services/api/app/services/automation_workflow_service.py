@@ -37,6 +37,12 @@ class AutomationWorkflowService:
         task_health = self._scheduler.get_health_summary()
         automation_status = self._automation.get_status(task_health=task_health)
         state = dict(automation_status.get("state") or {})
+        state_alerts = state.get("alerts")
+        alerts: list[dict[str, object]] = []
+        if isinstance(state_alerts, list):
+            for entry in state_alerts:
+                if isinstance(entry, dict):
+                    alerts.append(dict(entry))
         operations = self._get_operations_config()
         automation_config = dict(automation_status.get("automation_config") or self._get_automation_config())
         review_limit = int(operations.get("review_limit", 10) or 10)
@@ -60,6 +66,7 @@ class AutomationWorkflowService:
             "daily_summary": dict(automation_status.get("daily_summary") or {}),
             "runtime_window": self._build_runtime_window(state=state, operations=operations, automation_config=automation_config),
             "scheduler_plan": self._build_scheduler_plan(review_limit=review_limit),
+            "alerts": alerts,
             "failure_policy": self._build_failure_policy(operations=operations),
         }
 
