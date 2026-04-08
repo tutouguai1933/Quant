@@ -299,6 +299,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["automation_config"]["long_run_seconds"], 300)
         self.assertEqual(status["automation_config"]["alert_cleanup_minutes"], 15)
         self.assertIn("execution_policy", status)
+        self.assertEqual(status["execution_policy"]["candidate_symbols"][:2], ["BTCUSDT", "ETHUSDT"])
         self.assertEqual(status["execution_policy"]["live_allowed_symbols"], ["ETHUSDT", "DOGEUSDT"])
         self.assertEqual(status["execution_policy"]["live_max_stake_usdt"], "8")
         self.assertEqual(status["execution_policy"]["live_max_open_trades"], "2")

@@ -180,8 +180,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
     runtimeWindowSummary,
   });
   const executionPolicy = asRecord(automation.executionPolicy);
+  const candidateSymbols = toStringArray(executionPolicy.candidate_symbols);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
-  const executionSymbolOptions = Array.from(new Set([...executionAllowedSymbols, "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])).map((item) => ({
+  const executionSymbolOptions = Array.from(new Set([...candidateSymbols, ...executionAllowedSymbols])).map((item) => ({
     value: item,
     label: item,
     checked: executionAllowedSymbols.includes(item),
@@ -204,6 +205,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     ? evaluation.recent_review_tasks.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
   const executionConfig = {
+    candidateSymbols,
     liveAllowedSymbols: executionAllowedSymbols,
     liveMaxStakeUsdt: readText(executionPolicy.live_max_stake_usdt, "6"),
     liveMaxOpenTrades: readText(executionPolicy.live_max_open_trades, "1"),
@@ -511,7 +513,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
               <WorkbenchConfigCard
                 title="执行安全门"
-                description="这里改的是自动小额 live 真正会消费的币种白名单、单笔金额上限和最大持仓数。"
+                description="研究推荐出来的币会先进入研究 / dry-run 候选池；这里只有更严格的 live 子集、单笔金额上限和最大持仓数。"
                 scope="execution"
                 returnTo="/tasks"
               >
@@ -919,6 +921,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardDescription>自动化切到 live 前，会先按这里的白名单、单笔金额和最大持仓数做最后一道本地检查。</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>研究 / dry-run 候选池：{executionConfig.candidateSymbols.length ? executionConfig.candidateSymbols.join(" / ") : "当前未配置"}</p>
+                  <p>live 子集：{executionConfig.liveAllowedSymbols.length ? executionConfig.liveAllowedSymbols.join(" / ") : "当前未配置"}</p>
                   <p>live_allowed_symbols：{executionConfig.liveAllowedSymbols.length ? executionConfig.liveAllowedSymbols.join(" / ") : "当前未配置"}</p>
                   <p>live_max_stake_usdt：{executionConfig.liveMaxStakeUsdt}</p>
                   <p>live_max_open_trades：{executionConfig.liveMaxOpenTrades}</p>

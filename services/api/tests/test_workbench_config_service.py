@@ -22,6 +22,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
             config = service.get_config()
 
         self.assertEqual(config["data"]["selected_symbols"][0], "BTCUSDT")
+        self.assertEqual(len(config["data"]["selected_symbols"]), 10)
         self.assertEqual(config["data"]["timeframes"], ["4h", "1h"])
         self.assertEqual(config["data"]["lookback_days"], 30)
         self.assertEqual(config["data"]["window_mode"], "rolling")
@@ -43,7 +44,7 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["research"]["strict_penalty_weight"], "1")
         self.assertEqual(config["backtest"]["fee_bps"], "10")
         self.assertEqual(config["backtest"]["cost_model"], "round_trip_basis_points")
-        self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])
+        self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"])
         self.assertEqual(config["execution"]["live_max_stake_usdt"], "6")
         self.assertEqual(config["execution"]["live_max_open_trades"], "1")
         self.assertEqual(config["features"]["outlier_policy"], "clip")
@@ -415,6 +416,61 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["execution"]["live_allowed_symbols"], ["ETHUSDT", "DOGEUSDT"])
         self.assertEqual(config["execution"]["live_max_stake_usdt"], "8.5")
         self.assertEqual(config["execution"]["live_max_open_trades"], "2")
+
+    def test_live_allowed_symbols_stays_subset_of_selected_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            service.update_section(
+                "data",
+                {
+                    "selected_symbols": ["BTCUSDT", "ETHUSDT", "DOGEUSDT"],
+                },
+            )
+
+            config = service.update_section(
+                "execution",
+                {
+                    "live_allowed_symbols": ["BTCUSDT", "SOLUSDT", "XRPUSDT"],
+                },
+            )
+
+        self.assertEqual(config["execution"]["live_allowed_symbols"], ["BTCUSDT"])
+
+    def test_live_allowed_symbols_falls_back_to_default_subset_intersection_when_field_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            service.update_section(
+                "data",
+                {
+                    "selected_symbols": ["ETHUSDT", "XRPUSDT", "ADAUSDT"],
+                },
+            )
+
+            config = service.update_section(
+                "execution",
+                {},
+            )
+
+        self.assertEqual(config["execution"]["live_allowed_symbols"], ["ETHUSDT", "XRPUSDT"])
+
+    def test_live_allowed_symbols_can_be_explicitly_cleared(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            service.update_section(
+                "data",
+                {
+                    "selected_symbols": ["ETHUSDT", "XRPUSDT", "ADAUSDT"],
+                },
+            )
+
+            config = service.update_section(
+                "execution",
+                {
+                    "live_allowed_symbols": [],
+                },
+            )
+
+        self.assertEqual(config["execution"]["live_allowed_symbols"], [])
 
     def test_update_section_does_not_keep_old_factor_values_when_empty_selection_is_submitted(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

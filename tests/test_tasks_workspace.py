@@ -33,6 +33,8 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("severitySummary", content)
         self.assertIn("resumeChecklist", content)
         self.assertIn("执行安全门", content)
+        self.assertIn("研究 / dry-run 候选池", content)
+        self.assertIn("live 子集", content)
         self.assertIn("当前放行口径", content)
         self.assertIn("调度顺序矩阵", content)
         self.assertIn("失败规则矩阵", content)

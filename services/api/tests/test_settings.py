@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from services.api.app.core.settings import DEFAULT_MARKET_SYMBOLS, Settings  # noqa: E402
+from services.api.app.core.settings import DEFAULT_LIVE_ALLOWED_SYMBOLS, DEFAULT_MARKET_SYMBOLS, Settings  # noqa: E402
 
 
 class SettingsTests(unittest.TestCase):
@@ -29,6 +29,16 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.runtime_mode, "demo")
         self.assertEqual(settings.market_symbols, DEFAULT_MARKET_SYMBOLS)
+        self.assertEqual(settings.live_allowed_symbols, DEFAULT_LIVE_ALLOWED_SYMBOLS)
+
+    def test_default_live_symbols_follow_market_symbol_subset(self) -> None:
+        self._clear_runtime_env()
+        os.environ["QUANT_MARKET_SYMBOLS"] = "BTCUSDT,ETHUSDT,ADAUSDT"
+
+        settings = Settings.from_env()
+
+        self.assertEqual(settings.market_symbols, ("BTCUSDT", "ETHUSDT", "ADAUSDT"))
+        self.assertEqual(settings.live_allowed_symbols, ("BTCUSDT", "ETHUSDT"))
 
     def test_settings_repr_hides_binance_credentials(self) -> None:
         os.environ["QUANT_RUNTIME_MODE"] = "demo"

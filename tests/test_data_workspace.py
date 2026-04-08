@@ -52,6 +52,7 @@ class DataWorkspaceTests(unittest.TestCase):
         self.assertIn("固定日期窗口", content)
         self.assertIn("回看天数", content)
         self.assertIn("selected_symbols", content)
+        self.assertIn("研究 / dry-run 候选池", content)
         self.assertIn("当前结果与配置对齐", content)
         self.assertIn("配置检查", content)
         self.assertIn("WorkbenchConfigStatusCard", content)

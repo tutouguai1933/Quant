@@ -1001,8 +1001,10 @@ class AutomationService:
         """读取当前执行安全门配置。"""
 
         config = workbench_config_service.get_config()
+        data = dict(config.get("data") or {})
         execution = dict(config.get("execution") or {})
         return {
+            "candidate_symbols": [str(item) for item in list(data.get("selected_symbols") or []) if str(item).strip()],
             "live_allowed_symbols": [str(item) for item in list(execution.get("live_allowed_symbols") or []) if str(item).strip()],
             "live_max_stake_usdt": str(execution.get("live_max_stake_usdt", "")),
             "live_max_open_trades": str(execution.get("live_max_open_trades", "")),

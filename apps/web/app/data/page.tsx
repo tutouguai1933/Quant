@@ -224,6 +224,9 @@ export default async function DataPage({ searchParams }: PageProps) {
                 }))}
               />
             </ConfigField>
+            <p className="text-sm leading-6 text-muted-foreground">
+              这里就是研究 / dry-run 候选池。研究推荐出来的币会先在这组标的里比较，只有通过更严门控的子集，后面才允许继续进入 live。
+            </p>
             <ConfigField label="主标的" hint="数据工作台和后续入口会优先聚焦这个币。">
               <ConfigSelect
                 name="primary_symbol"

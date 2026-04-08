@@ -36,6 +36,10 @@ class EvaluationWorkspaceService:
         validation_reviews = dict(review_report.get("reviews") or {})
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
         configured_operations = dict((controls.get("config") or {}).get("operations") or {})
+        configured_data = dict((controls.get("config") or {}).get("data") or {})
+        configured_execution = dict((controls.get("config") or {}).get("execution") or {})
+        candidate_symbols = [str(item) for item in list(configured_data.get("selected_symbols") or []) if str(item).strip()]
+        live_allowed_symbols = [str(item) for item in list(configured_execution.get("live_allowed_symbols") or []) if str(item).strip()]
         best_experiment = self._build_best_experiment(
             leaderboard=leaderboard,
             overview=overview,
@@ -82,6 +86,10 @@ class EvaluationWorkspaceService:
                 "recommended_symbol": str(overview.get("recommended_symbol", "")),
                 "recommended_action": str(overview.get("recommended_action", "")),
                 "candidate_count": int(overview.get("candidate_count", 0) or 0),
+            },
+            "candidate_scope": {
+                "candidate_symbols": candidate_symbols,
+                "live_allowed_symbols": live_allowed_symbols,
             },
             "controls": {
                 "threshold_preset_key": str(configured_thresholds.get("threshold_preset_key", "standard_gate") or "standard_gate"),

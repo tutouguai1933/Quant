@@ -13,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Iterable
 
-from services.api.app.core.settings import DEFAULT_MARKET_SYMBOLS
+from services.api.app.core.settings import DEFAULT_LIVE_ALLOWED_SYMBOLS, DEFAULT_MARKET_SYMBOLS
 from services.worker.qlib_features import (
     AUXILIARY_FEATURE_COLUMNS,
     FEATURE_PROTOCOL,
@@ -648,7 +648,7 @@ def _default_config() -> dict[str, object]:
             "cost_model": "round_trip_basis_points",
         },
         "execution": {
-            "live_allowed_symbols": list(DEFAULT_MARKET_SYMBOLS),
+            "live_allowed_symbols": list(DEFAULT_LIVE_ALLOWED_SYMBOLS),
             "live_max_stake_usdt": "6",
             "live_max_open_trades": "1",
         },
@@ -772,7 +772,11 @@ class WorkbenchConfigService:
             )
             merged["backtest"] = self._normalize_backtest_section(next_section)
         elif normalized_section == "execution":
-            merged["execution"] = self._normalize_execution_section(next_section)
+            data_section = dict(merged.get("data") or {})
+            merged["execution"] = self._normalize_execution_section(
+                next_section,
+                candidate_symbols=tuple(str(item) for item in list(data_section.get("selected_symbols") or [])),
+            )
         elif normalized_section == "thresholds":
             next_section = self._apply_preset_reset(
                 current_section=next_section,
@@ -1012,13 +1016,17 @@ class WorkbenchConfigService:
         """把任意输入整理成完整配置。"""
 
         row = dict(payload or {})
+        data_section = self._normalize_data_section(row.get("data"))
         return {
             "version": "v1",
-            "data": self._normalize_data_section(row.get("data")),
+            "data": data_section,
             "features": self._normalize_features_section(row.get("features")),
             "research": self._normalize_research_section(row.get("research")),
             "backtest": self._normalize_backtest_section(row.get("backtest")),
-            "execution": self._normalize_execution_section(row.get("execution")),
+            "execution": self._normalize_execution_section(
+                row.get("execution"),
+                candidate_symbols=tuple(str(item) for item in list(data_section.get("selected_symbols") or [])),
+            ),
             "thresholds": self._normalize_thresholds_section(row.get("thresholds")),
             "operations": self._normalize_operations_section(row.get("operations")),
             "automation": self._normalize_automation_section(row.get("automation")),
@@ -1275,15 +1283,32 @@ class WorkbenchConfigService:
             }
         return result
 
-    def _normalize_execution_section(self, value: object) -> dict[str, object]:
+    def _normalize_execution_section(
+        self,
+        value: object,
+        *,
+        candidate_symbols: tuple[str, ...],
+    ) -> dict[str, object]:
         """整理执行安全门配置。"""
 
         payload = dict(value or {}) if isinstance(value, dict) else {}
-        live_allowed_symbols = self._normalize_symbol_list(
+        has_explicit_live_allowed_symbols = "live_allowed_symbols" in payload
+        normalized_live_allowed_symbols = self._normalize_symbol_list(
             payload.get("live_allowed_symbols"),
-            fallback=DEFAULT_MARKET_SYMBOLS,
+            fallback=DEFAULT_LIVE_ALLOWED_SYMBOLS,
             allow_empty=True,
         )
+        if candidate_symbols:
+            candidate_set = {item for item in candidate_symbols}
+            live_allowed_symbols = tuple(
+                item for item in normalized_live_allowed_symbols if item in candidate_set
+            )
+            if not live_allowed_symbols and not has_explicit_live_allowed_symbols:
+                live_allowed_symbols = tuple(
+                    item for item in DEFAULT_LIVE_ALLOWED_SYMBOLS if item in candidate_set
+                )
+        else:
+            live_allowed_symbols = ()
         return {
             "live_allowed_symbols": list(live_allowed_symbols),
             "live_max_stake_usdt": self._normalize_decimal(

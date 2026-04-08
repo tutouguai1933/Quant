@@ -11,7 +11,19 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
 
-DEFAULT_MARKET_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT")
+DEFAULT_MARKET_SYMBOLS = (
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "DOGEUSDT",
+    "ADAUSDT",
+    "LINKUSDT",
+    "AVAXUSDT",
+    "DOTUSDT",
+)
+DEFAULT_LIVE_ALLOWED_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT")
 ALLOWED_RUNTIME_MODES = {"demo", "dry-run", "live"}
 DEFAULT_BINANCE_BASE_URL = "https://api.binance.com"
 DEFAULT_BINANCE_MARKET_BASE_URL = "https://data-api.binance.vision"
@@ -100,9 +112,21 @@ class Settings:
                 raise ValueError("QUANT_MARKET_SYMBOLS 不能为空")
 
         raw_live_symbols = os.getenv("QUANT_LIVE_ALLOWED_SYMBOLS")
-        live_allowed_symbols = ()
-        if raw_live_symbols is not None and raw_live_symbols.strip():
-            live_allowed_symbols = cls._parse_symbol_list(raw_live_symbols, env_name="QUANT_LIVE_ALLOWED_SYMBOLS")
+        default_live_allowed_symbols = tuple(
+            symbol for symbol in DEFAULT_LIVE_ALLOWED_SYMBOLS if symbol in market_symbols
+        )
+        live_allowed_symbols = default_live_allowed_symbols
+        if raw_live_symbols is not None:
+            if raw_live_symbols.strip():
+                parsed_live_allowed_symbols = cls._parse_symbol_list(
+                    raw_live_symbols,
+                    env_name="QUANT_LIVE_ALLOWED_SYMBOLS",
+                )
+                live_allowed_symbols = tuple(
+                    symbol for symbol in parsed_live_allowed_symbols if symbol in market_symbols
+                )
+            else:
+                live_allowed_symbols = ()
 
         raw_live_max_stake = os.getenv("QUANT_LIVE_MAX_STAKE_USDT", "").strip()
         live_max_stake_usdt: Decimal | None = None

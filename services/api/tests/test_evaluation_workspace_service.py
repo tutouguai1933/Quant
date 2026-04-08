@@ -24,6 +24,8 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
 
         self.assertEqual(item["status"], "ready")
         self.assertEqual(item["overview"]["recommended_symbol"], "ETHUSDT")
+        self.assertEqual(item["candidate_scope"]["candidate_symbols"][:3], ["BTCUSDT", "ETHUSDT", "BNBUSDT"])
+        self.assertEqual(item["candidate_scope"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"])
         self.assertEqual(item["evaluation"]["candidate_status"]["ready_count"], 1)
         self.assertIn("net_return_pct", item["evaluation"]["metrics_catalog"])
         self.assertEqual(item["reviews"]["research"]["result"], "candidate_ready")
@@ -505,6 +507,23 @@ class _UnavailableAlignmentReviewService(_FakeValidationReviewService):
 def _fake_controls(*, review_limit: str = "10", comparison_run_limit: str = "5") -> dict[str, object]:
     return {
         "config": {
+            "data": {
+                "selected_symbols": [
+                    "BTCUSDT",
+                    "ETHUSDT",
+                    "BNBUSDT",
+                    "SOLUSDT",
+                    "XRPUSDT",
+                    "DOGEUSDT",
+                    "ADAUSDT",
+                    "LINKUSDT",
+                    "AVAXUSDT",
+                    "DOTUSDT",
+                ],
+            },
+            "execution": {
+                "live_allowed_symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"],
+            },
             "operations": {
                 "review_limit": review_limit,
                 "comparison_run_limit": comparison_run_limit,

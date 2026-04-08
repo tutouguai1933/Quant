@@ -24,6 +24,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const response = await getEvaluationWorkspace();
   const workspace = response.data.item;
   const evaluation = asRecord(workspace.evaluation);
+  const candidateScope = asRecord(workspace.candidate_scope);
+  const candidateSymbols = toStringArray(candidateScope.candidate_symbols);
+  const liveAllowedSymbols = toStringArray(candidateScope.live_allowed_symbols);
   const candidateStatus = asRecord(evaluation.candidate_status);
   const eliminationRules = asRecord(evaluation.elimination_rules);
   const recommendedCandidate = asRecord(evaluation.recommended_candidate);
@@ -376,6 +379,14 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <CardDescription>这里直接展示系统为什么推荐这个币继续进入下一步。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock
+                label="研究候选池"
+                value={candidateSymbols.length ? candidateSymbols.join(" / ") : "当前未配置"}
+              />
+              <InfoBlock
+                label="live 子集"
+                value={liveAllowedSymbols.length ? liveAllowedSymbols.join(" / ") : "当前未配置"}
+              />
               <InfoBlock label="推荐标的" value={String((recommendedCandidate.symbol ?? workspace.overview.recommended_symbol) || "未推荐")} />
               <InfoBlock label="推荐动作" value={String((researchReview.next_action ?? workspace.overview.recommended_action) || "继续研究")} />
               <InfoBlock label="推荐分数" value={String(recommendedCandidate.score ?? "n/a")} />
@@ -434,6 +445,18 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
               <InfoBlock
+                label="为什么先看候选池"
+                value="研究推荐会先在这组共享候选池里比较，只有通过更严门控的子集，后面才会继续进入 live。"
+              />
+              <InfoBlock
+                label="为什么这里只到 dry-run"
+                value={
+                  liveAllowedSymbols.length
+                    ? `当前 live 只放行 ${liveAllowedSymbols.join(" / ")} 这组更严子集，其他推荐先停在 dry-run。`
+                    : "当前还没有配置 live 子集，所以推荐只会先停在 dry-run。"
+                }
+              />
+              <InfoBlock
                 label="更值得进入 dry-run"
                 value={`${readText(bestDryRunCandidate.symbol, "当前还没有 dry-run 候选")} / ${readText(bestDryRunCandidate.reason, "当前还没有足够候选满足 dry-run 放行条件。")}`}
               />
@@ -452,6 +475,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <CardDescription>把推荐阶段、推荐理由和研究与执行差异压成一组最短判断，不用再自己拼多张卡片。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前推荐候选" value={readText(workspace.overview.recommended_symbol, "当前还没有推荐候选")} />
               <InfoBlock label="当前判断" value={readText(workspace.stage_decision_summary?.headline, "当前还没有阶段判断")} />
               <InfoBlock label="推荐原因" value={readText(workspace.stage_decision_summary?.why_recommended, "当前还没有推荐原因")} />
               <InfoBlock label="研究与执行差异" value={readText(workspace.stage_decision_summary?.execution_gap, "当前还没有差异摘要")} />
@@ -1239,6 +1263,13 @@ function compareNumericText(left: number | null, right: number | null, suffix: s
   }
   const diff = (left - right).toFixed(2);
   return `A-B=${diff}${suffix}`.replace("..", ".");
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item ?? "").trim()).filter((item) => item.length > 0);
 }
 
 function buildChangedFieldSummary(row: Record<string, unknown>) {

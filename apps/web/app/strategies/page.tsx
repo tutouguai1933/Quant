@@ -84,9 +84,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
   const configuration = asRecord(workspace.configuration);
   const executionPolicy = asRecord(automation.executionPolicy);
+  const candidateSymbols = toStringArray(executionPolicy.candidate_symbols);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
   const executionSymbolOptions = Array.from(
-    new Set([...workspace.whitelist, ...executionAllowedSymbols, "BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"]),
+    new Set([...(candidateSymbols.length ? candidateSymbols : workspace.whitelist), ...executionAllowedSymbols]),
   ).map((item) => ({
     value: item,
     label: item,
@@ -328,7 +329,9 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>研究范围：{readText(configuration.research_scope, "当前还没有研究范围摘要")}</p>
+                  <p>研究 / dry-run 候选池：{readText(configuration.candidate_pool, workspace.whitelist.join(" / ") || "当前未设置")}</p>
                   <p>验证策略：{readText(configuration.validation_policy, "当前还没有验证策略摘要")}</p>
+                  <p>live 子集：{executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
                   <p>执行策略：{readText(configuration.execution_policy, "当前还没有执行策略摘要")}</p>
                   <p>门槛策略：{readText(configuration.threshold_policy, "当前还没有门槛策略摘要")}</p>
                   <p>自动化策略：{readText(configuration.automation_policy, "当前还没有自动化策略摘要")}</p>
@@ -337,7 +340,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
 
               <WorkbenchConfigCard
                 title="执行安全门配置"
-                description="这里直接控制自动小额 live 的白名单、单笔金额和最大开仓数。保存后，执行页和自动化页会按这里的安全门放行。"
+                description="研究推荐出来的币会先走研究 / dry-run 候选池；这里只有更严格的 live 子集、单笔金额和最大开仓数。"
                 scope="execution"
                 returnTo={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}
               >
@@ -413,11 +416,12 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
 
               <Card>
                 <CardHeader>
-                  <p className="eyebrow">白名单摘要</p>
-                  <CardTitle>当前只在固定币种池里做 dry-run</CardTitle>
+                  <p className="eyebrow">候选池摘要</p>
+                  <CardTitle>研究 / dry-run 和 live 用的是两层口径</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm leading-6 text-muted-foreground">{workspace.whitelist.join(" / ")}</p>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>研究 / dry-run 候选池：{(candidateSymbols.length ? candidateSymbols : workspace.whitelist).join(" / ")}</p>
+                  <p>live 子集：{executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
                 </CardContent>
               </Card>
             </aside>

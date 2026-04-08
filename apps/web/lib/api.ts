@@ -75,6 +75,9 @@ export type StrategyWorkspaceModel = {
   configuration: Record<string, unknown>;
 };
 
+const DEFAULT_CANDIDATE_SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT"];
+const DEFAULT_LIVE_ALLOWED_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
+
 type BalancesPageModel = {
   source: string;
   truthSource: string;
@@ -674,6 +677,10 @@ export type EvaluationWorkspaceModel = {
     recommended_symbol: string;
     recommended_action: string;
     candidate_count: number;
+  };
+  candidate_scope: {
+    candidate_symbols: string[];
+    live_allowed_symbols: string[];
   };
   controls: {
     threshold_preset_key?: string;
@@ -1774,6 +1781,10 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       recommended_action: "",
       candidate_count: 0,
     },
+    candidate_scope: {
+      candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+      live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
+    },
     controls: {
       dry_run_min_score: "0.55",
       dry_run_min_positive_rate: "0.45",
@@ -2314,6 +2325,10 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       recommended_symbol: String(overview.recommended_symbol ?? ""),
       recommended_action: String(overview.recommended_action ?? ""),
       candidate_count: Number(overview.candidate_count ?? 0),
+    },
+    candidate_scope: {
+      candidate_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_symbols : [], DEFAULT_CANDIDATE_SYMBOLS),
+      live_allowed_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_allowed_symbols : [], DEFAULT_LIVE_ALLOWED_SYMBOLS),
     },
     controls: {
       dry_run_min_score: String(controls.dry_run_min_score ?? ""),
@@ -2903,7 +2918,7 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
   return {
     overview: {
       strategy_count: 2,
-      whitelist_count: 4,
+      whitelist_count: 10,
       signal_count: 1,
       order_count: 1,
       running_count: 0,
@@ -2921,14 +2936,14 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
       signal_count: 0,
     },
     research_recommendation: null,
-    whitelist: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+    whitelist: DEFAULT_CANDIDATE_SYMBOLS,
     strategies: [
       {
         strategy_id: 1,
         key: "trend_breakout",
         display_name: "趋势突破",
         description: "顺着趋势等待关键区间突破后入场。",
-        symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+        symbols: DEFAULT_CANDIDATE_SYMBOLS,
         default_params: { timeframe: "1h", lookback_bars: 20, breakout_buffer_pct: 0.5 },
         runtime_status: "stopped",
         runtime_name: "趋势突破",
@@ -2958,7 +2973,7 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
         key: "trend_pullback",
         display_name: "趋势回调",
         description: "在趋势中等待回调完成后顺势入场。",
-        symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+        symbols: DEFAULT_CANDIDATE_SYMBOLS,
         default_params: { timeframe: "1h", lookback_bars: 20, pullback_depth_pct: 1.0 },
         runtime_status: "stopped",
         runtime_name: "趋势回调",
@@ -3003,7 +3018,9 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
       latest_order: null,
       latest_position: null,
     },
-    configuration: {},
+    configuration: {
+      candidate_pool: DEFAULT_CANDIDATE_SYMBOLS.join(","),
+    },
   };
 }
 
@@ -3200,7 +3217,8 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
         alert_cleanup_minutes: "15",
       },
       executionPolicy: {
-        live_allowed_symbols: [],
+        candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+        live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
         live_max_stake_usdt: "6",
         live_max_open_trades: "1",
       },

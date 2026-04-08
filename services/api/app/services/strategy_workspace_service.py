@@ -42,7 +42,11 @@ class StrategyWorkspaceService:
     def get_workspace(self, signal_limit: int = 5, order_limit: int = 5) -> dict[str, object]:
         """返回策略中心页面的一次完整聚合视图。"""
 
-        whitelist = self._catalog_service.get_whitelist()
+        config = workbench_config_service.get_config()
+        configured_symbols = [
+            str(item) for item in list(dict(config.get("data") or {}).get("selected_symbols") or []) if str(item).strip()
+        ]
+        whitelist = configured_symbols or self._catalog_service.get_whitelist()
         catalog = self._catalog_service.list_strategies()
         recent_signals = self._signal_store.list_signals(limit=signal_limit)
         account_state = self._build_account_state(order_limit=order_limit)
@@ -211,17 +215,20 @@ class StrategyWorkspaceService:
         """把当前研究、执行和自动化关键配置压成策略页可读摘要。"""
 
         config = workbench_config_service.get_config()
+        data = dict(config.get("data") or {})
         research = dict(config.get("research") or {})
         execution = dict(config.get("execution") or {})
         thresholds = dict(config.get("thresholds") or {})
         operations = dict(config.get("operations") or {})
         automation = dict(config.get("automation") or {})
+        candidate_symbols = [str(item) for item in list(data.get("selected_symbols") or []) if str(item).strip()]
         allowed_symbols = [str(item) for item in list(execution.get("live_allowed_symbols") or []) if str(item).strip()]
         return {
             "research_scope": f"{research.get('research_template', 'single_asset_timing')} / {research.get('model_key', 'heuristic_v1')} / {research.get('holding_window_label', '1-3d')}",
             "validation_policy": "强制验证当前最优候选"
             if bool(research.get("force_validation_top_candidate", False))
             else "按统一门控自然筛选",
+            "candidate_pool": ",".join(candidate_symbols) or "未设置",
             "execution_policy": f"{','.join(allowed_symbols) or '未设置'} / 单笔 {execution.get('live_max_stake_usdt', '6')} USDT / 最多 {execution.get('live_max_open_trades', '1')} 仓",
             "threshold_policy": f"dry-run≥{thresholds.get('dry_run_min_score', '0.55')} / live≥{thresholds.get('live_min_score', '0.65')} / 验证样本≥{thresholds.get('validation_min_sample_count', '12')}",
             "automation_policy": f"冷却 {operations.get('cycle_cooldown_minutes', '15')} 分钟 / 每日 {operations.get('max_daily_cycle_count', '8')} 轮 / 长运行 {automation.get('long_run_seconds', '300')} 秒",

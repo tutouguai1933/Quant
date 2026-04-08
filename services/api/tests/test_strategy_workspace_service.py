@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -24,6 +25,9 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
                 "BINANCE_API_SECRET": "s",
             },
             clear=False,
+        ), patch(
+            "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
+            return_value={"data": {"selected_symbols": []}},
         ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
@@ -52,7 +56,10 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("automation_policy", workspace["configuration"])
 
     def test_workspace_cards_include_runtime_status_signal_and_evaluation(self) -> None:
-        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
+            "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
+            return_value={"data": {"selected_symbols": []}},
+        ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
                 signal_store=_FakeSignalStore(),
@@ -83,7 +90,10 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         )
 
     def test_workspace_uses_single_research_snapshot_for_summary_and_gate(self) -> None:
-        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
+            "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
+            return_value={"data": {"selected_symbols": []}},
+        ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
                 signal_store=_FakeSignalStore(),
@@ -110,6 +120,9 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
                 "BINANCE_API_SECRET": "s",
             },
             clear=False,
+        ), patch(
+            "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
+            return_value={"data": {"selected_symbols": []}},
         ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
@@ -127,7 +140,10 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(workspace["account_state"]["latest_position"]["symbol"], "DOGE")
 
     def test_workspace_prefers_ready_research_candidate(self) -> None:
-        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
+            "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
+            return_value={"data": {"selected_symbols": []}},
+        ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
                 signal_store=_FakeSignalStore(),
@@ -142,6 +158,36 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(workspace["research_recommendation"]["symbol"], "BTCUSDT")
         self.assertEqual(workspace["research_recommendation"]["allowed_to_dry_run"], True)
         self.assertEqual(workspace["research_recommendation"]["next_action"], "enter_dry_run")
+
+    def test_workspace_prefers_configured_candidate_pool_over_catalog_whitelist(self) -> None:
+        from services.api.app.services.workbench_config_service import WorkbenchConfigService
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            config_service.update_section(
+                "data",
+                {
+                    "selected_symbols": ["ETHUSDT", "XRPUSDT", "DOGEUSDT"],
+                },
+            )
+            with patch(
+                "services.api.app.services.strategy_workspace_service.workbench_config_service",
+                config_service,
+            ), patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False):
+                service = StrategyWorkspaceService(
+                    catalog_service=_FakeCatalogService(),
+                    signal_store=_FakeSignalStore(),
+                    execution_sync=_FakeExecutionSync(),
+                    market_reader=_FakeMarketReader(),
+                    research_reader=_FakeResearchService(),
+                    account_sync=_FakeAccountSyncService(),
+                )
+
+                workspace = service.get_workspace()
+
+        self.assertEqual(workspace["whitelist"], ["ETHUSDT", "XRPUSDT", "DOGEUSDT"])
+        self.assertEqual(workspace["overview"]["whitelist_count"], 3)
+        self.assertEqual(workspace["strategies"][0]["symbols"], ["ETHUSDT", "XRPUSDT", "DOGEUSDT"])
 
 
 class _FakeCatalogService:

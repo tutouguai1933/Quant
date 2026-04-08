@@ -56,6 +56,9 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByRole("heading", { name: "准入预设", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "自选实验对比", exact: true })).toBeVisible();
   await expect(page.getByText("分阶段最佳候选")).toBeVisible();
+  await expect(page.getByText("研究候选池")).toBeVisible();
+  await expect(page.getByText("live 子集")).toBeVisible();
+  await expect(page.getByText("为什么这里只到 dry-run")).toBeVisible();
   await expect(page.getByText("研究 / 回测 / 执行对照")).toBeVisible();
   await expect(page.getByText("最近复盘记录").first()).toBeVisible();
   await expect(page.getByText("最近训练实验快照").first()).toBeVisible();
