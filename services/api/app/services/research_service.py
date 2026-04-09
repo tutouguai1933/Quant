@@ -412,6 +412,8 @@ class ResearchService:
             stale_fields.append("end_date")
 
         current_pairs = {
+            "research_preset_key": str(research_config.get("research_preset_key", "")),
+            "label_preset_key": str(research_config.get("label_preset_key", "")),
             "research_template": str(research_config.get("research_template", "")),
             "model_key": str(research_config.get("model_key", "")),
             "label_mode": str(research_config.get("label_mode", "")),
@@ -487,6 +489,8 @@ class ResearchService:
             "live_min_sample_count": str(thresholds_config.get("live_min_sample_count", "")),
         }
         runtime_pairs = {
+            "research_preset_key": str(training_parameters.get("research_preset_key", input_summary.get("research_preset_key", ""))),
+            "label_preset_key": str(training_parameters.get("label_preset_key", input_summary.get("label_preset_key", ""))),
             "research_template": str(training_parameters.get("research_template", input_summary.get("research_template", ""))),
             "model_key": str(training_parameters.get("model_key", input_summary.get("model_key", ""))),
             "label_mode": str(training_parameters.get("label_mode", input_summary.get("label_mode", ""))),

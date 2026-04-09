@@ -187,6 +187,28 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(rows[1]["blocking_gate"], "validation_gate")
         self.assertEqual(rows[1]["primary_reason"], "sample_count_too_low")
 
+    def test_gate_matrix_keeps_legacy_candidates_neutral_when_live_gate_is_missing(self) -> None:
+        rows = EvaluationWorkspaceService._build_gate_matrix(
+            {
+                "candidates": [
+                    {
+                        "symbol": "BTCUSDT",
+                        "allowed_to_dry_run": True,
+                        "allowed_to_live": False,
+                        "rule_gate": {"status": "passed", "reasons": []},
+                        "research_validation_gate": {"status": "passed", "reasons": []},
+                        "backtest_gate": {"status": "passed", "reasons": []},
+                        "consistency_gate": {"status": "passed", "reasons": []},
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(rows[0]["blocking_gate"], "passed")
+        self.assertEqual(rows[0]["primary_reason"], "已通过")
+        self.assertEqual(rows[0]["live_gate"], "n/a")
+
     def test_workspace_marks_run_delta_as_unavailable_when_context_is_missing(self) -> None:
         service = EvaluationWorkspaceService(
             report_reader=_MissingContextResearchService(),
@@ -201,6 +223,22 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("暂时无法比较", item["run_deltas"][0]["changed_fields_note"])
         self.assertEqual(item["run_deltas"][0]["comparison_readiness"], "unavailable")
         self.assertIn("配置快照", item["run_deltas"][0]["comparison_reason"])
+
+    def test_workspace_preserves_research_and_label_configuration_in_recent_runs(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["recent_training_runs"][0]["research_preset_key"], "baseline_balanced")
+        self.assertEqual(item["recent_training_runs"][0]["label_preset_key"], "balanced_window")
+        self.assertEqual(item["recent_training_runs"][0]["label_trigger_basis"], "close")
+        self.assertEqual(item["recent_inference_runs"][0]["research_preset_key"], "baseline_balanced")
+        self.assertEqual(item["recent_inference_runs"][0]["label_preset_key"], "balanced_window")
+        self.assertEqual(item["recent_inference_runs"][0]["label_trigger_basis"], "close")
 
     def test_workspace_uses_configured_review_limit(self) -> None:
         review_reader = _CapturingValidationReviewService()
@@ -347,7 +385,10 @@ class _FakeResearchService:
                         "dataset_snapshot": {"snapshot_id": "snapshot-1"},
                         "training_context": {
                             "parameters": {
+                                "research_preset_key": "baseline_balanced",
                                 "model_key": "heuristic_v1",
+                                "label_preset_key": "balanced_window",
+                                "label_trigger_basis": "close",
                                 "window_mode": "fixed",
                                 "start_date": "2026-01-01",
                                 "end_date": "2026-02-01",
@@ -366,7 +407,10 @@ class _FakeResearchService:
                         "dataset_snapshot": {"snapshot_id": "snapshot-prev"},
                         "training_context": {
                             "parameters": {
+                                "research_preset_key": "momentum_breakout",
                                 "model_key": "trend_bias_v2",
+                                "label_preset_key": "volatility_breakout",
+                                "label_trigger_basis": "high_low",
                                 "window_mode": "rolling",
                                 "start_date": "",
                                 "end_date": "",
@@ -383,7 +427,10 @@ class _FakeResearchService:
                         "dataset_snapshot": {"snapshot_id": "snapshot-1"},
                         "inference_context": {
                             "input_summary": {
+                                "research_preset_key": "baseline_balanced",
                                 "model_key": "heuristic_v1",
+                                "label_preset_key": "balanced_window",
+                                "label_trigger_basis": "close",
                                 "window_mode": "fixed",
                                 "force_validation_top_candidate": False,
                             }

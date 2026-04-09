@@ -846,8 +846,12 @@ class EvaluationWorkspaceService:
                         context.get("holding_window")
                         or parameters.get("holding_window_label", "")
                     ),
+                    "research_preset_key": str(parameters.get("research_preset_key", "")),
+                    "research_template": str(parameters.get("research_template", "")),
                     "model_key": str(parameters.get("model_key", "")),
+                    "label_preset_key": str(parameters.get("label_preset_key", "")),
                     "label_mode": str(parameters.get("label_mode", "")),
+                    "label_trigger_basis": str(parameters.get("label_trigger_basis", "")),
                     "window_mode": str(parameters.get("window_mode", "")),
                     "force_validation_top_candidate": "是"
                     if bool(parameters.get("force_validation_top_candidate", False))
@@ -1091,9 +1095,12 @@ class EvaluationWorkspaceService:
         current_parameters = dict(current_context.get("parameters") or current_context.get("input_summary") or {})
         previous_parameters = dict(previous_context.get("parameters") or previous_context.get("input_summary") or {})
         watched_fields = (
+            "research_preset_key",
+            "label_preset_key",
             "research_template",
             "model_key",
             "label_mode",
+            "label_trigger_basis",
             "holding_window_label",
             "force_validation_top_candidate",
             "holding_window_min_days",
@@ -1222,6 +1229,8 @@ class EvaluationWorkspaceService:
         """把内部字段名转成前端能直接读懂的中文。"""
 
         label_map = {
+            "research_preset_key": "研究预设",
+            "label_preset_key": "标签预设",
             "research_template": "研究模板",
             "model_key": "模型选择",
             "label_mode": "标签口径",
@@ -1574,7 +1583,7 @@ class EvaluationWorkspaceService:
         if not EvaluationWorkspaceService._gate_passed(dry_run_gate):
             dry_run_reasons = [str(reason).strip() for reason in list(dry_run_gate.get("reasons") or []) if str(reason).strip()]
             return "dry_run_gate", " / ".join(dry_run_reasons) if dry_run_reasons else "未通过"
-        if not EvaluationWorkspaceService._gate_passed(live_gate):
+        if live_gate and not EvaluationWorkspaceService._gate_passed(live_gate):
             live_reasons = [str(reason).strip() for reason in list(live_gate.get("reasons") or []) if str(reason).strip()]
             return "live_gate", " / ".join(live_reasons) if live_reasons else "未通过"
         return "passed", "已通过"

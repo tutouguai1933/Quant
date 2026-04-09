@@ -1303,6 +1303,8 @@ class WorkbenchConfigService:
                 self._stringify_timeframe_profiles(dict(features.get("timeframe_profiles") or {})),
                 ensure_ascii=False,
             ),
+            "QUANT_QLIB_RESEARCH_PRESET_KEY": str(research.get("research_preset_key", "baseline_balanced")),
+            "QUANT_QLIB_LABEL_PRESET_KEY": str(research.get("label_preset_key", "balanced_window")),
             "QUANT_QLIB_RESEARCH_TEMPLATE": str(research.get("research_template", "single_asset_timing")),
             "QUANT_QLIB_LABEL_MODE": str(research.get("label_mode", "earliest_hit")),
             "QUANT_QLIB_LABEL_TRIGGER_BASIS": str(research.get("label_trigger_basis", "close")),

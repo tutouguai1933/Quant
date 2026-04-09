@@ -122,6 +122,8 @@ class QlibRuntimeConfig:
     window_mode: str
     start_date: str
     end_date: str
+    research_preset_key: str
+    label_preset_key: str
     research_template: str
     primary_feature_columns: tuple[str, ...]
     auxiliary_feature_columns: tuple[str, ...]
@@ -232,6 +234,8 @@ def load_qlib_config(
     )
     start_date = _read_date(values.get("QUANT_QLIB_START_DATE"))
     end_date = _read_date(values.get("QUANT_QLIB_END_DATE"))
+    research_preset_key = str(values.get("QUANT_QLIB_RESEARCH_PRESET_KEY") or "").strip() or "baseline_balanced"
+    label_preset_key = str(values.get("QUANT_QLIB_LABEL_PRESET_KEY") or "").strip() or "balanced_window"
     research_template = _read_research_template(values.get("QUANT_QLIB_RESEARCH_TEMPLATE"))
     primary_feature_columns = _read_name_list(
         values.get("QUANT_QLIB_PRIMARY_FACTORS"),
@@ -597,6 +601,8 @@ def load_qlib_config(
             window_mode=window_mode,
             start_date=start_date,
             end_date=end_date,
+            research_preset_key=research_preset_key,
+            label_preset_key=label_preset_key,
             research_template=research_template,
             primary_feature_columns=primary_feature_columns,
             auxiliary_feature_columns=auxiliary_feature_columns,
@@ -678,6 +684,8 @@ def load_qlib_config(
         window_mode=window_mode,
         start_date=start_date,
         end_date=end_date,
+        research_preset_key=research_preset_key,
+        label_preset_key=label_preset_key,
         research_template=research_template,
         primary_feature_columns=primary_feature_columns,
         auxiliary_feature_columns=auxiliary_feature_columns,
@@ -755,6 +763,8 @@ def _build_config(
     window_mode: str,
     start_date: str,
     end_date: str,
+    research_preset_key: str,
+    label_preset_key: str,
     research_template: str,
     primary_feature_columns: tuple[str, ...],
     auxiliary_feature_columns: tuple[str, ...],
@@ -847,6 +857,8 @@ def _build_config(
         window_mode=window_mode,
         start_date=start_date,
         end_date=end_date,
+        research_preset_key=research_preset_key,
+        label_preset_key=label_preset_key,
         research_template=research_template,
         primary_feature_columns=primary_feature_columns,
         auxiliary_feature_columns=auxiliary_feature_columns,

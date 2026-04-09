@@ -1,7 +1,7 @@
 # 当前进度
 
-- 当前正在做：`Phase2` 工作台收口，A1 / A2 / A3 / A4 / A5 已完成，下一步进入 B1 多实验并排比较。
-- 上次停留位置：评估页已经补完“当前准入选择”“准入门槛目录”和 `live_gate` 门控分解，并把评估页新真相源真正接到前后端链路。
+- 当前正在做：`Phase2` 决策中心收口，A1 / A2 / A3 / A4 / A5 / B1 已完成，下一步进入 B2 推荐原因稳定化。
+- 上次停留位置：评估页已经把实验历史里的 `研究预设 / 标签预设 / 标签触发口径` 接到真实研究产物，最近两轮对比不再只剩 `n/a`。
 
 # 关键决定
 
@@ -34,6 +34,12 @@
   - `threshold_catalog`
   - `gate_matrix.live_gate`
   - 页面现在直接展示当前准入组合、四层门槛摘要和 `live` 门卡点，不再只靠本地占位文案
+- 研究运行链这次新增的真相源是：
+  - `training_context.parameters.research_preset_key`
+  - `training_context.parameters.label_preset_key`
+  - `inference_context.input_summary.research_preset_key`
+  - `inference_context.input_summary.label_preset_key`
+  - 评估页最近训练 / 推理实验、配置差异和自选实验对比，终于能看懂研究预设与标签预设变化
 - 登录与动作按钮的浏览器测试不再依赖 `data-hydrated`，统一改成等待真实按钮文案和可见状态，避免测试继续绑定旧 DOM 细节。
 - 自动化状态接口现在补齐 `comparison_run_limit`，任务页和评估页的长期运行配置终于能对齐。
 - 当前真实主链仍固定为：`Qlib 研究 -> 候选筛选 -> dry-run -> 小额 live -> 复盘`。
@@ -58,8 +64,14 @@
   - Playwright 回归通过：`41`
   - `/evaluation` 真实 HTML 已验证出现“当前准入选择”“准入门槛目录”“live 门槛”“门控分解”和 `live 门`
   - `/api/v1/evaluation/workspace` 已验证返回 `selection_story`、`threshold_catalog` 和 `live_gate`
+- 这轮 B1 的验收口径固定为：
+  - Python 单测通过：`80`
+  - Playwright 定向回归通过：`3`
+  - 本地真实训练 + 推理已连续重跑 `2` 轮
+  - `/api/v1/evaluation/workspace` 已验证最近训练 / 推理实验返回 `research_preset_key`、`label_preset_key`、`label_trigger_basis`
+  - `/evaluation` 真实 HTML 已验证最近两轮自选实验对比出现 `baseline_balanced`、`balanced_window` 和 `close`
 
 # 下一步
 
-- 继续推进 B1：支持更方便的多实验并排比较
-- 然后进入 B2 / B3：把推荐原因和淘汰原因收成更稳定的结论
+- 继续推进 B2：把推荐原因压成稳定结论
+- 然后进入 B3：把淘汰原因压成稳定结论

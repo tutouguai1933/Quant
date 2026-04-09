@@ -197,6 +197,21 @@ class ResearchServiceTests(unittest.TestCase):
             report["snapshots"]["inference"]["cache_signature"],
         )
 
+    def test_research_service_persists_research_and_label_presets_in_runtime_context(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        report = self.service.get_factory_report()
+        training_parameters = report["latest_training"]["training_context"]["parameters"]
+        inference_summary = report["latest_inference"]["inference_context"]["input_summary"]
+
+        self.assertEqual(training_parameters["research_preset_key"], "baseline_balanced")
+        self.assertEqual(training_parameters["label_preset_key"], "balanced_window")
+        self.assertEqual(training_parameters["label_trigger_basis"], "close")
+        self.assertEqual(inference_summary["research_preset_key"], "baseline_balanced")
+        self.assertEqual(inference_summary["label_preset_key"], "balanced_window")
+        self.assertEqual(inference_summary["label_trigger_basis"], "close")
+
     def test_config_alignment_marks_backtest_and_gate_drift_as_stale(self) -> None:
         service = ResearchService(
             config_loader=self._load_config,
@@ -799,7 +814,20 @@ def _default_workbench_config() -> dict[str, object]:
             "timeframes": ["1h", "4h"],
             "sample_limit": 120,
             "lookback_days": 30,
-        }
+        },
+        "research": {
+            "research_preset_key": "baseline_balanced",
+            "label_preset_key": "balanced_window",
+            "research_template": "single_asset_timing",
+            "model_key": "heuristic_v1",
+            "label_mode": "earliest_hit",
+            "label_trigger_basis": "close",
+            "holding_window_label": "1-3d",
+            "min_holding_days": 1,
+            "max_holding_days": 3,
+            "label_target_pct": "1",
+            "label_stop_pct": "-1",
+        },
     }
 
 

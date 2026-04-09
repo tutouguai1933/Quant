@@ -49,7 +49,7 @@
 
 ## B. 决策中心：再把研究结果做成真正的判断入口
 
-- [ ] B1. 支持更方便的多实验并排比较
+- [x] B1. 支持更方便的多实验并排比较
   - 目标：评估页能更直接对比两轮或多轮实验，不用手工来回切
   - 重点页面：`/evaluation`
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
@@ -126,3 +126,4 @@
 - A3 已完成：特征页现在会显式说明当前因子组合、类别目录、预处理与周期摘要；即使研究协议暂时缺失，也会回退到默认因子协议继续把配置讲清楚
 - A4 已完成：回测页现在会显式说明当前回测组合、成本模型、规则过滤和结果口径，并把成本与过滤目录直接接到统一真相源；如果保存了新配置但还没重跑训练，页面也会明确提示“新配置尚未生效”
 - A5 已完成：评估页现在会显式说明当前准入组合、`dry-run / validation / consistency / live` 四层门槛、准入门槛目录和 `live` 门卡点；评估页展示不再丢掉 `selection_story`、`threshold_catalog` 和 `gate_matrix.live_gate`
+- B1 已完成：研究层运行产物现在会把 `research_preset_key / label_preset_key / label_trigger_basis` 写进训练和推理上下文；评估页最近两轮变化、自选实验对比和配置差异终于能把研究预设与标签预设讲清楚
