@@ -17,6 +17,7 @@ import services.api.app.routes.risk_events as risk_events_route  # noqa: E402
 import services.api.app.routes.signals as signals_route  # noqa: E402
 import services.api.app.routes.strategies as strategies_route  # noqa: E402
 import services.api.app.routes.tasks as tasks_route  # noqa: E402
+import services.api.app.routes.workbench_config as workbench_config_route  # noqa: E402
 import services.api.app.services.automation_service as automation_service_module  # noqa: E402
 import services.api.app.services.automation_workflow_service as automation_workflow_module  # noqa: E402
 import services.api.app.services.auth_service as auth_service_module  # noqa: E402
@@ -32,13 +33,20 @@ import services.api.app.tasks.scheduler as scheduler_module  # noqa: E402
 from services.api.app.main import app  # noqa: E402
 from services.api.app.routes.accounts import list_accounts  # noqa: E402
 from services.api.app.routes.auth import login  # noqa: E402
+from services.api.app.routes.backtest_workspace import get_backtest_workspace  # noqa: E402
+from services.api.app.routes.data_workspace import get_data_workspace  # noqa: E402
+from services.api.app.routes.evaluation_workspace import get_evaluation_workspace  # noqa: E402
+from services.api.app.routes.feature_workspace import get_feature_workspace  # noqa: E402
 from services.api.app.routes.health import get_health, get_healthz  # noqa: E402
+from services.api.app.routes.research_workspace import get_research_workspace  # noqa: E402
+from services.api.app.routes.workbench_config import get_workbench_config, update_workbench_config  # noqa: E402
 from services.api.app.routes.risk_events import get_risk_event, list_risk_events  # noqa: E402
 from services.api.app.routes.signals import (  # noqa: E402
     get_signal,
     get_research_candidate,
     get_research_candidates,
     get_research_report,
+    get_research_runtime,
     ingest_signal,
     list_signals,
     get_latest_research,
@@ -69,7 +77,7 @@ from services.api.app.services.validation_workflow_service import ValidationWork
 from services.api.app.adapters.freqtrade.client import FreqtradeClient  # noqa: E402
 from services.api.app.tasks.scheduler import TaskScheduler  # noqa: E402
 from services.api.app.routes.tasks import get_task, get_validation_review, list_tasks, run_review_task, run_train_task  # noqa: E402
-from services.api.app.routes.tasks import get_automation_status, set_automation_mode, halt_automation, resume_automation, run_automation_cycle  # noqa: E402
+from services.api.app.routes.tasks import get_automation_status, set_automation_mode, halt_automation, resume_automation, run_automation_cycle, enable_dry_run_only, trigger_kill_switch  # noqa: E402
 from services.api.app.routes.orders import list_orders  # noqa: E402
 from services.api.app.routes.positions import list_positions  # noqa: E402
 
@@ -86,6 +94,7 @@ class ApiSkeletonTests(unittest.TestCase):
         strategies_route.auth_service = new_auth_service
         tasks_route.auth_service = new_auth_service
         risk_events_route.auth_service = new_auth_service
+        workbench_config_route.auth_service = new_auth_service
 
         new_freqtrade_client = FreqtradeClient()
         freqtrade_client_module.freqtrade_client = new_freqtrade_client
@@ -173,6 +182,12 @@ class ApiSkeletonTests(unittest.TestCase):
                 prefix = getattr(router, "kwargs", {}).get("prefix")
             router_prefixes.append(prefix)
         self.assertIn("/api/v1/auth", router_prefixes)
+        self.assertIn("/api/v1/backtest", router_prefixes)
+        self.assertIn("/api/v1/data", router_prefixes)
+        self.assertIn("/api/v1/evaluation", router_prefixes)
+        self.assertIn("/api/v1/features", router_prefixes)
+        self.assertIn("/api/v1/research", router_prefixes)
+        self.assertIn("/api/v1/workbench", router_prefixes)
 
     def test_health_endpoints_return_success_envelope(self) -> None:
         self.assertEqual(get_health()["error"], None)
@@ -227,6 +242,7 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIn("account_state", response["data"])
         self.assertIn("executor_runtime", response["data"])
         self.assertIn("research_recommendation", response["data"])
+        self.assertIn("configuration", response["data"])
         self.assertEqual(response["meta"]["source"], "strategy-workspace")
 
     def test_detail_routes_return_consistent_response_shape(self) -> None:
@@ -259,13 +275,71 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertEqual(response["meta"]["action"], "research-train")
         self.assertEqual(response["data"]["item"]["task_type"], "research_train")
 
+    def test_data_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_data_workspace(symbol="BTCUSDT", interval="4h", limit=120)
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        self.assertEqual(response["meta"]["source"], "data-workspace")
+
+    def test_backtest_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_backtest_workspace()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        self.assertEqual(response["meta"]["source"], "backtest-workspace")
+
+    def test_evaluation_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_evaluation_workspace()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        self.assertIn("operations", response["data"]["item"])
+        self.assertIn("comparison_run_limit", response["data"]["item"]["operations"])
+        self.assertIn("recent_review_tasks", response["data"]["item"])
+        self.assertEqual(response["meta"]["source"], "evaluation-workspace")
+
+    def test_feature_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_feature_workspace()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        self.assertEqual(response["meta"]["source"], "feature-workspace")
+
+    def test_research_workspace_route_returns_consistent_response_shape(self) -> None:
+        response = get_research_workspace()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+
+    def test_workbench_config_routes_return_consistent_response_shape(self) -> None:
+        response = get_workbench_config()
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("item", response["data"])
+        token = self._login_token()
+        updated = update_workbench_config(
+            {"section": "backtest", "values": {"fee_bps": "12", "slippage_bps": "6"}},
+            token=token,
+        )
+        self.assertIsNone(updated["error"])
+        self.assertEqual(updated["data"]["item"]["backtest"]["fee_bps"], "12")
+        self.assertEqual(response["meta"]["source"], "workbench-config")
+
     def test_research_routes_return_consistent_response_shape(self) -> None:
         token = self._login_token()
         latest = get_latest_research()
+        runtime = get_research_runtime()
         training = run_research_training(token=token)
         inference = run_research_inference(token=token)
 
-        for response in (latest, training, inference):
+        for response in (latest, runtime, training, inference):
             self.assertEqual(set(response.keys()), {"data", "error", "meta"})
 
     def test_research_candidate_routes_return_consistent_response_shape(self) -> None:
@@ -313,8 +387,11 @@ class ApiSkeletonTests(unittest.TestCase):
 
         status = get_automation_status(token=token)
         switched = set_automation_mode(mode="auto_dry_run", token=token)
+        dry_run_only = enable_dry_run_only(token=token)
+        takeover = tasks_route.trigger_manual_takeover(reason="risk_guard_triggered", token=token)
         halted = halt_automation(reason="manual", token=token)
         resumed = resume_automation(mode="manual", token=token)
+        killed = trigger_kill_switch(token=token)
         with mock.patch.object(
             tasks_route.task_scheduler,
             "run_named_task",
@@ -322,13 +399,37 @@ class ApiSkeletonTests(unittest.TestCase):
         ):
             cycled = run_automation_cycle(token=token)
 
-        for response in (status, switched, halted, resumed, cycled):
+        for response in (status, switched, dry_run_only, takeover, halted, resumed, killed, cycled):
             self.assertEqual(set(response.keys()), {"data", "error", "meta"})
             self.assertIsNone(response["error"])
             self.assertIn("item", response["data"])
         self.assertIn("state", status["data"]["item"])
         self.assertIn("health", status["data"]["item"])
+        self.assertIn("automation_config", status["data"]["item"])
+        self.assertIn("daily_summary", status["data"]["item"])
+        self.assertIn("scheduler_plan", status["data"]["item"])
+        self.assertIn("failure_policy", status["data"]["item"])
+        self.assertIn("active_blockers", status["data"]["item"]["health"])
+        self.assertIn("operator_actions", status["data"]["item"]["health"])
+        self.assertIn("takeover_summary", status["data"]["item"]["health"])
+        self.assertIn("alert_summary", status["data"]["item"]["health"])
+        self.assertIn("active_blockers", status["data"]["item"])
+        self.assertIn("operator_actions", status["data"]["item"])
+        self.assertIn("takeover_summary", status["data"]["item"])
+        self.assertIn("alert_summary", status["data"]["item"])
         self.assertIn("status", cycled["data"]["item"])
+
+    def test_manual_takeover_route_updates_automation_state(self) -> None:
+        token = self._login_token()
+        set_automation_mode(mode="auto_live", token=token)
+
+        response = tasks_route.trigger_manual_takeover(reason="risk_guard_triggered", actor="watchdog", token=token)
+
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["data"]["item"]["mode"], "manual")
+        self.assertTrue(response["data"]["item"]["paused"])
+        self.assertTrue(response["data"]["item"]["manual_takeover"])
+        self.assertEqual(response["data"]["item"]["paused_reason"], "risk_guard_triggered")
 
     def test_validation_review_http_route_is_not_shadowed_by_task_id_route(self) -> None:
         token = self._login_token()
@@ -336,6 +437,23 @@ class ApiSkeletonTests(unittest.TestCase):
         payload = get_validation_review(token=token)
         self.assertIsNone(payload["error"])
         self.assertIn("overview", payload["data"]["item"])
+
+    def test_validation_review_route_uses_configured_review_limit_by_default(self) -> None:
+        from services.api.app.services.workbench_config_service import workbench_config_service
+
+        token = self._login_token()
+        original_operations = dict(workbench_config_service.get_config().get("operations") or {})
+        try:
+            workbench_config_service.update_section("operations", {"review_limit": "3"})
+            for index in range(5):
+                run_review_task(source=f"user-{index}", token=token)
+
+            payload = get_validation_review(token=token)
+
+            self.assertIsNone(payload["error"])
+            self.assertEqual(len(payload["data"]["item"]["recent_tasks"]), 3)
+        finally:
+            workbench_config_service.update_section("operations", original_operations)
 
     def test_research_report_route_stays_unavailable_without_results(self) -> None:
         original_research_service = signals_route.research_service

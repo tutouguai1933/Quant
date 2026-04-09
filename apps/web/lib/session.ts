@@ -3,7 +3,23 @@
 import { cookies } from "next/headers";
 
 export const SESSION_COOKIE_NAME = "quant_admin_token";
-const KNOWN_APP_PATHS = new Set(["/", "/login", "/signals", "/market", "/strategies", "/balances", "/positions", "/orders", "/risk", "/tasks"]);
+const KNOWN_APP_PATHS = new Set([
+  "/",
+  "/login",
+  "/signals",
+  "/market",
+  "/data",
+  "/features",
+  "/research",
+  "/backtest",
+  "/evaluation",
+  "/strategies",
+  "/balances",
+  "/positions",
+  "/orders",
+  "/risk",
+  "/tasks",
+]);
 
 /* 读取搜索参数里的单值字符串。 */
 export function readSingleParam(value?: string | string[]): string {

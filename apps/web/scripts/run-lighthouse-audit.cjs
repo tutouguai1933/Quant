@@ -7,9 +7,10 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const ROOT = path.resolve(__dirname, "..");
+const WEB_BASE_URL = process.env.QUANT_WEB_BASE_URL || "http://127.0.0.1:9012";
 const URLS = [
-  "http://127.0.0.1:9012/signals",
-  "http://127.0.0.1:9012/market/BTCUSDT",
+  `${WEB_BASE_URL}/signals`,
+  `${WEB_BASE_URL}/market/BTCUSDT`,
 ];
 const DEBUG_PORT = process.env.LIGHTHOUSE_PORT ?? "9223";
 const LIGHTHOUSE_OUTPUT_DIR = path.join(os.tmpdir(), "quant-lighthouse-audit");
@@ -46,7 +47,7 @@ async function waitForChrome() {
   }
 
   throw new Error(
-    `Chromium 调试端口 ${DEBUG_PORT} 未就绪。请先启动浏览器，例如：/snap/bin/chromium --headless=new --remote-debugging-port=${DEBUG_PORT} --user-data-dir=/tmp/lighthouse-chrome http://127.0.0.1:9012/signals`,
+    `Chromium 调试端口 ${DEBUG_PORT} 未就绪。请先启动浏览器，例如：/snap/bin/chromium --headless=new --remote-debugging-port=${DEBUG_PORT} --user-data-dir=/tmp/lighthouse-chrome ${WEB_BASE_URL}/signals`,
   );
 }
 

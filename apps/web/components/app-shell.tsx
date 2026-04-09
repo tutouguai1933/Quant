@@ -18,6 +18,11 @@ type AppShellProps = {
 
 const NAV_ITEMS = [
   { href: "/", label: "驾驶舱", protected: false },
+  { href: "/data", label: "数据", protected: false },
+  { href: "/features", label: "特征", protected: false },
+  { href: "/research", label: "研究", protected: false },
+  { href: "/backtest", label: "回测", protected: false },
+  { href: "/evaluation", label: "评估", protected: false },
   { href: "/signals", label: "信号", protected: false },
   { href: "/market", label: "市场", protected: false },
   { href: "/strategies", label: "策略", protected: true },
@@ -52,6 +57,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
                 <Link
                   key={item.href}
                   href={target}
+                  prefetch={false}
                   className={[
                     "flex items-center justify-between rounded-xl border px-3 py-3 text-sm transition-colors",
                     isActive
@@ -95,7 +101,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
                 </Badge>
 
                 {isAuthenticated ? (
-                  <form action="/logout" method="post">
+                  <form action="/logout/submit" method="post">
                     <FormSubmitButton
                       type="submit"
                       variant="outline"
@@ -106,7 +112,7 @@ export function AppShell({ title, subtitle, currentPath, isAuthenticated, childr
                   </form>
                 ) : (
                   <Button asChild variant="outline">
-                    <Link href="/login">前往登录</Link>
+                    <Link href="/login" prefetch={false}>前往登录</Link>
                   </Button>
                 )}
               </div>

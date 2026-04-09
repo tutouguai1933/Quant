@@ -72,7 +72,11 @@ export type StrategyWorkspaceModel = {
   recent_signals: Array<Record<string, unknown>>;
   recent_orders: Array<Record<string, unknown>>;
   account_state: WorkspaceAccountState;
+  configuration: Record<string, unknown>;
 };
+
+const DEFAULT_CANDIDATE_SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT"];
+const DEFAULT_LIVE_ALLOWED_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
 
 type BalancesPageModel = {
   source: string;
@@ -158,15 +162,141 @@ export type AutomationStatusModel = {
   paused: boolean;
   pauseReason: string;
   manualTakeover: boolean;
+  pausedAt: string;
+  manualTakeoverAt: string;
+  lastFailureAt: string;
   armedSymbol: string;
   runtimeMode: string;
   allowLiveExecution: boolean;
-  alerts: Array<{ level: string; code: string; message: string; createdAt: string }>;
+  alerts: Array<{ id: number; level: string; code: string; message: string; createdAt: string }>;
   lastCycle: Record<string, unknown>;
   reviewOverview: Record<string, unknown>;
   researchOverview: Record<string, unknown>;
   health: Record<string, unknown>;
   executionHealth: Record<string, unknown>;
+  dailySummary: Record<string, unknown>;
+  runtimeWindow: Record<string, unknown>;
+  schedulerPlan: Array<Record<string, unknown>>;
+  failurePolicy: Record<string, unknown>;
+  operations: Record<string, unknown>;
+  automationConfig: Record<string, unknown>;
+  executionPolicy: Record<string, unknown>;
+  severitySummary: Record<string, unknown>;
+  resumeChecklist: Array<Record<string, unknown>>;
+};
+
+export type WorkbenchControlOptions = {
+  timeframes?: string[];
+  models?: string[];
+  research_templates?: string[];
+  label_modes?: string[];
+  window_modes?: string[];
+  all_symbols?: string[];
+  factor_categories?: Record<string, string[]>;
+  all_factors?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+export type WorkbenchControlsModel = {
+  config: Record<string, Record<string, unknown>>;
+  options: WorkbenchControlOptions;
+};
+
+export type DataWorkspaceModel = {
+  status: string;
+  backend: string;
+  config_alignment?: Record<string, unknown>;
+  filters: {
+    selected_symbol: string;
+    selected_interval: string;
+    limit: number;
+    available_symbols: string[];
+    available_intervals: string[];
+  };
+  sources: {
+    research: string;
+    market: string;
+  };
+  source_explanations: Array<{
+    label: string;
+    value: string;
+    detail: string;
+  }>;
+  controls: {
+    candidate_pool_preset_key: string;
+    selected_symbols: string[];
+    primary_symbol: string;
+    timeframes: string[];
+    sample_limit: number;
+    lookback_days: number;
+    window_mode: string;
+    start_date: string;
+    end_date: string;
+    available_symbols: string[];
+    available_timeframes: string[];
+    available_window_modes: string[];
+    available_candidate_pool_presets?: string[];
+    candidate_pool_preset_catalog?: Array<Record<string, unknown>>;
+  };
+  snapshot: {
+    run_type: string;
+    run_id: string;
+    generated_at: string;
+    snapshot_id: string;
+    cache_signature: string;
+    cache_status: string;
+    cache_hit_count: number;
+    cache_miss_count: number;
+    active_data_state: string;
+    data_states: Record<string, unknown>;
+    dataset_snapshot_path: string;
+  };
+  snapshot_consistency: {
+    training_snapshot_id: string;
+    training_generated_at: string;
+    training_cache_status: string;
+    training_cache_hit_count: number;
+    training_cache_miss_count: number;
+    inference_snapshot_id: string;
+    inference_generated_at: string;
+    inference_cache_status: string;
+    inference_cache_hit_count: number;
+    inference_cache_miss_count: number;
+    matches_training_snapshot: boolean;
+    note: string;
+  };
+  quality: {
+    raw_rows: number;
+    cleaned_rows: number;
+    feature_ready_rows: number;
+    cleaned_drop_rows: number;
+    feature_drop_rows: number;
+    total_drop_rows: number;
+    retention_ratio_pct: number;
+    missing_rows: number | null;
+    invalid_rows: number | null;
+    detail: string;
+    summary: string;
+  };
+  preview: {
+    symbol: string;
+    interval: string;
+    effective_interval: string;
+    source: string;
+    total_rows: number;
+    first_open_time: string;
+    last_close_time: string;
+    status: string;
+    detail: string;
+  };
+  training_window: {
+    holding_window: string;
+    sample_window: Record<string, unknown>;
+  };
+  symbols: Array<{
+    symbol: string;
+    selected: boolean;
+  }>;
 };
 
 export type MarketSnapshot = {
@@ -268,6 +398,8 @@ export type ResearchCandidateItem = {
   backtest: { metrics: Record<string, string> };
   dry_run_gate: { status: string; reasons: string[] };
   allowed_to_dry_run: boolean;
+  live_gate?: { status: string; reasons: string[] };
+  allowed_to_live?: boolean;
   review_status: string;
   next_action: string;
   forced_for_validation: boolean;
@@ -294,8 +426,10 @@ export type ResearchRecommendation = {
   symbol: string;
   score: string;
   allowed_to_dry_run: boolean;
+  allowed_to_live?: boolean;
   strategy_template: string;
   dry_run_gate: { status: string; reasons: string[] };
+  live_gate?: { status: string; reasons: string[] };
   next_action: string;
 };
 
@@ -320,6 +454,313 @@ export type ResearchReportItem = {
     training: Record<string, unknown>;
     inference: Record<string, unknown>;
   };
+};
+
+export type ResearchRuntimeStatusModel = {
+  status: string;
+  action: string;
+  current_stage: string;
+  progress_pct: number;
+  started_at: string;
+  finished_at: string;
+  message: string;
+  last_completed_action: string;
+  last_finished_at: string;
+  result_paths: string[];
+  history: Record<string, unknown>;
+  estimated_seconds: Record<string, number>;
+  current_estimate_seconds: number;
+};
+
+export type FeatureWorkspaceModel = {
+  status: string;
+  backend: string;
+  config_alignment?: Record<string, unknown>;
+  overview: {
+    feature_version: string;
+    factor_count: number;
+    primary_count: number;
+    auxiliary_count: number;
+    holding_window: string;
+  };
+  categories: Record<string, string[]>;
+  roles: {
+    primary: string[];
+    auxiliary: string[];
+  };
+  controls: {
+    feature_preset_key?: string;
+    primary_factors: string[];
+    auxiliary_factors: string[];
+    trend_weight: string;
+    momentum_weight: string;
+    volume_weight: string;
+    oscillator_weight: string;
+    volatility_weight: string;
+    strict_penalty_weight: string;
+    signal_confidence_floor: string;
+    missing_policy: string;
+    outlier_policy: string;
+    normalization_policy: string;
+    timeframe_profiles: Record<string, Record<string, unknown>>;
+    available_primary_factors: string[];
+    available_auxiliary_factors: string[];
+    available_missing_policies: string[];
+    available_outlier_policies: string[];
+    available_normalization_policies: string[];
+    available_feature_presets?: string[];
+    feature_preset_catalog?: Array<Record<string, unknown>>;
+  };
+  preprocessing: {
+    missing_policy: string;
+    outlier_policy: string;
+    normalization_policy: string;
+  };
+  timeframe_profiles: Record<string, Record<string, unknown>>;
+  factors: Array<{
+    name: string;
+    category: string;
+    role: string;
+    description: string;
+  }>;
+  selection_matrix?: Array<{
+    name: string;
+    category: string;
+    protocol_role: string;
+    current_role: string;
+    description: string;
+  }>;
+};
+
+export type ResearchWorkspaceModel = {
+  status: string;
+  backend: string;
+  config_alignment?: Record<string, unknown>;
+  overview: {
+    holding_window: string;
+    candidate_count: number;
+    recommended_symbol: string;
+    recommended_action: string;
+  };
+  strategy_templates: string[];
+  labeling: {
+    label_columns: string[];
+    label_mode: string;
+    definition: string;
+  };
+  sample_window: Record<string, Record<string, unknown>>;
+  model: {
+    model_version: string;
+    backend: string;
+  };
+  controls: {
+    research_preset_key?: string;
+    research_template: string;
+    model_key: string;
+    label_mode: string;
+    label_trigger_basis: string;
+    holding_window_label: string;
+    force_validation_top_candidate: boolean;
+    min_holding_days: number;
+    max_holding_days: number;
+    label_target_pct: string;
+    label_stop_pct: string;
+    train_split_ratio: string;
+    validation_split_ratio: string;
+    test_split_ratio: string;
+    signal_confidence_floor: string;
+    trend_weight: string;
+    momentum_weight: string;
+    volume_weight: string;
+    oscillator_weight: string;
+    volatility_weight: string;
+    strict_penalty_weight: string;
+    available_models: string[];
+    available_research_templates: string[];
+    available_label_modes: string[];
+    available_label_trigger_bases: string[];
+    available_holding_windows: string[];
+    available_research_presets?: string[];
+    research_preset_catalog?: Array<Record<string, unknown>>;
+  };
+  parameters: Record<string, string>;
+  selectors: {
+    symbols: string[];
+    timeframes: string[];
+  };
+  readiness: {
+    train_ready: boolean;
+    infer_ready: boolean;
+    blocking_reasons: string[];
+    infer_reason: string;
+    next_step: string;
+  };
+  execution_preview: {
+    data_scope: string;
+    factor_mix: string;
+    label_scope: string;
+    dry_run_gate: string;
+    live_gate: string;
+    validation_policy: string;
+  };
+  label_rule_summary?: {
+    preset_key: string;
+    headline: string;
+    detail: string;
+    next_step: string;
+  };
+};
+
+export type BacktestWorkspaceModel = {
+  status: string;
+  backend: string;
+  overview: {
+    holding_window: string;
+    candidate_count: number;
+    recommended_symbol: string;
+  };
+  assumptions: Record<string, string>;
+  controls: {
+    backtest_preset_key?: string;
+    fee_bps: string;
+    slippage_bps: string;
+    cost_model: string;
+    available_cost_models: string[];
+    available_backtest_presets?: string[];
+    backtest_preset_catalog?: Array<Record<string, unknown>>;
+    enable_rule_gate: boolean;
+    enable_validation_gate: boolean;
+    enable_backtest_gate: boolean;
+    enable_consistency_gate: boolean;
+    enable_live_gate: boolean;
+    dry_run_min_score: string;
+    dry_run_min_positive_rate: string;
+    dry_run_min_net_return_pct: string;
+    dry_run_min_sharpe: string;
+    dry_run_max_drawdown_pct: string;
+    dry_run_max_loss_streak: string;
+    dry_run_min_win_rate: string;
+    dry_run_max_turnover: string;
+    dry_run_min_sample_count: string;
+    validation_min_sample_count: string;
+    validation_min_avg_future_return_pct: string;
+    consistency_max_validation_backtest_return_gap_pct: string;
+    consistency_max_training_validation_positive_rate_gap: string;
+    consistency_max_training_validation_return_gap_pct: string;
+    rule_min_ema20_gap_pct: string;
+    rule_min_ema55_gap_pct: string;
+    rule_max_atr_pct: string;
+    rule_min_volume_ratio: string;
+    strict_rule_min_ema20_gap_pct: string;
+    strict_rule_min_ema55_gap_pct: string;
+    strict_rule_max_atr_pct: string;
+    strict_rule_min_volume_ratio: string;
+    live_min_score: string;
+    live_min_positive_rate: string;
+    live_min_net_return_pct: string;
+    live_min_win_rate: string;
+    live_max_turnover: string;
+    live_min_sample_count: string;
+  };
+  training_backtest: {
+    metrics: Record<string, string>;
+  };
+  leaderboard: Array<{
+    symbol: string;
+    strategy_template: string;
+    backtest: Record<string, string>;
+  }>;
+};
+
+export type EvaluationWorkspaceModel = {
+  status: string;
+  backend: string;
+  config_alignment?: Record<string, unknown>;
+  overview: {
+    recommended_symbol: string;
+    recommended_action: string;
+    candidate_count: number;
+  };
+  candidate_scope: {
+    candidate_pool_preset_key?: string;
+    candidate_pool_preset_detail?: string;
+    candidate_symbols: string[];
+    live_subset_preset_key?: string;
+    live_subset_preset_detail?: string;
+    live_allowed_symbols: string[];
+  };
+  controls: {
+    threshold_preset_key?: string;
+    dry_run_min_score: string;
+    dry_run_min_positive_rate: string;
+    dry_run_min_net_return_pct: string;
+    dry_run_min_sharpe: string;
+    dry_run_max_drawdown_pct: string;
+    dry_run_max_loss_streak: string;
+    dry_run_min_win_rate: string;
+    dry_run_max_turnover: string;
+    dry_run_min_sample_count: string;
+    validation_min_sample_count: string;
+    validation_min_avg_future_return_pct: string;
+    consistency_max_validation_backtest_return_gap_pct: string;
+    consistency_max_training_validation_positive_rate_gap: string;
+    consistency_max_training_validation_return_gap_pct: string;
+    rule_min_ema20_gap_pct: string;
+    rule_min_ema55_gap_pct: string;
+    rule_max_atr_pct: string;
+    rule_min_volume_ratio: string;
+    strict_rule_min_ema20_gap_pct: string;
+    strict_rule_min_ema55_gap_pct: string;
+    strict_rule_max_atr_pct: string;
+    strict_rule_min_volume_ratio: string;
+    enable_rule_gate: boolean;
+    enable_validation_gate: boolean;
+    enable_backtest_gate: boolean;
+    enable_consistency_gate: boolean;
+    enable_live_gate: boolean;
+    live_min_score: string;
+    live_min_positive_rate: string;
+    live_min_net_return_pct: string;
+    live_min_win_rate: string;
+    live_max_turnover: string;
+    live_min_sample_count: string;
+    available_threshold_presets?: string[];
+    threshold_preset_catalog?: Array<Record<string, unknown>>;
+  };
+  operations: {
+    operations_preset_key?: string;
+    operations_preset_detail?: string;
+    review_limit: string;
+    comparison_run_limit: string;
+    cycle_cooldown_minutes: string;
+    max_daily_cycle_count: string;
+    automation_preset_key?: string;
+    automation_preset_detail?: string;
+  };
+  evaluation: Record<string, unknown>;
+  reviews: Record<string, unknown>;
+  recent_review_tasks: Array<Record<string, unknown>>;
+  leaderboard: Array<Record<string, unknown>>;
+  best_experiment: Record<string, unknown>;
+  best_stage_candidates: Record<string, unknown>;
+  recommendation_explanation: Record<string, unknown>;
+  elimination_explanation: Record<string, unknown>;
+  recent_runs: Array<Record<string, unknown>>;
+  recent_training_runs: Array<Record<string, unknown>>;
+  recent_inference_runs: Array<Record<string, unknown>>;
+  experiment_comparison: Array<Record<string, unknown>>;
+  gate_matrix: Array<Record<string, unknown>>;
+  run_deltas: Array<Record<string, unknown>>;
+  delta_overview: Record<string, unknown>;
+  comparison_summary: Record<string, unknown>;
+  execution_alignment: Record<string, unknown>;
+  alignment_details: Record<string, unknown>;
+  alignment_story: Record<string, unknown>;
+  alignment_metric_rows: Array<Record<string, unknown>>;
+  alignment_gaps: Array<Record<string, unknown>>;
+  alignment_actions: Array<Record<string, unknown>>;
+  workflow_alignment_timeline: Array<Record<string, unknown>>;
+  stage_decision_summary?: Record<string, unknown>;
 };
 
 export type ValidationReviewItem = {
@@ -365,17 +806,109 @@ export type LoginPageModel = {
   protectedPages: string[];
 };
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
-const API_BASE_URL = (process.env.QUANT_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
 const WEB_PROXY_BASE_URL = "/api/control";
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
 const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
+
+async function resolveControlPlaneBaseUrl(request?: Request): Promise<string> {
+  if (typeof window !== "undefined") {
+    return WEB_PROXY_BASE_URL;
+  }
+
+  const localDebugBaseUrl = deriveLocalApiBaseUrl(request);
+  if (localDebugBaseUrl) {
+    return localDebugBaseUrl;
+  }
+
+  try {
+    const { headers } = await import("next/headers");
+    const requestHeaders = await headers();
+    const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "";
+    const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
+    if (host) {
+      return `${protocol}://${host}${WEB_PROXY_BASE_URL}`;
+    }
+  } catch {
+    // 服务端无法读取当前请求头时，回退到显式 API 基址。
+  }
+
+  return buildUpstreamApiUrl("/");
+}
+
+export async function resolveControlPlaneUrl(path: string, request?: Request): Promise<string> {
+  const baseUrl = await resolveControlPlaneBaseUrl(request);
+  return `${baseUrl}${path}`;
+}
+
+function deriveLocalApiBaseUrl(request?: Request): string | null {
+  if (!request) {
+    return null;
+  }
+
+  try {
+    const currentUrl = new URL(request.url);
+    const forwardedHost = request.headers.get("x-forwarded-host")?.trim() ?? "";
+    const directHost = request.headers.get("host")?.trim() ?? "";
+    const hostPort = (forwardedHost || directHost || currentUrl.host).trim();
+    const [hostnamePart, portPart] = splitHostPort(hostPort);
+    const hostname = hostnamePart || currentUrl.hostname;
+    if (!isLoopbackHost(hostname)) {
+      return null;
+    }
+    const webPort = Number(portPart || currentUrl.port || "0");
+    if (!Number.isFinite(webPort) || webPort <= 1) {
+      return null;
+    }
+    return `${currentUrl.protocol}//${hostname}:${webPort - 1}/api/v1`;
+  } catch {
+    return null;
+  }
+}
+
+function splitHostPort(hostPort: string): [string, string] {
+  if (!hostPort) {
+    return ["", ""];
+  }
+  if (hostPort.startsWith("[")) {
+    const closingIndex = hostPort.indexOf("]");
+    if (closingIndex === -1) {
+      return [hostPort, ""];
+    }
+    const hostname = hostPort.slice(0, closingIndex + 1);
+    const port = hostPort.slice(closingIndex + 2);
+    return [hostname, port];
+  }
+  const separatorIndex = hostPort.lastIndexOf(":");
+  if (separatorIndex === -1) {
+    return [hostPort, ""];
+  }
+  return [hostPort.slice(0, separatorIndex), hostPort.slice(separatorIndex + 1)];
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+}
+
+/* 构建服务端直连控制面 API 地址。 */
+export function buildUpstreamApiUrl(path: string, request?: Request): string {
+  const configuredBaseUrl = (deriveLocalApiBaseUrl(request) ?? process.env.QUANT_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(
+    /\/$/,
+    "",
+  );
+  return `${configuredBaseUrl}${path}`;
+}
+
+/* 构建当前主机下的控制代理地址。 */
+export function buildProxyUrl(request: Request, path: string): string {
+  return new URL(`${WEB_PROXY_BASE_URL}${path}`, request.url).toString();
+}
 
 export function buildApiUrl(path: string): string {
   if (typeof window !== "undefined") {
     return `${WEB_PROXY_BASE_URL}${path}`;
   }
-  return `${API_BASE_URL}${path}`;
+  return buildUpstreamApiUrl(path);
 }
 
 export function buildAuthHeaders(token?: string): HeadersInit {
@@ -390,7 +923,7 @@ export function isProtectedRoute(path: string): boolean {
 }
 
 export async function fetchJson<T>(path: string, token?: string): Promise<ApiEnvelope<T>> {
-  const response = await fetch(buildApiUrl(path), {
+  const response = await fetch(await resolveControlPlaneUrl(path), {
     headers: buildAuthHeaders(token),
     cache: "no-store",
   });
@@ -401,8 +934,9 @@ export async function fetchJson<T>(path: string, token?: string): Promise<ApiEnv
 export async function loginAdmin(
   username: string,
   password: string,
+  request?: Request,
 ): Promise<ApiEnvelope<{ item: { token: string; username: string; scope: string } }>> {
-  const response = await fetch(buildApiUrl("/auth/login"), {
+  const response = await fetch(await resolveControlPlaneUrl("/auth/login", request), {
     method: "POST",
     headers: {
       ...buildAuthHeaders(),
@@ -423,8 +957,9 @@ export async function getAdminSession(
 
 export async function logoutAdmin(
   token: string,
+  request?: Request,
 ): Promise<ApiEnvelope<{ item: { token: string; status: string } }>> {
-  const response = await fetch(buildApiUrl(`/auth/logout?token=${token}`), {
+  const response = await fetch(await resolveControlPlaneUrl(`/auth/logout?token=${token}`, request), {
     method: "POST",
     headers: buildAuthHeaders(token),
     cache: "no-store",
@@ -495,6 +1030,7 @@ export async function getStrategyWorkspace(
       recent_signals: normalizeObjectArray(data.recent_signals),
       recent_orders: normalizeObjectArray(data.recent_orders),
       account_state: normalizeWorkspaceAccountState(data.account_state),
+      configuration: isPlainObject(data.configuration) ? data.configuration : {},
     },
   };
 }
@@ -551,6 +1087,24 @@ export async function getResearchReport(): Promise<ApiEnvelope<{ item: ResearchR
     ...response,
     data: {
       item: normalizeResearchReportItem(response.data.item),
+    },
+  };
+}
+
+export async function getResearchRuntimeStatus(): Promise<ApiEnvelope<{ item: ResearchRuntimeStatusModel }>> {
+  const response = await fetchJson<{ item: Record<string, unknown> }>("/signals/research/runtime");
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getResearchRuntimeStatusFallback(),
+      },
+    };
+  }
+  return {
+    ...response,
+    data: {
+      item: normalizeResearchRuntimeStatus(response.data.item),
     },
   };
 }
@@ -685,6 +1239,9 @@ export async function getAutomationStatus(
         paused: Boolean(state.paused),
         pauseReason: String(state.paused_reason ?? ""),
         manualTakeover: Boolean(state.manual_takeover),
+        pausedAt: String(state.paused_at ?? ""),
+        manualTakeoverAt: String(state.manual_takeover_at ?? ""),
+        lastFailureAt: String(state.last_failure_at ?? ""),
         armedSymbol: String(state.armed_symbol ?? ""),
         runtimeMode: String(state.runtime_mode ?? "demo"),
         allowLiveExecution: Boolean(state.allow_live_execution),
@@ -692,6 +1249,7 @@ export async function getAutomationStatus(
           ? state.alerts.map((entry) => {
               const row = isPlainObject(entry) ? entry : {};
               return {
+                id: Number(row.id ?? 0),
                 level: String(row.level ?? ""),
                 code: String(row.code ?? ""),
                 message: String(row.message ?? ""),
@@ -701,9 +1259,18 @@ export async function getAutomationStatus(
           : [],
         lastCycle: isPlainObject(state.last_cycle) ? state.last_cycle : {},
         reviewOverview: isPlainObject(item.review_overview) ? item.review_overview : {},
-        researchOverview: isPlainObject(item.review_overview) ? item.review_overview : {},
+        researchOverview: isPlainObject(item.research_overview) ? item.research_overview : {},
         health,
         executionHealth: isPlainObject(item.execution_health) ? item.execution_health : {},
+        dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
+        runtimeWindow: isPlainObject(item.runtime_window) ? item.runtime_window : {},
+        schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
+        failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
+        operations: isPlainObject(item.operations) ? item.operations : {},
+        automationConfig: isPlainObject(item.automation_config) ? item.automation_config : {},
+        executionPolicy: isPlainObject(item.execution_policy) ? item.execution_policy : {},
+        severitySummary: isPlainObject(item.severity_summary) ? item.severity_summary : {},
+        resumeChecklist: Array.isArray(item.resume_checklist) ? item.resume_checklist.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
       },
     },
   };
@@ -748,6 +1315,564 @@ export async function listMarketSnapshots(): Promise<
       ...data,
       items: items.map((item) => normalizeMarketSnapshot(item)),
     },
+  };
+}
+
+export async function getDataWorkspace(
+  symbol?: string,
+  interval?: string,
+  limit?: number,
+): Promise<ApiEnvelope<{ item: DataWorkspaceModel }>> {
+  const query = new URLSearchParams();
+  if (symbol) {
+    query.set("symbol", symbol);
+  }
+  if (interval) {
+    query.set("interval", interval);
+  }
+  if (typeof limit === "number" && Number.isFinite(limit)) {
+    query.set("limit", String(limit));
+  }
+  const path = query.size > 0 ? `/data/workspace?${query.toString()}` : "/data/workspace";
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>(path);
+  } catch (error) {
+    return {
+      data: {
+        item: getDataWorkspaceFallback(symbol, interval, limit),
+      },
+      error: {
+        code: "workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "数据工作台暂时不可用",
+      },
+      meta: {
+        source: "data-workspace",
+      },
+    };
+  }
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getDataWorkspaceFallback(symbol, interval, limit),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeDataWorkspaceModel(response.data.item),
+    },
+  };
+}
+
+export async function getFeatureWorkspace(): Promise<ApiEnvelope<{ item: FeatureWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/features/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getFeatureWorkspaceFallback(),
+      },
+      error: {
+        code: "feature_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "特征工作台暂时不可用",
+      },
+      meta: {
+        source: "feature-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getFeatureWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeFeatureWorkspaceModel(response.data.item),
+    },
+  };
+}
+
+export async function getResearchWorkspace(): Promise<ApiEnvelope<{ item: ResearchWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/research/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getResearchWorkspaceFallback(),
+      },
+      error: {
+        code: "research_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "策略研究工作台暂时不可用",
+      },
+      meta: {
+        source: "research-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getResearchWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeResearchWorkspaceModel(response.data.item),
+    },
+  };
+}
+
+export async function getBacktestWorkspace(): Promise<ApiEnvelope<{ item: BacktestWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/backtest/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getBacktestWorkspaceFallback(),
+      },
+      error: {
+        code: "backtest_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "回测工作台暂时不可用",
+      },
+      meta: {
+        source: "backtest-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getBacktestWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeBacktestWorkspaceModel(response.data.item),
+    },
+  };
+}
+
+export async function getEvaluationWorkspace(): Promise<ApiEnvelope<{ item: EvaluationWorkspaceModel }>> {
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/evaluation/workspace");
+  } catch (error) {
+    return {
+      data: {
+        item: getEvaluationWorkspaceFallback(),
+      },
+      error: {
+        code: "evaluation_workspace_fetch_failed",
+        message: error instanceof Error ? error.message : "评估与实验中心暂时不可用",
+      },
+      meta: {
+        source: "evaluation-workspace",
+      },
+    };
+  }
+
+  if (response.error) {
+    return {
+      ...response,
+      data: {
+        item: getEvaluationWorkspaceFallback(),
+      },
+    };
+  }
+
+  return {
+    ...response,
+    data: {
+      item: normalizeEvaluationWorkspaceModel(response.data.item),
+    },
+  };
+}
+
+export function getDataWorkspaceFallback(symbol?: string, interval?: string, limit?: number): DataWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    config_alignment: {},
+    filters: {
+      selected_symbol: String(symbol ?? "").trim() || "BTCUSDT",
+      selected_interval: String(interval ?? "").trim() || "4h",
+      limit: typeof limit === "number" && Number.isFinite(limit) ? limit : 200,
+      available_symbols: [],
+      available_intervals: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
+    },
+    controls: {
+      candidate_pool_preset_key: "top10_liquid",
+      selected_symbols: [String(symbol ?? "").trim() || "BTCUSDT"],
+      primary_symbol: String(symbol ?? "").trim() || "BTCUSDT",
+      timeframes: [String(interval ?? "").trim() || "4h", "1h"],
+      sample_limit: typeof limit === "number" && Number.isFinite(limit) ? limit : 200,
+      lookback_days: 30,
+      window_mode: "rolling",
+      start_date: "",
+      end_date: "",
+      available_symbols: [],
+      available_timeframes: ["1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"],
+      available_window_modes: ["rolling", "fixed"],
+      available_candidate_pool_presets: ["top10_liquid", "majors_focus", "execution_focus"],
+      candidate_pool_preset_catalog: [],
+    },
+    sources: {
+      research: "qlib-fallback",
+      market: "binance",
+    },
+    source_explanations: [],
+    snapshot: {
+      run_type: "training",
+      run_id: "",
+      generated_at: "",
+      snapshot_id: "",
+      cache_signature: "",
+      cache_status: "",
+      cache_hit_count: 0,
+      cache_miss_count: 0,
+      active_data_state: "",
+      data_states: {},
+      dataset_snapshot_path: "",
+    },
+    snapshot_consistency: {
+      training_snapshot_id: "",
+      training_generated_at: "",
+      training_cache_status: "",
+      training_cache_hit_count: 0,
+      training_cache_miss_count: 0,
+      inference_snapshot_id: "",
+      inference_generated_at: "",
+      inference_cache_status: "",
+      inference_cache_hit_count: 0,
+      inference_cache_miss_count: 0,
+      matches_training_snapshot: false,
+      note: "当前还没有可用快照一致性说明。",
+    },
+    quality: {
+      raw_rows: 0,
+      cleaned_rows: 0,
+      feature_ready_rows: 0,
+      cleaned_drop_rows: 0,
+      feature_drop_rows: 0,
+      total_drop_rows: 0,
+      retention_ratio_pct: 0,
+      missing_rows: null,
+      invalid_rows: null,
+      detail: "当前还没有可用质量摘要。",
+      summary: "当前还没有可用质量摘要。",
+    },
+    preview: {
+      symbol: String(symbol ?? "").trim() || "BTCUSDT",
+      interval: String(interval ?? "").trim() || "4h",
+      effective_interval: String(interval ?? "").trim() || "4h",
+      source: "binance",
+      total_rows: 0,
+      first_open_time: "",
+      last_close_time: "",
+      status: "unavailable",
+      detail: "数据工作台当前没有拿到可用响应。",
+    },
+    training_window: {
+      holding_window: "",
+      sample_window: {},
+    },
+    symbols: [],
+  };
+}
+
+export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    config_alignment: {},
+    overview: {
+      feature_version: "",
+      factor_count: 0,
+      primary_count: 0,
+      auxiliary_count: 0,
+      holding_window: "",
+    },
+    categories: {},
+    roles: {
+      primary: [],
+      auxiliary: [],
+    },
+    controls: {
+      primary_factors: [],
+      auxiliary_factors: [],
+      trend_weight: "1.3",
+      momentum_weight: "1",
+      volume_weight: "1.1",
+      oscillator_weight: "0.7",
+      volatility_weight: "0.8",
+      strict_penalty_weight: "0.6",
+      signal_confidence_floor: "0.55",
+      missing_policy: "neutral_fill",
+      outlier_policy: "clip",
+      normalization_policy: "fixed_4dp",
+      timeframe_profiles: {},
+      available_primary_factors: [],
+      available_auxiliary_factors: [],
+      available_missing_policies: ["neutral_fill", "strict_drop"],
+      available_outlier_policies: ["clip", "raw"],
+      available_normalization_policies: ["fixed_4dp", "zscore_by_symbol"],
+    },
+    preprocessing: {
+      missing_policy: "",
+      outlier_policy: "",
+      normalization_policy: "",
+    },
+    timeframe_profiles: {},
+    factors: [],
+    selection_matrix: [],
+  };
+}
+
+export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    config_alignment: {},
+    overview: {
+      holding_window: "",
+      candidate_count: 0,
+      recommended_symbol: "",
+      recommended_action: "",
+    },
+    strategy_templates: [],
+    labeling: {
+      label_columns: [],
+      label_mode: "earliest_hit",
+      definition: "",
+    },
+    sample_window: {},
+    model: {
+      model_version: "",
+      backend: "qlib-fallback",
+    },
+    controls: {
+      research_template: "single_asset_timing",
+      model_key: "heuristic_v1",
+      label_mode: "earliest_hit",
+      label_trigger_basis: "close",
+      holding_window_label: "1-3d",
+      force_validation_top_candidate: false,
+      min_holding_days: 1,
+      max_holding_days: 3,
+      label_target_pct: "1",
+      label_stop_pct: "-1",
+      train_split_ratio: "0.6",
+      validation_split_ratio: "0.2",
+      test_split_ratio: "0.2",
+      signal_confidence_floor: "0.55",
+      trend_weight: "1.3",
+      momentum_weight: "1",
+      volume_weight: "1.1",
+      oscillator_weight: "0.7",
+      volatility_weight: "0.9",
+      strict_penalty_weight: "1",
+      available_models: ["heuristic_v1", "trend_bias_v2", "balanced_v3"],
+      available_research_templates: ["single_asset_timing", "single_asset_timing_strict"],
+      available_label_modes: ["earliest_hit", "close_only", "window_majority"],
+      available_label_trigger_bases: ["close", "high_low"],
+      available_holding_windows: ["1-3d", "2-4d", "3-5d"],
+    },
+    parameters: {},
+    selectors: {
+      symbols: [],
+      timeframes: [],
+    },
+    readiness: {
+      train_ready: false,
+      infer_ready: false,
+      blocking_reasons: ["当前工作台暂时不可用"],
+      infer_reason: "当前还没有训练结果，暂时无法推理。",
+      next_step: "先恢复研究接口，再重新运行训练。",
+    },
+    execution_preview: {
+      data_scope: "",
+      factor_mix: "",
+      label_scope: "",
+      dry_run_gate: "",
+      live_gate: "",
+      validation_policy: "",
+    },
+    label_rule_summary: {
+      preset_key: "balanced_window",
+      headline: "",
+      detail: "",
+      next_step: "",
+    },
+  };
+}
+
+export function getBacktestWorkspaceFallback(): BacktestWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    overview: {
+      holding_window: "",
+      candidate_count: 0,
+      recommended_symbol: "",
+    },
+    assumptions: {},
+    controls: {
+      fee_bps: "10",
+      slippage_bps: "5",
+      cost_model: "round_trip_basis_points",
+      available_cost_models: ["round_trip_basis_points", "single_side_basis_points", "zero_cost_baseline"],
+      enable_rule_gate: true,
+      enable_validation_gate: true,
+      enable_backtest_gate: true,
+      enable_consistency_gate: true,
+      enable_live_gate: true,
+      dry_run_min_score: "0.55",
+      dry_run_min_positive_rate: "0.45",
+      dry_run_min_net_return_pct: "0",
+      dry_run_min_sharpe: "0.5",
+      dry_run_max_drawdown_pct: "15",
+      dry_run_max_loss_streak: "3",
+      dry_run_min_win_rate: "0.5",
+      dry_run_max_turnover: "0.6",
+      dry_run_min_sample_count: "20",
+      validation_min_sample_count: "12",
+      validation_min_avg_future_return_pct: "-0.1",
+      consistency_max_validation_backtest_return_gap_pct: "1.5",
+      consistency_max_training_validation_positive_rate_gap: "0.2",
+      consistency_max_training_validation_return_gap_pct: "1.5",
+      rule_min_ema20_gap_pct: "0",
+      rule_min_ema55_gap_pct: "0",
+      rule_max_atr_pct: "5",
+      rule_min_volume_ratio: "1",
+      strict_rule_min_ema20_gap_pct: "1.2",
+      strict_rule_min_ema55_gap_pct: "1.8",
+      strict_rule_max_atr_pct: "4.5",
+      strict_rule_min_volume_ratio: "1.05",
+      live_min_score: "0.65",
+      live_min_positive_rate: "0.50",
+      live_min_net_return_pct: "0.20",
+      live_min_win_rate: "0.55",
+      live_max_turnover: "0.45",
+      live_min_sample_count: "24",
+    },
+    training_backtest: {
+      metrics: {},
+    },
+    leaderboard: [],
+  };
+}
+
+export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
+  return {
+    status: "unavailable",
+    backend: "qlib-fallback",
+    overview: {
+      recommended_symbol: "",
+      recommended_action: "",
+      candidate_count: 0,
+    },
+    candidate_scope: {
+      candidate_pool_preset_key: "top10_liquid",
+      candidate_pool_preset_detail: "候选池预设：top10_liquid / 当前还没有候选池说明",
+      candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+      live_subset_preset_key: "core_live",
+      live_subset_preset_detail: "live 子集预设：core_live / 当前还没有 live 子集说明",
+      live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
+    },
+    controls: {
+      threshold_preset_key: "standard_gate",
+      dry_run_min_score: "0.55",
+      dry_run_min_positive_rate: "0.45",
+      dry_run_min_net_return_pct: "0",
+      dry_run_min_sharpe: "0.5",
+      dry_run_max_drawdown_pct: "15",
+      dry_run_max_loss_streak: "3",
+      dry_run_min_win_rate: "0.5",
+      dry_run_max_turnover: "0.6",
+      dry_run_min_sample_count: "20",
+      validation_min_sample_count: "12",
+      validation_min_avg_future_return_pct: "-0.1",
+      consistency_max_validation_backtest_return_gap_pct: "1.5",
+      consistency_max_training_validation_positive_rate_gap: "0.2",
+      consistency_max_training_validation_return_gap_pct: "1.5",
+      rule_min_ema20_gap_pct: "0",
+      rule_min_ema55_gap_pct: "0",
+      rule_max_atr_pct: "5",
+      rule_min_volume_ratio: "1",
+      strict_rule_min_ema20_gap_pct: "1.2",
+      strict_rule_min_ema55_gap_pct: "1.8",
+      strict_rule_max_atr_pct: "4.5",
+      strict_rule_min_volume_ratio: "1.05",
+      enable_rule_gate: true,
+      enable_validation_gate: true,
+      enable_backtest_gate: true,
+      enable_consistency_gate: true,
+      enable_live_gate: true,
+      live_min_score: "0.65",
+      live_min_positive_rate: "0.50",
+      live_min_net_return_pct: "0.20",
+      live_min_win_rate: "0.55",
+      live_max_turnover: "0.45",
+      live_min_sample_count: "24",
+    },
+    operations: {
+      operations_preset_key: "balanced_guard",
+      operations_preset_detail: "长期运行预设：balanced_guard / 当前还没有长期运行预设说明",
+      review_limit: "10",
+      comparison_run_limit: "5",
+      cycle_cooldown_minutes: "15",
+      max_daily_cycle_count: "8",
+      automation_preset_key: "balanced_runtime",
+      automation_preset_detail: "自动化运行预设：balanced_runtime / 当前还没有自动化运行预设说明",
+    },
+    evaluation: {},
+    reviews: {},
+    recent_review_tasks: [],
+    leaderboard: [],
+    best_experiment: {},
+    best_stage_candidates: {},
+    recommendation_explanation: {},
+    elimination_explanation: {},
+    recent_runs: [],
+    recent_training_runs: [],
+    recent_inference_runs: [],
+    experiment_comparison: [],
+    gate_matrix: [],
+    workflow_alignment_timeline: [],
+    run_deltas: [],
+    delta_overview: {},
+    comparison_summary: {},
+    execution_alignment: {},
+    stage_decision_summary: {},
+    alignment_details: {},
+    alignment_story: {},
+    alignment_metric_rows: [],
+    alignment_gaps: [],
+    alignment_actions: [],
   };
 }
 
@@ -824,6 +1949,487 @@ function normalizeMarketSnapshot(item: unknown): MarketSnapshot {
     trend_state: trendState,
     strategy_summary: normalizeStrategySummary(row.strategy_summary),
     research_brief: normalizeResearchCockpitSummary(row.research_brief),
+  };
+}
+
+function normalizeDataWorkspaceModel(item: unknown): DataWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const filters = isPlainObject(row.filters) ? row.filters : {};
+  const sources = isPlainObject(row.sources) ? row.sources : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
+  const snapshot = isPlainObject(row.snapshot) ? row.snapshot : {};
+  const preview = isPlainObject(row.preview) ? row.preview : {};
+  const trainingWindow = isPlainObject(row.training_window) ? row.training_window : {};
+  const sampleWindow = isPlainObject(trainingWindow.sample_window) ? trainingWindow.sample_window : {};
+  const symbols = Array.isArray(row.symbols) ? row.symbols : [];
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
+    filters: {
+      selected_symbol: String(filters.selected_symbol ?? ""),
+      selected_interval: String(filters.selected_interval ?? "4h"),
+      limit: Number(filters.limit ?? 0),
+      available_symbols: normalizeStringArray(filters.available_symbols, []),
+      available_intervals: normalizeStringArray(filters.available_intervals, ["1h", "4h", "1d"]),
+    },
+    controls: {
+      candidate_pool_preset_key: String(controls.candidate_pool_preset_key ?? "top10_liquid"),
+      selected_symbols: normalizeStringArray(controls.selected_symbols, []),
+      primary_symbol: String(controls.primary_symbol ?? ""),
+      timeframes: normalizeStringArray(controls.timeframes, []),
+      sample_limit: Number(controls.sample_limit ?? 120),
+      lookback_days: Number(controls.lookback_days ?? 30),
+      window_mode: String(controls.window_mode ?? "rolling"),
+      start_date: String(controls.start_date ?? ""),
+      end_date: String(controls.end_date ?? ""),
+      available_symbols: normalizeStringArray(controls.available_symbols, []),
+      available_timeframes: normalizeStringArray(controls.available_timeframes, []),
+      available_window_modes: normalizeStringArray(controls.available_window_modes, ["rolling", "fixed"]),
+      available_candidate_pool_presets: normalizeStringArray(controls.available_candidate_pool_presets, ["top10_liquid", "majors_focus", "execution_focus"]),
+      candidate_pool_preset_catalog: normalizeObjectArray(controls.candidate_pool_preset_catalog),
+    },
+    sources: {
+      research: String(sources.research ?? "qlib-fallback"),
+      market: String(sources.market ?? "binance"),
+    },
+    source_explanations: normalizeObjectArray(row.source_explanations).map((value) => ({
+      label: String(value.label ?? ""),
+      value: String(value.value ?? ""),
+      detail: String(value.detail ?? ""),
+    })),
+    snapshot: {
+      run_type: String(snapshot.run_type ?? "training"),
+      run_id: String(snapshot.run_id ?? ""),
+      generated_at: String(snapshot.generated_at ?? ""),
+      snapshot_id: String(snapshot.snapshot_id ?? ""),
+      cache_signature: String(snapshot.cache_signature ?? ""),
+      cache_status: String(snapshot.cache_status ?? ""),
+      cache_hit_count: Number(snapshot.cache_hit_count ?? 0),
+      cache_miss_count: Number(snapshot.cache_miss_count ?? 0),
+      active_data_state: String(snapshot.active_data_state ?? ""),
+      data_states: isPlainObject(snapshot.data_states) ? snapshot.data_states : {},
+      dataset_snapshot_path: String(snapshot.dataset_snapshot_path ?? ""),
+    },
+    snapshot_consistency: normalizeDataWorkspaceSnapshotConsistency(row.snapshot_consistency),
+    quality: normalizeDataWorkspaceQuality(row.quality),
+    preview: {
+      symbol: String(preview.symbol ?? ""),
+      interval: String(preview.interval ?? "4h"),
+      effective_interval: String(preview.effective_interval ?? preview.interval ?? "4h"),
+      source: String(preview.source ?? "binance"),
+      total_rows: Number(preview.total_rows ?? 0),
+      first_open_time: String(preview.first_open_time ?? ""),
+      last_close_time: String(preview.last_close_time ?? ""),
+      status: String(preview.status ?? "ready"),
+      detail: String(preview.detail ?? ""),
+    },
+    training_window: {
+      holding_window: String(trainingWindow.holding_window ?? ""),
+      sample_window: sampleWindow,
+    },
+    symbols: symbols
+      .map((value) => {
+        const symbolRow = isPlainObject(value) ? value : {};
+        return {
+          symbol: String(symbolRow.symbol ?? ""),
+          selected: Boolean(symbolRow.selected),
+        };
+      })
+      .filter((value) => value.symbol.length > 0),
+  };
+}
+
+function normalizeDataWorkspaceSnapshotConsistency(value: unknown): DataWorkspaceModel["snapshot_consistency"] {
+  const row: Record<string, unknown> = isPlainObject(value) ? value : {};
+  return {
+    training_snapshot_id: String(row.training_snapshot_id ?? ""),
+    training_generated_at: String(row.training_generated_at ?? ""),
+    training_cache_status: String(row.training_cache_status ?? ""),
+    training_cache_hit_count: Number(row.training_cache_hit_count ?? 0),
+    training_cache_miss_count: Number(row.training_cache_miss_count ?? 0),
+    inference_snapshot_id: String(row.inference_snapshot_id ?? ""),
+    inference_generated_at: String(row.inference_generated_at ?? ""),
+    inference_cache_status: String(row.inference_cache_status ?? ""),
+    inference_cache_hit_count: Number(row.inference_cache_hit_count ?? 0),
+    inference_cache_miss_count: Number(row.inference_cache_miss_count ?? 0),
+    matches_training_snapshot: Boolean(row.matches_training_snapshot),
+    note: String(row.note ?? "当前还没有可用快照一致性说明。"),
+  };
+}
+
+function normalizeDataWorkspaceQuality(value: unknown): DataWorkspaceModel["quality"] {
+  const row: Record<string, unknown> = isPlainObject(value) ? value : {};
+  return {
+    raw_rows: Number(row.raw_rows ?? 0),
+    cleaned_rows: Number(row.cleaned_rows ?? 0),
+    feature_ready_rows: Number(row.feature_ready_rows ?? 0),
+    cleaned_drop_rows: Number(row.cleaned_drop_rows ?? 0),
+    feature_drop_rows: Number(row.feature_drop_rows ?? 0),
+    total_drop_rows: Number(row.total_drop_rows ?? 0),
+    retention_ratio_pct: Number(row.retention_ratio_pct ?? 0),
+    missing_rows: row.missing_rows === null || row.missing_rows === undefined ? null : Number(row.missing_rows ?? 0),
+    invalid_rows: row.invalid_rows === null || row.invalid_rows === undefined ? null : Number(row.invalid_rows ?? 0),
+    detail: String(row.detail ?? "当前还没有可用质量摘要。"),
+    summary: String(row.summary ?? "当前还没有可用质量摘要。"),
+  };
+}
+
+function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
+  const roles = isPlainObject(row.roles) ? row.roles : {};
+  const preprocessing = isPlainObject(row.preprocessing) ? row.preprocessing : {};
+  const categories = isPlainObject(row.categories) ? row.categories : {};
+  const timeframeProfiles = isPlainObject(row.timeframe_profiles) ? row.timeframe_profiles : {};
+  const factors = Array.isArray(row.factors) ? row.factors : [];
+  const selectionMatrix = Array.isArray(row.selection_matrix) ? row.selection_matrix : [];
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
+    overview: {
+      feature_version: String(overview.feature_version ?? ""),
+      factor_count: Number(overview.factor_count ?? 0),
+      primary_count: Number(overview.primary_count ?? 0),
+      auxiliary_count: Number(overview.auxiliary_count ?? 0),
+      holding_window: String(overview.holding_window ?? ""),
+    },
+    categories: Object.fromEntries(
+      Object.entries(categories).map(([name, values]) => [String(name), normalizeStringArray(values, [])]),
+    ),
+    roles: {
+      primary: normalizeStringArray(roles.primary, []),
+      auxiliary: normalizeStringArray(roles.auxiliary, []),
+    },
+    controls: {
+      primary_factors: normalizeStringArray(controls.primary_factors, []),
+      auxiliary_factors: normalizeStringArray(controls.auxiliary_factors, []),
+      trend_weight: String(controls.trend_weight ?? "1.3"),
+      momentum_weight: String(controls.momentum_weight ?? "1"),
+      volume_weight: String(controls.volume_weight ?? "1.1"),
+      oscillator_weight: String(controls.oscillator_weight ?? "0.7"),
+      volatility_weight: String(controls.volatility_weight ?? "0.8"),
+      strict_penalty_weight: String(controls.strict_penalty_weight ?? "0.6"),
+      signal_confidence_floor: String(controls.signal_confidence_floor ?? "0.55"),
+      missing_policy: String(controls.missing_policy ?? "neutral_fill"),
+      outlier_policy: String(controls.outlier_policy ?? ""),
+      normalization_policy: String(controls.normalization_policy ?? ""),
+      timeframe_profiles: Object.fromEntries(
+        Object.entries(isPlainObject(controls.timeframe_profiles) ? controls.timeframe_profiles : {}).map(([name, values]) => [
+          String(name),
+          isPlainObject(values) ? values : {},
+        ]),
+      ),
+      available_primary_factors: normalizeStringArray(controls.available_primary_factors, []),
+      available_auxiliary_factors: normalizeStringArray(controls.available_auxiliary_factors, []),
+      available_missing_policies: normalizeStringArray(controls.available_missing_policies, ["neutral_fill", "strict_drop"]),
+      available_outlier_policies: normalizeStringArray(controls.available_outlier_policies, []),
+      available_normalization_policies: normalizeStringArray(controls.available_normalization_policies, []),
+    },
+    preprocessing: {
+      missing_policy: String(preprocessing.missing_policy ?? ""),
+      outlier_policy: String(preprocessing.outlier_policy ?? ""),
+      normalization_policy: String(preprocessing.normalization_policy ?? ""),
+    },
+    timeframe_profiles: Object.fromEntries(
+      Object.entries(timeframeProfiles).map(([name, values]) => [String(name), isPlainObject(values) ? values : {}]),
+    ),
+    factors: factors
+      .map((value) => {
+        const factor = isPlainObject(value) ? value : {};
+        return {
+          name: String(factor.name ?? ""),
+          category: String(factor.category ?? ""),
+          role: String(factor.role ?? ""),
+          description: String(factor.description ?? ""),
+        };
+      })
+      .filter((value) => value.name.length > 0),
+    selection_matrix: selectionMatrix
+      .map((value) => {
+        const item = isPlainObject(value) ? value : {};
+        return {
+          name: String(item.name ?? ""),
+          category: String(item.category ?? ""),
+          protocol_role: String(item.protocol_role ?? ""),
+          current_role: String(item.current_role ?? ""),
+          description: String(item.description ?? ""),
+        };
+      })
+      .filter((value) => value.name.length > 0),
+  };
+}
+
+function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
+  const labeling = isPlainObject(row.labeling) ? row.labeling : {};
+  const model = isPlainObject(row.model) ? row.model : {};
+  const selectors = isPlainObject(row.selectors) ? row.selectors : {};
+  const sampleWindow = isPlainObject(row.sample_window) ? row.sample_window : {};
+  const parameters = isPlainObject(row.parameters) ? row.parameters : {};
+  const readiness = isPlainObject(row.readiness) ? row.readiness : {};
+  const executionPreview = isPlainObject(row.execution_preview) ? row.execution_preview : {};
+  const labelRuleSummary = isPlainObject(row.label_rule_summary) ? row.label_rule_summary : {};
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
+    overview: {
+      holding_window: String(overview.holding_window ?? ""),
+      candidate_count: Number(overview.candidate_count ?? 0),
+      recommended_symbol: String(overview.recommended_symbol ?? ""),
+      recommended_action: String(overview.recommended_action ?? ""),
+    },
+    strategy_templates: normalizeStringArray(row.strategy_templates, []),
+    labeling: {
+      label_columns: normalizeStringArray(labeling.label_columns, []),
+      label_mode: String(labeling.label_mode ?? ""),
+      definition: String(labeling.definition ?? ""),
+    },
+    sample_window: Object.fromEntries(
+      Object.entries(sampleWindow).map(([name, value]) => [String(name), isPlainObject(value) ? value : {}]),
+    ),
+    model: {
+      model_version: String(model.model_version ?? ""),
+      backend: String(model.backend ?? "qlib-fallback"),
+    },
+    controls: {
+      research_template: String(controls.research_template ?? ""),
+      model_key: String(controls.model_key ?? ""),
+      label_mode: String(controls.label_mode ?? ""),
+      label_trigger_basis: String(controls.label_trigger_basis ?? "close"),
+      holding_window_label: String(controls.holding_window_label ?? ""),
+      force_validation_top_candidate: Boolean(controls.force_validation_top_candidate),
+      min_holding_days: Number(controls.min_holding_days ?? 1),
+      max_holding_days: Number(controls.max_holding_days ?? 3),
+      label_target_pct: String(controls.label_target_pct ?? ""),
+      label_stop_pct: String(controls.label_stop_pct ?? ""),
+      train_split_ratio: String(controls.train_split_ratio ?? "0.6"),
+      validation_split_ratio: String(controls.validation_split_ratio ?? "0.2"),
+      test_split_ratio: String(controls.test_split_ratio ?? "0.2"),
+      signal_confidence_floor: String(controls.signal_confidence_floor ?? "0.55"),
+      trend_weight: String(controls.trend_weight ?? "1.3"),
+      momentum_weight: String(controls.momentum_weight ?? "1"),
+      volume_weight: String(controls.volume_weight ?? "1.1"),
+      oscillator_weight: String(controls.oscillator_weight ?? "0.7"),
+      volatility_weight: String(controls.volatility_weight ?? "0.9"),
+      strict_penalty_weight: String(controls.strict_penalty_weight ?? "1"),
+      available_models: normalizeStringArray(controls.available_models, []),
+      available_research_templates: normalizeStringArray(controls.available_research_templates, []),
+      available_label_modes: normalizeStringArray(controls.available_label_modes, []),
+      available_label_trigger_bases: normalizeStringArray(controls.available_label_trigger_bases, []),
+      available_holding_windows: normalizeStringArray(controls.available_holding_windows, []),
+    },
+    parameters: Object.fromEntries(
+      Object.entries(parameters).map(([name, value]) => [String(name), String(value ?? "")]),
+    ),
+    selectors: {
+      symbols: normalizeStringArray(selectors.symbols, []),
+      timeframes: normalizeStringArray(selectors.timeframes, []),
+    },
+    readiness: {
+      train_ready: Boolean(readiness.train_ready),
+      infer_ready: Boolean(readiness.infer_ready),
+      blocking_reasons: normalizeStringArray(readiness.blocking_reasons, []),
+      infer_reason: String(readiness.infer_reason ?? ""),
+      next_step: String(readiness.next_step ?? ""),
+    },
+    execution_preview: {
+      data_scope: String(executionPreview.data_scope ?? ""),
+      factor_mix: String(executionPreview.factor_mix ?? ""),
+      label_scope: String(executionPreview.label_scope ?? ""),
+      dry_run_gate: String(executionPreview.dry_run_gate ?? ""),
+      live_gate: String(executionPreview.live_gate ?? ""),
+      validation_policy: String(executionPreview.validation_policy ?? ""),
+    },
+    label_rule_summary: {
+      preset_key: String(labelRuleSummary.preset_key ?? "balanced_window"),
+      headline: String(labelRuleSummary.headline ?? ""),
+      detail: String(labelRuleSummary.detail ?? ""),
+      next_step: String(labelRuleSummary.next_step ?? ""),
+    },
+  };
+}
+
+function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
+  const assumptions = isPlainObject(row.assumptions) ? row.assumptions : {};
+  const trainingBacktest = isPlainObject(row.training_backtest) ? row.training_backtest : {};
+  const metrics = isPlainObject(trainingBacktest.metrics) ? trainingBacktest.metrics : {};
+  const leaderboard = Array.isArray(row.leaderboard) ? row.leaderboard : [];
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    overview: {
+      holding_window: String(overview.holding_window ?? ""),
+      candidate_count: Number(overview.candidate_count ?? 0),
+      recommended_symbol: String(overview.recommended_symbol ?? ""),
+    },
+    assumptions: Object.fromEntries(
+      Object.entries(assumptions).map(([name, value]) => [String(name), String(value ?? "")]),
+    ),
+    controls: {
+      fee_bps: String(controls.fee_bps ?? ""),
+      slippage_bps: String(controls.slippage_bps ?? ""),
+      cost_model: String(controls.cost_model ?? "round_trip_basis_points"),
+      available_cost_models: normalizeStringArray(controls.available_cost_models, []),
+      enable_rule_gate: Boolean(controls.enable_rule_gate),
+      enable_validation_gate: Boolean(controls.enable_validation_gate),
+      enable_backtest_gate: Boolean(controls.enable_backtest_gate),
+      enable_consistency_gate: Boolean(controls.enable_consistency_gate),
+      enable_live_gate: Boolean(controls.enable_live_gate),
+      dry_run_min_score: String(controls.dry_run_min_score ?? "0.55"),
+      dry_run_min_positive_rate: String(controls.dry_run_min_positive_rate ?? "0.45"),
+      dry_run_min_net_return_pct: String(controls.dry_run_min_net_return_pct ?? "0"),
+      dry_run_min_sharpe: String(controls.dry_run_min_sharpe ?? "0.5"),
+      dry_run_max_drawdown_pct: String(controls.dry_run_max_drawdown_pct ?? "15"),
+      dry_run_max_loss_streak: String(controls.dry_run_max_loss_streak ?? "3"),
+      dry_run_min_win_rate: String(controls.dry_run_min_win_rate ?? "0.5"),
+      dry_run_max_turnover: String(controls.dry_run_max_turnover ?? "0.6"),
+      dry_run_min_sample_count: String(controls.dry_run_min_sample_count ?? "20"),
+      validation_min_sample_count: String(controls.validation_min_sample_count ?? "12"),
+      validation_min_avg_future_return_pct: String(controls.validation_min_avg_future_return_pct ?? "-0.1"),
+      consistency_max_validation_backtest_return_gap_pct: String(controls.consistency_max_validation_backtest_return_gap_pct ?? "1.5"),
+      consistency_max_training_validation_positive_rate_gap: String(controls.consistency_max_training_validation_positive_rate_gap ?? "0.2"),
+      consistency_max_training_validation_return_gap_pct: String(controls.consistency_max_training_validation_return_gap_pct ?? "1.5"),
+      rule_min_ema20_gap_pct: String(controls.rule_min_ema20_gap_pct ?? "0"),
+      rule_min_ema55_gap_pct: String(controls.rule_min_ema55_gap_pct ?? "0"),
+      rule_max_atr_pct: String(controls.rule_max_atr_pct ?? "5"),
+      rule_min_volume_ratio: String(controls.rule_min_volume_ratio ?? "1"),
+      strict_rule_min_ema20_gap_pct: String(controls.strict_rule_min_ema20_gap_pct ?? "1.2"),
+      strict_rule_min_ema55_gap_pct: String(controls.strict_rule_min_ema55_gap_pct ?? "1.8"),
+      strict_rule_max_atr_pct: String(controls.strict_rule_max_atr_pct ?? "4.5"),
+      strict_rule_min_volume_ratio: String(controls.strict_rule_min_volume_ratio ?? "1.05"),
+      live_min_score: String(controls.live_min_score ?? "0.65"),
+      live_min_positive_rate: String(controls.live_min_positive_rate ?? "0.50"),
+      live_min_net_return_pct: String(controls.live_min_net_return_pct ?? "0.20"),
+      live_min_win_rate: String(controls.live_min_win_rate ?? "0.55"),
+      live_max_turnover: String(controls.live_max_turnover ?? "0.45"),
+      live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
+    },
+    training_backtest: {
+      metrics: Object.fromEntries(
+        Object.entries(metrics).map(([name, value]) => [String(name), String(value ?? "")]),
+      ),
+    },
+    leaderboard: leaderboard
+      .map((value) => {
+        const item = isPlainObject(value) ? value : {};
+        const backtest = isPlainObject(item.backtest) ? item.backtest : {};
+        return {
+          symbol: String(item.symbol ?? ""),
+          strategy_template: String(item.strategy_template ?? ""),
+          backtest: Object.fromEntries(
+            Object.entries(backtest).map(([name, metric]) => [String(name), String(metric ?? "")]),
+          ),
+        };
+      })
+      .filter((item) => item.symbol.length > 0),
+  };
+}
+
+function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const overview = isPlainObject(row.overview) ? row.overview : {};
+  const controls = isPlainObject(row.controls) ? row.controls : {};
+  const operations = isPlainObject(row.operations) ? row.operations : {};
+
+  return {
+    status: String(row.status ?? "unavailable"),
+    backend: String(row.backend ?? "qlib-fallback"),
+    config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
+    overview: {
+      recommended_symbol: String(overview.recommended_symbol ?? ""),
+      recommended_action: String(overview.recommended_action ?? ""),
+      candidate_count: Number(overview.candidate_count ?? 0),
+    },
+    candidate_scope: {
+      candidate_pool_preset_key: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_pool_preset_key ?? "top10_liquid" : "top10_liquid"),
+      candidate_pool_preset_detail: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_pool_preset_detail ?? "" : ""),
+      candidate_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_symbols : [], DEFAULT_CANDIDATE_SYMBOLS),
+      live_subset_preset_key: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_subset_preset_key ?? "core_live" : "core_live"),
+      live_subset_preset_detail: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_subset_preset_detail ?? "" : ""),
+      live_allowed_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_allowed_symbols : [], DEFAULT_LIVE_ALLOWED_SYMBOLS),
+    },
+    controls: {
+      threshold_preset_key: String(controls.threshold_preset_key ?? "standard_gate"),
+      dry_run_min_score: String(controls.dry_run_min_score ?? ""),
+      dry_run_min_positive_rate: String(controls.dry_run_min_positive_rate ?? ""),
+      dry_run_min_net_return_pct: String(controls.dry_run_min_net_return_pct ?? ""),
+      dry_run_min_sharpe: String(controls.dry_run_min_sharpe ?? ""),
+      dry_run_max_drawdown_pct: String(controls.dry_run_max_drawdown_pct ?? ""),
+      dry_run_max_loss_streak: String(controls.dry_run_max_loss_streak ?? ""),
+      dry_run_min_win_rate: String(controls.dry_run_min_win_rate ?? "0.5"),
+      dry_run_max_turnover: String(controls.dry_run_max_turnover ?? "0.6"),
+      dry_run_min_sample_count: String(controls.dry_run_min_sample_count ?? "20"),
+      validation_min_sample_count: String(controls.validation_min_sample_count ?? "12"),
+      validation_min_avg_future_return_pct: String(controls.validation_min_avg_future_return_pct ?? "-0.1"),
+      consistency_max_validation_backtest_return_gap_pct: String(controls.consistency_max_validation_backtest_return_gap_pct ?? "1.5"),
+      consistency_max_training_validation_positive_rate_gap: String(controls.consistency_max_training_validation_positive_rate_gap ?? "0.2"),
+      consistency_max_training_validation_return_gap_pct: String(controls.consistency_max_training_validation_return_gap_pct ?? "1.5"),
+      rule_min_ema20_gap_pct: String(controls.rule_min_ema20_gap_pct ?? "0"),
+      rule_min_ema55_gap_pct: String(controls.rule_min_ema55_gap_pct ?? "0"),
+      rule_max_atr_pct: String(controls.rule_max_atr_pct ?? "5"),
+      rule_min_volume_ratio: String(controls.rule_min_volume_ratio ?? "1"),
+      strict_rule_min_ema20_gap_pct: String(controls.strict_rule_min_ema20_gap_pct ?? "1.2"),
+      strict_rule_min_ema55_gap_pct: String(controls.strict_rule_min_ema55_gap_pct ?? "1.8"),
+      strict_rule_max_atr_pct: String(controls.strict_rule_max_atr_pct ?? "4.5"),
+      strict_rule_min_volume_ratio: String(controls.strict_rule_min_volume_ratio ?? "1.05"),
+      enable_rule_gate: Boolean(controls.enable_rule_gate),
+      enable_validation_gate: Boolean(controls.enable_validation_gate),
+      enable_backtest_gate: Boolean(controls.enable_backtest_gate),
+      enable_consistency_gate: Boolean(controls.enable_consistency_gate),
+      enable_live_gate: Boolean(controls.enable_live_gate),
+      live_min_score: String(controls.live_min_score ?? ""),
+      live_min_positive_rate: String(controls.live_min_positive_rate ?? ""),
+      live_min_net_return_pct: String(controls.live_min_net_return_pct ?? ""),
+      live_min_win_rate: String(controls.live_min_win_rate ?? "0.55"),
+      live_max_turnover: String(controls.live_max_turnover ?? "0.45"),
+      live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
+    },
+    operations: {
+      operations_preset_key: String(operations.operations_preset_key ?? "balanced_guard"),
+      operations_preset_detail: String(operations.operations_preset_detail ?? ""),
+      review_limit: String(operations.review_limit ?? "10"),
+      comparison_run_limit: String(operations.comparison_run_limit ?? "5"),
+      cycle_cooldown_minutes: String(operations.cycle_cooldown_minutes ?? "15"),
+      max_daily_cycle_count: String(operations.max_daily_cycle_count ?? "8"),
+      automation_preset_key: String(operations.automation_preset_key ?? "balanced_runtime"),
+      automation_preset_detail: String(operations.automation_preset_detail ?? ""),
+    },
+    evaluation: isPlainObject(row.evaluation) ? row.evaluation : {},
+    reviews: isPlainObject(row.reviews) ? row.reviews : {},
+    recent_review_tasks: Array.isArray(row.recent_review_tasks) ? row.recent_review_tasks.filter(isPlainObject) : [],
+    leaderboard: Array.isArray(row.leaderboard) ? row.leaderboard.filter(isPlainObject) : [],
+    best_experiment: isPlainObject(row.best_experiment) ? row.best_experiment : {},
+    best_stage_candidates: isPlainObject(row.best_stage_candidates) ? row.best_stage_candidates : {},
+    recommendation_explanation: isPlainObject(row.recommendation_explanation) ? row.recommendation_explanation : {},
+    elimination_explanation: isPlainObject(row.elimination_explanation) ? row.elimination_explanation : {},
+    recent_runs: Array.isArray(row.recent_runs) ? row.recent_runs.filter(isPlainObject) : [],
+    recent_training_runs: Array.isArray(row.recent_training_runs) ? row.recent_training_runs.filter(isPlainObject) : [],
+    recent_inference_runs: Array.isArray(row.recent_inference_runs) ? row.recent_inference_runs.filter(isPlainObject) : [],
+    experiment_comparison: Array.isArray(row.experiment_comparison) ? row.experiment_comparison.filter(isPlainObject) : [],
+    gate_matrix: Array.isArray(row.gate_matrix) ? row.gate_matrix.filter(isPlainObject) : [],
+    workflow_alignment_timeline: Array.isArray(row.workflow_alignment_timeline) ? row.workflow_alignment_timeline.filter(isPlainObject) : [],
+    run_deltas: Array.isArray(row.run_deltas) ? row.run_deltas.filter(isPlainObject) : [],
+    delta_overview: isPlainObject(row.delta_overview) ? row.delta_overview : {},
+    comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
+    execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
+    stage_decision_summary: isPlainObject(row.stage_decision_summary) ? row.stage_decision_summary : {},
+    alignment_details: isPlainObject(row.alignment_details) ? row.alignment_details : {},
+    alignment_story: isPlainObject(row.alignment_story) ? row.alignment_story : {},
+    alignment_metric_rows: Array.isArray(row.alignment_metric_rows) ? row.alignment_metric_rows.filter(isPlainObject) : [],
+    alignment_gaps: Array.isArray(row.alignment_gaps) ? row.alignment_gaps.filter(isPlainObject) : [],
+    alignment_actions: Array.isArray(row.alignment_actions) ? row.alignment_actions.filter(isPlainObject) : [],
   };
 }
 
@@ -995,14 +2601,20 @@ function normalizeResearchRecommendation(item: unknown): ResearchRecommendation 
     return null;
   }
   const gateRow: Record<string, unknown> = isPlainObject(row.dry_run_gate) ? row.dry_run_gate : {};
+  const liveGateRow: Record<string, unknown> = isPlainObject(row.live_gate) ? row.live_gate : {};
   return {
     symbol,
     score: String(row.score ?? ""),
     allowed_to_dry_run: Boolean(row.allowed_to_dry_run),
+    allowed_to_live: Boolean(row.allowed_to_live),
     strategy_template: String(row.strategy_template ?? ""),
     dry_run_gate: {
       status: String(gateRow.status ?? "unavailable"),
       reasons: normalizeStringArray(gateRow.reasons, []),
+    },
+    live_gate: {
+      status: String(liveGateRow.status ?? "unavailable"),
+      reasons: normalizeStringArray(liveGateRow.reasons, []),
     },
     next_action: String(row.next_action ?? ""),
   };
@@ -1191,6 +2803,7 @@ function normalizeResearchCandidateItem(item: unknown): ResearchCandidateItem | 
   const backtestRow: Record<string, unknown> = isPlainObject(row.backtest) ? row.backtest : {};
   const metricsRow: Record<string, unknown> = isPlainObject(backtestRow.metrics) ? backtestRow.metrics : {};
   const gateRow: Record<string, unknown> = isPlainObject(row.dry_run_gate) ? row.dry_run_gate : {};
+  const liveGateRow: Record<string, unknown> = isPlainObject(row.live_gate) ? row.live_gate : {};
   return {
     rank: Number(row.rank ?? 0),
     symbol,
@@ -1204,6 +2817,11 @@ function normalizeResearchCandidateItem(item: unknown): ResearchCandidateItem | 
       reasons: normalizeStringArray(gateRow.reasons, []),
     },
     allowed_to_dry_run: Boolean(row.allowed_to_dry_run),
+    live_gate: {
+      status: String(liveGateRow.status ?? "unavailable"),
+      reasons: normalizeStringArray(liveGateRow.reasons, []),
+    },
+    allowed_to_live: Boolean(row.allowed_to_live),
     review_status: String(row.review_status ?? ""),
     next_action: String(row.next_action ?? ""),
     forced_for_validation: Boolean(row.forced_for_validation),
@@ -1248,6 +2866,30 @@ function normalizeResearchReportItem(item: unknown): ResearchReportItem {
       training: isPlainObject(experimentsRow.training) ? experimentsRow.training : {},
       inference: isPlainObject(experimentsRow.inference) ? experimentsRow.inference : {},
     },
+  };
+}
+
+function normalizeResearchRuntimeStatus(item: unknown): ResearchRuntimeStatusModel {
+  const row: Record<string, unknown> = isPlainObject(item) ? item : {};
+  const estimatedRow: Record<string, unknown> = isPlainObject(row.estimated_seconds) ? row.estimated_seconds : {};
+  return {
+    status: String(row.status ?? "idle"),
+    action: String(row.action ?? ""),
+    current_stage: String(row.current_stage ?? "idle"),
+    progress_pct: Number(row.progress_pct ?? 0),
+    started_at: String(row.started_at ?? ""),
+    finished_at: String(row.finished_at ?? ""),
+    message: String(row.message ?? "当前没有研究任务在运行。"),
+    last_completed_action: String(row.last_completed_action ?? ""),
+    last_finished_at: String(row.last_finished_at ?? ""),
+    result_paths: normalizeStringArray(row.result_paths, ["/research", "/evaluation", "/signals"]),
+    history: isPlainObject(row.history) ? row.history : {},
+    estimated_seconds: {
+      training: Number(estimatedRow.training ?? 25),
+      inference: Number(estimatedRow.inference ?? 12),
+      pipeline: Number(estimatedRow.pipeline ?? 40),
+    },
+    current_estimate_seconds: Number(row.current_estimate_seconds ?? 0),
   };
 }
 
@@ -1311,7 +2953,7 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
   return {
     overview: {
       strategy_count: 2,
-      whitelist_count: 4,
+      whitelist_count: 10,
       signal_count: 1,
       order_count: 1,
       running_count: 0,
@@ -1329,14 +2971,14 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
       signal_count: 0,
     },
     research_recommendation: null,
-    whitelist: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+    whitelist: DEFAULT_CANDIDATE_SYMBOLS,
     strategies: [
       {
         strategy_id: 1,
         key: "trend_breakout",
         display_name: "趋势突破",
         description: "顺着趋势等待关键区间突破后入场。",
-        symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+        symbols: DEFAULT_CANDIDATE_SYMBOLS,
         default_params: { timeframe: "1h", lookback_bars: 20, breakout_buffer_pct: 0.5 },
         runtime_status: "stopped",
         runtime_name: "趋势突破",
@@ -1366,7 +3008,7 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
         key: "trend_pullback",
         display_name: "趋势回调",
         description: "在趋势中等待回调完成后顺势入场。",
-        symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"],
+        symbols: DEFAULT_CANDIDATE_SYMBOLS,
         default_params: { timeframe: "1h", lookback_bars: 20, pullback_depth_pct: 1.0 },
         runtime_status: "stopped",
         runtime_name: "趋势回调",
@@ -1410,6 +3052,9 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
       latest_balance: null,
       latest_order: null,
       latest_position: null,
+    },
+    configuration: {
+      candidate_pool: DEFAULT_CANDIDATE_SYMBOLS.join(","),
     },
   };
 }
@@ -1471,6 +3116,28 @@ export function getResearchReportFallback(): { item: ResearchReportItem } {
       },
     }),
   };
+}
+
+export function getResearchRuntimeStatusFallback(): ResearchRuntimeStatusModel {
+  return normalizeResearchRuntimeStatus({
+    status: "idle",
+    action: "",
+    current_stage: "idle",
+    progress_pct: 0,
+    started_at: "",
+    finished_at: "",
+    message: "当前没有研究任务在运行。",
+    last_completed_action: "",
+    last_finished_at: "",
+    result_paths: ["/research", "/evaluation", "/signals"],
+    history: {},
+    estimated_seconds: {
+      training: 25,
+      inference: 12,
+      pipeline: 40,
+    },
+    current_estimate_seconds: 0,
+  });
 }
 
 export function getPositionsPageModel(): PositionsPageModel {
@@ -1557,6 +3224,9 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       paused: false,
       pauseReason: "",
       manualTakeover: false,
+      pausedAt: "",
+      manualTakeoverAt: "",
+      lastFailureAt: "",
       armedSymbol: "",
       runtimeMode: "demo",
       allowLiveExecution: false,
@@ -1564,8 +3234,52 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       lastCycle: {},
       reviewOverview: {},
       researchOverview: {},
-      health: {},
+      health: {
+        active_blockers: [],
+        operator_actions: [],
+        takeover_summary: {},
+        alert_summary: { groups: [] },
+      },
       executionHealth: {},
+      dailySummary: {},
+      runtimeWindow: {},
+      schedulerPlan: [],
+      failurePolicy: {},
+      severitySummary: {},
+      resumeChecklist: [],
+      automationConfig: {
+        automation_preset_key: "balanced_runtime",
+        automation_preset_detail: "自动化运行预设：balanced_runtime / 当前还没有自动化运行预设说明",
+        available_automation_presets: ["balanced_runtime", "fast_feedback", "cautious_watch"],
+        automation_preset_catalog: [],
+        long_run_seconds: "300",
+        alert_cleanup_minutes: "15",
+      },
+      executionPolicy: {
+        candidate_pool_preset_key: "top10_liquid",
+        candidate_pool_preset_detail: "候选池预设：top10_liquid / 当前还没有候选池说明",
+        candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+        candidate_pool_preset_catalog: [],
+        live_subset_preset_key: "core_live",
+        live_subset_preset_detail: "live 子集预设：core_live / 当前还没有 live 子集说明",
+        live_subset_preset_catalog: [],
+        live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
+        live_max_stake_usdt: "6",
+        live_max_open_trades: "1",
+      },
+      operations: {
+        operations_preset_key: "balanced_guard",
+        operations_preset_detail: "长期运行预设：balanced_guard / 当前还没有长期运行预设说明",
+        available_operations_presets: ["balanced_guard", "strict_guard", "extended_observation"],
+        operations_preset_catalog: [],
+        pause_after_consecutive_failures: "2",
+        stale_sync_failure_threshold: "1",
+        auto_pause_on_error: true,
+        review_limit: "10",
+        comparison_run_limit: "5",
+        cycle_cooldown_minutes: "15",
+        max_daily_cycle_count: "8",
+      },
     },
   };
 }

@@ -11,6 +11,7 @@
 - Binance 真实行情可以读取
 - Binance 真实余额可以读取
 - `dry-run` 链路可以跑通
+- 小额 `live` 链路已经做过真实验证
 
 ## 当前运行方式
 
@@ -63,8 +64,9 @@ pnpm start --hostname 127.0.0.1 --port 9012
 
 ### `live`
 
-- 当前仍然故意拦住
-- 还不能真实下单
+- 只在显式开启 live 安全门时允许真实下单
+- 默认仍然建议先走 `dry-run`
+- 当前 live 只用于小额受控验证，不是全自动放开
 
 ## 真实 dry-run 已验证链路
 
@@ -139,7 +141,7 @@ pwsh -File infra/scripts/demo_flow.ps1 -Username admin -Password 1933
 - 只支持 `Binance`
 - 只支持 `Freqtrade`
 - 当前主模式是 `dry-run`
-- 真实下单未开放
+- 真实下单已开放，但只允许受控小额验证
 
 ## 当前文档关系
 

@@ -126,6 +126,28 @@ class MarketService:
             allowed_symbols=allowed_symbols,
         )
         items = list(chart.get("items", []))
+        if not items:
+            strategy_context = _build_empty_strategy_context(normalized_symbol, "empty_chart")
+            markers = build_empty_marker_groups()
+            return {
+                "items": [],
+                "overlays": dict(chart.get("overlays") or {}),
+                "markers": markers,
+                "active_interval": active_interval,
+                "supported_intervals": get_supported_market_intervals(),
+                "multi_timeframe_summary": [],
+                "strategy_context": strategy_context,
+                "research_cockpit": build_symbol_research_cockpit(
+                    symbol=normalized_symbol,
+                    recommended_strategy=str(strategy_context.get("recommended_strategy", "none")),
+                    evaluation=_resolve_primary_evaluation(
+                        str(strategy_context.get("recommended_strategy", "none")),
+                        dict(strategy_context.get("evaluations") or {}),
+                    ),
+                    research_summary=self._get_symbol_research(normalized_symbol),
+                    markers=markers,
+                ),
+            }
         normalized_catalog_whitelist = tuple(item.strip().upper() for item in catalog_whitelist if item.strip())
         strategy_chart_cache: ChartCache = {}
         if normalized_symbol in normalized_catalog_whitelist:
@@ -449,6 +471,7 @@ def _build_empty_strategy_context(symbol: str, reason: str) -> dict[str, object]
         "recommended_strategy": "none",
         "trend_state": "neutral",
         "next_step": "当前 symbol 还不在可观察范围，先回市场页检查白名单。",
+        "primary_reason": reason,
         "evaluations": {
             "trend_breakout": dict(unavailable),
             "trend_pullback": dict(unavailable),

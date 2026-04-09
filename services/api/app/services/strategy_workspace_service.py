@@ -16,7 +16,14 @@ from services.api.app.services.signal_service import SignalService, signal_servi
 from services.api.app.services.strategy_catalog import StrategyCatalogService, strategy_catalog_service
 from services.api.app.services.strategy_engine import apply_research_soft_gate, evaluate_trend_breakout, evaluate_trend_pullback
 from services.api.app.services.sync_service import SyncService, sync_service
-from services.api.app.services.workbench_config_service import workbench_config_service
+from services.api.app.services.workbench_config_service import (
+    _build_automation_preset_catalog,
+    _build_candidate_pool_preset_catalog,
+    _build_live_subset_preset_catalog,
+    _build_operations_preset_catalog,
+    _describe_catalog_item,
+    workbench_config_service,
+)
 
 
 class StrategyWorkspaceService:
@@ -42,7 +49,11 @@ class StrategyWorkspaceService:
     def get_workspace(self, signal_limit: int = 5, order_limit: int = 5) -> dict[str, object]:
         """返回策略中心页面的一次完整聚合视图。"""
 
-        whitelist = self._catalog_service.get_whitelist()
+        config = workbench_config_service.get_config()
+        configured_symbols = [
+            str(item) for item in list(dict(config.get("data") or {}).get("selected_symbols") or []) if str(item).strip()
+        ]
+        whitelist = configured_symbols or self._catalog_service.get_whitelist()
         catalog = self._catalog_service.list_strategies()
         recent_signals = self._signal_store.list_signals(limit=signal_limit)
         account_state = self._build_account_state(order_limit=order_limit)
@@ -50,7 +61,6 @@ class StrategyWorkspaceService:
         latest_research = self._research_reader.get_latest_result()
         strategy_cards = self._build_strategy_cards(catalog, whitelist, latest_research)
 
-        configuration = workbench_config_service.get_config()
         return {
             "overview": {
                 "strategy_count": len(strategy_cards),
@@ -67,7 +77,7 @@ class StrategyWorkspaceService:
             "recent_signals": recent_signals,
             "recent_orders": recent_orders,
             "account_state": account_state,
-            "configuration": configuration,
+            "configuration": self._build_configuration_summary(),
         }
 
     def _build_account_state(self, order_limit: int = 5) -> dict[str, object]:
@@ -96,6 +106,8 @@ class StrategyWorkspaceService:
             "dust_count": sum(1 for item in balances if str(item.get("tradeStatus", "")).lower() == "dust"),
             "order_count": len(orders),
             "position_count": len(positions),
+            "pending_exit_count": sum(1 for item in orders if str(item.get("lifecycle", "")).lower() == "pending_exit"),
+            "open_position_count": sum(1 for item in positions if str(item.get("positionStatus", "open")).lower() == "open"),
         }
 
         return {
@@ -204,6 +216,55 @@ class StrategyWorkspaceService:
         if recommendation is None:
             return None
         return dict(recommendation)
+
+    @staticmethod
+    def _build_configuration_summary() -> dict[str, str]:
+        """把当前研究、执行和自动化关键配置压成策略页可读摘要。"""
+
+        config = workbench_config_service.get_config()
+        data = dict(config.get("data") or {})
+        research = dict(config.get("research") or {})
+        execution = dict(config.get("execution") or {})
+        thresholds = dict(config.get("thresholds") or {})
+        operations = dict(config.get("operations") or {})
+        automation = dict(config.get("automation") or {})
+        candidate_symbols = [str(item) for item in list(data.get("selected_symbols") or []) if str(item).strip()]
+        allowed_symbols = [str(item) for item in list(execution.get("live_allowed_symbols") or []) if str(item).strip()]
+        candidate_pool_preset_key = str(data.get("candidate_pool_preset_key", "top10_liquid"))
+        live_subset_preset_key = str(execution.get("live_subset_preset_key", "core_live"))
+        operations_preset_key = str(operations.get("operations_preset_key", "balanced_guard"))
+        automation_preset_key = str(automation.get("automation_preset_key", "balanced_runtime"))
+        return {
+            "priority_tags": [dict(item) for item in list(config.get("priority_tags") or []) if isinstance(item, dict)],
+            "research_scope": f"{research.get('research_template', 'single_asset_timing')} / {research.get('model_key', 'heuristic_v1')} / {research.get('holding_window_label', '1-3d')}",
+            "validation_policy": "强制验证当前最优候选"
+            if bool(research.get("force_validation_top_candidate", False))
+            else "按统一门控自然筛选",
+            "candidate_pool": ",".join(candidate_symbols) or "未设置",
+            "candidate_pool_preset": _describe_catalog_item(
+                _build_candidate_pool_preset_catalog(),
+                key=candidate_pool_preset_key,
+                title="候选池预设",
+            ),
+            "execution_policy": f"{','.join(allowed_symbols) or '未设置'} / 单笔 {execution.get('live_max_stake_usdt', '6')} USDT / 最多 {execution.get('live_max_open_trades', '1')} 仓",
+            "live_subset_preset": _describe_catalog_item(
+                _build_live_subset_preset_catalog(),
+                key=live_subset_preset_key,
+                title="live 子集预设",
+            ),
+            "threshold_policy": f"dry-run≥{thresholds.get('dry_run_min_score', '0.55')} / live≥{thresholds.get('live_min_score', '0.65')} / 验证样本≥{thresholds.get('validation_min_sample_count', '12')}",
+            "automation_policy": f"冷却 {operations.get('cycle_cooldown_minutes', '15')} 分钟 / 每日 {operations.get('max_daily_cycle_count', '8')} 轮 / 长运行 {automation.get('long_run_seconds', '300')} 秒",
+            "operations_preset": _describe_catalog_item(
+                _build_operations_preset_catalog(),
+                key=operations_preset_key,
+                title="长期运行预设",
+            ),
+            "automation_runtime_preset": _describe_catalog_item(
+                _build_automation_preset_catalog(),
+                key=automation_preset_key,
+                title="自动化运行预设",
+            ),
+        }
 
     def _build_research_summary(
         self,

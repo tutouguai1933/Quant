@@ -29,22 +29,37 @@ def _success(data: dict, meta: dict | None = None) -> dict:
     return {"data": data, "error": None, "meta": meta or {}}
 
 
+def _build_freqtrade_meta(limit: int, detail: str = "") -> dict[str, object]:
+    """整理 Freqtrade 相关元信息，并在不可用时给出降级提示。"""
+
+    source = "freqtrade-sync"
+    get_runtime_snapshot = getattr(sync_service, "get_runtime_snapshot", None)
+    if callable(get_runtime_snapshot):
+        try:
+            runtime_snapshot = get_runtime_snapshot()
+        except Exception:
+            runtime_snapshot = {"backend": "memory"}
+        source = "freqtrade-rest-sync" if runtime_snapshot.get("backend") == "rest" else "freqtrade-sync"
+    meta: dict[str, object] = {
+        "limit": limit,
+        "source": source,
+        "truth_source": "freqtrade",
+    }
+    if detail:
+        meta["status"] = "unavailable"
+        meta["detail"] = detail
+    return meta
+
+
 @router.get("")
 def list_positions(limit: int = 100) -> dict:
     runtime_mode = Settings.from_env().runtime_mode
     if runtime_mode in {"demo", "dry-run"}:
-        items = sync_service.list_positions(limit=limit)
-        get_runtime_snapshot = getattr(sync_service, "get_runtime_snapshot", None)
-        runtime_snapshot = get_runtime_snapshot() if callable(get_runtime_snapshot) else {"backend": "memory"}
-        source = "freqtrade-rest-sync" if runtime_snapshot.get("backend") == "rest" else "freqtrade-sync"
-        return _success(
-            {"items": items},
-            {
-                "limit": limit,
-                "source": source,
-                "truth_source": "freqtrade",
-            },
-        )
+        try:
+            items = sync_service.list_positions(limit=limit)
+            return _success({"items": items}, _build_freqtrade_meta(limit))
+        except Exception as exc:
+            return _success({"items": []}, _build_freqtrade_meta(limit, str(exc)))
 
     items = account_sync_service.list_positions(limit=limit)
     return _success(

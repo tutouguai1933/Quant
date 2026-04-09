@@ -102,7 +102,12 @@ class SyncService:
             "source_signal_id": action.get("source_signal_id"),
         }
 
-    def get_execution_health_summary(self, *, task_health: dict[str, object] | None = None) -> dict[str, object]:
+    def get_execution_health_summary(
+        self,
+        *,
+        task_health: dict[str, object] | None = None,
+        automation_state: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         """返回执行链当前健康状态，给复盘和页面统一复用。"""
 
         runtime = self.get_runtime_snapshot()
@@ -113,6 +118,8 @@ class SyncService:
         latest_sync_status = str(latest_status.get("sync", "unknown"))
         latest_review_status = str(latest_status.get("review", "unknown"))
         latest_failed_sync = dict(latest_failure.get("sync") or {})
+        account_shape = self._build_account_shape(runtime=runtime)
+        execution_state = self._build_execution_state(runtime=runtime, automation_state=dict(automation_state or {}))
         return {
             "runtime_mode": str(runtime.get("mode", "")),
             "backend": str(runtime.get("backend", "")),
@@ -125,7 +132,101 @@ class SyncService:
             "sync_stale": latest_sync_status not in {"succeeded", "retrying"},
             "order_count": int(runtime.get("order_count", 0) or 0),
             "position_count": int(runtime.get("position_count", 0) or 0),
+            "execution_state": execution_state,
+            "retry_allowed": latest_sync_status in {"failed", "retrying"},
+            "reconnect_required": str(runtime.get("backend", "")) == "rest"
+            and str(runtime.get("connection_status", "")) not in {"connected", "not_configured"},
+            "latest_error_message": str(
+                latest_failed_sync.get("error_message")
+                or latest_failed_sync.get("detail")
+                or ""
+            ),
+            "recovery_action": self._resolve_recovery_action(
+                execution_state=execution_state,
+                latest_sync_status=latest_sync_status,
+                runtime=runtime,
+                account_shape=account_shape,
+            ),
+            **account_shape,
         }
+
+    def _build_account_shape(self, *, runtime: dict[str, object]) -> dict[str, object]:
+        """整理执行层账户状态，区分持仓、待平仓和零头。"""
+
+        runtime_mode = str(runtime.get("mode", ""))
+        if runtime_mode == "live":
+            balances = account_sync_service.list_balances(limit=100)
+            orders = account_sync_service.list_orders(limit=100)
+            positions = account_sync_service.list_positions(limit=100)
+        else:
+            balances = []
+            orders = self.list_orders(limit=100)
+            positions = self.list_positions(limit=100)
+        return {
+            "dust_balance_count": sum(1 for item in balances if str(item.get("tradeStatus", "")).lower() == "dust"),
+            "pending_exit_count": sum(1 for item in orders if str(item.get("lifecycle", "")).lower() == "pending_exit"),
+            "open_position_count": sum(1 for item in positions if str(item.get("positionStatus", "open")).lower() == "open"),
+        }
+
+    @staticmethod
+    def _build_execution_state(*, runtime: dict[str, object], automation_state: dict[str, object]) -> dict[str, object]:
+        """把当前执行链压成固定状态机。"""
+
+        if bool(automation_state.get("manual_takeover")):
+            return {
+                "state": "takeover",
+                "detail": "当前处于人工接管状态，自动化不会继续推进",
+                "allowed_transitions": ["manual", "dry-run", "live"],
+            }
+        if bool(automation_state.get("paused")):
+            return {
+                "state": "paused",
+                "detail": "当前执行链已暂停，等待人工恢复",
+                "allowed_transitions": ["manual", "dry-run", "live"],
+            }
+        runtime_mode = str(runtime.get("mode", ""))
+        if runtime_mode == "live":
+            return {
+                "state": "live",
+                "detail": "当前执行链正在小额 live 模式下运行",
+                "allowed_transitions": ["paused", "takeover", "dry-run"],
+            }
+        if runtime_mode == "dry-run":
+            return {
+                "state": "dry-run",
+                "detail": "当前执行链正在 dry-run 模式下运行",
+                "allowed_transitions": ["live", "paused", "takeover"],
+            }
+        return {
+            "state": "manual",
+            "detail": "当前仍是手动或演示模式",
+            "allowed_transitions": ["dry-run", "paused"],
+        }
+
+    @staticmethod
+    def _resolve_recovery_action(
+        *,
+        execution_state: dict[str, object],
+        latest_sync_status: str,
+        runtime: dict[str, object],
+        account_shape: dict[str, object],
+    ) -> str:
+        """给执行异常统一输出恢复方向。"""
+
+        state = str(execution_state.get("state", ""))
+        if state == "paused":
+            return "resume_after_review"
+        if state == "takeover":
+            return "manual_takeover"
+        if str(runtime.get("backend", "")) == "rest" and str(runtime.get("connection_status", "")) not in {"connected", "not_configured"}:
+            return "reconnect_executor"
+        if latest_sync_status in {"failed", "retrying"}:
+            return "retry_sync"
+        if int(account_shape.get("pending_exit_count", 0) or 0) > 0:
+            return "watch_pending_exit"
+        if int(account_shape.get("dust_balance_count", 0) or 0) > 0:
+            return "review_dust"
+        return "healthy"
 
     def _confirm_live_dispatch_sync(
         self,

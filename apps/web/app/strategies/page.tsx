@@ -9,6 +9,7 @@ import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
+import { ConfigCheckboxGrid, ConfigField, ConfigInput, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -16,6 +17,8 @@ import { readFeedback } from "../../lib/feedback";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
+  getEvaluationWorkspace,
+  getEvaluationWorkspaceFallback,
   getResearchCandidate,
   getResearchCandidates,
   getResearchCandidatesFallback,
@@ -39,10 +42,12 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   let workspace = getStrategyWorkspaceFallback();
   let candidateSnapshot = getResearchCandidatesFallback();
   let automation = getAutomationStatusFallback().item;
-  const [workspaceResult, candidateResult, automationResult] = await Promise.allSettled([
+  let evaluation = getEvaluationWorkspaceFallback();
+  const [workspaceResult, candidateResult, automationResult, evaluationResult] = await Promise.allSettled([
     token ? getStrategyWorkspace(token) : Promise.resolve(null),
     focusSymbol ? getResearchCandidate(focusSymbol) : getResearchCandidates(),
     token ? getAutomationStatus(token) : Promise.resolve(null),
+    getEvaluationWorkspace(),
   ]);
 
   if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
@@ -72,7 +77,22 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
     automation = automationResult.value.data.item;
   }
+  if (evaluationResult.status === "fulfilled" && !evaluationResult.value.error) {
+    evaluation = evaluationResult.value.data.item;
+  }
   const automationCycle = asRecord(automation.lastCycle);
+  const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
+  const configuration = asRecord(workspace.configuration);
+  const executionPolicy = asRecord(automation.executionPolicy);
+  const candidateSymbols = toStringArray(executionPolicy.candidate_symbols);
+  const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
+  const executionSymbolOptions = Array.from(
+    new Set([...(candidateSymbols.length ? candidateSymbols : workspace.whitelist), ...executionAllowedSymbols]),
+  ).map((item) => ({
+    value: item,
+    label: item,
+    checked: executionAllowedSymbols.includes(item),
+  }));
 
   return (
     <AppShell
@@ -136,6 +156,28 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
             ]}
           />
 
+          {automation.paused || automation.manualTakeover ? (
+            <Card>
+              <CardHeader>
+                <p className="eyebrow">当前自动化状态</p>
+                <CardTitle>{automation.manualTakeover ? "当前已人工接管" : "当前已暂停自动化"}</CardTitle>
+                <CardDescription>
+                  {automation.manualTakeover
+                    ? "这意味着当前不应该继续自动推进，先去任务页看接管原因、恢复步骤和最近失败。"
+                    : "这意味着当前不应该继续自动推进，先去任务页确认为什么暂停、什么时候恢复。"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-3">
+                <AutomationInfo label="当前模式" value={readText(automation.mode, "manual")} />
+                <AutomationInfo label="暂停原因" value={readText(automation.pauseReason, "当前没有暂停原因")} />
+                <AutomationInfo label="最近失败时间" value={readText(automation.lastFailureAt, "当前没有失败记录")} />
+                <Button asChild variant="outline">
+                  <Link href="/tasks">去任务页处理接管与恢复</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.9fr)] xl:items-start">
             <section className="grid gap-5">
               {workspace.research_recommendation ? (
@@ -153,12 +195,47 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                     <Button asChild variant="outline">
                       <Link href={`/market/${encodeURIComponent(workspace.research_recommendation.symbol)}`}>去这个币的图表页</Link>
                     </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/research">去研究工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/backtest">去回测工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/evaluation">去评估与实验中心</Link>
+                    </Button>
                     <Button asChild variant="terminal">
                       <Link href={`/strategies?symbol=${encodeURIComponent(workspace.research_recommendation.symbol)}`}>围绕这个币继续执行</Link>
                     </Button>
                   </CardContent>
                 </Card>
               ) : null}
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">候选池摘要</p>
+                  <CardTitle>为什么现在先推进这个币</CardTitle>
+                  <CardDescription>先把共享候选池、评估门和 live 子集讲清楚，再决定这一轮先推进谁。</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  <AutomationInfo
+                    label="候选池先筛，live 子集后放"
+                    value={readText(configuration.candidate_pool_preset, "研究和 dry-run 先共用候选池，再由更严格的 live 子集继续放行。")}
+                  />
+                  <AutomationInfo
+                    label="这一轮先推进谁"
+                    value={workspace.research_recommendation?.symbol || readText(evaluation.overview.recommended_symbol, "当前还没有推荐标的")}
+                  />
+                  <AutomationInfo
+                    label="为什么先推进"
+                    value={workspace.research_recommendation?.next_action || readText(evaluationReview.next_action, "先继续研究，确认门控和执行差异")}
+                  />
+                  <AutomationInfo
+                    label="还差什么"
+                    value={readText(configuration.live_subset_preset, "先通过候选池和评估门，再进入更严格的 live 子集")}
+                  />
+                </CardContent>
+              </Card>
 
               <ResearchCandidateBoard
                 title="研究候选"
@@ -179,6 +256,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <AutomationInfo label="最近一轮" value={readText(automationCycle.status, "waiting")} />
                   <AutomationInfo label="自动化推荐" value={readText(automationCycle.recommended_symbol, "n/a")} />
                   <AutomationInfo label="下一步动作" value={readText(automationCycle.next_action, "continue_research")} />
+                  <AutomationInfo label="是否暂停" value={automation.paused ? "已暂停" : "正常运行"} />
+                  <AutomationInfo label="人工接管" value={automation.manualTakeover ? "人工接管中" : "当前未接管"} />
+                  <AutomationInfo label="暂停原因" value={readText(automation.pauseReason, "当前没有暂停原因")} />
+                  <AutomationInfo label="上次失败时间" value={readText(automation.lastFailureAt, "当前没有失败记录")} />
                 </CardContent>
               </Card>
 
@@ -206,6 +287,29 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <Button asChild variant="secondary">
                     <Link href="/signals">回到信号页复核</Link>
                   </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">研究链入口</p>
+                  <CardTitle>先看研究工作台、回测工作台和评估与实验中心</CardTitle>
+                  <CardDescription>执行页继续承接研究链，而不是让你自己在多个页面之间拼结论。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>评估中心推荐：{readText(evaluation.overview.recommended_symbol, "n/a")}</p>
+                  <p>推荐原因：{readText(evaluationReview.result, "未生成")}</p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="outline">
+                      <Link href="/research">研究工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/backtest">回测工作台</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href="/evaluation">评估与实验中心</Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -242,6 +346,53 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <p>连接状态：{workspace.executor_runtime.connection_status}</p>
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">当前配置摘要</p>
+                  <CardTitle>先确认这轮研究和执行到底按什么口径在跑</CardTitle>
+                  <CardDescription>把研究模板、验证门、执行安全门和自动化策略压成一块，避免你只看到推荐结果，却不知道它是按什么规则得出来的。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>研究范围：{readText(configuration.research_scope, "当前还没有研究范围摘要")}</p>
+                  <p>研究 / dry-run 候选池：{readText(configuration.candidate_pool, workspace.whitelist.join(" / ") || "当前未设置")}</p>
+                  <p>验证策略：{readText(configuration.validation_policy, "当前还没有验证策略摘要")}</p>
+                  <p>live 子集：{executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
+                  <p>执行策略：{readText(configuration.execution_policy, "当前还没有执行策略摘要")}</p>
+                  <p>门槛策略：{readText(configuration.threshold_policy, "当前还没有门槛策略摘要")}</p>
+                  <p>自动化策略：{readText(configuration.automation_policy, "当前还没有自动化策略摘要")}</p>
+                </CardContent>
+              </Card>
+
+              <WorkbenchConfigCard
+                title="执行安全门配置"
+                description="研究推荐出来的币会先走研究 / dry-run 候选池；这里只有更严格的 live 子集、单笔金额和最大开仓数。"
+                scope="execution"
+                returnTo={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}
+              >
+                <ConfigField label="live_allowed_symbols" hint="只有这里勾选的币，才允许继续自动小额 live。">
+                  <ConfigCheckboxGrid name="live_allowed_symbols" options={executionSymbolOptions} />
+                </ConfigField>
+                <ConfigField label="单笔 live 金额" hint="这里控制单次自动小额 live 最多能下多少 USDT。">
+                  <ConfigInput
+                    name="live_max_stake_usdt"
+                    type="number"
+                    min={0.1}
+                    step={0.1}
+                    defaultValue={readText(executionPolicy.live_max_stake_usdt, "6")}
+                  />
+                </ConfigField>
+                <ConfigField label="最大同时开仓数" hint="这里控制自动 live 同时最多保留多少个打开中的仓位。">
+                  <ConfigInput
+                    name="live_max_open_trades"
+                    type="number"
+                    min={1}
+                    max={20}
+                    step={1}
+                    defaultValue={readText(executionPolicy.live_max_open_trades, "1")}
+                  />
+                </ConfigField>
+              </WorkbenchConfigCard>
 
               <Card>
                 <CardHeader>
@@ -291,11 +442,12 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
 
               <Card>
                 <CardHeader>
-                  <p className="eyebrow">白名单摘要</p>
-                  <CardTitle>当前只在固定币种池里做 dry-run</CardTitle>
+                  <p className="eyebrow">候选池摘要</p>
+                  <CardTitle>研究 / dry-run 和 live 用的是两层口径</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm leading-6 text-muted-foreground">{workspace.whitelist.join(" / ")}</p>
+                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p>研究 / dry-run 候选池：{(candidateSymbols.length ? candidateSymbols : workspace.whitelist).join(" / ")}</p>
+                  <p>live 子集：{executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
                 </CardContent>
               </Card>
             </aside>
@@ -381,6 +533,13 @@ function asRecord(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item ?? "").trim()).filter(Boolean);
 }
 
 function AutomationInfo({ label, value }: { label: string; value: string }) {

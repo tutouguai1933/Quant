@@ -8,6 +8,7 @@ __pycache__/
 *.tsbuildinfo
 .next/
 node_modules/
+apps/web/node_modules
 dist/
 out/
 coverage/

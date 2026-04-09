@@ -11,6 +11,7 @@ from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.core.settings import Settings
 from services.api.app.domain.contracts import ExecutionActionContract, ExecutionActionType
 from services.api.app.services.signal_service import signal_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 
 class ExecutionService:
@@ -99,23 +100,26 @@ class ExecutionService:
         symbol = self._compact_symbol(str(action["symbol"]))
         side = str(action["side"])
         if side != "flat":
-            if not settings.live_allowed_symbols:
+            execution_policy = self._get_execution_policy(settings=settings)
+            if not execution_policy["live_allowed_symbols"]:
                 raise PermissionError("live 模式需要先配置 QUANT_LIVE_ALLOWED_SYMBOLS")
-            if symbol not in settings.live_allowed_symbols:
-                raise PermissionError(f"live 模式当前只允许这些币种: {', '.join(settings.live_allowed_symbols)}")
+            if symbol not in execution_policy["live_allowed_symbols"]:
+                raise PermissionError(
+                    f"live 模式当前只允许这些币种: {', '.join(execution_policy['live_allowed_symbols'])}"
+                )
 
             stake_amount = self._read_decimal(
                 runtime_snapshot.get("stake_amount"),
                 field_name="stake_amount",
             )
-            if settings.live_max_stake_usdt is None:
+            if execution_policy["live_max_stake_usdt"] is None:
                 raise PermissionError("live 模式需要先配置 QUANT_LIVE_MAX_STAKE_USDT")
-            if stake_amount > settings.live_max_stake_usdt:
+            if stake_amount > execution_policy["live_max_stake_usdt"]:
                 raise PermissionError(
-                    f"远端 Freqtrade 当前 stake_amount={stake_amount} USDT，已超过本地 live 上限 {settings.live_max_stake_usdt} USDT"
+                    f"远端 Freqtrade 当前 stake_amount={stake_amount} USDT，已超过本地 live 上限 {execution_policy['live_max_stake_usdt']} USDT"
                 )
 
-            if settings.live_max_open_trades is None:
+            if execution_policy["live_max_open_trades"] is None:
                 raise PermissionError("live 模式需要先配置 QUANT_LIVE_MAX_OPEN_TRADES")
             remote_max_open_trades = runtime_snapshot.get("max_open_trades")
             if remote_max_open_trades is None:
@@ -124,12 +128,12 @@ class ExecutionService:
                 parsed_remote_max_open_trades = int(remote_max_open_trades)
             except (TypeError, ValueError) as exc:
                 raise PermissionError(f"无法解析远端 max_open_trades={remote_max_open_trades}") from exc
-            if parsed_remote_max_open_trades > settings.live_max_open_trades:
+            if parsed_remote_max_open_trades > execution_policy["live_max_open_trades"]:
                 raise PermissionError(
-                    f"远端 Freqtrade 当前 max_open_trades={parsed_remote_max_open_trades}，已超过本地 live 上限 {settings.live_max_open_trades}"
+                    f"远端 Freqtrade 当前 max_open_trades={parsed_remote_max_open_trades}，已超过本地 live 上限 {execution_policy['live_max_open_trades']}"
                 )
             open_positions = freqtrade_client.get_snapshot().positions
-            if len(open_positions) >= settings.live_max_open_trades:
+            if len(open_positions) >= execution_policy["live_max_open_trades"]:
                 raise PermissionError("live 模式已达到允许的最大持仓数")
 
             min_notional = self._get_min_notional(symbol)
@@ -144,6 +148,36 @@ class ExecutionService:
                     f"当前 Freqtrade stake_amount={stake_amount} USDT"
                 )
             action["stake_amount"] = f"{stake_amount:.10f}"
+
+    @staticmethod
+    def _get_execution_policy(settings: Settings) -> dict[str, object]:
+        """优先读取工作台里的执行安全门，再回退到环境变量。"""
+
+        config = workbench_config_service.get_config()
+        execution = dict(config.get("execution") or {})
+        raw_symbols = [str(item).strip().upper() for item in list(execution.get("live_allowed_symbols") or []) if str(item).strip()]
+        live_allowed_symbols = tuple(raw_symbols) if raw_symbols else settings.live_allowed_symbols
+
+        raw_max_stake = execution.get("live_max_stake_usdt")
+        live_max_stake_usdt = settings.live_max_stake_usdt
+        if raw_max_stake not in (None, ""):
+            live_max_stake_usdt = ExecutionService._read_decimal(raw_max_stake, field_name="execution.live_max_stake_usdt")
+
+        raw_max_open_trades = execution.get("live_max_open_trades")
+        live_max_open_trades = settings.live_max_open_trades
+        if raw_max_open_trades not in (None, ""):
+            try:
+                live_max_open_trades = int(raw_max_open_trades)
+            except (TypeError, ValueError) as exc:
+                raise PermissionError("execution.live_max_open_trades 必须是整数") from exc
+            if live_max_open_trades <= 0:
+                raise PermissionError("execution.live_max_open_trades 必须大于 0")
+
+        return {
+            "live_allowed_symbols": live_allowed_symbols,
+            "live_max_stake_usdt": live_max_stake_usdt,
+            "live_max_open_trades": live_max_open_trades,
+        }
 
     def _get_min_notional(self, symbol: str) -> Decimal:
         """读取交易所对该币种的最小下单额。"""

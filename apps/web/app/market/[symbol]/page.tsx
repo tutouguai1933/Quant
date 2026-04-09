@@ -8,6 +8,7 @@ import { MarketSymbolWorkspace } from "../../../components/market-symbol-workspa
 import { PageHero } from "../../../components/page-hero";
 import { Button } from "../../../components/ui/button";
 import {
+  type ApiEnvelope,
   getMarketChart,
   getResearchCandidate,
   getResearchCandidatesFallback,
@@ -33,15 +34,15 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
   let candidate: ResearchCandidateItem | null =
     getResearchCandidatesFallback().items.find((item) => item.symbol === normalizedSymbol) ?? null;
 
-  const [chartResult, candidateResult] = await Promise.allSettled([
-    getMarketChart(symbol, interval),
-    getResearchCandidate(normalizedSymbol),
+  const [chartResult, candidateResult] = await Promise.all([
+    withTimeout(getMarketChart(symbol, interval), getMarketChartTimeoutFallback(), 2500),
+    withTimeout(getResearchCandidate(normalizedSymbol), getResearchCandidateTimeoutFallback(), 1500),
   ]);
-  if (chartResult.status === "fulfilled" && !chartResult.value.error) {
-    chartData = chartResult.value.data;
+  if (!chartResult.error) {
+    chartData = chartResult.data;
   }
-  if (candidateResult.status === "fulfilled" && !candidateResult.value.error) {
-    candidate = candidateResult.value.data.item;
+  if (!candidateResult.error) {
+    candidate = candidateResult.data.item;
   }
 
   return (
@@ -144,5 +145,46 @@ function getEmptyMarketChartData(): MarketChartData {
     research_cockpit: getEmptyResearchCockpit(),
     strategy_context: getEmptyStrategyContext(),
     freqtrade_readiness: getEmptyFreqtradeReadiness(),
+  };
+}
+
+/* 为慢接口提供服务端超时降级，避免整页等待过久。 */
+async function withTimeout<T>(promise: Promise<T>, fallback: T, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+/* 返回市场图表接口的超时兜底响应。 */
+function getMarketChartTimeoutFallback(): ApiEnvelope<MarketChartData> {
+  return {
+    data: getEmptyMarketChartData(),
+    error: {
+      code: "market_chart_timeout",
+      message: "图表加载较慢，页面先展示空图，稍后可切换周期重试。",
+    },
+    meta: {},
+  };
+}
+
+/* 返回研究候选接口的超时兜底响应。 */
+function getResearchCandidateTimeoutFallback(): ApiEnvelope<{ item: ResearchCandidateItem | null }> {
+  return {
+    data: { item: null },
+    error: {
+      code: "research_candidate_timeout",
+      message: "研究候选加载较慢，页面先展示基础视图。",
+    },
+    meta: {},
   };
 }

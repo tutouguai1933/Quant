@@ -136,6 +136,20 @@ class FakeSyncService:
             }
         ]
 
+    def get_runtime_snapshot(self) -> dict[str, object]:
+        return {"backend": "memory"}
+
+
+class UnavailableFreqtradeSyncService:
+    def list_orders(self, limit: int = 100) -> list[dict[str, object]]:
+        raise RuntimeError("freqtrade unavailable")
+
+    def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+        raise RuntimeError("freqtrade unavailable")
+
+    def get_runtime_snapshot(self) -> dict[str, object]:
+        return {"backend": "rest"}
+
 
 class FakeResponse:
     def __init__(self, body: str, status: int = 200) -> None:
@@ -332,6 +346,7 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(orders_result[0]["side"], "buy")
         self.assertEqual(orders_result[0]["orderType"], "LIMIT")
         self.assertEqual(orders_result[0]["order_type"], "LIMIT")
+        self.assertEqual(orders_result[0]["lifecycle"], "filled_entry")
         self.assertEqual(positions_result[0]["id"], "position-BTCUSDT")
         self.assertEqual(positions_result[0]["symbol"], "BTCUSDT")
         self.assertEqual(positions_result[0]["side"], "long")
@@ -358,6 +373,33 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(balances_result[0]["dustQuantity"], "0.976")
         self.assertEqual(balances_result[1]["tradeStatus"], "tradable")
         self.assertEqual(balances_result[2]["tradeStatus"], "tradable")
+
+    def test_account_sync_service_marks_pending_exit_order_lifecycle(self) -> None:
+        class PendingExitClient:
+            def get_orders(self, symbol: str | None = None, limit: int = 100) -> list[dict[str, object]]:
+                if symbol != "ETHUSDT":
+                    return []
+                return [
+                    {
+                        "orderId": "102",
+                        "symbol": "ETHUSDT",
+                        "status": "NEW",
+                        "side": "SELL",
+                        "type": "MARKET",
+                        "time": 2000,
+                        "price": "0.0000000000",
+                        "origQty": "0.2000000000",
+                        "executedQty": "0.0000000000",
+                    }
+                ]
+
+        service = AccountSyncService(PendingExitClient(), market_client=FakeBalanceMarketClient())
+
+        orders_result = service.list_orders(limit=10, symbols=("ETHUSDT",))
+
+        self.assertEqual(orders_result[0]["side"], "sell")
+        self.assertEqual(orders_result[0]["status"], "NEW")
+        self.assertEqual(orders_result[0]["lifecycle"], "pending_exit")
 
     def test_dry_run_mode_uses_binance_only_for_balances(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):
@@ -435,7 +477,7 @@ class AccountSyncServiceTests(unittest.TestCase):
                 "QUANT_RUNTIME_MODE": "live",
                 "BINANCE_API_KEY": "k",
                 "BINANCE_API_SECRET": "s",
-                "QUANT_MARKET_SYMBOLS": "BTCUSDT,ETHUSDT",
+                "QUANT_MARKET_SYMBOLS": "BTCUSDT,ETHUSDT,SOLUSDT",
                 "QUANT_LIVE_ALLOWED_SYMBOLS": "SOLUSDT",
             },
         ):
@@ -555,6 +597,26 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(order_response["meta"]["truth_source"], "freqtrade")
         self.assertEqual(position_response["meta"]["source"], "freqtrade-sync")
         self.assertEqual(position_response["meta"]["truth_source"], "freqtrade")
+
+    def test_dry_run_routes_return_empty_items_when_freqtrade_sync_is_unavailable(self) -> None:
+        unavailable_sync = UnavailableFreqtradeSyncService()
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):
+            with patch.object(orders, "sync_service", unavailable_sync), patch.object(positions, "sync_service", unavailable_sync):
+                order_response = orders.list_orders(limit=5)
+                position_response = positions.list_positions(limit=5)
+
+        self.assertIsNone(order_response["error"])
+        self.assertEqual(order_response["data"]["items"], [])
+        self.assertEqual(order_response["meta"]["source"], "freqtrade-rest-sync")
+        self.assertEqual(order_response["meta"]["truth_source"], "freqtrade")
+        self.assertEqual(order_response["meta"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", order_response["meta"]["detail"])
+        self.assertIsNone(position_response["error"])
+        self.assertEqual(position_response["data"]["items"], [])
+        self.assertEqual(position_response["meta"]["source"], "freqtrade-rest-sync")
+        self.assertEqual(position_response["meta"]["truth_source"], "freqtrade")
+        self.assertEqual(position_response["meta"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", position_response["meta"]["detail"])
 
 if __name__ == "__main__":
     unittest.main()

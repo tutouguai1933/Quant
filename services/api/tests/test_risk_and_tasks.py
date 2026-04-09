@@ -27,8 +27,18 @@ from services.api.app.routes.auth import login  # noqa: E402
 from services.api.app.routes.risk_events import list_risk_events  # noqa: E402
 from services.api.app.routes.signals import get_signal, run_signal_pipeline  # noqa: E402
 from services.api.app.routes.strategies import dispatch_latest_signal, start_strategy  # noqa: E402
-from services.api.app.routes.tasks import get_validation_review, retry_task, run_reconcile_task, run_review_task, run_sync_task  # noqa: E402
+from services.api.app.routes.tasks import (  # noqa: E402
+    get_validation_review,
+    retry_task,
+    run_reconcile_task,
+    run_review_task,
+    run_sync_task,
+    confirm_automation_alert,
+    clear_automation_alerts,
+)
+from services.api.app.routes.tasks import confirm_automation_alert, clear_automation_alerts  # noqa: E402
 from services.api.app.services.auth_service import auth_service  # noqa: E402
+from services.api.app.services.automation_service import automation_service  # noqa: E402
 from services.api.app.services.risk_service import risk_service  # noqa: E402
 from services.api.app.services.signal_service import signal_service  # noqa: E402
 from services.api.app.tasks.scheduler import task_scheduler  # noqa: E402
@@ -37,6 +47,7 @@ from services.api.app.tasks.scheduler import task_scheduler  # noqa: E402
 class RiskAndTaskTests(unittest.TestCase):
     def setUp(self) -> None:
         auth_service.__init__()
+        automation_service.__init__()
         freqtrade_client.__init__()
         signal_service.__init__()
         risk_service.__init__()
@@ -50,6 +61,7 @@ class RiskAndTaskTests(unittest.TestCase):
         strategies_route.auth_service = auth_service
         strategies_route.task_scheduler = task_scheduler
         tasks_route.auth_service = auth_service
+        tasks_route.automation_service = automation_service
         tasks_route.task_scheduler = task_scheduler
         risk_events_route.risk_service = risk_service
         risk_service_module.signal_service = signal_service
@@ -64,6 +76,20 @@ class RiskAndTaskTests(unittest.TestCase):
         strategy_dispatch_module.task_scheduler = task_scheduler
         strategies_route.strategy_dispatch_service = strategy_dispatch_module.strategy_dispatch_service
 
+    def test_confirm_alert_endpoint(self) -> None:
+        token = self._login_token()
+        automation_service.record_alert(level="warning", code="sync", message="fail", source="scheduler")
+        alert_id = int(automation_service._alerts[0]["id"])
+        response = confirm_automation_alert(alert_id, token=token)
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["data"]["item"]["id"], alert_id)
+
+    def test_clear_alerts_endpoint(self) -> None:
+        token = self._login_token()
+        automation_service.record_alert(level="info", code="info", message="ok", source="tester")
+        response = clear_automation_alerts(levels="info", token=token)
+        self.assertIsNone(response["error"])
+        self.assertGreaterEqual(len(response["data"]["item"]), 1)
     @staticmethod
     def _login_token() -> str:
         response = login(username="admin", password="1933")
@@ -448,6 +474,16 @@ class RiskAndTaskTests(unittest.TestCase):
         self.assertIn("overview", review_response["data"]["item"]["result"])
         self.assertIn("steps", review_response["data"]["item"]["result"])
         self.assertIn("task_health", review_response["data"]["item"]["result"])
+        self.assertIn("execution_comparison", review_response["data"]["item"]["result"])
+        self.assertIn("reviews", review_response["data"]["item"]["result"])
+        self.assertIn("research", review_response["data"]["item"]["result"]["reviews"])
+        self.assertIn("dry_run", review_response["data"]["item"]["result"]["reviews"])
+        self.assertIn("live", review_response["data"]["item"]["result"]["reviews"])
+        self.assertIn("what_happened", review_response["data"]["item"]["result"]["reviews"]["research"])
+        self.assertIn("next_action", review_response["data"]["item"]["result"]["reviews"]["live"])
+        self.assertIn("status", review_response["data"]["item"]["result"]["execution_comparison"])
+        self.assertIn("backtest", review_response["data"]["item"]["result"]["execution_comparison"])
+        self.assertIn("execution", review_response["data"]["item"]["result"]["execution_comparison"])
         self.assertIn("execution_health", report_response["data"]["item"])
         self.assertIn("recent_tasks", report_response["data"]["item"])
 

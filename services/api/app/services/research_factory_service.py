@@ -61,6 +61,8 @@ class ResearchFactoryService:
         return {
             "status": str(snapshot.get("status", "unavailable")),
             "backend": str(snapshot.get("backend", "qlib-fallback")),
+            "config_alignment": dict(latest.get("config_alignment") or {}),
+            "factor_protocol": dict(report.get("factor_protocol") or {}),
             "overview": {
                 "model_version": str(snapshot.get("model_version", "")),
                 "generated_at": str(snapshot.get("generated_at", "")),
@@ -76,11 +78,14 @@ class ResearchFactoryService:
                 "forced_validation": bool(overview.get("forced_validation")),
                 "forced_symbol": str(overview.get("forced_symbol", "")),
             },
+            "snapshots": dict(report.get("snapshots") or {}),
             "latest_training": dict(report.get("latest_training") or {}),
             "latest_inference": dict(report.get("latest_inference") or {}),
             "candidates": list(report.get("candidates") or []),
             "leaderboard": list(report.get("leaderboard") or []),
             "screening": dict(report.get("screening") or {}),
+            "evaluation": dict(report.get("evaluation") or {}),
+            "reviews": dict(report.get("reviews") or {}),
             "experiments": dict(report.get("experiments") or {}),
         }
 

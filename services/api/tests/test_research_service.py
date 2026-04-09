@@ -13,9 +13,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import services.api.app.routes.signals as signals_route  # noqa: E402
+import services.api.app.services.research_runtime_service as research_runtime_module  # noqa: E402
 import services.api.app.services.research_service as research_service_module  # noqa: E402
+import services.api.app.services.signal_service as signal_service_module  # noqa: E402
 from services.api.app.services.auth_service import auth_service  # noqa: E402
+from services.api.app.services.research_runtime_service import ResearchRuntimeService  # noqa: E402
 from services.api.app.services.research_service import ResearchService  # noqa: E402
+from services.worker.qlib_config import QlibConfigurationError  # noqa: E402
 
 
 class ResearchServiceTests(unittest.TestCase):
@@ -28,9 +32,20 @@ class ResearchServiceTests(unittest.TestCase):
             config_loader=self._load_config,
             market_reader=_FakeMarketReader(),
             whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=_default_workbench_config,
+            runtime_override_provider=lambda: {},
         )
         research_service_module.research_service = self.service
+        signal_service_module.research_service = self.service
         signals_route.research_service = self.service
+        runtime_service = ResearchRuntimeService(
+            config_loader=self._load_config,
+            research_service_instance=self.service,
+            signal_service_instance=signals_route.signal_service,
+            async_runner=lambda fn: fn(),
+        )
+        research_runtime_module.research_runtime_service = runtime_service
+        signals_route.research_runtime_service = runtime_service
 
     def tearDown(self) -> None:
         self._temp_dir.cleanup()
@@ -78,6 +93,51 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(report["experiments"]["training"]["status"], "unavailable")
         self.assertEqual(report["experiments"]["inference"]["status"], "unavailable")
 
+    def test_research_service_reports_symbol_interval_and_reason_when_market_samples_are_missing(self) -> None:
+        service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_AlwaysEmptyMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaises(QlibConfigurationError) as captured:
+            service.run_training()
+
+        self.assertIn("BTCUSDT@4h=empty_chart", str(captured.exception))
+
+    def test_research_service_does_not_cache_empty_market_samples(self) -> None:
+        service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_EmptyThenReadyMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaises(QlibConfigurationError):
+            service.run_training()
+
+        result = service.run_training()
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(service._market_reader.calls, [("BTCUSDT", "4h", 180), ("BTCUSDT", "4h", 180)])
+
     def test_research_service_returns_symbol_candidate_summary(self) -> None:
         self.service.run_training()
         self.service.run_inference()
@@ -87,6 +147,16 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIsNotNone(item)
         self.assertEqual(item["symbol"], "BTCUSDT")
         self.assertIn("allowed_to_dry_run", item)
+
+    def test_research_service_recommendation_exposes_live_gate(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+
+        item = self.service.get_research_recommendation()
+
+        self.assertIsNotNone(item)
+        self.assertIn("allowed_to_live", item)
+        self.assertIn("live_gate", item)
 
     def test_research_service_returns_unified_report(self) -> None:
         self.service.run_training()
@@ -111,6 +181,106 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("leaderboard", report)
         self.assertIn("screening", report)
         self.assertTrue(report["experiments"]["recent_runs"])
+        self.assertIn("factor_protocol", report)
+        self.assertIn("primary_feature_columns", report["factor_protocol"])
+        self.assertIn("auxiliary_feature_columns", report["factor_protocol"])
+        self.assertIn("evaluation", report)
+        self.assertIn("reviews", report)
+        self.assertIn("training_context", report["latest_training"])
+        self.assertIn("inference_context", report["latest_inference"])
+        self.assertEqual(report["experiments"]["training"]["dataset_snapshot"]["data_states"]["current"], "feature-ready")
+        self.assertIn("cache", report["experiments"]["training"]["dataset_snapshot"])
+        self.assertIn("snapshots", report)
+        self.assertEqual(report["snapshots"]["training"]["active_data_state"], "feature-ready")
+        self.assertEqual(
+            report["snapshots"]["training"]["cache_signature"],
+            report["snapshots"]["inference"]["cache_signature"],
+        )
+
+    def test_config_alignment_marks_backtest_and_gate_drift_as_stale(self) -> None:
+        service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                    "window_mode": "rolling",
+                    "start_date": "",
+                    "end_date": "",
+                },
+                "features": {
+                    "primary_factors": ["ema20_gap_pct"],
+                    "auxiliary_factors": ["rsi14"],
+                    "missing_policy": "neutral_fill",
+                    "outlier_policy": "clip",
+                    "normalization_policy": "fixed_4dp",
+                },
+                "research": {
+                    "research_template": "single_asset_timing",
+                    "model_key": "balanced_v3",
+                    "label_mode": "window_majority",
+                    "holding_window_label": "2-4d",
+                    "force_validation_top_candidate": True,
+                    "min_holding_days": 2,
+                    "max_holding_days": 4,
+                    "label_target_pct": "1.5",
+                    "label_stop_pct": "-0.8",
+                    "train_split_ratio": "0.5",
+                    "validation_split_ratio": "0.3",
+                    "test_split_ratio": "0.2",
+                    "signal_confidence_floor": "0.62",
+                    "trend_weight": "1.8",
+                    "volume_weight": "1.4",
+                    "oscillator_weight": "0.5",
+                    "volatility_weight": "0.6",
+                    "strict_penalty_weight": "1.4",
+                },
+                "backtest": {
+                    "fee_bps": "12",
+                    "slippage_bps": "7",
+                    "cost_model": "zero_cost_baseline",
+                },
+                "thresholds": {
+                    "dry_run_min_score": "0.6",
+                    "dry_run_min_positive_rate": "0.45",
+                    "dry_run_min_net_return_pct": "0",
+                    "dry_run_min_sharpe": "0.5",
+                    "dry_run_max_drawdown_pct": "15",
+                    "dry_run_max_loss_streak": "3",
+                    "dry_run_min_win_rate": "0.57",
+                    "dry_run_max_turnover": "0.5",
+                    "dry_run_min_sample_count": "26",
+                    "validation_min_sample_count": "18",
+                    "enable_rule_gate": False,
+                    "enable_validation_gate": False,
+                    "enable_backtest_gate": True,
+                    "enable_consistency_gate": False,
+                    "enable_live_gate": True,
+                    "live_min_score": "0.8",
+                    "live_min_positive_rate": "0.50",
+                    "live_min_net_return_pct": "0.20",
+                    "live_min_win_rate": "0.61",
+                    "live_max_turnover": "0.42",
+                    "live_min_sample_count": "30",
+                },
+            },
+            runtime_override_provider=lambda: {},
+        )
+        service.run_training()
+        service.run_inference()
+
+        report = service.get_factory_report()
+
+        self.assertEqual(report["config_alignment"]["status"], "stale")
+        self.assertIn("holding_window_label", report["config_alignment"]["stale_fields"])
+        self.assertIn("backtest_cost_model", report["config_alignment"]["stale_fields"])
+        self.assertIn("force_validation_top_candidate", report["config_alignment"]["stale_fields"])
+        self.assertIn("enable_rule_gate", report["config_alignment"]["stale_fields"])
+        self.assertIn("live_min_win_rate", report["config_alignment"]["stale_fields"])
 
     def test_research_service_report_uses_worker_experiment_builder(self) -> None:
         self.service.run_training()
@@ -142,10 +312,150 @@ class ResearchServiceTests(unittest.TestCase):
     def test_research_service_prepares_both_1h_and_4h_samples_for_runner(self) -> None:
         self.service.run_training()
 
-        self.assertIn(("BTCUSDT", "1h", 120), self.service._market_reader.calls)
-        self.assertIn(("BTCUSDT", "4h", 120), self.service._market_reader.calls)
-        self.assertIn(("ETHUSDT", "1h", 120), self.service._market_reader.calls)
-        self.assertIn(("ETHUSDT", "4h", 120), self.service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "1h", 720), self.service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "4h", 180), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "1h", 720), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "4h", 180), self.service._market_reader.calls)
+
+    def test_research_service_reuses_cached_kline_batch_between_training_and_inference(self) -> None:
+        training_result = self.service.run_training()
+        inference_result = self.service.run_inference()
+
+        self.assertEqual(len(self.service._market_reader.calls), 4)
+        self.assertEqual(training_result["market_cache"]["reused_count"], 0)
+        self.assertEqual(inference_result["market_cache"]["reused_count"], 4)
+        self.assertEqual(training_result["dataset_snapshot"]["cache_signature"], inference_result["dataset_snapshot"]["cache_signature"])
+
+    def test_research_service_uses_workbench_controls_for_symbol_timeframe_and_limit(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["ETHUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 180,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        controlled_service.run_training()
+
+        self.assertEqual(controlled_service._market_reader.calls, [("ETHUSDT", "4h", 180)])
+
+    def test_research_service_expands_fetch_limit_when_lookback_days_requires_more_rows(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": ["1h", "4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 20,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        controlled_service.run_training()
+
+        self.assertIn(("BTCUSDT", "1h", 480), controlled_service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "4h", 120), controlled_service._market_reader.calls)
+
+    def test_research_service_rejects_empty_symbol_selection_instead_of_falling_back(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": [],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaisesRegex(research_service_module.QlibConfigurationError, "没有选中研究标的"):
+            controlled_service.run_training()
+
+    def test_research_service_rejects_empty_timeframe_selection_instead_of_falling_back(self) -> None:
+        controlled_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["BTCUSDT"],
+                    "timeframes": [],
+                    "sample_limit": 120,
+                    "lookback_days": 30,
+                }
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        with self.assertRaisesRegex(research_service_module.QlibConfigurationError, "没有选中研究周期"):
+            controlled_service.run_training()
+
+    def test_research_service_marks_report_stale_when_current_config_has_changed(self) -> None:
+        self.service.run_training()
+        self.service.run_inference()
+        stale_service = ResearchService(
+            config_loader=self._load_config,
+            market_reader=_FakeMarketReader(),
+            whitelist_provider=lambda: ["BTCUSDT", "ETHUSDT"],
+            workbench_config_reader=lambda: {
+                "data": {
+                    "selected_symbols": ["ETHUSDT"],
+                    "timeframes": ["4h"],
+                    "sample_limit": 120,
+                    "lookback_days": 14,
+                },
+                "features": {
+                    "primary_factors": ["trend_gap_pct"],
+                    "auxiliary_factors": ["volume_ratio"],
+                    "outlier_policy": "clip",
+                    "normalization_policy": "fixed_4dp",
+                },
+                "research": {
+                    "research_template": "single_asset_timing_strict",
+                    "model_key": "trend_bias_v2",
+                    "label_mode": "close_only",
+                    "holding_window_label": "1-3d",
+                    "min_holding_days": 1,
+                    "max_holding_days": 3,
+                    "label_target_pct": "1",
+                    "label_stop_pct": "-1",
+                },
+                "backtest": {"fee_bps": "10", "slippage_bps": "5"},
+                "thresholds": {
+                    "dry_run_min_score": "0.55",
+                    "dry_run_min_positive_rate": "0.45",
+                    "dry_run_min_net_return_pct": "0",
+                    "dry_run_min_sharpe": "0.5",
+                    "dry_run_max_drawdown_pct": "15",
+                    "dry_run_max_loss_streak": "3",
+                    "live_min_score": "0.65",
+                    "live_min_positive_rate": "0.50",
+                    "live_min_net_return_pct": "0.20",
+                },
+            },
+            runtime_override_provider=lambda: {},
+        )
+
+        latest = stale_service.get_latest_result()
+
+        self.assertEqual(latest["config_alignment"]["status"], "stale")
+        self.assertIn("selected_symbols", latest["config_alignment"]["stale_fields"])
+        self.assertIn("lookback_days", latest["config_alignment"]["stale_fields"])
+        self.assertIn("research_template", latest["config_alignment"]["stale_fields"])
 
     def test_research_report_uses_signal_list_when_summary_missing(self) -> None:
         self._write_json(
@@ -379,9 +689,10 @@ class ResearchServiceTests(unittest.TestCase):
 
         self.assertIsNone(training_response["error"])
         self.assertIsNone(inference_response["error"])
-        self.assertEqual(training_response["data"]["item"]["status"], "completed")
-        self.assertEqual(inference_response["data"]["item"]["status"], "completed")
-        self.assertTrue(inference_response["data"]["item"]["signals"])
+        self.assertEqual(training_response["data"]["item"]["status"], "succeeded")
+        self.assertEqual(inference_response["data"]["item"]["status"], "succeeded")
+        runtime_response = signals_route.get_research_runtime()
+        self.assertEqual(runtime_response["data"]["item"]["status"], "succeeded")
 
     def test_research_routes_require_login_for_write_actions(self) -> None:
         training_response = signals_route.run_research_training()
@@ -424,6 +735,72 @@ class _FakeMarketReader:
                 }
             )
         return {"items": items, "overlays": {}, "markers": {"signals": [], "entries": [], "stops": []}}
+
+
+class _AlwaysEmptyMarketReader:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int]] = []
+
+    def get_symbol_chart(
+        self,
+        symbol: str,
+        interval: str = "1h",
+        limit: int = 120,
+        allowed_symbols: tuple[str, ...] | None = None,
+    ) -> dict[str, object]:
+        self.calls.append((symbol, interval, limit))
+        return {
+            "items": [],
+            "strategy_context": {"primary_reason": "empty_chart"},
+            "overlays": {},
+            "markers": {"signals": [], "entries": [], "stops": []},
+        }
+
+
+class _EmptyThenReadyMarketReader(_AlwaysEmptyMarketReader):
+    def get_symbol_chart(
+        self,
+        symbol: str,
+        interval: str = "1h",
+        limit: int = 120,
+        allowed_symbols: tuple[str, ...] | None = None,
+    ) -> dict[str, object]:
+        self.calls.append((symbol, interval, limit))
+        if len(self.calls) == 1:
+            return {
+                "items": [],
+                "strategy_context": {"primary_reason": "empty_chart"},
+                "overlays": {},
+                "markers": {"signals": [], "entries": [], "stops": []},
+            }
+
+        step_ms = 4 * 3600000 if interval == "4h" else 3600000
+        items = []
+        for index in range(120):
+            close = 100 + index * 0.8
+            items.append(
+                {
+                    "open_time": 1712016000000 + (index * step_ms),
+                    "open": str(close - 1),
+                    "high": str(close + 2),
+                    "low": str(close - 2),
+                    "close": str(close),
+                    "volume": str(1000 + (index * 100)),
+                    "close_time": 1712019599999 + (index * step_ms),
+                }
+            )
+        return {"items": items, "overlays": {}, "markers": {"signals": [], "entries": [], "stops": []}}
+
+
+def _default_workbench_config() -> dict[str, object]:
+    return {
+        "data": {
+            "selected_symbols": ["BTCUSDT", "ETHUSDT"],
+            "timeframes": ["1h", "4h"],
+            "sample_limit": 120,
+            "lookback_days": 30,
+        }
+    }
 
 
 if __name__ == "__main__":

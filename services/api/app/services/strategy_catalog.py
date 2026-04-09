@@ -7,12 +7,14 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from services.api.app.core.settings import DEFAULT_MARKET_SYMBOLS
+
 
 class StrategyCatalogService:
     """提供固定的策略目录和默认交易白名单。"""
 
     def __init__(self) -> None:
-        self._whitelist: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT")
+        self._whitelist: tuple[str, ...] = DEFAULT_MARKET_SYMBOLS
         self._strategies: tuple[dict[str, object], ...] = (
             {
                 "key": "trend_breakout",

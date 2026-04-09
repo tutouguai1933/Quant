@@ -1,9 +1,8 @@
 const { test, expect } = require("@playwright/test");
+const { getPlaywrightUseOptions } = require("./playwright-browser.cjs");
+const { WEB_BASE_URL } = require("./test-urls.cjs");
 
-test.use({
-  launchOptions: { executablePath: "/snap/bin/chromium" },
-  viewport: { width: 1440, height: 1100 },
-});
+test.use(getPlaywrightUseOptions());
 
 test("sidebar navigation stays responsive across public pages", async ({ page }) => {
   const errors = [];
@@ -16,7 +15,7 @@ test("sidebar navigation stays responsive across public pages", async ({ page })
     errors.push(error.message);
   });
 
-  await page.goto("http://127.0.0.1:9012/signals", { waitUntil: "networkidle" });
+  await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.body.innerText.includes("信号") && !document.body.innerText.includes("正在切换工作区"));
 
   await page.getByRole("link", { name: /市场/ }).click();

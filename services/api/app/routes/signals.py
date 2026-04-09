@@ -9,6 +9,7 @@ from services.api.app.services.strategy_engine import apply_research_soft_gate
 from services.api.app.services.strategy_engine import evaluate_trend_breakout
 from services.api.app.services.strategy_engine import evaluate_trend_pullback
 from services.api.app.services.market_service import MarketService
+from services.api.app.services.research_runtime_service import research_runtime_service
 from services.api.app.services.research_service import research_service
 from services.api.app.services.signal_service import SignalPipelineUnavailableError, signal_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
@@ -112,6 +113,19 @@ def get_research_report() -> dict:
     )
 
 
+@router.get("/research/runtime")
+def get_research_runtime() -> dict:
+    item = research_runtime_service.get_status()
+    return _success(
+        {"item": item},
+        {
+            "source": "control-plane-api",
+            "action": "research-runtime",
+            "status": item.get("status", "idle"),
+        },
+    )
+
+
 @router.post("/research/train")
 def run_research_training(token: str = "", authorization: str = Header("")) -> dict:
     try:
@@ -119,7 +133,7 @@ def run_research_training(token: str = "", authorization: str = Header("")) -> d
     except PermissionError:
         return _unauthorized()
     try:
-        item = research_service.run_training()
+        item = research_runtime_service.start_training()
         return _success({"item": item}, {"source": "control-plane-api", "action": "research-train"})
     except Exception as exc:
         return {
@@ -136,7 +150,7 @@ def run_research_inference(token: str = "", authorization: str = Header("")) -> 
     except PermissionError:
         return _unauthorized()
     try:
-        item = research_service.run_inference()
+        item = research_runtime_service.start_inference()
         return _success({"item": item}, {"source": "control-plane-api", "action": "research-infer"})
     except Exception as exc:
         return {
@@ -165,6 +179,15 @@ def run_signal_pipeline(source: str = "mock", token: str = "", authorization: st
             auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
         except PermissionError:
             return _unauthorized()
+        try:
+            result = research_runtime_service.start_pipeline()
+            return _success({"run": result}, {"source": "control-plane-api", "action": "pipeline-run"})
+        except Exception as exc:
+            return {
+                "data": None,
+                "error": {"code": "pipeline_unavailable", "message": str(exc)},
+                "meta": {"source": "control-plane-api", "requested_source": source},
+            }
     try:
         result = signal_service.run_pipeline(source=source)
         return _success({"run": result}, {"source": "control-plane-api", "action": "pipeline-run"})

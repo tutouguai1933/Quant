@@ -33,7 +33,7 @@ export function TableRow({ className, ...props }: React.HTMLAttributes<HTMLTable
 export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
-      className={cn("h-11 px-4 text-left align-middle text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground", className)}
+      className={cn("h-11 px-4 text-left align-middle text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground break-words whitespace-normal", className)}
       {...props}
     />
   );
@@ -41,5 +41,5 @@ export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTa
 
 /* 渲染数据单元格。 */
 export function TableCell({ className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("px-4 py-3 align-middle text-sm text-foreground", className)} {...props} />;
+  return <td className={cn("px-4 py-3 align-middle text-sm text-foreground break-all whitespace-normal", className)} {...props} />;
 }

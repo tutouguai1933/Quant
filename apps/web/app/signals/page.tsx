@@ -9,6 +9,7 @@ import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
+import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
@@ -19,6 +20,8 @@ import {
   getAutomationStatusFallback,
   getResearchReport,
   getResearchReportFallback,
+  getResearchRuntimeStatus,
+  getResearchRuntimeStatusFallback,
   getSignalsPageFallback,
   listSignals,
 } from "../../lib/api";
@@ -34,11 +37,13 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   const session = await getControlSessionState();
   let items = getSignalsPageFallback().items;
   let researchReport = getResearchReportFallback().item;
+  let runtimeStatus = getResearchRuntimeStatusFallback();
   let automation = getAutomationStatusFallback().item;
 
-  const [signalsResult, researchReportResult, automationResult] = await Promise.allSettled([
+  const [signalsResult, researchReportResult, runtimeResult, automationResult] = await Promise.allSettled([
     listSignals(),
     getResearchReport(),
+    getResearchRuntimeStatus(),
     session.token ? getAutomationStatus(session.token) : Promise.resolve(null),
   ]);
   if (signalsResult.status === "fulfilled") {
@@ -46,6 +51,9 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   }
   if (researchReportResult.status === "fulfilled" && !researchReportResult.value.error) {
     researchReport = researchReportResult.value.data.item;
+  }
+  if (runtimeResult.status === "fulfilled" && !runtimeResult.value.error) {
+    runtimeStatus = runtimeResult.value.data.item;
   }
   if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
     automation = automationResult.value.data.item;
@@ -85,6 +93,8 @@ export default async function SignalsPage({ searchParams }: PageProps) {
           { label: "最新状态", value: items[0]?.status ?? "waiting", detail: "决定是否需要继续到策略和任务页" },
         ]}
       />
+
+      <ResearchRuntimePanel initialStatus={runtimeStatus} />
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <div className="space-y-6">

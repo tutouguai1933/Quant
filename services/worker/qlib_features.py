@@ -1,37 +1,232 @@
-"""Qlib 最小特征定义。
+"""Qlib 因子层定义。
 
-这个文件负责把 K 线样本转成稳定的研究特征集合。
+这个文件负责统一管理因子分类、预处理规则和特征输出协议。
 """
 
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from statistics import mean, pstdev
 
 
-FEATURE_COLUMNS = (
-    "symbol",
-    "generated_at",
-    "close_return_pct",
-    "range_pct",
-    "body_pct",
-    "volume_ratio",
-    "trend_gap_pct",
-    "ema20_gap_pct",
-    "ema55_gap_pct",
-    "atr_pct",
-    "rsi14",
-    "breakout_strength",
+DEFAULT_OUTLIER_POLICY = "clip"
+DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
+DEFAULT_MISSING_POLICY = "neutral_fill"
+OUTLIER_POLICY_LABELS = {
+    "clip": "按因子预设范围裁剪极值",
+    "raw": "保留原始极值",
+}
+NORMALIZATION_POLICY_LABELS = {
+    "fixed_4dp": "统一输出四位小数字符串",
+    "zscore_by_symbol": "按单币样本做 z-score 标准化",
+}
+MISSING_POLICY_LABELS = {
+    "neutral_fill": "窗口不足时用中性值补齐",
+    "strict_drop": "窗口不足时直接丢弃",
+}
+
+
+FACTOR_DEFINITIONS = (
+    {
+        "name": "close_return_pct",
+        "category": "momentum",
+        "role": "primary",
+        "kind": "base",
+        "description": "最近一根 K 线的收盘变化，用来观察短期动量。",
+        "neutral": "0",
+        "clip": ("-50", "50"),
+    },
+    {
+        "name": "range_pct",
+        "category": "volatility",
+        "role": "primary",
+        "kind": "base",
+        "description": "单根 K 线振幅，用来判断波动环境是否扩大。",
+        "neutral": "0",
+        "clip": ("0", "100"),
+    },
+    {
+        "name": "body_pct",
+        "category": "momentum",
+        "role": "primary",
+        "kind": "base",
+        "description": "K 线实体强弱，用来判断单根价格推进力度。",
+        "neutral": "0",
+        "clip": ("-50", "50"),
+    },
+    {
+        "name": "volume_ratio",
+        "category": "volume",
+        "role": "primary",
+        "kind": "base",
+        "description": "成交量相对均值的放大倍数，用来确认量价是否同步。",
+        "neutral": "1",
+        "clip": ("0", "10"),
+    },
+    {
+        "name": "trend_gap_pct",
+        "category": "trend",
+        "role": "primary",
+        "kind": "composite",
+        "description": "价格相对短趋势均值的偏离，用来衡量趋势位置。",
+        "neutral": "0",
+        "clip": ("-50", "50"),
+    },
+    {
+        "name": "ema20_gap_pct",
+        "category": "trend",
+        "role": "primary",
+        "kind": "composite",
+        "description": "价格相对 EMA20 的偏离，用来判断趋势是否站稳。",
+        "neutral": "0",
+        "clip": ("-50", "50"),
+    },
+    {
+        "name": "ema55_gap_pct",
+        "category": "trend",
+        "role": "primary",
+        "kind": "composite",
+        "description": "价格相对 EMA55 的偏离，用来判断中期结构是否完整。",
+        "neutral": "0",
+        "clip": ("-50", "50"),
+    },
+    {
+        "name": "atr_pct",
+        "category": "volatility",
+        "role": "primary",
+        "kind": "composite",
+        "description": "ATR 相对价格的比例，用来评估波动与止损空间。",
+        "neutral": "0",
+        "clip": ("0", "100"),
+    },
+    {
+        "name": "breakout_strength",
+        "category": "momentum",
+        "role": "primary",
+        "kind": "composite",
+        "description": "价格相对近期高点的突破强度，用来观察趋势加速。",
+        "neutral": "0",
+        "clip": ("-50", "50"),
+    },
+    {
+        "name": "roc6",
+        "category": "momentum",
+        "role": "primary",
+        "kind": "composite",
+        "description": "一段窗口内的价格变化率，用来判断推进速度是否持续。",
+        "neutral": "0",
+        "clip": ("-100", "100"),
+    },
+    {
+        "name": "rsi14",
+        "category": "oscillator",
+        "role": "auxiliary",
+        "kind": "base",
+        "description": "RSI 超买超卖参考，只做辅助确认，不直接进主模型。",
+        "neutral": "50",
+        "clip": ("0", "100"),
+    },
+    {
+        "name": "cci20",
+        "category": "oscillator",
+        "role": "auxiliary",
+        "kind": "composite",
+        "description": "CCI 均值偏离参考，只做辅助确认，不直接进主模型。",
+        "neutral": "0",
+        "clip": ("-300", "300"),
+    },
+    {
+        "name": "stoch_k14",
+        "category": "oscillator",
+        "role": "auxiliary",
+        "kind": "composite",
+        "description": "随机指标 K 值，用来辅助观察区间位置和过热状态。",
+        "neutral": "50",
+        "clip": ("0", "100"),
+    },
 )
 
+TIMEFRAME_PROFILES = {
+    "4h": {
+        "profile": "swing-primary",
+        "trend_window": 3,
+        "volume_window": 3,
+        "atr_period": 14,
+        "rsi_period": 14,
+        "roc_period": 6,
+        "cci_period": 20,
+        "stoch_period": 14,
+        "breakout_lookback": 20,
+    },
+    "1h": {
+        "profile": "swing-support",
+        "trend_window": 12,
+        "volume_window": 12,
+        "atr_period": 24,
+        "rsi_period": 21,
+        "roc_period": 18,
+        "cci_period": 30,
+        "stoch_period": 21,
+        "breakout_lookback": 24,
+    },
+}
 
-def build_feature_rows(symbol: str, candles: list[dict[str, object]]) -> list[dict[str, object]]:
-    """把 K 线样本转成最小特征行。"""
+PRIMARY_FEATURE_COLUMNS = tuple(item["name"] for item in FACTOR_DEFINITIONS if item["role"] == "primary")
+AUXILIARY_FEATURE_COLUMNS = tuple(item["name"] for item in FACTOR_DEFINITIONS if item["role"] == "auxiliary")
+FEATURE_COLUMNS = ("symbol", "generated_at", *PRIMARY_FEATURE_COLUMNS, *AUXILIARY_FEATURE_COLUMNS)
+FACTOR_METADATA = {item["name"]: item for item in FACTOR_DEFINITIONS}
+FEATURE_PROTOCOL = {
+    "version": "v2",
+    "primary_feature_columns": list(PRIMARY_FEATURE_COLUMNS),
+    "auxiliary_feature_columns": list(AUXILIARY_FEATURE_COLUMNS),
+    "categories": {
+        "trend": [item["name"] for item in FACTOR_DEFINITIONS if item["category"] == "trend"],
+        "momentum": [item["name"] for item in FACTOR_DEFINITIONS if item["category"] == "momentum"],
+        "oscillator": [item["name"] for item in FACTOR_DEFINITIONS if item["category"] == "oscillator"],
+        "volume": [item["name"] for item in FACTOR_DEFINITIONS if item["category"] == "volume"],
+        "volatility": [item["name"] for item in FACTOR_DEFINITIONS if item["category"] == "volatility"],
+    },
+    "roles": {
+        "primary": list(PRIMARY_FEATURE_COLUMNS),
+        "auxiliary": list(AUXILIARY_FEATURE_COLUMNS),
+    },
+    "preprocessing": {
+        "missing_policy": MISSING_POLICY_LABELS[DEFAULT_MISSING_POLICY],
+        "outlier_policy": OUTLIER_POLICY_LABELS[DEFAULT_OUTLIER_POLICY],
+        "normalization_policy": NORMALIZATION_POLICY_LABELS[DEFAULT_NORMALIZATION_POLICY],
+    },
+    "timeframe_profiles": {key: dict(value) for key, value in TIMEFRAME_PROFILES.items()},
+    "factors": [
+        {
+            "name": item["name"],
+            "category": item["category"],
+            "role": item["role"],
+            "kind": item["kind"],
+            "description": item["description"],
+        }
+        for item in FACTOR_DEFINITIONS
+    ],
+}
+
+
+def build_feature_rows(
+    symbol: str,
+    candles: list[dict[str, object]],
+    *,
+    missing_policy: str = DEFAULT_MISSING_POLICY,
+    outlier_policy: str = DEFAULT_OUTLIER_POLICY,
+    normalization_policy: str = DEFAULT_NORMALIZATION_POLICY,
+    timeframe_profiles: dict[str, dict[str, int | str]] | None = None,
+) -> list[dict[str, object]]:
+    """把 K 线样本转成统一因子行。"""
 
     normalized = [_normalize_candle(item) for item in candles]
     valid_candles = [item for item in normalized if item is not None]
     if not valid_candles:
         return []
 
+    timeframe = _infer_timeframe(valid_candles)
+    profile = _resolve_timeframe_profile(timeframe, timeframe_profiles=timeframe_profiles)
     rows: list[dict[str, object]] = []
     rolling_closes: list[Decimal] = []
     rolling_volumes: list[Decimal] = []
@@ -46,37 +241,99 @@ def build_feature_rows(symbol: str, candles: list[dict[str, object]]) -> list[di
         close_return_pct = _safe_pct_change(previous_close, candle["close"] - previous_close)
         range_pct = _safe_pct_change(candle["close"], candle["high"] - candle["low"])
         body_pct = _safe_pct_change(candle["open"], candle["close"] - candle["open"])
-        volume_ratio = _safe_ratio(candle["volume"], _mean(rolling_volumes[-3:]))
-        trend_gap_pct = _safe_pct_change(_mean(rolling_closes[-3:]), candle["close"] - _mean(rolling_closes[-3:]))
+        volume_ratio = _safe_ratio(candle["volume"], _mean(rolling_volumes[-profile["volume_window"] :]))
+        trend_gap_pct = _safe_pct_change(
+            _mean(rolling_closes[-profile["trend_window"] :]),
+            candle["close"] - _mean(rolling_closes[-profile["trend_window"] :]),
+        )
         ema20_gap_pct = _safe_pct_change(candle["close"], candle["close"] - _ema(rolling_closes, 20))
         ema55_gap_pct = _safe_pct_change(candle["close"], candle["close"] - _ema(rolling_closes, 55))
-        atr_pct = _safe_pct_change(candle["close"], _atr(valid_candles[: index + 1]))
-        rsi14 = _rsi(valid_candles[: index + 1])
-        recent_high = _recent_high(rolling_highs[:-1])
-        breakout_strength = _safe_pct_change(
-            recent_high,
-            candle["close"] - recent_high,
-        )
+        atr_pct = _safe_pct_change(candle["close"], _atr(valid_candles[: index + 1], profile["atr_period"]))
+        rsi14 = _rsi(valid_candles[: index + 1], profile["rsi_period"])
+        recent_high = _recent_high(rolling_highs[:-1], profile["breakout_lookback"])
+        breakout_strength = _safe_pct_change(recent_high, candle["close"] - recent_high)
+        roc6 = _roc(rolling_closes, profile["roc_period"])
+        cci20 = _cci(valid_candles[: index + 1], profile["cci_period"])
+        stoch_k14 = _stoch_k(valid_candles[: index + 1], profile["stoch_period"])
 
-        rows.append(
-            {
-                "symbol": symbol.strip().upper(),
-                "generated_at": int(candle["close_time"]),
-                "close_return_pct": _format_decimal(close_return_pct),
-                "range_pct": _format_decimal(range_pct),
-                "body_pct": _format_decimal(body_pct),
-                "volume_ratio": _format_decimal(volume_ratio),
-                "trend_gap_pct": _format_decimal(trend_gap_pct),
-                "ema20_gap_pct": _format_decimal(ema20_gap_pct),
-                "ema55_gap_pct": _format_decimal(ema55_gap_pct),
-                "atr_pct": _format_decimal(atr_pct),
-                "rsi14": _format_decimal(rsi14),
-                "breakout_strength": _format_decimal(breakout_strength),
-            }
-        )
+        raw_row = {
+            "symbol": symbol.strip().upper(),
+            "generated_at": int(candle["close_time"]),
+            "close_return_pct": close_return_pct,
+            "range_pct": range_pct,
+            "body_pct": body_pct,
+            "volume_ratio": volume_ratio,
+            "trend_gap_pct": trend_gap_pct,
+            "ema20_gap_pct": ema20_gap_pct,
+            "ema55_gap_pct": ema55_gap_pct,
+            "atr_pct": atr_pct,
+            "breakout_strength": breakout_strength,
+            "roc6": roc6,
+            "rsi14": rsi14,
+            "cci20": cci20,
+            "stoch_k14": stoch_k14,
+        }
+        rows.append(raw_row)
         previous_close = candle["close"]
 
-    return rows
+    if missing_policy == "strict_drop":
+        warmup_bars = _resolve_warmup_bars(profile)
+        rows = rows[warmup_bars - 1 :] if len(rows) >= warmup_bars else []
+
+    return _apply_feature_protocol(
+        rows,
+        outlier_policy=outlier_policy,
+        normalization_policy=normalization_policy,
+    )
+
+
+def _apply_feature_protocol(
+    rows: list[dict[str, object]],
+    *,
+    outlier_policy: str,
+    normalization_policy: str,
+) -> list[dict[str, object]]:
+    """按统一协议格式化整批因子输出。"""
+
+    normalized_outlier_policy = outlier_policy if outlier_policy in OUTLIER_POLICY_LABELS else DEFAULT_OUTLIER_POLICY
+    normalized_normalization_policy = (
+        normalization_policy if normalization_policy in NORMALIZATION_POLICY_LABELS else DEFAULT_NORMALIZATION_POLICY
+    )
+    factor_values = {
+        column: [
+            _normalize_feature_decimal(column, row.get(column), outlier_policy=normalized_outlier_policy)
+            for row in rows
+        ]
+        for column in PRIMARY_FEATURE_COLUMNS + AUXILIARY_FEATURE_COLUMNS
+    }
+    if normalized_normalization_policy == "zscore_by_symbol":
+        factor_values = {
+            column: _zscore_series(values)
+            for column, values in factor_values.items()
+        }
+
+    normalized_rows: list[dict[str, object]] = []
+    for index, row in enumerate(rows):
+        normalized: dict[str, object] = {
+            "symbol": row["symbol"],
+            "generated_at": row["generated_at"],
+        }
+        for column in PRIMARY_FEATURE_COLUMNS + AUXILIARY_FEATURE_COLUMNS:
+            normalized[column] = _format_decimal(factor_values[column][index])
+        normalized_rows.append(normalized)
+    return normalized_rows
+
+
+def _normalize_feature_decimal(name: str, value: object, *, outlier_policy: str) -> Decimal:
+    """按因子协议补齐缺失值，并按策略处理极值。"""
+
+    metadata = FACTOR_METADATA[name]
+    parsed = _to_decimal(value, default=Decimal(str(metadata["neutral"])))
+    if outlier_policy == "raw":
+        return parsed
+    lower = Decimal(str(metadata["clip"][0]))
+    upper = Decimal(str(metadata["clip"][1]))
+    return min(max(parsed, lower), upper)
 
 
 def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int] | None:
@@ -89,10 +346,56 @@ def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int] | N
             "low": Decimal(str(candle["low"])),
             "close": Decimal(str(candle["close"])),
             "volume": Decimal(str(candle["volume"])),
+            "open_time": int(candle.get("open_time") or candle["close_time"]),
             "close_time": int(candle["close_time"]),
         }
     except (KeyError, TypeError, ValueError, InvalidOperation):
         return None
+
+
+def _infer_timeframe(candles: list[dict[str, Decimal | int]]) -> str:
+    """根据 K 线时间间隔推断周期。"""
+
+    if len(candles) < 2:
+        return "1h"
+    first = int(candles[0]["open_time"])
+    second = int(candles[1]["open_time"])
+    step_ms = max(0, second - first)
+    if step_ms >= 4 * 60 * 60 * 1000:
+        return "4h"
+    return "1h"
+
+
+def _resolve_timeframe_profile(
+    timeframe: str,
+    *,
+    timeframe_profiles: dict[str, dict[str, int | str]] | None = None,
+) -> dict[str, int | str]:
+    """返回当前周期应该使用的因子参数。"""
+
+    defaults = dict(TIMEFRAME_PROFILES.get(timeframe, TIMEFRAME_PROFILES["4h"]))
+    incoming = dict((timeframe_profiles or {}).get(timeframe) or {})
+    merged = dict(defaults)
+    for key, default in defaults.items():
+        if key not in incoming:
+            continue
+        candidate = incoming.get(key, default)
+        if isinstance(default, int):
+            try:
+                merged[key] = max(1, int(candidate))
+            except (TypeError, ValueError):
+                merged[key] = default
+        else:
+            text = str(candidate or default).strip()
+            merged[key] = text or default
+    return merged
+
+
+def _resolve_warmup_bars(profile: dict[str, int | str]) -> int:
+    """返回严格缺失处理需要预留的最小预热长度。"""
+
+    numeric_values = [int(value) for value in profile.values() if isinstance(value, int)]
+    return max([55, *numeric_values])
 
 
 def _safe_pct_change(base: Decimal, delta: Decimal) -> Decimal:
@@ -107,7 +410,7 @@ def _safe_ratio(value: Decimal, baseline: Decimal) -> Decimal:
     """计算比例。"""
 
     if baseline == 0:
-        return Decimal("0")
+        return Decimal("1")
     return value / baseline
 
 
@@ -126,6 +429,30 @@ def _format_decimal(value: Decimal) -> str:
     return format(normalized, "f")
 
 
+def _zscore_series(values: list[Decimal]) -> list[Decimal]:
+    """按单币样本把一列值转成 z-score。"""
+
+    if not values:
+        return []
+    float_values = [float(item) for item in values]
+    if len(float_values) < 2:
+        return [Decimal("0") for _ in values]
+    std = pstdev(float_values)
+    if std == 0:
+        return [Decimal("0") for _ in values]
+    avg = mean(float_values)
+    return [Decimal(str((item - avg) / std)) for item in float_values]
+
+
+def _to_decimal(value: object, *, default: Decimal) -> Decimal:
+    """把输入统一转成十进制。"""
+
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return default
+
+
 def _ema(values: list[Decimal], period: int) -> Decimal:
     """计算简单 EMA。"""
 
@@ -138,7 +465,7 @@ def _ema(values: list[Decimal], period: int) -> Decimal:
     return ema
 
 
-def _atr(candles: list[dict[str, Decimal | int]]) -> Decimal:
+def _atr(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
     """计算平均真实波幅。"""
 
     if not candles:
@@ -159,11 +486,11 @@ def _atr(candles: list[dict[str, Decimal | int]]) -> Decimal:
                 )
             )
         previous_close = candle["close"]
-    return _mean(true_ranges[-14:])
+    return _mean(true_ranges[-period:])
 
 
-def _rsi(candles: list[dict[str, Decimal | int]]) -> Decimal:
-    """计算 14 周期 RSI。"""
+def _rsi(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
+    """计算 RSI。"""
 
     if len(candles) < 2:
         return Decimal("50")
@@ -175,8 +502,8 @@ def _rsi(candles: list[dict[str, Decimal | int]]) -> Decimal:
             gains.append(change)
         elif change < 0:
             losses.append(-change)
-    average_gain = _mean(gains[-14:])
-    average_loss = _mean(losses[-14:])
+    average_gain = _mean(gains[-period:])
+    average_loss = _mean(losses[-period:])
     if average_gain == 0 and average_loss == 0:
         return Decimal("50")
     if average_loss == 0:
@@ -185,9 +512,48 @@ def _rsi(candles: list[dict[str, Decimal | int]]) -> Decimal:
     return Decimal("100") - (Decimal("100") / (Decimal("1") + relative_strength))
 
 
-def _recent_high(values: list[Decimal]) -> Decimal:
+def _roc(values: list[Decimal], period: int) -> Decimal:
+    """计算价格变化率。"""
+
+    if len(values) <= period:
+        return Decimal("0")
+    baseline = values[-period - 1]
+    return _safe_pct_change(baseline, values[-1] - baseline)
+
+
+def _cci(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
+    """计算 CCI。"""
+
+    if len(candles) < period:
+        return Decimal("0")
+    typical_prices = [
+        (candle["high"] + candle["low"] + candle["close"]) / Decimal("3")
+        for candle in candles[-period:]
+    ]
+    typical_price = typical_prices[-1]
+    moving_average = _mean(typical_prices)
+    mean_deviation = _mean([abs(value - moving_average) for value in typical_prices])
+    if mean_deviation == 0:
+        return Decimal("0")
+    return (typical_price - moving_average) / (Decimal("0.015") * mean_deviation)
+
+
+def _stoch_k(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
+    """计算随机指标 K 值。"""
+
+    if len(candles) < period:
+        return Decimal("50")
+    window = candles[-period:]
+    highest_high = max(candle["high"] for candle in window)
+    lowest_low = min(candle["low"] for candle in window)
+    if highest_high == lowest_low:
+        return Decimal("50")
+    return ((window[-1]["close"] - lowest_low) / (highest_high - lowest_low)) * Decimal("100")
+
+
+def _recent_high(values: list[Decimal], lookback: int) -> Decimal:
     """返回近期高点。"""
 
     if not values:
         return Decimal("0")
-    return max(values[-20:])
+    return max(values[-lookback:])

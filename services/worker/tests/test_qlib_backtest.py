@@ -38,9 +38,13 @@ class QlibBacktestTests(unittest.TestCase):
                 "turnover",
                 "sample_count",
                 "max_loss_streak",
+                "action_segment_count",
+                "direction_switch_count",
             },
         )
         self.assertIn("assumptions", report)
+        self.assertEqual(report["assumptions"]["switch_rule"], "signal_flip_only")
+        self.assertEqual(report["assumptions"]["segment_turnover_mode"], "watch_to_action_segments")
 
     def test_backtest_applies_fee_and_slippage_to_net_return(self) -> None:
         report = run_backtest(
@@ -57,6 +61,24 @@ class QlibBacktestTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["gross_return_pct"], "2.0000")
         self.assertEqual(report["metrics"]["net_return_pct"], "1.4000")
         self.assertEqual(report["metrics"]["cost_impact_pct"], "0.6000")
+
+    def test_backtest_supports_zero_cost_baseline_model(self) -> None:
+        report = run_backtest(
+            rows=[
+                {"future_return_pct": "1.2000", "label": "buy"},
+                {"future_return_pct": "0.8000", "label": "buy"},
+            ],
+            holding_window="1-3d",
+            fee_bps="10",
+            slippage_bps="5",
+            cost_model="zero_cost_baseline",
+        )
+
+        self.assertEqual(report["assumptions"]["cost_model"], "zero_cost_baseline")
+        self.assertEqual(report["assumptions"]["round_trip_cost_pct"], "0.0000")
+        self.assertEqual(report["metrics"]["gross_return_pct"], "2.0000")
+        self.assertEqual(report["metrics"]["net_return_pct"], "2.0000")
+        self.assertEqual(report["metrics"]["cost_impact_pct"], "0.0000")
 
     def test_backtest_turnover_stays_low_when_direction_is_stable(self) -> None:
         report = run_backtest(
@@ -86,6 +108,22 @@ class QlibBacktestTests(unittest.TestCase):
 
         self.assertEqual(report["metrics"]["sample_count"], "4")
         self.assertEqual(report["metrics"]["max_loss_streak"], "2")
+
+    def test_backtest_reports_segment_counts_and_switches(self) -> None:
+        report = run_backtest(
+            rows=[
+                {"future_return_pct": "0.0000", "label": "watch"},
+                {"future_return_pct": "1.2000", "label": "buy"},
+                {"future_return_pct": "0.8000", "label": "buy"},
+                {"future_return_pct": "-0.5000", "label": "sell"},
+                {"future_return_pct": "-0.2000", "label": "sell"},
+                {"future_return_pct": "0.0000", "label": "watch"},
+            ],
+            holding_window="1-3d",
+        )
+
+        self.assertEqual(report["metrics"]["action_segment_count"], "2")
+        self.assertEqual(report["metrics"]["direction_switch_count"], "1")
 
 
 def _sample_ranked_rows() -> list[dict[str, object]]:

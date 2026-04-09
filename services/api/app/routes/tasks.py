@@ -136,7 +136,7 @@ def run_health_check_task(source: str = "scheduler", token: str = "", authorizat
 
 
 @router.get("/validation-review")
-def get_validation_review(limit: int = 10, token: str = "", authorization: str = Header("")) -> dict:
+def get_validation_review(limit: int = 0, token: str = "", authorization: str = Header("")) -> dict:
     try:
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:
@@ -202,6 +202,79 @@ def resume_automation(mode: str = "", actor: str = "user", token: str = "", auth
         automation_service.configure_mode(mode, actor=actor)
     item = automation_service.resume(actor=actor)
     return _success({"item": item}, {"source": "automation-service", "action": "resume"})
+
+
+@router.post("/automation/dry-run-only")
+def enable_dry_run_only(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.enable_dry_run_only(actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "dry-run-only"})
+
+
+@router.post("/automation/alerts/{alert_id}/confirm")
+def confirm_automation_alert(
+    alert_id: int,
+    token: str = "",
+    authorization: str = Header(""),
+    actor: str = "user",
+) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    try:
+        item = automation_service.confirm_alert(alert_id, actor=actor)
+        return _success({"item": item}, {"source": "automation-service", "action": "confirm-alert", "alert_id": alert_id})
+    except ValueError as exc:
+        return {
+            "data": None,
+            "error": {"code": "alert_not_found", "message": str(exc)},
+            "meta": {"source": "automation-service", "alert_id": alert_id},
+        }
+
+
+@router.post("/automation/alerts/clear")
+def clear_automation_alerts(
+    levels: str = "",
+    token: str = "",
+    authorization: str = Header(""),
+    actor: str = "user",
+) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    level_list = [item.strip() for item in levels.split(",") if item.strip()]
+    item = automation_service.clear_alerts(levels=level_list or None, actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "clear-alerts", "levels": level_list})
+
+
+@router.post("/automation/kill-switch")
+def trigger_kill_switch(actor: str = "user", token: str = "", authorization: str = Header("")) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.kill_switch(actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "kill-switch"})
+
+
+@router.post("/automation/manual-takeover")
+def trigger_manual_takeover(
+    reason: str = "manual_takeover",
+    actor: str = "user",
+    token: str = "",
+    authorization: str = Header(""),
+) -> dict:
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+    item = automation_service.manual_takeover(reason=reason, actor=actor)
+    return _success({"item": item}, {"source": "automation-service", "action": "manual-takeover"})
 
 
 @router.post("/automation/run")

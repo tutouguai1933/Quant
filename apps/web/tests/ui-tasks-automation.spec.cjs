@@ -1,11 +1,12 @@
 const { test, expect } = require("@playwright/test");
+const { getPlaywrightUseOptions } = require("./playwright-browser.cjs");
+const { WEB_BASE_URL } = require("./test-urls.cjs");
+const { loginAsAdmin } = require("./test-auth.cjs");
 
-test.use({
-  launchOptions: { executablePath: "/snap/bin/chromium" },
-  viewport: { width: 1440, height: 1100 },
-});
+test.use(getPlaywrightUseOptions());
 
 test("tasks page shows latest automation decision after login", async ({ page }) => {
+  test.setTimeout(90000);
   const errors = [];
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -16,33 +17,26 @@ test("tasks page shows latest automation decision after login", async ({ page })
     errors.push(error.message);
   });
 
-  const loginResponse = await page.request.post("http://127.0.0.1:9011/api/v1/auth/login", {
-    data: { username: "admin", password: "1933" },
-  });
-  const loginPayload = await loginResponse.json();
-  const token = loginPayload?.data?.item?.token;
-
-  expect(typeof token).toBe("string");
-  expect(token.length).toBeGreaterThan(10);
-
-  await page.context().addCookies([
-    {
-      name: "quant_admin_token",
-      value: token,
-      domain: "127.0.0.1",
-      path: "/",
-      httpOnly: false,
-      sameSite: "Lax",
-    },
-  ]);
-
-  await page.goto("http://127.0.0.1:9012/tasks", { waitUntil: "networkidle" });
-  await page.waitForFunction(() => document.body.innerText.includes("任务") && !document.body.innerText.includes("正在切换工作区"));
+  await loginAsAdmin(page, "/tasks");
+  await expect(page.locator("body")).toContainText("任务", { timeout: 60000 });
+  await expect(page.locator("body")).not.toContainText("正在切换工作区", { timeout: 60000 });
 
   await expect(page.getByText("本轮自动化判断")).toBeVisible();
   await expect(page.getByText("推荐策略实例")).toBeVisible();
   await expect(page.getByText("派发结果")).toBeVisible();
   await expect(page.getByText("失败原因")).toBeVisible();
+  await expect(page.getByText("告警强度")).toBeVisible();
+  await expect(page.getByText("人工接管原因", { exact: true })).toBeVisible();
+  await expect(page.getByText("恢复前先做什么", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("风险等级摘要", { exact: true })).toBeVisible();
+  await expect(page.getByText("恢复清单", { exact: true })).toBeVisible();
+  await expect(page.getByText("头号告警", { exact: true })).toBeVisible();
+  await expect(page.getByText("最早恢复时间", { exact: true })).toBeVisible();
+  await expect(page.getByText("接管复核截止", { exact: true })).toBeVisible();
+  await expect(page.getByText("自动化运行参数", { exact: true })).toBeVisible();
+  await expect(page.getByText("长时间接管阈值", { exact: true })).toBeVisible();
+  await expect(page.getByText("活跃告警窗口", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/接管原因：/, { exact: false }).first()).toBeVisible();
 
   expect(errors).toEqual([]);
 });

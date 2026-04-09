@@ -84,6 +84,10 @@ def _normalize_order_row(row: dict[str, object]) -> dict[str, object]:
     )
     normalized["orderType"] = order_type
     normalized["order_type"] = order_type
+    normalized["lifecycle"] = _resolve_order_lifecycle(
+        status=str(normalized.get("status", "")),
+        side=str(normalized.get("side", "")),
+    )
     return normalized
 
 
@@ -119,7 +123,24 @@ def _normalize_position_row(row: dict[str, object]) -> dict[str, object]:
     normalized["unrealizedPnl"] = str(normalized.get("unrealizedPnl", "0.0000000000"))
     normalized["entryPrice"] = str(normalized.get("entryPrice", "0.0000000000"))
     normalized["markPrice"] = str(normalized.get("markPrice", "0.0000000000"))
+    normalized["positionStatus"] = "open" if _read_decimal(normalized["quantity"]) > 0 else "closed"
     return normalized
+
+
+def _resolve_order_lifecycle(*, status: str, side: str) -> str:
+    """把订单状态压成更适合页面和健康摘要的生命周期。"""
+
+    normalized_status = status.strip().upper()
+    normalized_side = side.strip().lower()
+    if normalized_side == "sell" and normalized_status in {"NEW", "PARTIALLY_FILLED"}:
+        return "pending_exit"
+    if normalized_side == "buy" and normalized_status in {"NEW", "PARTIALLY_FILLED"}:
+        return "pending_entry"
+    if normalized_side == "sell" and normalized_status in {"FILLED", "CLOSED"}:
+        return "filled_exit"
+    if normalized_side == "buy" and normalized_status in {"FILLED", "CLOSED"}:
+        return "filled_entry"
+    return "idle"
 
 
 class AccountSyncService:

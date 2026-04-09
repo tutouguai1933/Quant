@@ -355,6 +355,38 @@ class MarketServiceTests(unittest.TestCase):
         self.assertEqual(cockpit["entry_hint"], "103.515")
         self.assertEqual(cockpit["stop_hint"], "99")
 
+    def test_get_symbol_chart_short_circuits_multi_timeframe_reads_when_base_chart_is_empty(self) -> None:
+        client = FakeMarketClient(
+            klines_by_request={
+                ("BTCUSDT", "4h"): [],
+                ("BTCUSDT", "1h"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710003599999],
+                    [1710003600000, "100", "102", "99", "101", "11", 1710007199999],
+                ],
+                ("BTCUSDT", "15m"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710000899999],
+                    [1710000900000, "100", "102", "99", "101", "11", 1710001799999],
+                ],
+                ("BTCUSDT", "1d"): [
+                    [1710000000000, "100", "101", "99", "100", "10", 1710086399999],
+                    [1710086400000, "100", "102", "99", "101", "11", 1710172799999],
+                ],
+            }
+        )
+        service = MarketService(
+            client=client,
+            catalog_service=FakeStrategyCatalogService(["BTCUSDT"]),
+            research_reader=FakeResearchService(),
+        )
+
+        chart = service.get_symbol_chart("BTCUSDT", interval="4h", limit=50, allowed_symbols=("BTCUSDT",))
+
+        self.assertEqual(chart["items"], [])
+        self.assertEqual(chart["multi_timeframe_summary"], [])
+        self.assertEqual(chart["strategy_context"]["recommended_strategy"], "none")
+        self.assertEqual(chart["strategy_context"]["primary_reason"], "empty_chart")
+        self.assertEqual(client.requests, [("BTCUSDT", "4h", 50)])
+
     def test_get_symbol_chart_returns_interval_metadata_and_multi_timeframe_summary(self) -> None:
         client = FakeMarketClient(
             klines_by_request={
@@ -513,6 +545,22 @@ class MarketServiceTests(unittest.TestCase):
             for interval in ("1d", "4h", "1h", "15m")
         }
         self.assertEqual(interval_counts, {"1d": 1, "4h": 1, "1h": 1, "15m": 1})
+
+    def test_get_symbol_chart_returns_early_when_base_chart_is_empty(self) -> None:
+        client = FakeMarketClient(klines_by_request={("BTCUSDT", "4h"): []})
+        service = MarketService(
+            client=client,
+            catalog_service=FakeStrategyCatalogService(["BTCUSDT"]),
+            research_reader=FakeResearchService(),
+        )
+
+        chart = service.get_symbol_chart("BTCUSDT", interval="4h", limit=50)
+
+        self.assertEqual(chart["items"], [])
+        self.assertEqual(chart["multi_timeframe_summary"], [])
+        self.assertEqual(chart["strategy_context"]["recommended_strategy"], "none")
+        self.assertEqual(chart["research_cockpit"]["research_bias"], "bullish")
+        self.assertEqual(client.requests, [("BTCUSDT", "4h", 50)])
 
     def test_build_chart_cache_key_ignores_allowed_symbol_order(self) -> None:
         self.assertEqual(
