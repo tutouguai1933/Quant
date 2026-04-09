@@ -1361,7 +1361,12 @@ class EvaluationWorkspaceService:
 
         if not gate:
             return False
-        return bool(gate.get("passed"))
+        if "passed" in gate:
+            return bool(gate.get("passed"))
+        status = str(gate.get("status", "") or "").strip().lower()
+        if status:
+            return status == "passed"
+        return not [str(reason).strip() for reason in list(gate.get("reasons") or []) if str(reason).strip()]
 
 
 evaluation_workspace_service = EvaluationWorkspaceService()

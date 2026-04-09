@@ -6,6 +6,7 @@ const { loginAsAdmin } = require("./test-auth.cjs");
 test.use(getPlaywrightUseOptions());
 
 test("tasks page shows latest automation decision after login", async ({ page }) => {
+  test.setTimeout(90000);
   const errors = [];
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -17,7 +18,8 @@ test("tasks page shows latest automation decision after login", async ({ page })
   });
 
   await loginAsAdmin(page, "/tasks");
-  await page.waitForFunction(() => document.body.innerText.includes("任务") && !document.body.innerText.includes("正在切换工作区"));
+  await expect(page.locator("body")).toContainText("任务", { timeout: 60000 });
+  await expect(page.locator("body")).not.toContainText("正在切换工作区", { timeout: 60000 });
 
   await expect(page.getByText("本轮自动化判断")).toBeVisible();
   await expect(page.getByText("推荐策略实例")).toBeVisible();

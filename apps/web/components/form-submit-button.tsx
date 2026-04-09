@@ -23,7 +23,12 @@ export function FormSubmitButton({
   ...props
 }: FormSubmitButtonProps) {
   const [pending, setPending] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     const currentButton = buttonRef.current;
@@ -55,6 +60,7 @@ export function FormSubmitButton({
       <Button
         {...props}
         ref={buttonRef}
+        data-hydrated={hydrated ? "true" : "false"}
         disabled={disabled || pending}
         onClick={(event) => {
           const currentButton = buttonRef.current;

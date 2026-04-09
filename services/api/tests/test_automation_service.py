@@ -293,6 +293,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("operations", status)
         self.assertEqual(status["operations"]["pause_after_consecutive_failures"], 2)
         self.assertEqual(status["operations"]["review_limit"], 10)
+        self.assertEqual(status["operations"]["comparison_run_limit"], 5)
         self.assertEqual(status["operations"]["cycle_cooldown_minutes"], 15)
         self.assertEqual(status["operations"]["max_daily_cycle_count"], 8)
         self.assertIn("automation_config", status)

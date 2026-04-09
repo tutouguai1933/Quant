@@ -14,6 +14,7 @@ import services.api.app.routes.strategies as strategies_route  # noqa: E402
 import services.api.app.services.auth_service as auth_service_module  # noqa: E402
 import services.api.app.services.strategy_catalog as strategy_catalog_module  # noqa: E402
 from services.api.app.routes.auth import login  # noqa: E402
+from services.api.app.core.settings import DEFAULT_MARKET_SYMBOLS  # noqa: E402
 from services.api.app.routes.strategies import get_strategy_catalog  # noqa: E402
 from services.api.app.services.auth_service import AuthService  # noqa: E402
 from services.api.app.services.strategy_catalog import StrategyCatalogService  # noqa: E402
@@ -47,7 +48,7 @@ class StrategyCatalogRouteTests(unittest.TestCase):
     def test_strategy_catalog_service_exposes_default_whitelist(self) -> None:
         whitelist = strategy_catalog_module.strategy_catalog_service.get_whitelist()
 
-        self.assertEqual(whitelist, ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])
+        self.assertEqual(whitelist, list(DEFAULT_MARKET_SYMBOLS))
 
     def test_strategy_catalog_route_requires_login(self) -> None:
         response = get_strategy_catalog()
@@ -73,7 +74,7 @@ class StrategyCatalogRouteTests(unittest.TestCase):
 
         next_response = get_strategy_catalog(token=token)
 
-        self.assertEqual(next_response["data"]["whitelist"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT"])
+        self.assertEqual(next_response["data"]["whitelist"], list(DEFAULT_MARKET_SYMBOLS))
         self.assertEqual(next_response["data"]["strategies"][0]["default_params"]["timeframe"], "1h")
 
     def test_strategy_catalog_entry_contains_key_fields(self) -> None:

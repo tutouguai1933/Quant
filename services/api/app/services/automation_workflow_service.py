@@ -531,6 +531,7 @@ class AutomationWorkflowService:
             "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
             "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
             "review_limit": int(operations.get("review_limit", 10) or 10),
+            "comparison_run_limit": int(operations.get("comparison_run_limit", 5) or 5),
             "cycle_cooldown_minutes": int(operations.get("cycle_cooldown_minutes", 15) or 0),
             "max_daily_cycle_count": int(operations.get("max_daily_cycle_count", 8) or 8),
         }

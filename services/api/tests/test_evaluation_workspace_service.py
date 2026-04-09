@@ -139,6 +139,39 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
             "当前还没有训练或推理记录，先跑实验再来看对比。",
         )
 
+    def test_gate_matrix_accepts_status_based_gate_payloads(self) -> None:
+        rows = EvaluationWorkspaceService._build_gate_matrix(
+            {
+                "candidates": [
+                    {
+                        "symbol": "ETHUSDT",
+                        "allowed_to_dry_run": True,
+                        "allowed_to_live": False,
+                        "rule_gate": {"status": "passed", "reasons": []},
+                        "research_validation_gate": {"status": "passed", "reasons": []},
+                        "backtest_gate": {"status": "passed", "reasons": []},
+                        "consistency_gate": {"status": "passed", "reasons": []},
+                        "dry_run_gate": {"status": "passed", "reasons": []},
+                    },
+                    {
+                        "symbol": "BTCUSDT",
+                        "allowed_to_dry_run": False,
+                        "allowed_to_live": False,
+                        "rule_gate": {"status": "passed", "reasons": []},
+                        "research_validation_gate": {"status": "failed", "reasons": ["sample_count_too_low"]},
+                        "backtest_gate": {"status": "passed", "reasons": []},
+                        "consistency_gate": {"status": "passed", "reasons": []},
+                        "dry_run_gate": {"status": "failed", "reasons": ["sample_count_too_low"]},
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(rows[0]["blocking_gate"], "passed")
+        self.assertEqual(rows[0]["rule_gate"], "通过")
+        self.assertEqual(rows[1]["blocking_gate"], "validation_gate")
+        self.assertEqual(rows[1]["primary_reason"], "sample_count_too_low")
+
     def test_workspace_marks_run_delta_as_unavailable_when_context_is_missing(self) -> None:
         service = EvaluationWorkspaceService(
             report_reader=_MissingContextResearchService(),

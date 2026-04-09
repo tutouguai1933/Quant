@@ -136,6 +136,20 @@ class FakeSyncService:
             }
         ]
 
+    def get_runtime_snapshot(self) -> dict[str, object]:
+        return {"backend": "memory"}
+
+
+class UnavailableFreqtradeSyncService:
+    def list_orders(self, limit: int = 100) -> list[dict[str, object]]:
+        raise RuntimeError("freqtrade unavailable")
+
+    def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+        raise RuntimeError("freqtrade unavailable")
+
+    def get_runtime_snapshot(self) -> dict[str, object]:
+        return {"backend": "rest"}
+
 
 class FakeResponse:
     def __init__(self, body: str, status: int = 200) -> None:
@@ -463,7 +477,7 @@ class AccountSyncServiceTests(unittest.TestCase):
                 "QUANT_RUNTIME_MODE": "live",
                 "BINANCE_API_KEY": "k",
                 "BINANCE_API_SECRET": "s",
-                "QUANT_MARKET_SYMBOLS": "BTCUSDT,ETHUSDT",
+                "QUANT_MARKET_SYMBOLS": "BTCUSDT,ETHUSDT,SOLUSDT",
                 "QUANT_LIVE_ALLOWED_SYMBOLS": "SOLUSDT",
             },
         ):
@@ -583,6 +597,26 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(order_response["meta"]["truth_source"], "freqtrade")
         self.assertEqual(position_response["meta"]["source"], "freqtrade-sync")
         self.assertEqual(position_response["meta"]["truth_source"], "freqtrade")
+
+    def test_dry_run_routes_return_empty_items_when_freqtrade_sync_is_unavailable(self) -> None:
+        unavailable_sync = UnavailableFreqtradeSyncService()
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):
+            with patch.object(orders, "sync_service", unavailable_sync), patch.object(positions, "sync_service", unavailable_sync):
+                order_response = orders.list_orders(limit=5)
+                position_response = positions.list_positions(limit=5)
+
+        self.assertIsNone(order_response["error"])
+        self.assertEqual(order_response["data"]["items"], [])
+        self.assertEqual(order_response["meta"]["source"], "freqtrade-rest-sync")
+        self.assertEqual(order_response["meta"]["truth_source"], "freqtrade")
+        self.assertEqual(order_response["meta"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", order_response["meta"]["detail"])
+        self.assertIsNone(position_response["error"])
+        self.assertEqual(position_response["data"]["items"], [])
+        self.assertEqual(position_response["meta"]["source"], "freqtrade-rest-sync")
+        self.assertEqual(position_response["meta"]["truth_source"], "freqtrade")
+        self.assertEqual(position_response["meta"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", position_response["meta"]["detail"])
 
 if __name__ == "__main__":
     unittest.main()

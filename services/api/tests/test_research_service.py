@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 import services.api.app.routes.signals as signals_route  # noqa: E402
 import services.api.app.services.research_runtime_service as research_runtime_module  # noqa: E402
 import services.api.app.services.research_service as research_service_module  # noqa: E402
+import services.api.app.services.signal_service as signal_service_module  # noqa: E402
 from services.api.app.services.auth_service import auth_service  # noqa: E402
 from services.api.app.services.research_runtime_service import ResearchRuntimeService  # noqa: E402
 from services.api.app.services.research_service import ResearchService  # noqa: E402
@@ -35,6 +36,7 @@ class ResearchServiceTests(unittest.TestCase):
             runtime_override_provider=lambda: {},
         )
         research_service_module.research_service = self.service
+        signal_service_module.research_service = self.service
         signals_route.research_service = self.service
         runtime_service = ResearchRuntimeService(
             config_loader=self._load_config,
