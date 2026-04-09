@@ -630,12 +630,16 @@ export type BacktestWorkspaceModel = {
     recommended_symbol: string;
   };
   assumptions: Record<string, string>;
+  selection_story?: Record<string, unknown>;
+  cost_filter_catalog?: Array<Record<string, unknown>>;
+  stage_assessment?: Array<Record<string, unknown>>;
   controls: {
     backtest_preset_key?: string;
     fee_bps: string;
     slippage_bps: string;
     cost_model: string;
     available_cost_models: string[];
+    cost_model_catalog?: Array<Record<string, unknown>>;
     available_backtest_presets?: string[];
     backtest_preset_catalog?: Array<Record<string, unknown>>;
     enable_rule_gate: boolean;
@@ -1759,11 +1763,18 @@ export function getBacktestWorkspaceFallback(): BacktestWorkspaceModel {
       recommended_symbol: "",
     },
     assumptions: {},
+    selection_story: {},
+    cost_filter_catalog: [],
+    stage_assessment: [],
     controls: {
+      backtest_preset_key: "realistic_standard",
       fee_bps: "10",
       slippage_bps: "5",
       cost_model: "round_trip_basis_points",
       available_cost_models: ["round_trip_basis_points", "single_side_basis_points", "zero_cost_baseline"],
+      cost_model_catalog: [],
+      available_backtest_presets: ["realistic_standard", "cost_stress", "signal_baseline"],
+      backtest_preset_catalog: [],
       enable_rule_gate: true,
       enable_validation_gate: true,
       enable_backtest_gate: true,
@@ -2313,11 +2324,18 @@ function normalizeBacktestWorkspaceModel(item: unknown): BacktestWorkspaceModel 
     assumptions: Object.fromEntries(
       Object.entries(assumptions).map(([name, value]) => [String(name), String(value ?? "")]),
     ),
+    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
+    cost_filter_catalog: normalizeObjectArray(row.cost_filter_catalog),
+    stage_assessment: normalizeObjectArray(row.stage_assessment),
     controls: {
+      backtest_preset_key: String(controls.backtest_preset_key ?? "realistic_standard"),
       fee_bps: String(controls.fee_bps ?? ""),
       slippage_bps: String(controls.slippage_bps ?? ""),
       cost_model: String(controls.cost_model ?? "round_trip_basis_points"),
       available_cost_models: normalizeStringArray(controls.available_cost_models, []),
+      cost_model_catalog: normalizeObjectArray(controls.cost_model_catalog),
+      available_backtest_presets: normalizeStringArray(controls.available_backtest_presets, ["realistic_standard", "cost_stress", "signal_baseline"]),
+      backtest_preset_catalog: normalizeObjectArray(controls.backtest_preset_catalog),
       enable_rule_gate: Boolean(controls.enable_rule_gate),
       enable_validation_gate: Boolean(controls.enable_validation_gate),
       enable_backtest_gate: Boolean(controls.enable_backtest_gate),

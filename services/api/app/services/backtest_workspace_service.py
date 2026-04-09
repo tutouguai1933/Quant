@@ -29,6 +29,11 @@ class BacktestWorkspaceService:
         controls = self._controls_builder()
         configured_backtest = dict((controls.get("config") or {}).get("backtest") or {})
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
+        option_catalogs = dict(controls.get("options") or {})
+        backtest_preset_key = str(configured_backtest.get("backtest_preset_key", "realistic_standard") or "realistic_standard")
+        fee_bps = str(configured_backtest.get("fee_bps", "10") or "10")
+        slippage_bps = str(configured_backtest.get("slippage_bps", "5") or "5")
+        cost_model = str(configured_backtest.get("cost_model", "round_trip_basis_points") or "round_trip_basis_points")
         leaderboard = [
             {
                 "symbol": str(item.get("symbol", "")),
@@ -56,10 +61,10 @@ class BacktestWorkspaceService:
                 for name, value in assumptions.items()
             },
             "controls": {
-                "backtest_preset_key": str(configured_backtest.get("backtest_preset_key", "realistic_standard") or "realistic_standard"),
-                "fee_bps": str(configured_backtest.get("fee_bps", "")),
-                "slippage_bps": str(configured_backtest.get("slippage_bps", "")),
-                "cost_model": str(configured_backtest.get("cost_model", "round_trip_basis_points")),
+                "backtest_preset_key": backtest_preset_key,
+                "fee_bps": fee_bps,
+                "slippage_bps": slippage_bps,
+                "cost_model": cost_model,
                 "available_cost_models": [str(item) for item in list((controls.get("options") or {}).get("backtest_cost_models") or [])],
                 "cost_model_catalog": [dict(item) for item in list((controls.get("options") or {}).get("cost_model_catalog") or []) if isinstance(item, dict)],
                 "available_backtest_presets": [str(item) for item in list((controls.get("options") or {}).get("backtest_presets") or [])],
@@ -110,6 +115,22 @@ class BacktestWorkspaceService:
                 sample_window=dict(training_context.get("sample_window") or {}),
                 thresholds=configured_thresholds,
             ),
+            "selection_story": self._build_selection_story(
+                option_catalogs=option_catalogs,
+                backtest_preset_key=backtest_preset_key,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
+                cost_model=cost_model,
+                thresholds=configured_thresholds,
+            ),
+            "cost_filter_catalog": self._build_cost_filter_catalog(
+                option_catalogs=option_catalogs,
+                backtest_preset_key=backtest_preset_key,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
+                cost_model=cost_model,
+                thresholds=configured_thresholds,
+            ),
             "leaderboard": [
                 {
                     "symbol": item["symbol"],
@@ -132,6 +153,161 @@ class BacktestWorkspaceService:
             if isinstance(payload, dict):
                 return payload
         return {"status": "unavailable", "backend": "qlib-fallback"}
+
+    @staticmethod
+    def _resolve_catalog_item(
+        catalog: list[dict[str, object]],
+        *,
+        key: str,
+        fallback_label: str,
+    ) -> dict[str, str]:
+        """从目录里找出当前选中的说明项。"""
+
+        for item in catalog:
+            if str(item.get("key", "")).strip() == key:
+                return {
+                    "key": key,
+                    "label": str(item.get("label", fallback_label) or fallback_label),
+                    "fit": str(item.get("fit", "当前没有适用场景说明") or "当前没有适用场景说明"),
+                    "detail": str(item.get("detail", "当前没有额外说明") or "当前没有额外说明"),
+                }
+        return {
+            "key": key,
+            "label": fallback_label,
+            "fit": "当前没有适用场景说明",
+            "detail": "当前没有额外说明",
+        }
+
+    def _build_selection_story(
+        self,
+        *,
+        option_catalogs: dict[str, object],
+        backtest_preset_key: str,
+        fee_bps: str,
+        slippage_bps: str,
+        cost_model: str,
+        thresholds: dict[str, object],
+    ) -> dict[str, object]:
+        """把当前回测 preset、成本口径和过滤条件压成一屏说明。"""
+
+        backtest_preset = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("backtest_preset_catalog") or []) if isinstance(item, dict)],
+            key=backtest_preset_key,
+            fallback_label=backtest_preset_key,
+        )
+        cost_model_item = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("cost_model_catalog") or []) if isinstance(item, dict)],
+            key=cost_model,
+            fallback_label=cost_model,
+        )
+        return {
+            "headline": f"{backtest_preset['label']} / {cost_model_item['label']}",
+            "detail": (
+                f"手续费 {fee_bps} bps / 滑点 {slippage_bps} bps / "
+                f"dry-run 净收益 ≥ {thresholds.get('dry_run_min_net_return_pct', '0')}% / "
+                f"最大回撤 ≤ {thresholds.get('dry_run_max_drawdown_pct', '15')}%"
+            ),
+            "backtest_preset": backtest_preset,
+            "cost_model": cost_model_item,
+            "filter_summary": self._build_rule_filter_summary(thresholds),
+            "gate_summary": self._build_gate_summary(thresholds),
+        }
+
+    def _build_cost_filter_catalog(
+        self,
+        *,
+        option_catalogs: dict[str, object],
+        backtest_preset_key: str,
+        fee_bps: str,
+        slippage_bps: str,
+        cost_model: str,
+        thresholds: dict[str, object],
+    ) -> list[dict[str, str]]:
+        """把成本和过滤参数整理成稳定目录。"""
+
+        backtest_preset = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("backtest_preset_catalog") or []) if isinstance(item, dict)],
+            key=backtest_preset_key,
+            fallback_label=backtest_preset_key,
+        )
+        cost_model_item = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("cost_model_catalog") or []) if isinstance(item, dict)],
+            key=cost_model,
+            fallback_label=cost_model,
+        )
+        return [
+            {
+                "key": "cost_model",
+                "label": "成本模型",
+                "current": cost_model_item["label"],
+                "effect": "决定净收益是按双边、单边还是零成本基线来扣减。",
+                "detail": cost_model_item["detail"],
+            },
+            {
+                "key": "cost_inputs",
+                "label": "成本输入",
+                "current": f"手续费 {fee_bps} bps / 滑点 {slippage_bps} bps",
+                "effect": "动作越频繁，这两项越容易直接吃掉毛收益。",
+                "detail": f"当前回测预设：{backtest_preset['label']} / {backtest_preset['detail']}",
+            },
+            {
+                "key": "rule_filters",
+                "label": "规则过滤",
+                "current": self._build_rule_filter_summary(thresholds),
+                "effect": "先筛掉趋势不够强、波动过大或量能不足的候选。",
+                "detail": (
+                    f"严格模板：EMA20 ≥ {thresholds.get('strict_rule_min_ema20_gap_pct', '1.2')}% / "
+                    f"EMA55 ≥ {thresholds.get('strict_rule_min_ema55_gap_pct', '1.8')}% / "
+                    f"ATR ≤ {thresholds.get('strict_rule_max_atr_pct', '4.5')}% / "
+                    f"量比 ≥ {thresholds.get('strict_rule_min_volume_ratio', '1.05')}"
+                ),
+            },
+            {
+                "key": "consistency_filters",
+                "label": "一致性过滤",
+                "current": (
+                    f"验证/回测收益差 ≤ {thresholds.get('consistency_max_validation_backtest_return_gap_pct', '1.5')}% / "
+                    f"训练/验证正收益比例差 ≤ {thresholds.get('consistency_max_training_validation_positive_rate_gap', '0.2')} / "
+                    f"训练/验证收益差 ≤ {thresholds.get('consistency_max_training_validation_return_gap_pct', '1.5')}%"
+                ),
+                "effect": "避免只在单段样本里好看，换一个窗口就明显走样。",
+                "detail": (
+                    f"验证样本数 ≥ {thresholds.get('validation_min_sample_count', '12')} / "
+                    f"验证平均未来收益 ≥ {thresholds.get('validation_min_avg_future_return_pct', '-0.1')}%"
+                ),
+            },
+            {
+                "key": "gate_switches",
+                "label": "门控开关",
+                "current": self._build_gate_summary(thresholds),
+                "effect": "方便快速判断到底是哪一层在拦住候选。",
+                "detail": "这些开关更适合临时排查，不适合长期关闭后直接放行到 dry-run 或 live。",
+            },
+        ]
+
+    @staticmethod
+    def _build_rule_filter_summary(thresholds: dict[str, object]) -> str:
+        """把规则过滤压成一行摘要。"""
+
+        return (
+            f"EMA20 ≥ {thresholds.get('rule_min_ema20_gap_pct', '0')}% / "
+            f"EMA55 ≥ {thresholds.get('rule_min_ema55_gap_pct', '0')}% / "
+            f"ATR ≤ {thresholds.get('rule_max_atr_pct', '5')}% / "
+            f"量比 ≥ {thresholds.get('rule_min_volume_ratio', '1')}"
+        )
+
+    @staticmethod
+    def _build_gate_summary(thresholds: dict[str, object]) -> str:
+        """把五个门控开关压成一行说明。"""
+
+        gates = [
+            ("规则门", bool(thresholds.get("enable_rule_gate", True))),
+            ("验证门", bool(thresholds.get("enable_validation_gate", True))),
+            ("回测门", bool(thresholds.get("enable_backtest_gate", True))),
+            ("一致性门", bool(thresholds.get("enable_consistency_gate", True))),
+            ("live 门", bool(thresholds.get("enable_live_gate", True))),
+        ]
+        return " / ".join(f"{label}{'开启' if enabled else '关闭'}" for label, enabled in gates)
 
     @staticmethod
     def _build_stage_assessment(

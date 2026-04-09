@@ -36,6 +36,13 @@ class BacktestWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("净收益", item["stage_assessment"][0]["current"])
         self.assertEqual(item["stage_assessment"][1]["stage"], "validation")
         self.assertEqual(item["stage_assessment"][2]["stage"], "live")
+        self.assertEqual(item["selection_story"]["backtest_preset"]["key"], "realistic_standard")
+        self.assertEqual(item["selection_story"]["cost_model"]["key"], "round_trip_basis_points")
+        self.assertIn("手续费 10", item["selection_story"]["detail"])
+        self.assertEqual(item["cost_filter_catalog"][0]["key"], "cost_model")
+        self.assertEqual(item["cost_filter_catalog"][1]["key"], "cost_inputs")
+        self.assertEqual(item["cost_filter_catalog"][2]["key"], "rule_filters")
+        self.assertEqual(item["cost_filter_catalog"][4]["key"], "gate_switches")
 
     def test_workspace_handles_missing_backtest(self) -> None:
         service = BacktestWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
@@ -45,6 +52,8 @@ class BacktestWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["status"], "unavailable")
         self.assertEqual(item["leaderboard"], [])
         self.assertEqual(item["training_backtest"]["metrics"], {})
+        self.assertEqual(item["selection_story"]["backtest_preset"]["key"], "realistic_standard")
+        self.assertTrue(item["cost_filter_catalog"])
 
 
 class _FakeResearchService:
@@ -118,6 +127,11 @@ def _fake_controls() -> dict[str, object]:
         }
         ,
         "options": {
+            "backtest_presets": ["realistic_standard", "cost_stress"],
+            "backtest_preset_catalog": [
+                {"key": "realistic_standard", "label": "真实标准", "fit": "默认口径", "detail": "按常用双边成本估算"},
+                {"key": "cost_stress", "label": "成本压力", "fit": "高成本压力", "detail": "先看高成本下还能不能站住"},
+            ],
             "backtest_cost_models": ["round_trip_basis_points", "zero_cost_baseline"],
             "cost_model_catalog": [
                 {"key": "round_trip_basis_points", "label": "双边成本", "fit": "更贴近真实交易", "detail": "买卖都扣成本"}

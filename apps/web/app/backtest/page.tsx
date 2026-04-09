@@ -21,17 +21,20 @@ export default async function BacktestPage() {
       ? `净收益 ${metric(workspace.training_backtest.metrics, "net_return_pct")} / Sharpe ${metric(workspace.training_backtest.metrics, "sharpe")}`
       : "当前还没有回测结果";
   const metrics = workspace.training_backtest.metrics;
-  const workspaceRecord = asRecord(workspace);
-  const backtestControls = asRecord(workspace.controls);
-  const gatePreview = backtestControls;
-  const costModelCatalog = Array.isArray(backtestControls.cost_model_catalog)
-    ? backtestControls.cost_model_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+  const selectionStory = asRecord(workspace.selection_story);
+  const selectedBacktestPreset = asRecord(selectionStory.backtest_preset);
+  const selectedCostModel = asRecord(selectionStory.cost_model);
+  const costModelCatalog = Array.isArray(workspace.controls.cost_model_catalog)
+    ? workspace.controls.cost_model_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
-  const backtestPresetCatalog = Array.isArray(backtestControls.backtest_preset_catalog)
-    ? backtestControls.backtest_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+  const backtestPresetCatalog = Array.isArray(workspace.controls.backtest_preset_catalog)
+    ? workspace.controls.backtest_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
-  const stageAssessment = Array.isArray(workspaceRecord.stage_assessment)
-    ? workspaceRecord.stage_assessment.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+  const costFilterCatalog = Array.isArray(workspace.cost_filter_catalog)
+    ? workspace.cost_filter_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const stageAssessment = Array.isArray(workspace.stage_assessment)
+    ? workspace.stage_assessment.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
@@ -93,6 +96,27 @@ export default async function BacktestPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>当前回测选择</CardTitle>
+              <CardDescription>先看清这轮回测究竟按什么口径在算，再去读净收益、回撤和阶段门槛。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前组合" value={displayValue(selectionStory.headline, "当前还没有回测组合摘要")} />
+              <InfoBlock label="当前组合说明" value={displayValue(selectionStory.detail, "当前还没有组合说明")} />
+              <InfoBlock
+                label="回测预设"
+                value={`${displayValue(selectedBacktestPreset.label, String(workspace.controls.backtest_preset_key ?? "realistic_standard"))} / ${displayValue(selectedBacktestPreset.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock
+                label="成本模型"
+                value={`${displayValue(selectedCostModel.label, workspace.controls.cost_model)} / ${displayValue(selectedCostModel.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock label="规则过滤" value={displayValue(selectionStory.filter_summary, "当前还没有规则过滤摘要")} />
+              <InfoBlock label="门控摘要" value={displayValue(selectionStory.gate_summary, "当前还没有门控摘要")} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <CardTitle>交易明细</CardTitle>
               <CardDescription>当前最小回测先展示动作段和切换统计，逐笔明细后续再继续补齐。</CardDescription>
             </CardHeader>
@@ -112,7 +136,7 @@ export default async function BacktestPage() {
             <CardContent className="p-0">
               <DataTable
                 columns={["拆解项", "当前口径", "会影响什么"]}
-                rows={buildBacktestBreakdownRows(workspace, metrics, gateStates)}
+                rows={buildBacktestBreakdownRows(selectionStory, costFilterCatalog, metrics)}
                 emptyTitle="当前还没有回测拆解"
                 emptyDetail="先保存回测参数并跑一轮训练，这里才会按当前配置解释成本和过滤影响。"
               />
@@ -317,6 +341,21 @@ export default async function BacktestPage() {
           />
 
           <DataTable
+            columns={["过滤参数目录", "当前作用", "会拦住什么", "说明"]}
+            rows={costFilterCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                displayValue(item.label, "n/a"),
+                displayValue(item.current, "当前没有作用摘要"),
+                displayValue(item.effect, "当前没有过滤影响说明"),
+                displayValue(item.detail, "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有过滤参数目录"
+            emptyDetail="先恢复回测配置目录，系统才会告诉你当前有哪些成本与过滤口径。"
+          />
+
+          <DataTable
             columns={["准入阶段", "先看什么", "当前结果", "说明"]}
             rows={stageAssessment.map((item, index) => ({
               id: `${String(item.stage ?? index)}`,
@@ -346,49 +385,34 @@ export default async function BacktestPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
-              <CardTitle>准入门槛预览</CardTitle>
-              <CardDescription>这些门槛会直接影响候选是否能从回测进入 dry-run 或 live。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="dry_run_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_win_rate))} />
-              <InfoBlock label="dry_run_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_turnover))} />
-              <InfoBlock label="dry_run_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_sample_count))} />
-              <InfoBlock label="live_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.live_min_win_rate))} />
-              <InfoBlock label="live_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.live_max_turnover))} />
-              <InfoBlock label="live_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.live_min_sample_count))} />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
               <CardTitle>完整准入门槛</CardTitle>
               <CardDescription>把 dry-run、验证和 live 三层门槛一次看全，先确认这轮结果到底卡在哪一层。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="dry_run_min_score" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_score))} />
-              <InfoBlock label="dry_run_min_positive_rate" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_positive_rate))} />
-              <InfoBlock label="dry_run_min_net_return_pct" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_net_return_pct))} />
-              <InfoBlock label="dry_run_min_sharpe" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_sharpe))} />
-              <InfoBlock label="dry_run_max_drawdown_pct" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_drawdown_pct))} />
-              <InfoBlock label="dry_run_max_loss_streak" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_loss_streak))} />
-              <InfoBlock label="dry_run_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_win_rate))} />
-              <InfoBlock label="dry_run_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.dry_run_max_turnover))} />
-              <InfoBlock label="dry_run_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.dry_run_min_sample_count))} />
-              <InfoBlock label="validation_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.validation_min_sample_count))} />
-              <InfoBlock label="validation_min_avg_future_return_pct" value={valueOrFallback(asOptionalString(gatePreview.validation_min_avg_future_return_pct))} />
-              <InfoBlock label="rule_min_ema20_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.rule_min_ema20_gap_pct))} />
-              <InfoBlock label="rule_min_ema55_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.rule_min_ema55_gap_pct))} />
-              <InfoBlock label="rule_max_atr_pct" value={valueOrFallback(asOptionalString(gatePreview.rule_max_atr_pct))} />
-              <InfoBlock label="rule_min_volume_ratio" value={valueOrFallback(asOptionalString(gatePreview.rule_min_volume_ratio))} />
-              <InfoBlock label="consistency_max_validation_backtest_return_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.consistency_max_validation_backtest_return_gap_pct))} />
-              <InfoBlock label="consistency_max_training_validation_positive_rate_gap" value={valueOrFallback(asOptionalString(gatePreview.consistency_max_training_validation_positive_rate_gap))} />
-              <InfoBlock label="consistency_max_training_validation_return_gap_pct" value={valueOrFallback(asOptionalString(gatePreview.consistency_max_training_validation_return_gap_pct))} />
-              <InfoBlock label="live_min_score" value={valueOrFallback(asOptionalString(gatePreview.live_min_score))} />
-              <InfoBlock label="live_min_positive_rate" value={valueOrFallback(asOptionalString(gatePreview.live_min_positive_rate))} />
-              <InfoBlock label="live_min_net_return_pct" value={valueOrFallback(asOptionalString(gatePreview.live_min_net_return_pct))} />
-              <InfoBlock label="live_min_win_rate" value={valueOrFallback(asOptionalString(gatePreview.live_min_win_rate))} />
-              <InfoBlock label="live_max_turnover" value={valueOrFallback(asOptionalString(gatePreview.live_max_turnover))} />
-              <InfoBlock label="live_min_sample_count" value={valueOrFallback(asOptionalString(gatePreview.live_min_sample_count))} />
+              <InfoBlock label="dry_run_min_score" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_score))} />
+              <InfoBlock label="dry_run_min_positive_rate" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_positive_rate))} />
+              <InfoBlock label="dry_run_min_net_return_pct" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_net_return_pct))} />
+              <InfoBlock label="dry_run_min_sharpe" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_sharpe))} />
+              <InfoBlock label="dry_run_max_drawdown_pct" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_max_drawdown_pct))} />
+              <InfoBlock label="dry_run_max_loss_streak" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_max_loss_streak))} />
+              <InfoBlock label="dry_run_min_win_rate" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_win_rate))} />
+              <InfoBlock label="dry_run_max_turnover" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_max_turnover))} />
+              <InfoBlock label="dry_run_min_sample_count" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_sample_count))} />
+              <InfoBlock label="validation_min_sample_count" value={valueOrFallback(asOptionalString(workspace.controls.validation_min_sample_count))} />
+              <InfoBlock label="validation_min_avg_future_return_pct" value={valueOrFallback(asOptionalString(workspace.controls.validation_min_avg_future_return_pct))} />
+              <InfoBlock label="rule_min_ema20_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.rule_min_ema20_gap_pct))} />
+              <InfoBlock label="rule_min_ema55_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.rule_min_ema55_gap_pct))} />
+              <InfoBlock label="rule_max_atr_pct" value={valueOrFallback(asOptionalString(workspace.controls.rule_max_atr_pct))} />
+              <InfoBlock label="rule_min_volume_ratio" value={valueOrFallback(asOptionalString(workspace.controls.rule_min_volume_ratio))} />
+              <InfoBlock label="consistency_max_validation_backtest_return_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.consistency_max_validation_backtest_return_gap_pct))} />
+              <InfoBlock label="consistency_max_training_validation_positive_rate_gap" value={valueOrFallback(asOptionalString(workspace.controls.consistency_max_training_validation_positive_rate_gap))} />
+              <InfoBlock label="consistency_max_training_validation_return_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.consistency_max_training_validation_return_gap_pct))} />
+              <InfoBlock label="live_min_score" value={valueOrFallback(asOptionalString(workspace.controls.live_min_score))} />
+              <InfoBlock label="live_min_positive_rate" value={valueOrFallback(asOptionalString(workspace.controls.live_min_positive_rate))} />
+              <InfoBlock label="live_min_net_return_pct" value={valueOrFallback(asOptionalString(workspace.controls.live_min_net_return_pct))} />
+              <InfoBlock label="live_min_win_rate" value={valueOrFallback(asOptionalString(workspace.controls.live_min_win_rate))} />
+              <InfoBlock label="live_max_turnover" value={valueOrFallback(asOptionalString(workspace.controls.live_max_turnover))} />
+              <InfoBlock label="live_min_sample_count" value={valueOrFallback(asOptionalString(workspace.controls.live_min_sample_count))} />
             </CardContent>
           </Card>
         </div>
@@ -409,77 +433,65 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
 function metric(metrics: Record<string, string>, key: string) {
   return valueOrFallback(metrics[key]);
 }
-
 function valueOrFallback(value: string | undefined) {
   return value && value.length > 0 ? value : "n/a";
 }
-
-function asOptionalString(value: unknown): string | undefined {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  return String(value);
+function displayValue(value: unknown, fallback: string) {
+  return valueOrFallback(asOptionalString(value)) === "n/a" ? fallback : valueOrFallback(asOptionalString(value));
 }
-
+function asOptionalString(value: unknown): string | undefined {
+  return value === null || value === undefined ? undefined : String(value);
+}
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
-
 function buildBacktestBreakdownRows(
-  workspace: {
-    assumptions: Record<string, string>;
-  },
+  selectionStory: Record<string, unknown>,
+  costFilterCatalog: Array<Record<string, unknown>>,
   metrics: Record<string, string>,
-  gateStates: Array<{ label: string; key: string; enabled: boolean }>,
 ) {
-  const gateSummary = gateStates.map((gate) => `${gate.label}${gate.enabled ? "开启" : "关闭"}`).join(" / ") || "当前没有门控说明";
+  const catalogRows = costFilterCatalog.map((item, index) => ({
+    id: String(item.key ?? index),
+    cells: [
+      displayValue(item.label, "未命名拆解项"),
+      displayValue(item.current, "当前没有口径说明"),
+      displayValue(item.effect, "当前没有影响说明"),
+    ],
+  }));
+  const fallbackRows = [
+    {
+      id: "selection-headline",
+      cells: [
+        "当前组合",
+        displayValue(selectionStory.headline, "当前没有回测组合摘要"),
+        displayValue(selectionStory.detail, "当前没有组合说明"),
+      ],
+    },
+    {
+      id: "rule-filter",
+      cells: [
+        "规则过滤",
+        displayValue(selectionStory.filter_summary, "当前没有规则过滤摘要"),
+        "先筛掉趋势不够强、波动过大或量能不足的候选。",
+      ],
+    },
+    {
+      id: "gate-summary",
+      cells: [
+        "门控影响",
+        displayValue(selectionStory.gate_summary, "当前没有门控摘要"),
+        "规则门、验证门、回测门、一致性门和 live 门共同决定这轮结果能不能继续进入下一阶段。",
+      ],
+    },
+  ];
   return [
-    {
-      id: "cost-model",
-      cells: [
-        "成本来源",
-        valueOrFallback(workspace.assumptions.cost_model),
-        "决定净收益是按零成本、单边成本还是双边回合成本来扣减。",
-      ],
-    },
-    {
-      id: "fee",
-      cells: [
-        "手续费",
-        valueOrFallback(workspace.assumptions.fee_bps),
-        "直接影响每次开平仓后的净收益，频繁切换时影响更明显。",
-      ],
-    },
-    {
-      id: "slippage",
-      cells: [
-        "滑点",
-        valueOrFallback(workspace.assumptions.slippage_bps),
-        "用来模拟真实成交时拿不到理想价格的那部分损耗。",
-      ],
-    },
-    {
-      id: "round-trip",
-      cells: [
-        "回合成本",
-        valueOrFallback(workspace.assumptions.round_trip_cost_pct),
-        "把一开一平的总摩擦成本压成一项，方便和毛收益直接对照。",
-      ],
-    },
+    ...(catalogRows.length ? catalogRows : fallbackRows),
     {
       id: "action-segments",
       cells: [
         "动作段明细",
         `${metric(metrics, "action_segment_count")} / 切换 ${metric(metrics, "direction_switch_count")}`,
         "动作段越多、切换越频繁，越容易把成本模型放大成净收益压力。",
-      ],
-    },
-    {
-      id: "loss-streak",
-      cells: [
-        "过滤影响",
-        gateSummary,
-        "规则门、验证门、回测门、一致性门和 live 门共同决定这轮结果能不能继续进入验证或执行。",
       ],
     },
   ];

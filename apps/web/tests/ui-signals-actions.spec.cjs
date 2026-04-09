@@ -22,7 +22,7 @@ test("signals page shows pending feedback before pipeline form leaves the page",
   test.setTimeout(60000);
   await loginAsAdmin(page, "/signals");
   await page.goto(`${WEB_BASE_URL}/signals`, { waitUntil: "commit", timeout: 90000 });
-  await expect(page.locator('button[data-hydrated="true"]').first()).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole("button", { name: "运行 Qlib 信号流水线" })).toBeVisible({ timeout: 30000 });
   await page.evaluate(() => {
     const forms = Array.from(document.querySelectorAll('form[action="/actions"]'));
     const target = forms.find((form) => {

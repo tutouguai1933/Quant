@@ -40,7 +40,8 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await page.goto(`${WEB_BASE_URL}/backtest`, navigation);
   await expect(page.locator("body")).toContainText("成本模型说明", { timeout: renderTimeout });
   await expect(page.getByText("成本模型说明").first()).toBeVisible();
-  await expect(page.getByText("准入门槛预览").first()).toBeVisible();
+  await expect(page.getByText("当前回测选择").first()).toBeVisible();
+  await expect(page.getByText("过滤参数目录").first()).toBeVisible();
 
   await page.goto(`${WEB_BASE_URL}/tasks`, navigation);
   await expect(page.locator("body")).toContainText("统一调度入口", { timeout: renderTimeout });
