@@ -18,12 +18,18 @@ export default async function FeaturePage() {
   const featurePresetCatalog = Array.isArray(workspace.controls.feature_preset_catalog)
     ? workspace.controls.feature_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
+  const categoryCatalog = Array.isArray(workspace.category_catalog)
+    ? workspace.category_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
   const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
   const featureStatus = workspace.status || "unavailable";
   const featureNote = workspace.overview.feature_version
     ? `特征版本 ${workspace.overview.feature_version} / 持有周期 ${workspace.overview.holding_window || "n/a"}`
     : "当前还没有生成特征版本";
+  const selectionStory = asRecord(workspace.selection_story);
+  const selectedFeaturePreset = asRecord(selectionStory.feature_preset);
+  const preprocessingStory = asRecord(selectionStory.preprocessing);
 
   const categoryRows = Object.entries(workspace.categories).map(([name, items]) => ({
     id: name,
@@ -51,15 +57,27 @@ export default async function FeaturePage() {
     ? categorySummaries.reduce((prev, current) => (current.total > prev.total ? current : prev))
     : undefined;
   const averagePerGroup = totalCategoryCount ? Math.round(totalFactorCount / totalCategoryCount) : 0;
-  const categoryWeightRows = categorySummaries.map((summary) => ({
-    id: summary.name,
-    cells: [
-      summary.name,
-      `${summary.primaryCount} 主判断 / ${summary.auxiliaryCount} 辅助`,
-      describeCategoryWeight(summary.name).weightEntry,
-      describeCategoryWeight(summary.name).effect,
-    ],
-  }));
+  const categoryWeightRows = categoryCatalog.length
+    ? categoryCatalog.map((item, index) => ({
+        id: String(item.key ?? index),
+        cells: [
+          String(item.label ?? item.key ?? "n/a"),
+          String(item.current_mix ?? "当前没有启用摘要"),
+          String(item.weight_entry ?? "研究页统一评分"),
+          String(item.effect ?? "当前没有影响说明"),
+          String(item.detail ?? "当前没有额外说明"),
+        ],
+      }))
+    : categorySummaries.map((summary) => ({
+        id: summary.name,
+        cells: [
+          summary.name,
+          `${summary.primaryCount} 主判断 / ${summary.auxiliaryCount} 辅助`,
+          describeCategoryWeight(summary.name).weightEntry,
+          describeCategoryWeight(summary.name).effect,
+          describeCategoryWeight(summary.name).detail,
+        ],
+      }));
   const selectionMatrixRows = Array.isArray(workspace.selection_matrix)
     ? workspace.selection_matrix.map((item) => ({
         id: String(item.name ?? ""),
@@ -113,6 +131,24 @@ export default async function FeaturePage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>当前因子选择</CardTitle>
+              <CardDescription>把这轮因子 preset、预处理规则和周期参数压成一屏，避免保存后还要来回翻几块面板。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前组合" value={displayValue(selectionStory.headline, "当前还没有因子组合摘要")} />
+              <InfoBlock label="当前组合说明" value={displayValue(selectionStory.detail, "当前还没有因子组合说明")} />
+              <InfoBlock
+                label="因子预设"
+                value={`${displayValue(selectedFeaturePreset.label, String(workspace.controls.feature_preset_key ?? "balanced_default"))} / ${displayValue(selectedFeaturePreset.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock label="预处理摘要" value={displayValue(preprocessingStory.headline, "当前还没有预处理摘要")} />
+              <InfoBlock label="预处理说明" value={displayValue(preprocessingStory.detail, "当前还没有预处理说明")} />
+              <InfoBlock label="周期摘要" value={displayValue(selectionStory.timeframe_summary, "当前还没有周期摘要")} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <CardTitle>按类别看当前启用情况</CardTitle>
               <CardDescription>实时展示每个因子类目里现在有多少被设置为主判断、多少被设置为辅助确认。</CardDescription>
             </CardHeader>
@@ -160,7 +196,7 @@ export default async function FeaturePage() {
           </Card>
 
           <DataTable
-            columns={["因子类别", "当前角色分布", "研究页权重入口", "主要影响什么"]}
+            columns={["因子类别", "当前角色分布", "研究页权重入口", "主要影响什么", "说明"]}
             rows={categoryWeightRows}
             emptyTitle="当前还没有类别权重解释"
             emptyDetail="先生成一轮特征协议，再回来看每个因子类别在研究页里由哪一档权重控制。"
@@ -381,36 +417,51 @@ function describeCategoryWeight(category: string) {
     return {
       weightEntry: "研究页 trend_weight",
       effect: "决定顺势强弱，通常最先影响能不能继续跟随趋势。",
+      detail: "重点看均线偏离和趋势方向，更适合先判断是不是仍在主趋势里。",
     };
   }
   if (name.includes("momentum") || category.includes("动量")) {
     return {
       weightEntry: "研究页 momentum_weight",
       effect: "决定加速和放缓的分数，影响什么时候追、什么时候收手。",
+      detail: "重点看推进速度和短期加速，更适合判断这段走势还有没有继续冲的动力。",
     };
   }
   if (name.includes("volume") || category.includes("量")) {
     return {
       weightEntry: "研究页 volume_weight",
       effect: "决定量价是否配合，常用来确认突破是不是有真成交支撑。",
+      detail: "重点看成交量放大和量价同步，更适合确认突破是不是有真实成交支持。",
     };
   }
   if (name.includes("osc") || name.includes("oscillator") || category.includes("震荡")) {
     return {
       weightEntry: "研究页 oscillator_weight",
       effect: "决定超买超卖和反转提示，更适合提醒什么时候不要追。",
+      detail: "重点看超买超卖和回摆位置，更适合过滤追高或过度回撤时段。",
     };
   }
   if (name.includes("vol") || category.includes("波动")) {
     return {
       weightEntry: "研究页 volatility_weight",
       effect: "决定波动惩罚和风险折扣，直接影响这轮信号敢不敢放行。",
+      detail: "重点看波动幅度和风险压力，更适合在进 dry-run 或 live 前先压掉过度波动。",
     };
   }
   return {
     weightEntry: "研究页统一评分",
     effect: "当前先按统一评分处理，后面再继续拆得更细。",
+    detail: "这类因子暂时没有单独权重入口，会先按统一评分逻辑参与研究判断。",
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function displayValue(value: unknown, fallback: string) {
+  const text = String(value ?? "").trim();
+  return text || fallback;
 }
 
 function TimeframeProfile4hCard({ params }: { params: Record<string, unknown> }) {

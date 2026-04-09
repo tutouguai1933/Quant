@@ -37,6 +37,11 @@ class FeatureWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["selection_matrix"][0]["current_role"], "主判断")
         self.assertEqual(item["selection_matrix"][2]["current_role"], "辅助确认")
         self.assertIn("controls", item)
+        self.assertEqual(item["selection_story"]["feature_preset"]["key"], "balanced_default")
+        self.assertIn("strict_drop", item["selection_story"]["detail"])
+        self.assertEqual(item["category_catalog"][0]["key"], "trend")
+        self.assertEqual(item["category_catalog"][0]["primary_count"], 2)
+        self.assertEqual(item["category_catalog"][1]["auxiliary_count"], 1)
 
     def test_workspace_handles_missing_factor_protocol(self) -> None:
         service = FeatureWorkspaceService(research_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
@@ -44,9 +49,11 @@ class FeatureWorkspaceServiceTests(unittest.TestCase):
         item = service.get_workspace()
 
         self.assertEqual(item["status"], "unavailable")
-        self.assertEqual(item["overview"]["factor_count"], 0)
-        self.assertEqual(item["factors"], [])
-        self.assertEqual(item["categories"], {})
+        self.assertGreater(item["overview"]["factor_count"], 0)
+        self.assertTrue(item["factors"])
+        self.assertIn("trend", item["categories"])
+        self.assertIn("ema20_gap_pct", item["roles"]["primary"])
+        self.assertEqual(item["selection_story"]["feature_preset"]["key"], "balanced_default")
 
     def test_workspace_uses_factor_protocol_as_ready_signal(self) -> None:
         service = FeatureWorkspaceService(research_reader=_ProtocolOnlyResearchService(), controls_builder=_fake_controls)
@@ -129,6 +136,11 @@ def _fake_controls() -> dict[str, object]:
             }
         },
         "options": {
+            "feature_presets": ["balanced_default", "trend_focus"],
+            "feature_preset_catalog": [
+                {"key": "balanced_default", "label": "balanced_default / 均衡默认", "fit": "默认第一轮", "detail": "先平衡观察"},
+                {"key": "trend_focus", "label": "trend_focus / 趋势优先", "fit": "更重趋势", "detail": "更看趋势推进"},
+            ],
             "primary_factors": ["ema20_gap_pct", "ema55_gap_pct"],
             "auxiliary_factors": ["rsi14", "atr_pct"],
             "missing_policies": ["neutral_fill", "strict_drop"],

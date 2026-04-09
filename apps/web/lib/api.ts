@@ -530,6 +530,8 @@ export type FeatureWorkspaceModel = {
     current_role: string;
     description: string;
   }>;
+  category_catalog?: Array<Record<string, unknown>>;
+  selection_story?: Record<string, unknown>;
 };
 
 export type ResearchWorkspaceModel = {
@@ -1657,6 +1659,8 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
     timeframe_profiles: {},
     factors: [],
     selection_matrix: [],
+    category_catalog: [],
+    selection_story: {},
   };
 }
 
@@ -2100,6 +2104,7 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
   const timeframeProfiles = isPlainObject(row.timeframe_profiles) ? row.timeframe_profiles : {};
   const factors = Array.isArray(row.factors) ? row.factors : [];
   const selectionMatrix = Array.isArray(row.selection_matrix) ? row.selection_matrix : [];
+  const categoryCatalog = Array.isArray(row.category_catalog) ? row.category_catalog : [];
 
   return {
     status: String(row.status ?? "unavailable"),
@@ -2175,6 +2180,8 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
         };
       })
       .filter((value) => value.name.length > 0),
+    category_catalog: categoryCatalog.filter((value): value is Record<string, unknown> => isPlainObject(value)),
+    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
   };
 }
 
