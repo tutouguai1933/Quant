@@ -43,6 +43,7 @@ class BacktestWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["cost_filter_catalog"][1]["key"], "cost_inputs")
         self.assertEqual(item["cost_filter_catalog"][2]["key"], "rule_filters")
         self.assertEqual(item["cost_filter_catalog"][4]["key"], "gate_switches")
+        self.assertEqual(item["selection_story"]["alignment_status"], "aligned")
 
     def test_workspace_handles_missing_backtest(self) -> None:
         service = BacktestWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
@@ -54,6 +55,18 @@ class BacktestWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["training_backtest"]["metrics"], {})
         self.assertEqual(item["selection_story"]["backtest_preset"]["key"], "realistic_standard")
         self.assertTrue(item["cost_filter_catalog"])
+
+    def test_workspace_marks_cost_story_stale_until_training_reruns(self) -> None:
+        service = BacktestWorkspaceService(report_reader=_StaleCostResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["selection_story"]["alignment_status"], "stale")
+        self.assertIn("已保存新回测配置", item["selection_story"]["alignment_note"])
+        self.assertEqual(item["selection_story"]["cost_model"]["key"], "zero_cost_baseline")
+        self.assertIn("零成本基线", item["cost_filter_catalog"][0]["current"])
+        self.assertIn("手续费 0 bps / 滑点 0 bps", item["cost_filter_catalog"][1]["current"])
+        self.assertIn("已保存配置：手续费 10 bps / 滑点 5 bps", item["cost_filter_catalog"][1]["detail"])
 
 
 class _FakeResearchService:
@@ -101,6 +114,35 @@ class _UnavailableResearchService:
         return {"status": "unavailable"}
 
 
+class _StaleCostResearchService:
+    def get_factory_report(self) -> dict[str, object]:
+        return {
+            "status": "ready",
+            "latest_training": {
+                "training_context": {"holding_window": "1-3d"},
+                "validation": {"avg_future_return_pct": "0.1000"},
+                "backtest": {
+                    "assumptions": {
+                        "fee_bps": "0",
+                        "slippage_bps": "0",
+                        "cost_model": "zero_cost_baseline",
+                    },
+                    "metrics": {
+                        "net_return_pct": "6.2000",
+                        "cost_impact_pct": "0.0000",
+                        "max_drawdown_pct": "-2.1000",
+                        "sharpe": "1.7000",
+                        "action_segment_count": "5",
+                        "direction_switch_count": "2",
+                        "win_rate": "0.6500",
+                        "turnover": "0.1800",
+                    },
+                },
+            },
+            "leaderboard": [],
+        }
+
+
 def _fake_controls() -> dict[str, object]:
     return {
         "config": {
@@ -134,7 +176,8 @@ def _fake_controls() -> dict[str, object]:
             ],
             "backtest_cost_models": ["round_trip_basis_points", "zero_cost_baseline"],
             "cost_model_catalog": [
-                {"key": "round_trip_basis_points", "label": "双边成本", "fit": "更贴近真实交易", "detail": "买卖都扣成本"}
+                {"key": "round_trip_basis_points", "label": "双边成本", "fit": "更贴近真实交易", "detail": "买卖都扣成本"},
+                {"key": "zero_cost_baseline", "label": "零成本基线", "fit": "只看策略裸表现", "detail": "只适合做基线对照"},
             ],
         },
     }

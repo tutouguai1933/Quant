@@ -31,6 +31,7 @@ class BacktestWorkspaceTests(unittest.TestCase):
         self.assertIn("当前回测选择", content)
         self.assertIn("当前组合", content)
         self.assertIn("当前组合说明", content)
+        self.assertIn("结果口径", content)
         self.assertIn("成本与过滤拆解", content)
         self.assertIn("拆解项", content)
         self.assertIn("当前口径", content)

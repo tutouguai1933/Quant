@@ -31,9 +31,12 @@ class BacktestWorkspaceService:
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
         option_catalogs = dict(controls.get("options") or {})
         backtest_preset_key = str(configured_backtest.get("backtest_preset_key", "realistic_standard") or "realistic_standard")
-        fee_bps = str(configured_backtest.get("fee_bps", "10") or "10")
-        slippage_bps = str(configured_backtest.get("slippage_bps", "5") or "5")
-        cost_model = str(configured_backtest.get("cost_model", "round_trip_basis_points") or "round_trip_basis_points")
+        configured_fee_bps = str(configured_backtest.get("fee_bps", "10") or "10")
+        configured_slippage_bps = str(configured_backtest.get("slippage_bps", "5") or "5")
+        configured_cost_model = str(configured_backtest.get("cost_model", "round_trip_basis_points") or "round_trip_basis_points")
+        result_fee_bps = str(assumptions.get("fee_bps", configured_fee_bps) or configured_fee_bps)
+        result_slippage_bps = str(assumptions.get("slippage_bps", configured_slippage_bps) or configured_slippage_bps)
+        result_cost_model = str(assumptions.get("cost_model", configured_cost_model) or configured_cost_model)
         leaderboard = [
             {
                 "symbol": str(item.get("symbol", "")),
@@ -62,9 +65,9 @@ class BacktestWorkspaceService:
             },
             "controls": {
                 "backtest_preset_key": backtest_preset_key,
-                "fee_bps": fee_bps,
-                "slippage_bps": slippage_bps,
-                "cost_model": cost_model,
+                "fee_bps": configured_fee_bps,
+                "slippage_bps": configured_slippage_bps,
+                "cost_model": configured_cost_model,
                 "available_cost_models": [str(item) for item in list((controls.get("options") or {}).get("backtest_cost_models") or [])],
                 "cost_model_catalog": [dict(item) for item in list((controls.get("options") or {}).get("cost_model_catalog") or []) if isinstance(item, dict)],
                 "available_backtest_presets": [str(item) for item in list((controls.get("options") or {}).get("backtest_presets") or [])],
@@ -118,17 +121,23 @@ class BacktestWorkspaceService:
             "selection_story": self._build_selection_story(
                 option_catalogs=option_catalogs,
                 backtest_preset_key=backtest_preset_key,
-                fee_bps=fee_bps,
-                slippage_bps=slippage_bps,
-                cost_model=cost_model,
+                configured_fee_bps=configured_fee_bps,
+                configured_slippage_bps=configured_slippage_bps,
+                configured_cost_model=configured_cost_model,
+                result_fee_bps=result_fee_bps,
+                result_slippage_bps=result_slippage_bps,
+                result_cost_model=result_cost_model,
                 thresholds=configured_thresholds,
             ),
             "cost_filter_catalog": self._build_cost_filter_catalog(
                 option_catalogs=option_catalogs,
                 backtest_preset_key=backtest_preset_key,
-                fee_bps=fee_bps,
-                slippage_bps=slippage_bps,
-                cost_model=cost_model,
+                configured_fee_bps=configured_fee_bps,
+                configured_slippage_bps=configured_slippage_bps,
+                configured_cost_model=configured_cost_model,
+                result_fee_bps=result_fee_bps,
+                result_slippage_bps=result_slippage_bps,
+                result_cost_model=result_cost_model,
                 thresholds=configured_thresholds,
             ),
             "leaderboard": [
@@ -183,9 +192,12 @@ class BacktestWorkspaceService:
         *,
         option_catalogs: dict[str, object],
         backtest_preset_key: str,
-        fee_bps: str,
-        slippage_bps: str,
-        cost_model: str,
+        configured_fee_bps: str,
+        configured_slippage_bps: str,
+        configured_cost_model: str,
+        result_fee_bps: str,
+        result_slippage_bps: str,
+        result_cost_model: str,
         thresholds: dict[str, object],
     ) -> dict[str, object]:
         """把当前回测 preset、成本口径和过滤条件压成一屏说明。"""
@@ -195,20 +207,36 @@ class BacktestWorkspaceService:
             key=backtest_preset_key,
             fallback_label=backtest_preset_key,
         )
-        cost_model_item = self._resolve_catalog_item(
+        result_cost_model_item = self._resolve_catalog_item(
             [dict(item) for item in list(option_catalogs.get("cost_model_catalog") or []) if isinstance(item, dict)],
-            key=cost_model,
-            fallback_label=cost_model,
+            key=result_cost_model,
+            fallback_label=result_cost_model,
+        )
+        configured_cost_model_item = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("cost_model_catalog") or []) if isinstance(item, dict)],
+            key=configured_cost_model,
+            fallback_label=configured_cost_model,
+        )
+        alignment_status, alignment_note = self._build_cost_alignment_note(
+            configured_fee_bps=configured_fee_bps,
+            configured_slippage_bps=configured_slippage_bps,
+            configured_cost_model_item=configured_cost_model_item,
+            result_fee_bps=result_fee_bps,
+            result_slippage_bps=result_slippage_bps,
+            result_cost_model_item=result_cost_model_item,
         )
         return {
-            "headline": f"{backtest_preset['label']} / {cost_model_item['label']}",
+            "headline": f"{backtest_preset['label']} / {result_cost_model_item['label']}",
             "detail": (
-                f"手续费 {fee_bps} bps / 滑点 {slippage_bps} bps / "
+                f"手续费 {result_fee_bps} bps / 滑点 {result_slippage_bps} bps / "
                 f"dry-run 净收益 ≥ {thresholds.get('dry_run_min_net_return_pct', '0')}% / "
                 f"最大回撤 ≤ {thresholds.get('dry_run_max_drawdown_pct', '15')}%"
             ),
+            "alignment_status": alignment_status,
+            "alignment_note": alignment_note,
             "backtest_preset": backtest_preset,
-            "cost_model": cost_model_item,
+            "cost_model": result_cost_model_item,
+            "configured_cost_model": configured_cost_model_item,
             "filter_summary": self._build_rule_filter_summary(thresholds),
             "gate_summary": self._build_gate_summary(thresholds),
         }
@@ -218,9 +246,12 @@ class BacktestWorkspaceService:
         *,
         option_catalogs: dict[str, object],
         backtest_preset_key: str,
-        fee_bps: str,
-        slippage_bps: str,
-        cost_model: str,
+        configured_fee_bps: str,
+        configured_slippage_bps: str,
+        configured_cost_model: str,
+        result_fee_bps: str,
+        result_slippage_bps: str,
+        result_cost_model: str,
         thresholds: dict[str, object],
     ) -> list[dict[str, str]]:
         """把成本和过滤参数整理成稳定目录。"""
@@ -230,25 +261,43 @@ class BacktestWorkspaceService:
             key=backtest_preset_key,
             fallback_label=backtest_preset_key,
         )
-        cost_model_item = self._resolve_catalog_item(
+        result_cost_model_item = self._resolve_catalog_item(
             [dict(item) for item in list(option_catalogs.get("cost_model_catalog") or []) if isinstance(item, dict)],
-            key=cost_model,
-            fallback_label=cost_model,
+            key=result_cost_model,
+            fallback_label=result_cost_model,
+        )
+        configured_cost_model_item = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("cost_model_catalog") or []) if isinstance(item, dict)],
+            key=configured_cost_model,
+            fallback_label=configured_cost_model,
+        )
+        alignment_status, alignment_note = self._build_cost_alignment_note(
+            configured_fee_bps=configured_fee_bps,
+            configured_slippage_bps=configured_slippage_bps,
+            configured_cost_model_item=configured_cost_model_item,
+            result_fee_bps=result_fee_bps,
+            result_slippage_bps=result_slippage_bps,
+            result_cost_model_item=result_cost_model_item,
         )
         return [
             {
                 "key": "cost_model",
                 "label": "成本模型",
-                "current": cost_model_item["label"],
+                "current": result_cost_model_item["label"],
                 "effect": "决定净收益是按双边、单边还是零成本基线来扣减。",
-                "detail": cost_model_item["detail"],
+                "detail": alignment_note if alignment_status == "stale" else result_cost_model_item["detail"],
             },
             {
                 "key": "cost_inputs",
                 "label": "成本输入",
-                "current": f"手续费 {fee_bps} bps / 滑点 {slippage_bps} bps",
+                "current": f"手续费 {result_fee_bps} bps / 滑点 {result_slippage_bps} bps",
                 "effect": "动作越频繁，这两项越容易直接吃掉毛收益。",
-                "detail": f"当前回测预设：{backtest_preset['label']} / {backtest_preset['detail']}",
+                "detail": (
+                    f"已保存配置：手续费 {configured_fee_bps} bps / 滑点 {configured_slippage_bps} bps / "
+                    f"{configured_cost_model_item['label']}，需重跑后才会体现在结果里。"
+                    if alignment_status == "stale"
+                    else f"当前回测预设：{backtest_preset['label']} / {backtest_preset['detail']}"
+                ),
             },
             {
                 "key": "rule_filters",
@@ -284,6 +333,35 @@ class BacktestWorkspaceService:
                 "detail": "这些开关更适合临时排查，不适合长期关闭后直接放行到 dry-run 或 live。",
             },
         ]
+
+    @staticmethod
+    def _build_cost_alignment_note(
+        *,
+        configured_fee_bps: str,
+        configured_slippage_bps: str,
+        configured_cost_model_item: dict[str, str],
+        result_fee_bps: str,
+        result_slippage_bps: str,
+        result_cost_model_item: dict[str, str],
+    ) -> tuple[str, str]:
+        """说明当前页面配置和本轮回测结果是否已经对齐。"""
+
+        is_stale = (
+            configured_fee_bps != result_fee_bps
+            or configured_slippage_bps != result_slippage_bps
+            or configured_cost_model_item["key"] != result_cost_model_item["key"]
+        )
+        if is_stale:
+            return (
+                "stale",
+                f"本轮结果按手续费 {result_fee_bps} bps / 滑点 {result_slippage_bps} bps / "
+                f"{result_cost_model_item['label']} 计算；已保存新回测配置，重跑训练后才会生效。",
+            )
+        return (
+            "aligned",
+            f"本轮结果与当前回测配置已对齐：手续费 {result_fee_bps} bps / "
+            f"滑点 {result_slippage_bps} bps / {result_cost_model_item['label']}。",
+        )
 
     @staticmethod
     def _build_rule_filter_summary(thresholds: dict[str, object]) -> str:

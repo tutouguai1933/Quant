@@ -111,7 +111,7 @@ export default async function BacktestPage() {
                 value={`${displayValue(selectedCostModel.label, workspace.controls.cost_model)} / ${displayValue(selectedCostModel.fit, "当前没有适用场景说明")}`}
               />
               <InfoBlock label="规则过滤" value={displayValue(selectionStory.filter_summary, "当前还没有规则过滤摘要")} />
-              <InfoBlock label="门控摘要" value={displayValue(selectionStory.gate_summary, "当前还没有门控摘要")} />
+              <InfoBlock label="结果口径" value={displayValue(selectionStory.alignment_note, "当前还没有结果口径说明")} />
             </CardContent>
           </Card>
 
