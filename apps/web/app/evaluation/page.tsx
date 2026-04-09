@@ -99,6 +99,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
     params.compareB,
     comparisonOptions.find((item) => item.id !== compareA)?.id ?? comparisonOptions[0]?.id ?? "",
   );
+  const stageView = resolveStageView(readSearchParam(params.stageView, "all"));
   const manualCompare = buildManualExperimentComparison({
     left: comparisonOptions.find((item) => item.id === compareA),
     right: comparisonOptions.find((item) => item.id === compareB),
@@ -115,6 +116,27 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const configDiffSections = buildConfigDiffSections(latestRunDelta);
   const evaluationStatus = String(configAlignment.status ?? workspace.status ?? "unavailable");
   const evaluationStaleFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
+  const filteredLeaderboard = workspace.leaderboard.filter((item) => {
+    const row = asRecord(item);
+    const symbol = String(row.symbol ?? "");
+    return matchesStageView({
+      row,
+      gateRow: gateMatrixBySymbol.get(symbol),
+      stageView,
+    });
+  });
+  const filteredGateMatrixRows = gateMatrixRows.filter((item) =>
+    matchesStageView({
+      gateRow: asRecord(item),
+      row: workspace.leaderboard.find((entry) => String(asRecord(entry).symbol ?? "") === String(asRecord(item).symbol ?? "")),
+      stageView,
+    }),
+  );
+  const stageFilterSummary = buildStageFilterSummary({
+    leaderboard: workspace.leaderboard,
+    gateMatrixBySymbol,
+    currentStageView: stageView,
+  });
 
   return (
     <AppShell
@@ -291,9 +313,52 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
             </ConfigField>
           </WorkbenchConfigCard>
 
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>阶段筛选</CardTitle>
+              <CardDescription>先决定现在只看继续研究、可进 dry-run，还是已经够格进入 live 的候选，再往下看推荐和淘汰原因。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form method="get" action="/evaluation" className="grid gap-3 rounded-2xl border border-border/60 bg-background/40 p-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="space-y-2">
+                  <p className="eyebrow">当前只看哪一层</p>
+                  <select
+                    name="stageView"
+                    defaultValue={stageView}
+                    className="flex h-11 w-full rounded-xl border border-border/70 bg-background px-3 text-sm text-foreground shadow-sm outline-none transition focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    <option value="all">全部候选</option>
+                    <option value="research">继续研究</option>
+                    <option value="dry_run">可进 dry-run</option>
+                    <option value="live">可进 live</option>
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <FormSubmitButton
+                    type="submit"
+                    variant="terminal"
+                    size="sm"
+                    idleLabel="更新阶段视图"
+                    pendingLabel="更新阶段视图中…"
+                    pendingHint="页面会按你选的阶段重新整理候选、门控和推进板。"
+                  />
+                </div>
+              </form>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoBlock label="当前阶段视图" value={stageFilterSummary.currentLabel} />
+                <InfoBlock label="当前视图候选数" value={String(filteredLeaderboard.length)} />
+                <InfoBlock label="继续研究" value={String(stageFilterSummary.researchCount)} />
+                <InfoBlock label="可进 dry-run" value={String(stageFilterSummary.dryRunCount)} />
+                <InfoBlock label="可进 live" value={String(stageFilterSummary.liveCount)} />
+                <InfoBlock label="阶段说明" value={stageFilterSummary.detail} />
+              </div>
+            </CardContent>
+          </Card>
+
           <DataTable
             columns={["实验排行榜", "推荐原因", "下一步动作", "淘汰原因"]}
-            rows={workspace.leaderboard.map((item, index) => {
+            rows={filteredLeaderboard.map((item, index) => {
               const row = asRecord(item);
               const reasons = String(row.elimination_reason ?? "已通过");
               return {
@@ -307,7 +372,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               };
             })}
             emptyTitle="还没有实验排行榜"
-            emptyDetail="先运行研究训练和研究推理，再回到这里比较候选。"
+            emptyDetail="当前阶段视图下还没有候选，先切回全部候选，或重新运行研究训练和推理。"
           />
 
           <DataTable
@@ -579,20 +644,20 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <CardDescription>这里直接解释被拦住的候选最主要卡在哪个门槛。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              {workspace.leaderboard.length ? workspace.leaderboard.map((item, index) => {
+              {filteredLeaderboard.length ? filteredLeaderboard.map((item, index) => {
                 const row = asRecord(item);
                 return (
                   <p key={`${row.symbol ?? index}`}>
                     {String(row.symbol ?? "n/a")}：{String(row.elimination_reason ?? "已通过")}
                   </p>
                 );
-              }) : <p>当前还没有可解释的候选淘汰记录。</p>}
+              }) : <p>当前阶段视图下还没有可解释的候选淘汰记录。</p>}
             </CardContent>
           </Card>
 
           <DataTable
             columns={["门控分解", "规则门", "验证门", "回测门", "一致性门", "当前卡点"]}
-            rows={gateMatrixRows.map((item, index) => {
+            rows={filteredGateMatrixRows.map((item, index) => {
               const row = asRecord(item);
               return {
                 id: `${row.symbol ?? index}`,
@@ -607,12 +672,12 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               };
             })}
             emptyTitle="当前还没有门控分解"
-            emptyDetail="先完成训练和推理，系统才会把每个候选卡在哪一层门槛拆开给你看。"
+            emptyDetail="当前阶段视图下还没有门控分解，先切回全部候选或重新运行研究。"
           />
 
           <DataTable
             columns={["候选推进板", "更适合去哪一层", "dry-run / live", "当前卡点", "为什么推荐或淘汰", "下一步"]}
-            rows={workspace.leaderboard.map((item, index) => {
+            rows={filteredLeaderboard.map((item, index) => {
               const row = asRecord(item);
               const symbol = String(row.symbol ?? `candidate-${index}`);
               const gateRow = gateMatrixBySymbol.get(symbol) ?? {};
@@ -639,7 +704,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               };
             })}
             emptyTitle="当前还没有候选推进板"
-            emptyDetail="先完成研究训练和推理，系统才会告诉你哪一轮更适合继续研究、dry-run 或 live。"
+            emptyDetail="当前阶段视图下还没有候选推进板，先切回全部候选，或重新完成研究训练和推理。"
           />
 
           <Card className="bg-card/90">
@@ -1254,8 +1319,11 @@ function buildManualExperimentComparison({
     nextAction,
     rows: [
       buildManualCompareRow("实验类型", left.runType, right.runType, comparable ? "同类型，可直接比较。" : "不同类型，只适合先看方向。"),
+      buildManualCompareRow("研究预设", readText(left.row.research_preset_key, "n/a"), readText(right.row.research_preset_key, "n/a"), compareText(readText(left.row.research_preset_key, "n/a"), readText(right.row.research_preset_key, "n/a"))),
       buildManualCompareRow("模型选择", readText(left.row.model_key, "n/a"), readText(right.row.model_key, "n/a"), compareText(readText(left.row.model_key, "n/a"), readText(right.row.model_key, "n/a"))),
+      buildManualCompareRow("标签预设", readText(left.row.label_preset_key, "n/a"), readText(right.row.label_preset_key, "n/a"), compareText(readText(left.row.label_preset_key, "n/a"), readText(right.row.label_preset_key, "n/a"))),
       buildManualCompareRow("标签方式", readText(left.row.label_mode, "n/a"), readText(right.row.label_mode, "n/a"), compareText(readText(left.row.label_mode, "n/a"), readText(right.row.label_mode, "n/a"))),
+      buildManualCompareRow("标签触发口径", readText(left.row.label_trigger_basis, "n/a"), readText(right.row.label_trigger_basis, "n/a"), compareText(readText(left.row.label_trigger_basis, "n/a"), readText(right.row.label_trigger_basis, "n/a"))),
       buildManualCompareRow("持有窗口", readText(left.row.holding_window, "n/a"), readText(right.row.holding_window, "n/a"), compareText(readText(left.row.holding_window, "n/a"), readText(right.row.holding_window, "n/a"))),
       buildManualCompareRow("数据快照", readText(left.row.dataset_snapshot_id, "n/a"), readText(right.row.dataset_snapshot_id, "n/a"), compareText(readText(left.row.dataset_snapshot_id, "n/a"), readText(right.row.dataset_snapshot_id, "n/a"))),
       buildManualCompareRow("净收益", formatMetricValue(left.row.net_return_pct), formatMetricValue(right.row.net_return_pct), compareNumericText(leftNet, rightNet, "%")),
@@ -1298,6 +1366,85 @@ function compareNumericText(left: number | null, right: number | null, suffix: s
   }
   const diff = (left - right).toFixed(2);
   return `A-B=${diff}${suffix}`.replace("..", ".");
+}
+
+function resolveStageView(value: string) {
+  if (value === "research" || value === "dry_run" || value === "live") {
+    return value;
+  }
+  return "all";
+}
+
+function matchesStageView({
+  row,
+  gateRow,
+  stageView,
+}: {
+  row?: Record<string, unknown> | undefined;
+  gateRow?: Record<string, unknown> | undefined;
+  stageView: string;
+}) {
+  if (stageView === "all") {
+    return true;
+  }
+  const nextAction = String(row?.next_action ?? "").toLowerCase();
+  const dryAllowed = Boolean(gateRow?.allowed_to_dry_run);
+  const liveAllowed = Boolean(gateRow?.allowed_to_live);
+  if (stageView === "live") {
+    return liveAllowed || nextAction.includes("live");
+  }
+  if (stageView === "dry_run") {
+    return (dryAllowed || nextAction.includes("dry")) && !liveAllowed;
+  }
+  return !dryAllowed && !liveAllowed && !nextAction.includes("dry") && !nextAction.includes("live");
+}
+
+function buildStageFilterSummary({
+  leaderboard,
+  gateMatrixBySymbol,
+  currentStageView,
+}: {
+  leaderboard: Array<Record<string, unknown>>;
+  gateMatrixBySymbol: Map<string, Record<string, unknown>>;
+  currentStageView: string;
+}) {
+  const counts = {
+    research: 0,
+    dry_run: 0,
+    live: 0,
+  };
+  leaderboard.forEach((item) => {
+    const row = asRecord(item);
+    const gateRow = gateMatrixBySymbol.get(String(row.symbol ?? "")) ?? {};
+    if (matchesStageView({ row, gateRow, stageView: "live" })) {
+      counts.live += 1;
+      return;
+    }
+    if (matchesStageView({ row, gateRow, stageView: "dry_run" })) {
+      counts.dry_run += 1;
+      return;
+    }
+    counts.research += 1;
+  });
+  const labels: Record<string, string> = {
+    all: "全部候选",
+    research: "继续研究",
+    dry_run: "可进 dry-run",
+    live: "可进 live",
+  };
+  const detailMap: Record<string, string> = {
+    all: "先总览全部候选，再决定要往研究、dry-run 还是 live 收缩。",
+    research: "这里只保留还没过门的候选，适合先看为什么被拦下。",
+    dry_run: "这里只保留已经够格进入 dry-run、但还没到 live 的候选。",
+    live: "这里只保留已经够格进入小额 live 的候选。",
+  };
+  return {
+    currentLabel: labels[currentStageView] ?? labels.all,
+    detail: detailMap[currentStageView] ?? detailMap.all,
+    researchCount: counts.research,
+    dryRunCount: counts.dry_run,
+    liveCount: counts.live,
+  };
 }
 
 function toStringArray(value: unknown): string[] {

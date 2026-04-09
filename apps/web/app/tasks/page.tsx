@@ -932,6 +932,41 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardContent>
               </Card>
 
+              <DataTable
+                columns={["告警等级处理口径", "当前数量", "系统会怎么做", "你下一步去哪看"]}
+                rows={[
+                  {
+                    id: "error",
+                    cells: [
+                      "错误告警",
+                      String(alertSummary.active_error_count ?? alertSummary.error_count ?? 0),
+                      "优先建议人工接管或暂停，先别继续自动推进。",
+                      "/tasks / /evaluation",
+                    ],
+                  },
+                  {
+                    id: "warning",
+                    cells: [
+                      "警告告警",
+                      String(alertSummary.active_warning_count ?? alertSummary.warning_count ?? 0),
+                      "先看告警详情和恢复步骤，再决定是否继续下一轮。",
+                      "/tasks / /research",
+                    ],
+                  },
+                  {
+                    id: "info",
+                    cells: [
+                      "提示告警",
+                      String(alertSummary.active_info_count ?? alertSummary.info_count ?? 0),
+                      "只做提示，不直接拦住主流程；确认后可以清理。",
+                      "/tasks",
+                    ],
+                  },
+                ]}
+                emptyTitle="当前没有告警等级口径"
+                emptyDetail="恢复自动化状态接口后，这里会继续按当前活跃告警窗口展示。"
+              />
+
               <Card>
                 <CardHeader>
                   <p className="eyebrow">今日摘要</p>
@@ -1003,13 +1038,15 @@ export default async function TasksPage({ searchParams }: PageProps) {
               </Card>
 
               <DataTable
-                columns={["活跃告警", "级别", "时间", "说明"]}
+                columns={["活跃告警", "级别", "多久前", "建议动作", "建议页面", "说明"]}
                 rows={activeAlerts.map((item, index) => ({
                   id: `${item.code}-${item.createdAt}-${index}`,
                   cells: [
                     item.code || "alert",
                     item.level || "info",
-                    item.createdAt || "n/a",
+                    item.createdAt ? formatRelativeMoment(item.createdAt) : "n/a",
+                    describeAlertNextStep(item),
+                    mapAlertTargetPage(item),
                     item.message || "当前没有额外说明",
                   ],
                 }))}
@@ -1530,6 +1567,42 @@ function formatAlertAction(severity: string) {
     return "先做复盘确认，再决定是否继续自动化";
   }
   return "先看最新摘要，再决定要不要继续";
+}
+
+function describeAlertNextStep(alert: { level?: string; code?: string; message?: string }) {
+  const level = String(alert.level ?? "").toLowerCase();
+  const code = String(alert.code ?? "").toLowerCase();
+  if (level === "error") {
+    if (code.includes("sync")) {
+      return "先查同步失败，再决定是否恢复";
+    }
+    if (code.includes("research") || code.includes("train") || code.includes("infer")) {
+      return "先去研究页重跑，再回任务页复核";
+    }
+    return "先人工接管，再核对执行和复盘";
+  }
+  if (level === "warning") {
+    return "先去评估页确认门槛和淘汰原因";
+  }
+  return "先确认或清理，再继续观察";
+}
+
+function mapAlertTargetPage(alert: { level?: string; code?: string; message?: string }) {
+  const level = String(alert.level ?? "").toLowerCase();
+  const code = String(alert.code ?? "").toLowerCase();
+  if (code.includes("research") || code.includes("train") || code.includes("infer")) {
+    return "/research";
+  }
+  if (code.includes("backtest") || code.includes("gate") || code.includes("evaluation")) {
+    return "/evaluation";
+  }
+  if (level === "warning") {
+    return "/evaluation";
+  }
+  if (code.includes("dispatch") || code.includes("execution") || code.includes("order") || code.includes("position")) {
+    return "/strategies";
+  }
+  return "/tasks";
 }
 
 function resolveAlertTone(severity: string) {

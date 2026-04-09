@@ -260,6 +260,12 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("name=\"force_validation_top_candidate\"", research_content)
         self.assertIn("window_majority", research_content)
         self.assertIn("balanced_v3", research_content)
+        self.assertIn("momentum_drive_v4", research_content)
+        self.assertIn("stability_guard_v5", research_content)
+        self.assertIn("volatility_breakout", research_content)
+        self.assertIn("pullback_reclaim", research_content)
+        self.assertIn("1-2d", research_content)
+        self.assertIn("2-5d", research_content)
         self.assertIn("标签目标与止损说明", research_content)
         self.assertIn("因子明细表", features_content)
         self.assertIn("当前选中角色", features_content)
@@ -328,6 +334,9 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("实验对比窗口", evaluation_content)
         self.assertIn("最近训练实验快照", evaluation_content)
         self.assertIn("最近推理实验快照", evaluation_content)
+        self.assertIn("研究预设", evaluation_content)
+        self.assertIn("标签预设", evaluation_content)
+        self.assertIn("标签触发口径", evaluation_content)
         self.assertIn("更值得进入 dry-run", evaluation_content)
         self.assertIn("严格规则", backtest_content)
         self.assertIn("门控开关", backtest_content)
@@ -351,6 +360,7 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("自动化运行参数", content)
         self.assertIn("长时间接管阈值", content)
         self.assertIn("活跃告警窗口", content)
+        self.assertIn("告警等级处理口径", content)
         self.assertIn("活跃错误", content)
         self.assertIn("最近复盘记录", content)
         self.assertIn("这里最多显示最近", content)
@@ -403,6 +413,20 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("研究结果 vs 执行结果", content)
         self.assertIn("对齐解释", content)
         self.assertIn("最近执行摘要", content)
+
+    def test_research_and_evaluation_pages_show_phase2_configuration_helpers(self) -> None:
+        research_content = (WEB_APP / "research" / "page.tsx").read_text(encoding="utf-8")
+        evaluation_content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("标签配方与模型口径", research_content)
+        self.assertIn("当前标签预设", research_content)
+        self.assertIn("训练 / 验证 / 测试", research_content)
+
+        self.assertIn("阶段筛选", evaluation_content)
+        self.assertIn("当前只看哪一层", evaluation_content)
+        self.assertIn("更新阶段视图", evaluation_content)
+        self.assertIn("当前阶段视图", evaluation_content)
+        self.assertIn("当前视图候选数", evaluation_content)
 
 
 if __name__ == "__main__":

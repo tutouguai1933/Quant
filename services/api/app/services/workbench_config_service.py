@@ -25,16 +25,16 @@ from services.worker.qlib_features import (
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_WORKBENCH_CONFIG_PATH = REPO_ROOT / ".runtime" / "workbench_config.json"
 SUPPORTED_TIMEFRAMES = ("4h", "1h")
-SUPPORTED_MODELS = ("heuristic_v1", "trend_bias_v2", "balanced_v3")
+SUPPORTED_MODELS = ("heuristic_v1", "trend_bias_v2", "balanced_v3", "momentum_drive_v4", "stability_guard_v5")
 SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only", "window_majority")
 SUPPORTED_LABEL_TRIGGER_BASES = ("close", "high_low")
-SUPPORTED_LABEL_PRESETS = ("balanced_window", "breakout_path", "closing_confirmation", "majority_filter")
+SUPPORTED_LABEL_PRESETS = ("balanced_window", "breakout_path", "closing_confirmation", "majority_filter", "pullback_reclaim", "volatility_breakout")
 SUPPORTED_OUTLIER_POLICIES = ("clip", "raw")
 SUPPORTED_NORMALIZATION_POLICIES = ("fixed_4dp", "zscore_by_symbol")
 SUPPORTED_MISSING_POLICIES = ("neutral_fill", "strict_drop")
 SUPPORTED_WINDOW_MODES = ("rolling", "fixed")
-SUPPORTED_HOLDING_WINDOWS = ("1-3d", "2-4d", "3-5d")
+SUPPORTED_HOLDING_WINDOWS = ("1-2d", "1-3d", "2-4d", "2-5d", "3-5d")
 SUPPORTED_BACKTEST_COST_MODELS = (
     "round_trip_basis_points",
     "single_side_basis_points",
@@ -45,7 +45,7 @@ SUPPORTED_LIVE_SUBSET_PRESETS = ("core_live", "majors_only", "strict_pairs")
 SUPPORTED_OPERATIONS_PRESETS = ("balanced_guard", "strict_guard", "extended_observation")
 SUPPORTED_AUTOMATION_PRESETS = ("balanced_runtime", "fast_feedback", "cautious_watch")
 SUPPORTED_FEATURE_PRESETS = ("balanced_default", "trend_focus", "confirmation_focus")
-SUPPORTED_RESEARCH_PRESETS = ("baseline_balanced", "trend_following", "conservative_validation")
+SUPPORTED_RESEARCH_PRESETS = ("baseline_balanced", "trend_following", "conservative_validation", "momentum_breakout", "stability_first")
 SUPPORTED_BACKTEST_PRESETS = ("realistic_standard", "cost_stress", "signal_baseline")
 SUPPORTED_THRESHOLD_PRESETS = ("standard_gate", "strict_live_gate", "exploratory_dry_run")
 
@@ -186,6 +186,42 @@ RESEARCH_PRESET_VALUES = {
         "volatility_weight": "1",
         "strict_penalty_weight": "1.4",
     },
+    "momentum_breakout": {
+        "label_preset_key": "volatility_breakout",
+        "research_template": "single_asset_timing",
+        "model_key": "momentum_drive_v4",
+        "label_mode": "earliest_hit",
+        "label_trigger_basis": "high_low",
+        "holding_window_label": "1-2d",
+        "force_validation_top_candidate": False,
+        "label_target_pct": "1.6",
+        "label_stop_pct": "-0.8",
+        "signal_confidence_floor": "0.6",
+        "trend_weight": "1.2",
+        "momentum_weight": "1.8",
+        "volume_weight": "1.5",
+        "oscillator_weight": "0.4",
+        "volatility_weight": "0.8",
+        "strict_penalty_weight": "0.8",
+    },
+    "stability_first": {
+        "label_preset_key": "pullback_reclaim",
+        "research_template": "single_asset_timing_strict",
+        "model_key": "stability_guard_v5",
+        "label_mode": "window_majority",
+        "label_trigger_basis": "close",
+        "holding_window_label": "2-5d",
+        "force_validation_top_candidate": True,
+        "label_target_pct": "0.9",
+        "label_stop_pct": "-0.7",
+        "signal_confidence_floor": "0.64",
+        "trend_weight": "1.5",
+        "momentum_weight": "0.8",
+        "volume_weight": "1.1",
+        "oscillator_weight": "0.9",
+        "volatility_weight": "1.3",
+        "strict_penalty_weight": "1.6",
+    },
 }
 
 LABEL_PRESET_VALUES = {
@@ -224,6 +260,24 @@ LABEL_PRESET_VALUES = {
         "max_holding_days": 5,
         "label_target_pct": "1.1",
         "label_stop_pct": "-0.7",
+    },
+    "pullback_reclaim": {
+        "label_mode": "window_majority",
+        "label_trigger_basis": "close",
+        "holding_window_label": "2-5d",
+        "min_holding_days": 2,
+        "max_holding_days": 5,
+        "label_target_pct": "0.9",
+        "label_stop_pct": "-0.7",
+    },
+    "volatility_breakout": {
+        "label_mode": "earliest_hit",
+        "label_trigger_basis": "high_low",
+        "holding_window_label": "1-2d",
+        "min_holding_days": 1,
+        "max_holding_days": 2,
+        "label_target_pct": "1.6",
+        "label_stop_pct": "-0.8",
     },
 }
 
@@ -590,6 +644,18 @@ def _build_research_preset_catalog() -> list[dict[str, str]]:
             "fit": "更重视稳定性",
             "detail": "会提高放行门槛并偏向收盘确认，适合先验证候选是否真的稳。",
         },
+        {
+            "key": "momentum_breakout",
+            "label": "momentum_breakout / 动量突破",
+            "fit": "更适合追踪快速放量突破",
+            "detail": "会提高动量和量能权重，并把持有窗口收短，适合先找更快的推进段。",
+        },
+        {
+            "key": "stability_first",
+            "label": "stability_first / 稳定优先",
+            "fit": "更适合先筛稳定候选",
+            "detail": "会提高波动惩罚和一致性要求，更适合先筛出更稳、再继续进 dry-run 和 live。",
+        },
     ]
 
 
@@ -639,6 +705,18 @@ def _build_model_catalog() -> list[dict[str, str]]:
             "label": "balanced_v3 / 平衡评分",
             "fit": "适合多状态横向比较",
             "detail": "会同时看趋势、动量、波动和震荡，适合比较不同市场状态下哪一轮更稳。",
+        },
+        {
+            "key": "momentum_drive_v4",
+            "label": "momentum_drive_v4 / 动量推进",
+            "fit": "更适合快节奏突破段",
+            "detail": "会更重视突破强度、短期动量和量能配合，适合先找最近正在加速的候选。",
+        },
+        {
+            "key": "stability_guard_v5",
+            "label": "stability_guard_v5 / 稳定守门",
+            "fit": "更适合进 live 前复核",
+            "detail": "会更重视稳定收益、较低回撤和较短亏损段，适合先筛掉波动太大的候选。",
         },
     ]
 
@@ -715,6 +793,18 @@ def _build_label_preset_catalog() -> list[dict[str, str]]:
             "fit": "更适合保守筛选候选",
             "detail": "按窗口内多数阶段结果决定标签，适合先过滤单根极端波动带来的误判。",
         },
+        {
+            "key": "pullback_reclaim",
+            "label": "pullback_reclaim / 回踩收复",
+            "fit": "更适合慢一点的趋势回踩",
+            "detail": "会拉长持有窗口，并更看重收盘站回关键位置，适合先过滤只是一闪而过的反弹。",
+        },
+        {
+            "key": "volatility_breakout",
+            "label": "volatility_breakout / 波动突破",
+            "fit": "更适合快节奏放量突破",
+            "detail": "会缩短持有窗口，并按盘中高低点先命中记账，适合先验证快速突破能不能真的走出来。",
+        },
     ]
 
 
@@ -722,6 +812,12 @@ def _build_holding_window_catalog() -> list[dict[str, str]]:
     """返回持有窗口目录。"""
 
     return [
+        {
+            "key": "1-2d",
+            "label": "1-2d / 短节奏窗口",
+            "fit": "更适合快进快出",
+            "detail": "会更重视最近两天内有没有快速推进，更适合配合突破类研究模板。",
+        },
         {
             "key": "1-3d",
             "label": "1-3d / 默认窗口",
@@ -733,6 +829,12 @@ def _build_holding_window_catalog() -> list[dict[str, str]]:
             "label": "2-4d / 更耐心持有",
             "fit": "更偏中短波段",
             "detail": "会让研究更看重持有稳定性，但短线信号的反应会更慢。",
+        },
+        {
+            "key": "2-5d",
+            "label": "2-5d / 稳定复核窗口",
+            "fit": "更适合先看走势能否站稳",
+            "detail": "会给回踩、修复和收盘确认更多时间，适合进 live 前再复核一次稳定性。",
         },
         {
             "key": "3-5d",

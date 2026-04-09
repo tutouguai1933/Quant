@@ -274,13 +274,21 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         options = controls["options"]
         self.assertEqual(options["model_catalog"][0]["key"], "heuristic_v1")
         self.assertIn("detail", options["model_catalog"][0])
+        self.assertTrue(any(item["key"] == "momentum_drive_v4" for item in options["model_catalog"]))
+        self.assertTrue(any(item["key"] == "stability_guard_v5" for item in options["model_catalog"]))
         self.assertEqual(options["label_mode_catalog"][0]["key"], "earliest_hit")
         self.assertEqual(options["label_trigger_catalog"][0]["key"], "close")
         self.assertEqual(options["label_preset_catalog"][0]["key"], "balanced_window")
-        self.assertEqual(options["holding_window_catalog"][0]["key"], "1-3d")
+        self.assertTrue(any(item["key"] == "volatility_breakout" for item in options["label_preset_catalog"]))
+        self.assertTrue(any(item["key"] == "pullback_reclaim" for item in options["label_preset_catalog"]))
+        self.assertEqual(options["holding_window_catalog"][0]["key"], "1-2d")
+        self.assertTrue(any(item["key"] == "1-2d" for item in options["holding_window_catalog"]))
+        self.assertTrue(any(item["key"] == "2-5d" for item in options["holding_window_catalog"]))
         self.assertEqual(options["cost_model_catalog"][0]["key"], "round_trip_basis_points")
         self.assertEqual(options["feature_preset_catalog"][0]["key"], "balanced_default")
         self.assertEqual(options["research_preset_catalog"][0]["key"], "baseline_balanced")
+        self.assertTrue(any(item["key"] == "momentum_breakout" for item in options["research_preset_catalog"]))
+        self.assertTrue(any(item["key"] == "stability_first" for item in options["research_preset_catalog"]))
         self.assertEqual(options["backtest_preset_catalog"][0]["key"], "realistic_standard")
         self.assertEqual(options["threshold_preset_catalog"][0]["key"], "standard_gate")
         self.assertEqual(options["candidate_pool_preset_catalog"][0]["key"], "top10_liquid")
@@ -314,6 +322,26 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(thresholds["thresholds"]["dry_run_min_score"], "0.6")
         self.assertEqual(thresholds["thresholds"]["live_min_score"], "0.72")
         self.assertEqual(thresholds["thresholds"]["dry_run_min_sample_count"], "28")
+
+    def test_update_section_can_apply_new_research_and_label_presets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            momentum = service.update_section("research", {"research_preset_key": "momentum_breakout"})
+            stability = service.update_section("research", {"research_preset_key": "stability_first"})
+            breakout = service.update_section("research", {"label_preset_key": "volatility_breakout"})
+            reclaim = service.update_section("research", {"label_preset_key": "pullback_reclaim"})
+
+        self.assertEqual(momentum["research"]["model_key"], "momentum_drive_v4")
+        self.assertEqual(momentum["research"]["holding_window_label"], "1-2d")
+        self.assertEqual(momentum["research"]["label_trigger_basis"], "high_low")
+        self.assertEqual(stability["research"]["model_key"], "stability_guard_v5")
+        self.assertEqual(stability["research"]["holding_window_label"], "2-5d")
+        self.assertEqual(stability["research"]["label_mode"], "window_majority")
+        self.assertEqual(breakout["research"]["holding_window_label"], "1-2d")
+        self.assertEqual(breakout["research"]["label_target_pct"], "1.6")
+        self.assertEqual(reclaim["research"]["holding_window_label"], "2-5d")
+        self.assertEqual(reclaim["research"]["label_stop_pct"], "-0.7")
 
     def test_update_features_section_accepts_timeframe_profile_overrides(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

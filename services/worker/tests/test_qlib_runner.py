@@ -383,6 +383,63 @@ class QlibRunnerTests(unittest.TestCase):
 
         self.assertGreater(high_score, low_score)
 
+    def test_additional_models_change_score_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            momentum_runner = QlibRunner(
+                config=load_qlib_config(
+                    env={
+                        "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                        "QUANT_QLIB_MODEL_KEY": "momentum_drive_v4",
+                    },
+                    require_explicit=True,
+                )
+            )
+            stability_runner = QlibRunner(
+                config=load_qlib_config(
+                    env={
+                        "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                        "QUANT_QLIB_MODEL_KEY": "stability_guard_v5",
+                    },
+                    require_explicit=True,
+                )
+            )
+            metrics = {
+                "feature_averages": {
+                    "trend_gap_pct": "0.5000",
+                    "ema20_gap_pct": "0.6000",
+                    "ema55_gap_pct": "0.7000",
+                    "breakout_strength": "0.2000",
+                    "close_return_pct": "0.4000",
+                    "roc6": "0.3000",
+                    "body_pct": "0.2000",
+                    "range_pct": "3.0000",
+                    "atr_pct": "3.2000",
+                    "volume_ratio": "1.0000",
+                },
+                "avg_future_return_pct": "0.5000",
+                "positive_rate": "0.5600",
+                "max_loss_streak": "3.0000",
+            }
+            feature_row = {
+                "trend_gap_pct": "1.1000",
+                "ema20_gap_pct": "1.2000",
+                "ema55_gap_pct": "1.4000",
+                "breakout_strength": "1.5000",
+                "close_return_pct": "1.3000",
+                "roc6": "1.1000",
+                "body_pct": "0.9000",
+                "range_pct": "4.8000",
+                "atr_pct": "5.1000",
+                "volume_ratio": "1.3000",
+            }
+
+            momentum_score = momentum_runner._score_signal(feature_row, metrics)
+            stability_score = stability_runner._score_signal(feature_row, metrics)
+
+        self.assertGreater(momentum_score, stability_score)
+
     def test_training_exposes_data_states_and_backtest_snapshot_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)

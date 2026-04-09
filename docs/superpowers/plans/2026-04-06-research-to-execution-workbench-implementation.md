@@ -251,6 +251,14 @@
 - [x] 生产构建下重新验证 `/strategies`、`/evaluation`、`/tasks` 的说明卡和动作区，避免旧 build 让浏览器验到过期页面
 - [x] 浏览器用例兼容“研究任务已在后台运行”的真实反馈，并用精确文案避免严格模式误报
 
+## Phase 2 Todo（第四段）
+
+- [x] 研究工作台补上 `momentum_drive_v4`、`stability_guard_v5` 两个模型目录，并让新模型真正进入研究打分
+- [x] 研究工作台补上 `pullback_reclaim`、`volatility_breakout` 两个标签预设，以及 `1-2d`、`2-5d` 两个持有窗口
+- [x] 评估中心手动实验对比补上“研究预设 / 标签预设 / 标签触发口径”，把两轮实验差异讲清楚
+- [x] 任务页补上“告警等级处理口径”，直接说明错误、警告、提示各自会怎么处理
+- [x] 最新生产构建下重新验证 `/research`、`/evaluation`、`/tasks`，确认新模型、新标签和告警口径都已真实显示
+
 ## Validation Commands
 
 ```bash

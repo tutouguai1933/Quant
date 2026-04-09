@@ -509,6 +509,18 @@ class QlibRunner:
                 raw_score += _to_float(feature_row.get(key)) * self._feature_weight(key) * 0.05
             raw_score += _to_float(metrics.get("avg_future_return_pct")) * 1.2
             raw_score += _to_float(metrics.get("positive_rate")) * 0.8
+        elif model_key == "momentum_drive_v4":
+            for key in primary_columns:
+                delta = _to_float(feature_row.get(key)) - _to_float(averages.get(key))
+                raw_score += delta * self._feature_weight(key) * 0.65
+            raw_score += _to_float(feature_row.get("breakout_strength")) * float(self._config.momentum_weight) * 1.4
+            raw_score += _to_float(feature_row.get("close_return_pct")) * float(self._config.momentum_weight) * 0.9
+            raw_score += _to_float(feature_row.get("roc6")) * float(self._config.momentum_weight) * 0.7
+            raw_score += _to_float(feature_row.get("body_pct")) * float(self._config.momentum_weight) * 0.5
+            raw_score += max(0.0, _to_float(feature_row.get("volume_ratio")) - 1.0) * float(self._config.volume_weight) * 1.2
+            raw_score += _to_float(metrics.get("avg_future_return_pct")) * 1.0
+            raw_score += _to_float(metrics.get("positive_rate")) * 0.7
+            raw_score -= max(0.0, _to_float(feature_row.get("atr_pct")) - 6.0) * float(self._config.volatility_weight) * 0.3
         elif model_key == "balanced_v3":
             for key in primary_columns:
                 delta = _to_float(feature_row.get(key)) - _to_float(averages.get(key))
@@ -518,6 +530,20 @@ class QlibRunner:
             raw_score += _to_float(metrics.get("avg_future_return_pct")) * 1.1
             raw_score += _to_float(metrics.get("positive_rate")) * 0.9
             raw_score -= max(0.0, _to_float(metrics.get("max_loss_streak")) - 2.0) * 0.4
+        elif model_key == "stability_guard_v5":
+            for key in primary_columns:
+                delta = _to_float(feature_row.get(key)) - _to_float(averages.get(key))
+                raw_score += delta * self._feature_weight(key) * 0.75
+            for key in self._active_auxiliary_feature_columns():
+                raw_score += (_to_float(feature_row.get(key)) - _to_float(averages.get(key))) * self._feature_weight(key) * 0.05
+            raw_score += max(0.0, _to_float(feature_row.get("ema20_gap_pct"))) * float(self._config.trend_weight) * 0.5
+            raw_score += max(0.0, _to_float(feature_row.get("ema55_gap_pct"))) * float(self._config.trend_weight) * 0.4
+            raw_score += max(0.0, _to_float(feature_row.get("volume_ratio")) - 1.0) * float(self._config.volume_weight) * 0.6
+            raw_score += _to_float(metrics.get("avg_future_return_pct")) * 1.15
+            raw_score += _to_float(metrics.get("positive_rate")) * 1.0
+            raw_score -= max(0.0, _to_float(metrics.get("max_loss_streak")) - 1.0) * 0.8
+            raw_score -= max(0.0, _to_float(feature_row.get("range_pct")) - 4.0) * float(self._config.volatility_weight) * 0.15
+            raw_score -= max(0.0, _to_float(feature_row.get("atr_pct")) - 4.5) * float(self._config.volatility_weight) * 0.45
         else:
             for key in primary_columns:
                 raw_score += (_to_float(feature_row.get(key)) - _to_float(averages.get(key))) * self._feature_weight(key)

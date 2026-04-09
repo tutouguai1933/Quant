@@ -17,6 +17,8 @@ const MODEL_LABELS: Record<string, string> = {
   heuristic_v1: "heuristic_v1 / 基础启发式",
   trend_bias_v2: "trend_bias_v2 / 趋势偏置",
   balanced_v3: "balanced_v3 / 平衡评分",
+  momentum_drive_v4: "momentum_drive_v4 / 动量推进",
+  stability_guard_v5: "stability_guard_v5 / 稳定守门",
 };
 
 const LABEL_MODE_LABELS: Record<string, string> = {
@@ -30,7 +32,7 @@ const LABEL_TRIGGER_BASIS_LABELS: Record<string, string> = {
   high_low: "high_low / 按高低点命中",
 };
 
-const DEFAULT_RESEARCH_PRESETS = ["baseline_balanced", "trend_following", "conservative_validation"];
+const DEFAULT_RESEARCH_PRESETS = ["baseline_balanced", "trend_following", "conservative_validation", "momentum_breakout", "stability_first"];
 
 export default async function ResearchPage() {
   const session = await getControlSessionState();
@@ -86,7 +88,7 @@ export default async function ResearchPage() {
     : [];
   const availableLabelPresets = Array.isArray(controls.available_label_presets)
     ? controls.available_label_presets.map(String)
-    : ["balanced_window", "breakout_path", "closing_confirmation", "majority_filter"];
+    : ["balanced_window", "breakout_path", "closing_confirmation", "majority_filter", "pullback_reclaim", "volatility_breakout"];
   const labelModeCatalog = Array.isArray(controls.label_mode_catalog)
     ? controls.label_mode_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
@@ -184,6 +186,24 @@ export default async function ResearchPage() {
               <InfoBlock label="标签触发基础" value={resolvedLabelTriggerBasis} />
               <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
               <InfoBlock label="定义" value={workspace.labeling.definition || "当前没有标签定义"} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>标签配方与模型口径</CardTitle>
+              <CardDescription>把当前模型、标签触发、持有窗口和切分比例压成一组最短说明，避免保存完还要来回翻几张表。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前模型" value={MODEL_LABELS[selectedModelKey] || selectedModelKey} />
+              <InfoBlock label="当前标签预设" value={selectedLabelPresetKey} />
+              <InfoBlock label="标签触发基础" value={resolvedLabelTriggerBasis} />
+              <InfoBlock label="持有窗口" value={String(controls.holding_window_label ?? workspace.overview.holding_window ?? "1-3d")} />
+              <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
+              <InfoBlock
+                label="训练 / 验证 / 测试"
+                value={`${String(controls.train_split_ratio ?? "0.6")} / ${String(controls.validation_split_ratio ?? "0.2")} / ${String(controls.test_split_ratio ?? "0.2")}`}
+              />
             </CardContent>
           </Card>
 
@@ -684,6 +704,10 @@ function payloadRecord(value: unknown): Record<string, unknown> {
 
 function describeModel(modelKey: string) {
   switch (modelKey) {
+    case "momentum_drive_v4":
+      return "更偏短节奏突破和动量延续，适合先找最近放量、加速、最可能快速走一段的候选。";
+    case "stability_guard_v5":
+      return "更偏稳定收益和波动控制，适合进 live 前先筛掉回撤大、稳定性差的候选。";
     case "trend_bias_v2":
       return "更偏顺趋势确认，适合把趋势、量能和突破一致的标的优先排前。";
     case "balanced_v3":
@@ -720,6 +744,8 @@ function describeHoldingWindow(holdingWindow: string) {
   switch (holdingWindow) {
     case "1-2d":
       return "更短，更偏快节奏择时，推荐会更敏感，但也更容易被短期波动影响。";
+    case "2-5d":
+      return "会给走势修复和收盘确认更多时间，更适合进 live 前先看稳定性是不是站住。";
     case "3-5d":
       return "更偏中短波段，会优先观察更完整的一段走势，推荐更稳，但短线信号会更慢一些。";
     case "2-4d":
