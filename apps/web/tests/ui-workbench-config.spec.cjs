@@ -66,3 +66,15 @@ test("tasks config save persists across tasks and evaluation workbenches", async
     await expect(formFor(page).locator('input[name="review_limit"]')).toHaveValue(originalReview);
   }
 });
+
+test("evaluation workspace shows threshold story and live gate breakdown", async ({ page }) => {
+  test.setTimeout(120000);
+
+  await loginAsAdmin(page, "/evaluation");
+
+  await expect(page.locator("body")).toContainText("当前准入选择", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("准入门槛目录", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("live 门槛", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("门控分解", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("live 门", { timeout: 60000 });
+});

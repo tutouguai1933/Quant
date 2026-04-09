@@ -690,6 +690,8 @@ export type EvaluationWorkspaceModel = {
   status: string;
   backend: string;
   config_alignment?: Record<string, unknown>;
+  selection_story?: Record<string, unknown>;
+  threshold_catalog?: Array<Record<string, unknown>>;
   overview: {
     recommended_symbol: string;
     recommended_action: string;
@@ -1825,6 +1827,8 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       recommended_action: "",
       candidate_count: 0,
     },
+    selection_story: {},
+    threshold_catalog: [],
     candidate_scope: {
       candidate_pool_preset_key: "top10_liquid",
       candidate_pool_preset_detail: "候选池预设：top10_liquid / 当前还没有候选池说明",
@@ -1868,6 +1872,8 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
       live_min_win_rate: "0.55",
       live_max_turnover: "0.45",
       live_min_sample_count: "24",
+      available_threshold_presets: ["standard_gate", "strict_live_gate", "exploratory_dry_run"],
+      threshold_preset_catalog: [],
     },
     operations: {
       operations_preset_key: "balanced_guard",
@@ -2121,6 +2127,7 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
     status: String(row.status ?? "unavailable"),
     backend: String(row.backend ?? "qlib-fallback"),
     config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
+    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
     overview: {
       feature_version: String(overview.feature_version ?? ""),
       factor_count: Number(overview.factor_count ?? 0),
@@ -2192,7 +2199,6 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
       })
       .filter((value) => value.name.length > 0),
     category_catalog: categoryCatalog.filter((value): value is Record<string, unknown> => isPlainObject(value)),
-    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
   };
 }
 
@@ -2213,6 +2219,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
     status: String(row.status ?? "unavailable"),
     backend: String(row.backend ?? "qlib-fallback"),
     config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
+    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
     overview: {
       holding_window: String(overview.holding_window ?? ""),
       candidate_count: Number(overview.candidate_count ?? 0),
@@ -2300,7 +2307,6 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       detail: String(labelRuleSummary.detail ?? ""),
       next_step: String(labelRuleSummary.next_step ?? ""),
     },
-    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
   };
 }
 
@@ -2401,6 +2407,8 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     status: String(row.status ?? "unavailable"),
     backend: String(row.backend ?? "qlib-fallback"),
     config_alignment: isPlainObject(row.config_alignment) ? row.config_alignment : {},
+    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
+    threshold_catalog: Array.isArray(row.threshold_catalog) ? row.threshold_catalog.filter(isPlainObject) : [],
     overview: {
       recommended_symbol: String(overview.recommended_symbol ?? ""),
       recommended_action: String(overview.recommended_action ?? ""),
@@ -2449,6 +2457,8 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       live_min_win_rate: String(controls.live_min_win_rate ?? "0.55"),
       live_max_turnover: String(controls.live_max_turnover ?? "0.45"),
       live_min_sample_count: String(controls.live_min_sample_count ?? "24"),
+      available_threshold_presets: normalizeStringArray(controls.available_threshold_presets, ["standard_gate", "strict_live_gate", "exploratory_dry_run"]),
+      threshold_preset_catalog: Array.isArray(controls.threshold_preset_catalog) ? controls.threshold_preset_catalog.filter(isPlainObject) : [],
     },
     operations: {
       operations_preset_key: String(operations.operations_preset_key ?? "balanced_guard"),

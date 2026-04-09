@@ -46,6 +46,7 @@ class EvaluationWorkspaceService:
         configured_automation = dict((controls.get("config") or {}).get("automation") or {})
         configured_data = dict((controls.get("config") or {}).get("data") or {})
         configured_execution = dict((controls.get("config") or {}).get("execution") or {})
+        option_catalogs = dict(controls.get("options") or {})
         candidate_symbols = [str(item) for item in list(configured_data.get("selected_symbols") or []) if str(item).strip()]
         live_allowed_symbols = [str(item) for item in list(configured_execution.get("live_allowed_symbols") or []) if str(item).strip()]
         best_experiment = self._build_best_experiment(
@@ -111,6 +112,16 @@ class EvaluationWorkspaceService:
                 ),
                 "live_allowed_symbols": live_allowed_symbols,
             },
+            "selection_story": self._build_selection_story(
+                option_catalogs=option_catalogs,
+                thresholds=configured_thresholds,
+                config_alignment=dict(report.get("config_alignment") or {}),
+            ),
+            "threshold_catalog": self._build_threshold_catalog(
+                option_catalogs=option_catalogs,
+                thresholds=configured_thresholds,
+                config_alignment=dict(report.get("config_alignment") or {}),
+            ),
             "controls": {
                 "threshold_preset_key": str(configured_thresholds.get("threshold_preset_key", "standard_gate") or "standard_gate"),
                 "dry_run_min_score": str(configured_thresholds.get("dry_run_min_score", "")),
@@ -207,6 +218,219 @@ class EvaluationWorkspaceService:
             "alignment_actions": alignment_actions,
             "stage_decision_summary": stage_decision_summary,
         }
+
+    @staticmethod
+    def _resolve_catalog_item(
+        catalog: list[dict[str, object]],
+        *,
+        key: str,
+        fallback_label: str,
+    ) -> dict[str, str]:
+        """从目录里找出当前选中的说明项。"""
+
+        for item in catalog:
+            if str(item.get("key", "")).strip() == key:
+                return {
+                    "key": key,
+                    "label": str(item.get("label", fallback_label) or fallback_label),
+                    "fit": str(item.get("fit", "当前没有适用场景说明") or "当前没有适用场景说明"),
+                    "detail": str(item.get("detail", "当前没有额外说明") or "当前没有额外说明"),
+                }
+        return {
+            "key": key,
+            "label": fallback_label,
+            "fit": "当前没有适用场景说明",
+            "detail": "当前没有额外说明",
+        }
+
+    def _build_selection_story(
+        self,
+        *,
+        option_catalogs: dict[str, object],
+        thresholds: dict[str, object],
+        config_alignment: dict[str, object],
+    ) -> dict[str, object]:
+        """把当前准入预设和四层门槛压成一屏说明。"""
+
+        threshold_preset = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("threshold_preset_catalog") or []) if isinstance(item, dict)],
+            key=str(thresholds.get("threshold_preset_key", "standard_gate") or "standard_gate"),
+            fallback_label=str(thresholds.get("threshold_preset_key", "standard_gate") or "standard_gate"),
+        )
+        alignment_status = str(config_alignment.get("status", "unavailable") or "unavailable")
+        alignment_note = str(config_alignment.get("note", "") or "").strip()
+        if not alignment_note:
+            alignment_note = self._build_alignment_note(alignment_status)
+        return {
+            "headline": threshold_preset["label"],
+            "detail": (
+                f"dry-run 分数 ≥ {thresholds.get('dry_run_min_score', '0.55')} / "
+                f"验证样本 ≥ {thresholds.get('validation_min_sample_count', '12')} / "
+                f"live 分数 ≥ {thresholds.get('live_min_score', '0.65')}"
+            ),
+            "alignment_status": alignment_status,
+            "alignment_note": alignment_note,
+            "threshold_preset": threshold_preset,
+            "dry_run_summary": self._build_dry_run_summary(thresholds),
+            "validation_summary": self._build_validation_summary(thresholds),
+            "consistency_summary": self._build_consistency_summary(thresholds),
+            "live_summary": self._build_live_summary(thresholds),
+            "gate_summary": self._build_gate_summary(thresholds),
+        }
+
+    def _build_threshold_catalog(
+        self,
+        *,
+        option_catalogs: dict[str, object],
+        thresholds: dict[str, object],
+        config_alignment: dict[str, object],
+    ) -> list[dict[str, str]]:
+        """把准入门槛整理成稳定目录。"""
+
+        threshold_preset = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("threshold_preset_catalog") or []) if isinstance(item, dict)],
+            key=str(thresholds.get("threshold_preset_key", "standard_gate") or "standard_gate"),
+            fallback_label=str(thresholds.get("threshold_preset_key", "standard_gate") or "standard_gate"),
+        )
+        alignment_status = str(config_alignment.get("status", "unavailable") or "unavailable")
+        alignment_note = str(config_alignment.get("note", "") or "").strip() or self._build_alignment_note(alignment_status)
+        return [
+            {
+                "key": "threshold_preset",
+                "label": "准入预设",
+                "current": threshold_preset["label"],
+                "effect": "先统一切换一整套放行口径，再决定要不要细调单个门槛。",
+                "detail": threshold_preset["detail"],
+            },
+            {
+                "key": "dry_run_gate",
+                "label": "dry-run 门槛",
+                "current": self._build_dry_run_summary(thresholds),
+                "effect": "决定候选能不能先进入 dry-run 观察，而不是继续停在研究阶段。",
+                "detail": alignment_note,
+            },
+            {
+                "key": "validation_gate",
+                "label": "验证门槛",
+                "current": self._build_validation_summary(thresholds),
+                "effect": "要求样本外验证先站住，避免只在训练段里好看。",
+                "detail": "验证门主要看样本量和平均未来收益，不够就先别放到后面阶段。",
+            },
+            {
+                "key": "rule_gate",
+                "label": "规则过滤",
+                "current": self._build_rule_summary(thresholds),
+                "effect": "先筛掉趋势不够强、波动过大或量能不足的候选。",
+                "detail": self._build_strict_rule_summary(thresholds),
+            },
+            {
+                "key": "consistency_gate",
+                "label": "一致性门槛",
+                "current": self._build_consistency_summary(thresholds),
+                "effect": "避免训练、验证和回测差得太远，结果看起来稳但换窗口就走样。",
+                "detail": "一致性门主要限制训练/验证/回测之间的收益和正收益比例漂移。",
+            },
+            {
+                "key": "live_gate",
+                "label": "live 门槛",
+                "current": self._build_live_summary(thresholds),
+                "effect": "只有更稳的候选才允许继续进入小额 live。",
+                "detail": "live 门默认比 dry-run 更严格，先保守验证真实执行风险。",
+            },
+            {
+                "key": "gate_switches",
+                "label": "门控开关",
+                "current": self._build_gate_summary(thresholds),
+                "effect": "方便快速判断到底是哪一层在拦住候选。",
+                "detail": "这些开关更适合临时排查，不适合长期关闭后直接放行。",
+            },
+        ]
+
+    @staticmethod
+    def _build_alignment_note(status: str) -> str:
+        """生成当前结果和配置是否对齐的说明。"""
+
+        if status == "aligned":
+            return "当前研究结果仍然基于这页右上角的最新门槛。"
+        if status == "stale":
+            return "检测到评估门槛和研究结果之间可能存在漂移，请先重跑研究或重新核对。"
+        return "评估系统还没拿到配置快照，暂时无法确认当前门槛是否已经生效。"
+
+    @staticmethod
+    def _build_dry_run_summary(thresholds: dict[str, object]) -> str:
+        """压缩 dry-run 门槛摘要。"""
+
+        return (
+            f"分数 ≥ {thresholds.get('dry_run_min_score', '0.55')} / "
+            f"净收益 ≥ {thresholds.get('dry_run_min_net_return_pct', '0')}% / "
+            f"Sharpe ≥ {thresholds.get('dry_run_min_sharpe', '0.5')} / "
+            f"样本 ≥ {thresholds.get('dry_run_min_sample_count', '20')}"
+        )
+
+    @staticmethod
+    def _build_validation_summary(thresholds: dict[str, object]) -> str:
+        """压缩验证门槛摘要。"""
+
+        return (
+            f"样本 ≥ {thresholds.get('validation_min_sample_count', '12')} / "
+            f"平均未来收益 ≥ {thresholds.get('validation_min_avg_future_return_pct', '-0.1')}%"
+        )
+
+    @staticmethod
+    def _build_rule_summary(thresholds: dict[str, object]) -> str:
+        """压缩规则门摘要。"""
+
+        return (
+            f"EMA20 ≥ {thresholds.get('rule_min_ema20_gap_pct', '0')}% / "
+            f"EMA55 ≥ {thresholds.get('rule_min_ema55_gap_pct', '0')}% / "
+            f"ATR ≤ {thresholds.get('rule_max_atr_pct', '5')}% / "
+            f"量比 ≥ {thresholds.get('rule_min_volume_ratio', '1')}"
+        )
+
+    @staticmethod
+    def _build_strict_rule_summary(thresholds: dict[str, object]) -> str:
+        """压缩严格规则模板摘要。"""
+
+        return (
+            f"严格模板：EMA20 ≥ {thresholds.get('strict_rule_min_ema20_gap_pct', '1.2')}% / "
+            f"EMA55 ≥ {thresholds.get('strict_rule_min_ema55_gap_pct', '1.8')}% / "
+            f"ATR ≤ {thresholds.get('strict_rule_max_atr_pct', '4.5')}% / "
+            f"量比 ≥ {thresholds.get('strict_rule_min_volume_ratio', '1.05')}"
+        )
+
+    @staticmethod
+    def _build_consistency_summary(thresholds: dict[str, object]) -> str:
+        """压缩一致性门槛摘要。"""
+
+        return (
+            f"验证/回测收益差 ≤ {thresholds.get('consistency_max_validation_backtest_return_gap_pct', '1.5')}% / "
+            f"训练/验证正收益比例差 ≤ {thresholds.get('consistency_max_training_validation_positive_rate_gap', '0.2')} / "
+            f"训练/验证收益差 ≤ {thresholds.get('consistency_max_training_validation_return_gap_pct', '1.5')}%"
+        )
+
+    @staticmethod
+    def _build_live_summary(thresholds: dict[str, object]) -> str:
+        """压缩 live 门槛摘要。"""
+
+        return (
+            f"分数 ≥ {thresholds.get('live_min_score', '0.65')} / "
+            f"净收益 ≥ {thresholds.get('live_min_net_return_pct', '0.20')}% / "
+            f"胜率 ≥ {thresholds.get('live_min_win_rate', '0.55')} / "
+            f"样本 ≥ {thresholds.get('live_min_sample_count', '24')}"
+        )
+
+    @staticmethod
+    def _build_gate_summary(thresholds: dict[str, object]) -> str:
+        """压缩五个门控开关摘要。"""
+
+        gates = [
+            ("规则门", bool(thresholds.get("enable_rule_gate", True))),
+            ("验证门", bool(thresholds.get("enable_validation_gate", True))),
+            ("回测门", bool(thresholds.get("enable_backtest_gate", True))),
+            ("一致性门", bool(thresholds.get("enable_consistency_gate", True))),
+            ("live 门", bool(thresholds.get("enable_live_gate", True))),
+        ]
+        return " / ".join(f"{label}{'开启' if enabled else '关闭'}" for label, enabled in gates)
 
     def _read_factory_report(self) -> dict[str, object]:
         """读取统一研究报告。"""
@@ -683,12 +907,15 @@ class EvaluationWorkspaceService:
             validation_gate = dict(item.get("research_validation_gate") or {})
             backtest_gate = dict(item.get("backtest_gate") or {})
             consistency_gate = dict(item.get("consistency_gate") or {})
+            dry_run_gate = dict(item.get("dry_run_gate") or {})
+            live_gate = dict(item.get("live_gate") or {})
             blocking_gate, primary_reason = EvaluationWorkspaceService._resolve_blocking_gate(
                 rule_gate=rule_gate,
                 validation_gate=validation_gate,
                 backtest_gate=backtest_gate,
                 consistency_gate=consistency_gate,
-                dry_run_gate=dict(item.get("dry_run_gate") or {}),
+                dry_run_gate=dry_run_gate,
+                live_gate=live_gate,
             )
             rows.append(
                 {
@@ -701,6 +928,7 @@ class EvaluationWorkspaceService:
                     "validation_gate": EvaluationWorkspaceService._format_gate_status(validation_gate),
                     "backtest_gate": EvaluationWorkspaceService._format_gate_status(backtest_gate),
                     "consistency_gate": EvaluationWorkspaceService._format_gate_status(consistency_gate),
+                    "live_gate": EvaluationWorkspaceService._format_gate_status(live_gate),
                 }
             )
         return rows
@@ -1328,6 +1556,7 @@ class EvaluationWorkspaceService:
         backtest_gate: dict[str, object],
         consistency_gate: dict[str, object],
         dry_run_gate: dict[str, object],
+        live_gate: dict[str, object],
     ) -> tuple[str, str]:
         """找出候选当前最主要卡住的门。"""
 
@@ -1342,9 +1571,12 @@ class EvaluationWorkspaceService:
                 continue
             reasons = [str(reason).strip() for reason in list(gate_payload.get("reasons") or []) if str(reason).strip()]
             return gate_name, " / ".join(reasons) if reasons else "未通过"
-        dry_run_reasons = [str(reason).strip() for reason in list(dry_run_gate.get("reasons") or []) if str(reason).strip()]
-        if dry_run_reasons:
-            return "dry_run_gate", " / ".join(dry_run_reasons)
+        if not EvaluationWorkspaceService._gate_passed(dry_run_gate):
+            dry_run_reasons = [str(reason).strip() for reason in list(dry_run_gate.get("reasons") or []) if str(reason).strip()]
+            return "dry_run_gate", " / ".join(dry_run_reasons) if dry_run_reasons else "未通过"
+        if not EvaluationWorkspaceService._gate_passed(live_gate):
+            live_reasons = [str(reason).strip() for reason in list(live_gate.get("reasons") or []) if str(reason).strip()]
+            return "live_gate", " / ".join(live_reasons) if live_reasons else "未通过"
         return "passed", "已通过"
 
     @staticmethod

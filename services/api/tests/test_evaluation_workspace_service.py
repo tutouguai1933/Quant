@@ -38,6 +38,7 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["leaderboard"][1]["elimination_reason"], "sample_count_too_low")
         self.assertEqual(item["execution_alignment"]["status"], "matched")
         self.assertEqual(item["gate_matrix"][0]["blocking_gate"], "passed")
+        self.assertEqual(item["gate_matrix"][0]["live_gate"], "通过")
         self.assertEqual(item["gate_matrix"][1]["blocking_gate"], "validation_gate")
         self.assertEqual(item["comparison_summary"]["config_alignment_status"], "aligned")
         self.assertTrue(item["comparison_summary"]["model_aligned"])
@@ -97,6 +98,14 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["controls"]["live_min_win_rate"], "0.55")
         self.assertEqual(item["controls"]["live_max_turnover"], "0.45")
         self.assertEqual(item["controls"]["live_min_sample_count"], "24")
+        self.assertEqual(item["selection_story"]["threshold_preset"]["key"], "standard_gate")
+        self.assertEqual(item["selection_story"]["alignment_status"], "aligned")
+        self.assertIn("dry-run", item["selection_story"]["detail"])
+        self.assertEqual(item["threshold_catalog"][0]["key"], "threshold_preset")
+        self.assertEqual(item["threshold_catalog"][1]["key"], "dry_run_gate")
+        self.assertEqual(item["threshold_catalog"][2]["key"], "validation_gate")
+        self.assertEqual(item["threshold_catalog"][5]["key"], "live_gate")
+        self.assertEqual(item["threshold_catalog"][6]["key"], "gate_switches")
         self.assertIn("更值得进入 dry-run", item["recommendation_explanation"]["headline"])
         self.assertIn("主要卡在", item["elimination_explanation"]["headline"])
         self.assertIsInstance(item["recommendation_explanation"]["evidence"], list)
@@ -134,6 +143,8 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["status"], "unavailable")
         self.assertEqual(item["leaderboard"], [])
         self.assertEqual(item["evaluation"], {})
+        self.assertEqual(item["selection_story"]["threshold_preset"]["key"], "standard_gate")
+        self.assertTrue(item["threshold_catalog"])
         self.assertEqual(
             item["comparison_summary"]["experiment_alignment_note"],
             "当前还没有训练或推理记录，先跑实验再来看对比。",
@@ -152,6 +163,7 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
                         "backtest_gate": {"status": "passed", "reasons": []},
                         "consistency_gate": {"status": "passed", "reasons": []},
                         "dry_run_gate": {"status": "passed", "reasons": []},
+                        "live_gate": {"status": "failed", "reasons": ["score_below_live_floor"]},
                     },
                     {
                         "symbol": "BTCUSDT",
@@ -162,13 +174,16 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
                         "backtest_gate": {"status": "passed", "reasons": []},
                         "consistency_gate": {"status": "passed", "reasons": []},
                         "dry_run_gate": {"status": "failed", "reasons": ["sample_count_too_low"]},
+                        "live_gate": {"status": "failed", "reasons": ["live_threshold_not_met"]},
                     },
                 ]
             }
         )
 
-        self.assertEqual(rows[0]["blocking_gate"], "passed")
+        self.assertEqual(rows[0]["blocking_gate"], "live_gate")
         self.assertEqual(rows[0]["rule_gate"], "通过")
+        self.assertEqual(rows[0]["live_gate"], "拦下")
+        self.assertEqual(rows[0]["primary_reason"], "score_below_live_floor")
         self.assertEqual(rows[1]["blocking_gate"], "validation_gate")
         self.assertEqual(rows[1]["primary_reason"], "sample_count_too_low")
 
@@ -280,6 +295,8 @@ class _FakeResearchService:
                     "research_validation_gate": {"passed": True, "reasons": []},
                     "backtest_gate": {"passed": True, "reasons": []},
                     "consistency_gate": {"passed": True, "reasons": []},
+                    "dry_run_gate": {"passed": True, "reasons": []},
+                    "live_gate": {"passed": True, "reasons": []},
                 },
                 {
                     "symbol": "BTCUSDT",
@@ -289,6 +306,8 @@ class _FakeResearchService:
                     "research_validation_gate": {"passed": False, "reasons": ["sample_count_too_low"]},
                     "backtest_gate": {"passed": True, "reasons": []},
                     "consistency_gate": {"passed": True, "reasons": []},
+                    "dry_run_gate": {"passed": False, "reasons": ["sample_count_too_low"]},
+                    "live_gate": {"passed": False, "reasons": ["sample_count_too_low"]},
                 },
             ],
             "leaderboard": [
@@ -566,6 +585,7 @@ def _fake_controls(*, review_limit: str = "10", comparison_run_limit: str = "5")
                 "comparison_run_limit": comparison_run_limit,
             },
             "thresholds": {
+                "threshold_preset_key": "standard_gate",
                 "dry_run_min_score": "0.55",
                 "dry_run_min_positive_rate": "0.45",
                 "dry_run_min_net_return_pct": "0",
@@ -576,14 +596,34 @@ def _fake_controls(*, review_limit: str = "10", comparison_run_limit: str = "5")
                 "dry_run_max_turnover": "0.60",
                 "dry_run_min_sample_count": "20",
                 "validation_min_sample_count": "12",
+                "validation_min_avg_future_return_pct": "-0.1",
+                "consistency_max_validation_backtest_return_gap_pct": "1.5",
+                "consistency_max_training_validation_positive_rate_gap": "0.2",
+                "consistency_max_training_validation_return_gap_pct": "1.5",
+                "rule_min_ema20_gap_pct": "0",
+                "rule_min_ema55_gap_pct": "0",
+                "rule_max_atr_pct": "5",
+                "rule_min_volume_ratio": "1",
+                "enable_rule_gate": True,
+                "enable_validation_gate": True,
+                "enable_backtest_gate": True,
+                "enable_consistency_gate": True,
+                "enable_live_gate": True,
                 "live_min_score": "0.65",
                 "live_min_positive_rate": "0.50",
                 "live_min_net_return_pct": "0.20",
                 "live_min_win_rate": "0.55",
                 "live_max_turnover": "0.45",
                 "live_min_sample_count": "24",
-            }
-        }
+            },
+        },
+        "options": {
+            "threshold_presets": ["standard_gate", "strict_live_gate", "exploratory_dry_run"],
+            "threshold_preset_catalog": [
+                {"key": "standard_gate", "label": "standard_gate / 标准准入", "fit": "默认口径", "detail": "适合先跑统一研究链，再看哪些候选可以进 dry-run。"},
+                {"key": "strict_live_gate", "label": "strict_live_gate / 严格 live", "fit": "更适合小额 live 前复核", "detail": "会更强调趋势确认、一致性和稳定性。"},
+            ],
+        },
     }
 
 

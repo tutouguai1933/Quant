@@ -42,6 +42,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const comparisonSummary = asRecord(workspace.comparison_summary);
   const deltaOverview = asRecord(workspace.delta_overview);
   const configAlignment = asRecord(workspace.config_alignment);
+  const selectionStory = asRecord(workspace.selection_story);
   const controls = asRecord(workspace.controls);
   const operations = asRecord(workspace.operations);
   const operationsPresetKey = readText(operations.operations_preset_key, "balanced_guard");
@@ -55,6 +56,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const recommendationExplanation = asRecord(workspace.recommendation_explanation);
   const eliminationExplanation = asRecord(workspace.elimination_explanation);
   const alignmentStory = asRecord(workspace.alignment_story);
+  const selectedThresholdPreset = asRecord(selectionStory.threshold_preset);
   const alignmentMetricRows = Array.isArray(workspace.alignment_metric_rows)
     ? workspace.alignment_metric_rows.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
@@ -88,6 +90,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
         : "检测到配置与研究结果之间可能存在漂移，请参照右侧字段进一步核对。";
   const thresholdPresetCatalog = Array.isArray(controls.threshold_preset_catalog)
     ? controls.threshold_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
+  const thresholdCatalog = Array.isArray(workspace.threshold_catalog)
+    ? workspace.threshold_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
   const comparisonOptions = buildExperimentCompareOptions({
     trainingRuns: workspace.recent_training_runs,
@@ -170,6 +175,26 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
         <div className="space-y-5">
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>当前准入选择</CardTitle>
+              <CardDescription>先看清这轮评估现在按什么门槛放行，再去判断为什么只到 dry-run、为什么还不能进 live。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前准入组合" value={readText(selectionStory.headline, "当前还没有准入组合摘要")} />
+              <InfoBlock label="当前口径说明" value={readText(selectionStory.detail, "当前还没有口径说明")} />
+              <InfoBlock
+                label="准入预设"
+                value={`${readText(selectedThresholdPreset.label, String(controls.threshold_preset_key ?? "standard_gate"))} / ${readText(selectedThresholdPreset.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock label="dry-run 口径" value={readText(selectionStory.dry_run_summary, "当前还没有 dry-run 摘要")} />
+              <InfoBlock label="validation 口径" value={readText(selectionStory.validation_summary, "当前还没有验证摘要")} />
+              <InfoBlock label="consistency 口径" value={readText(selectionStory.consistency_summary, "当前还没有一致性摘要")} />
+              <InfoBlock label="live 口径" value={readText(selectionStory.live_summary, "当前还没有 live 摘要")} />
+              <InfoBlock label="当前门控" value={readText(selectionStory.gate_summary, "当前还没有门控摘要")} />
+            </CardContent>
+          </Card>
+
           <WorkbenchConfigCard
             title="准入预设"
             description="先切换一整套放行口径，再决定要不要继续手动微调 dry-run 和 live 的每个门。"
@@ -312,6 +337,21 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <ConfigInput name="review_limit" type="number" min={1} max={100} step={1} defaultValue={reviewLimit} />
             </ConfigField>
           </WorkbenchConfigCard>
+
+          <DataTable
+            columns={["准入门槛目录", "当前口径", "为什么重要", "说明"]}
+            rows={thresholdCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                readText(item.label, "n/a"),
+                readText(item.current, "当前没有门槛摘要"),
+                readText(item.effect, "当前没有影响说明"),
+                readText(item.detail, "当前没有额外说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有准入门槛目录"
+            emptyDetail="先恢复评估工作台，系统才会把 dry-run、验证、一致性和 live 的口径整理出来。"
+          />
 
           <Card className="bg-card/90">
             <CardHeader>
@@ -656,7 +696,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
           </Card>
 
           <DataTable
-            columns={["门控分解", "规则门", "验证门", "回测门", "一致性门", "当前卡点"]}
+            columns={["门控分解", "规则门", "验证门", "回测门", "一致性门", "live 门", "当前卡点"]}
             rows={filteredGateMatrixRows.map((item, index) => {
               const row = asRecord(item);
               return {
@@ -667,6 +707,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
                   String(row.validation_gate ?? "n/a"),
                   String(row.backtest_gate ?? "n/a"),
                   String(row.consistency_gate ?? "n/a"),
+                  String(row.live_gate ?? "n/a"),
                   String(row.primary_reason ?? row.blocking_gate ?? "n/a"),
                 ],
               };
