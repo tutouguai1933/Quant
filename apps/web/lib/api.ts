@@ -546,10 +546,16 @@ export type ResearchWorkspaceModel = {
   labeling: {
     label_columns: string[];
     label_mode: string;
+    label_preset_key?: string;
+    label_trigger_basis?: string;
+    holding_window_label?: string;
+    label_target_pct?: string;
+    label_stop_pct?: string;
     definition: string;
   };
   sample_window: Record<string, Record<string, unknown>>;
   model: {
+    model_key?: string;
     model_version: string;
     backend: string;
   };
@@ -582,6 +588,7 @@ export type ResearchWorkspaceModel = {
     available_holding_windows: string[];
     available_research_presets?: string[];
     research_preset_catalog?: Array<Record<string, unknown>>;
+    research_template_catalog?: Array<Record<string, unknown>>;
   };
   parameters: Record<string, string>;
   selectors: {
@@ -609,6 +616,7 @@ export type ResearchWorkspaceModel = {
     detail: string;
     next_step: string;
   };
+  selection_story?: Record<string, unknown>;
 };
 
 export type BacktestWorkspaceModel = {
@@ -1667,10 +1675,16 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
     labeling: {
       label_columns: [],
       label_mode: "earliest_hit",
+      label_preset_key: "balanced_window",
+      label_trigger_basis: "close",
+      holding_window_label: "1-3d",
+      label_target_pct: "1",
+      label_stop_pct: "-1",
       definition: "",
     },
     sample_window: {},
     model: {
+      model_key: "heuristic_v1",
       model_version: "",
       backend: "qlib-fallback",
     },
@@ -1727,6 +1741,7 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       detail: "",
       next_step: "",
     },
+    selection_story: {},
   };
 }
 
@@ -2190,12 +2205,18 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
     labeling: {
       label_columns: normalizeStringArray(labeling.label_columns, []),
       label_mode: String(labeling.label_mode ?? ""),
+      label_preset_key: String(labeling.label_preset_key ?? "balanced_window"),
+      label_trigger_basis: String(labeling.label_trigger_basis ?? "close"),
+      holding_window_label: String(labeling.holding_window_label ?? "1-3d"),
+      label_target_pct: String(labeling.label_target_pct ?? "1"),
+      label_stop_pct: String(labeling.label_stop_pct ?? "-1"),
       definition: String(labeling.definition ?? ""),
     },
     sample_window: Object.fromEntries(
       Object.entries(sampleWindow).map(([name, value]) => [String(name), isPlainObject(value) ? value : {}]),
     ),
     model: {
+      model_key: String(model.model_key ?? ""),
       model_version: String(model.model_version ?? ""),
       backend: String(model.backend ?? "qlib-fallback"),
     },
@@ -2225,6 +2246,13 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       available_label_modes: normalizeStringArray(controls.available_label_modes, []),
       available_label_trigger_bases: normalizeStringArray(controls.available_label_trigger_bases, []),
       available_holding_windows: normalizeStringArray(controls.available_holding_windows, []),
+      available_research_presets: normalizeStringArray(controls.available_research_presets, []),
+      research_preset_catalog: Array.isArray(controls.research_preset_catalog)
+        ? controls.research_preset_catalog.filter((item): item is Record<string, unknown> => isPlainObject(item))
+        : [],
+      research_template_catalog: Array.isArray(controls.research_template_catalog)
+        ? controls.research_template_catalog.filter((item): item is Record<string, unknown> => isPlainObject(item))
+        : [],
     },
     parameters: Object.fromEntries(
       Object.entries(parameters).map(([name, value]) => [String(name), String(value ?? "")]),
@@ -2254,6 +2282,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       detail: String(labelRuleSummary.detail ?? ""),
       next_step: String(labelRuleSummary.next_step ?? ""),
     },
+    selection_story: isPlainObject(row.selection_story) ? row.selection_story : {},
   };
 }
 

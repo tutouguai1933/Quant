@@ -32,6 +32,7 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["controls"]["validation_split_ratio"], "0.2")
         self.assertEqual(item["controls"]["test_split_ratio"], "0.2")
         self.assertEqual(item["controls"]["model_catalog"][0]["key"], "heuristic_v1")
+        self.assertEqual(item["controls"]["research_template_catalog"][0]["key"], "single_asset_timing")
         self.assertEqual(item["controls"]["label_mode_catalog"][0]["key"], "earliest_hit")
         self.assertEqual(item["controls"]["label_trigger_catalog"][0]["key"], "close")
         self.assertEqual(item["controls"]["holding_window_catalog"][0]["key"], "1-3d")
@@ -51,6 +52,24 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["label_rule_summary"]["preset_key"], "balanced_window")
         self.assertIn("目标 1%", item["label_rule_summary"]["headline"])
         self.assertIn("1-3 天", item["label_rule_summary"]["detail"])
+        self.assertIn("单币择时", item["selection_story"]["headline"])
+        self.assertEqual(item["selection_story"]["model"]["key"], "heuristic_v1")
+        self.assertEqual(item["selection_story"]["label_preset"]["key"], "balanced_window")
+        self.assertEqual(item["selection_story"]["holding_window"]["key"], "1-3d")
+
+    def test_workspace_describes_window_majority_label_definition(self) -> None:
+        service = ResearchWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls_window_majority,
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["labeling"]["label_mode"], "window_majority")
+        self.assertIn("多数阶段", item["labeling"]["definition"])
+        self.assertEqual(item["selection_story"]["label_mode"]["key"], "window_majority")
+        self.assertEqual(item["selection_story"]["model"]["key"], "stability_guard_v5")
+        self.assertEqual(item["selection_story"]["holding_window"]["key"], "2-5d")
 
     def test_workspace_handles_missing_report(self) -> None:
         service = ResearchWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
@@ -159,13 +178,76 @@ def _fake_controls() -> dict[str, object]:
             "models": ["heuristic_v1", "trend_bias_v2"],
             "model_catalog": [{"key": "heuristic_v1", "label": "基础启发式", "fit": "最小闭环", "detail": "先跑通"}],
             "research_templates": ["single_asset_timing", "single_asset_timing_strict"],
+            "research_template_catalog": [{"key": "single_asset_timing", "label": "单币择时", "fit": "默认主链", "detail": "先跑主研究链"}],
             "label_modes": ["earliest_hit", "close_only"],
             "label_mode_catalog": [{"key": "earliest_hit", "label": "最早命中", "fit": "更接近真实退出", "detail": "先命中先记账"}],
             "label_trigger_bases": ["close", "high_low"],
             "label_trigger_catalog": [{"key": "close", "label": "按收盘价判断", "fit": "口径更稳", "detail": "只看收盘"}],
+            "label_presets": ["balanced_window", "pullback_reclaim"],
+            "label_preset_catalog": [{"key": "balanced_window", "label": "均衡窗口", "fit": "默认标签", "detail": "均衡判断"}],
             "holding_windows": ["1-3d", "2-4d"],
             "holding_window_catalog": [{"key": "1-3d", "label": "默认窗口", "fit": "平衡节奏", "detail": "当前默认"}],
         },
+    }
+
+
+def _fake_controls_window_majority() -> dict[str, object]:
+    controls = _fake_controls()
+    research = dict((controls.get("config") or {}).get("research") or {})
+    research.update(
+        {
+            "research_template": "single_asset_timing_strict",
+            "model_key": "stability_guard_v5",
+            "label_preset_key": "pullback_reclaim",
+            "label_mode": "window_majority",
+            "label_trigger_basis": "high_low",
+            "holding_window_label": "2-5d",
+            "min_holding_days": 2,
+            "max_holding_days": 5,
+            "label_target_pct": "1.4",
+            "label_stop_pct": "-0.8",
+        }
+    )
+    options = dict(controls.get("options") or {})
+    options.update(
+        {
+            "models": ["heuristic_v1", "trend_bias_v2", "stability_guard_v5"],
+            "model_catalog": [
+                {"key": "heuristic_v1", "label": "基础启发式", "fit": "最小闭环", "detail": "先跑通"},
+                {"key": "stability_guard_v5", "label": "稳定守门", "fit": "先看稳定性", "detail": "更稳一点"},
+            ],
+            "research_template_catalog": [
+                {"key": "single_asset_timing", "label": "单币择时", "fit": "默认主链", "detail": "先跑主研究链"},
+                {"key": "single_asset_timing_strict", "label": "单币择时严格版", "fit": "收紧放行", "detail": "更强调一致性"},
+            ],
+            "label_modes": ["earliest_hit", "close_only", "window_majority"],
+            "label_mode_catalog": [
+                {"key": "earliest_hit", "label": "最早命中", "fit": "更接近真实退出", "detail": "先命中先记账"},
+                {"key": "window_majority", "label": "多数表决", "fit": "更保守", "detail": "按多数阶段结果记账"},
+            ],
+            "label_trigger_bases": ["close", "high_low"],
+            "label_trigger_catalog": [
+                {"key": "close", "label": "按收盘价判断", "fit": "口径更稳", "detail": "只看收盘"},
+                {"key": "high_low", "label": "按高低点命中", "fit": "更接近盘中", "detail": "看窗口高低点"},
+            ],
+            "label_presets": ["balanced_window", "pullback_reclaim"],
+            "label_preset_catalog": [
+                {"key": "balanced_window", "label": "均衡窗口", "fit": "默认标签", "detail": "均衡判断"},
+                {"key": "pullback_reclaim", "label": "回踩收复", "fit": "慢一点更稳", "detail": "更看重收盘修复"},
+            ],
+            "holding_windows": ["1-3d", "2-4d", "2-5d"],
+            "holding_window_catalog": [
+                {"key": "1-3d", "label": "默认窗口", "fit": "平衡节奏", "detail": "当前默认"},
+                {"key": "2-5d", "label": "稳定复核窗口", "fit": "多给走势修复时间", "detail": "更偏稳定复核"},
+            ],
+        }
+    )
+    return {
+        "config": {
+            **dict(controls.get("config") or {}),
+            "research": research,
+        },
+        "options": options,
     }
 
 

@@ -31,12 +31,18 @@ class ResearchWorkspaceService:
         configured_features = dict((controls.get("config") or {}).get("features") or {})
         configured_research = dict((controls.get("config") or {}).get("research") or {})
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
+        option_catalogs = dict(controls.get("options") or {})
         min_days = int(configured_research.get("min_holding_days", 1) or 1)
         max_days = int(configured_research.get("max_holding_days", 3) or 3)
         label_target_pct = str(configured_research.get("label_target_pct", "1"))
         label_stop_pct = str(configured_research.get("label_stop_pct", "-1"))
         label_mode = str(configured_research.get("label_mode", "earliest_hit") or "earliest_hit")
         label_trigger_basis = str(configured_research.get("label_trigger_basis", "close") or "close")
+        research_preset_key = str(configured_research.get("research_preset_key", "baseline_balanced") or "baseline_balanced")
+        label_preset_key = str(configured_research.get("label_preset_key", "balanced_window") or "balanced_window")
+        research_template = str(configured_research.get("research_template", "single_asset_timing") or "single_asset_timing")
+        model_key = str(configured_research.get("model_key", "heuristic_v1") or "heuristic_v1")
+        holding_window_label = str(configured_research.get("holding_window_label", "1-3d") or "1-3d")
         strategy_templates = sorted(
             {
                 str(item.get("strategy_template", "")).strip()
@@ -63,6 +69,11 @@ class ResearchWorkspaceService:
             "labeling": {
                 "label_columns": [str(item) for item in list(latest_training.get("label_columns") or [])],
                 "label_mode": label_mode,
+                "label_preset_key": label_preset_key,
+                "label_trigger_basis": label_trigger_basis,
+                "holding_window_label": holding_window_label,
+                "label_target_pct": label_target_pct,
+                "label_stop_pct": label_stop_pct,
                 "definition": self._build_label_definition(
                     label_mode=label_mode,
                     label_trigger_basis=label_trigger_basis,
@@ -77,6 +88,7 @@ class ResearchWorkspaceService:
                 for name, value in sample_window.items()
             },
             "model": {
+                "model_key": model_key,
                 "model_version": str(
                     latest_inference.get("model_version")
                     or latest_training.get("model_version")
@@ -85,13 +97,13 @@ class ResearchWorkspaceService:
                 "backend": str(report.get("backend", "qlib-fallback") or "qlib-fallback"),
             },
             "controls": {
-                "research_preset_key": str(configured_research.get("research_preset_key", "baseline_balanced")),
-                "label_preset_key": str(configured_research.get("label_preset_key", "balanced_window")),
-                "research_template": str(configured_research.get("research_template", "")),
-                "model_key": str(configured_research.get("model_key", "")),
+                "research_preset_key": research_preset_key,
+                "label_preset_key": label_preset_key,
+                "research_template": research_template,
+                "model_key": model_key,
                 "label_mode": label_mode,
                 "label_trigger_basis": label_trigger_basis,
-                "holding_window_label": str(configured_research.get("holding_window_label", "")),
+                "holding_window_label": holding_window_label,
                 "force_validation_top_candidate": bool(
                     configured_research.get("force_validation_top_candidate", False)
                 ),
@@ -114,6 +126,7 @@ class ResearchWorkspaceService:
                 "available_research_presets": [str(item) for item in list((controls.get("options") or {}).get("research_presets") or [])],
                 "research_preset_catalog": [dict(item) for item in list((controls.get("options") or {}).get("research_preset_catalog") or []) if isinstance(item, dict)],
                 "available_research_templates": [str(item) for item in list((controls.get("options") or {}).get("research_templates") or [])],
+                "research_template_catalog": [dict(item) for item in list((controls.get("options") or {}).get("research_template_catalog") or []) if isinstance(item, dict)],
                 "available_label_modes": [str(item) for item in list((controls.get("options") or {}).get("label_modes") or [])],
                 "label_mode_catalog": [dict(item) for item in list((controls.get("options") or {}).get("label_mode_catalog") or []) if isinstance(item, dict)],
                 "available_label_trigger_bases": [str(item) for item in list((controls.get("options") or {}).get("label_trigger_bases") or [])],
@@ -144,6 +157,23 @@ class ResearchWorkspaceService:
                 configured_thresholds=configured_thresholds,
             ),
             "label_rule_summary": self._build_label_rule_summary(configured_research=configured_research),
+            "selection_story": self._build_selection_story(
+                option_catalogs=option_catalogs,
+                research_preset_key=research_preset_key,
+                research_template=research_template,
+                model_key=model_key,
+                label_preset_key=label_preset_key,
+                label_mode=label_mode,
+                label_trigger_basis=label_trigger_basis,
+                holding_window_label=holding_window_label,
+                min_days=min_days,
+                max_days=max_days,
+                label_target_pct=label_target_pct,
+                label_stop_pct=label_stop_pct,
+                train_ratio=str(configured_research.get("train_split_ratio", "0.6")),
+                validation_ratio=str(configured_research.get("validation_split_ratio", "0.2")),
+                test_ratio=str(configured_research.get("test_split_ratio", "0.2")),
+            ),
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -171,6 +201,8 @@ class ResearchWorkspaceService:
         trigger_detail = "按收盘价判断" if label_trigger_basis == "close" else "按高低点命中判断"
         if label_mode == "close_only":
             return f"未来 {min_days}-{max_days} 天窗口结束时，{trigger_detail}；窗口结束达到 +{label_target_pct}% 记 buy，低于 {label_stop_pct}% 记 sell，其余记 watch。"
+        if label_mode == "window_majority":
+            return f"未来 {min_days}-{max_days} 天内，{trigger_detail}；按整个窗口里多数阶段的结果来决定 buy / sell / watch，更适合过滤单根极端波动。"
         return f"未来 {min_days}-{max_days} 天内，{trigger_detail}；最早达到 +{label_target_pct}% 记 buy，最早达到 {label_stop_pct}% 记 sell，其余记 watch。"
 
     @staticmethod
@@ -266,6 +298,98 @@ class ResearchWorkspaceService:
             "headline": f"目标 {target}% / 止损 {stop}% / {min_days}-{max_days} 天窗口",
             "detail": f"未来 {min_days}-{max_days} 天里，{trigger_text}；{mode_text}。",
             "next_step": "想更激进就提高目标收益或缩短窗口；想更稳就放宽窗口并降低目标。",  # noqa: E501
+        }
+
+    @staticmethod
+    def _resolve_catalog_item(
+        catalog: list[dict[str, object]],
+        *,
+        key: str,
+        fallback_label: str,
+    ) -> dict[str, str]:
+        """从目录里找出当前选中的说明项。"""
+
+        for item in catalog:
+            if str(item.get("key", "")).strip() == key:
+                return {
+                    "key": key,
+                    "label": str(item.get("label", fallback_label) or fallback_label),
+                    "fit": str(item.get("fit", "当前没有适用场景说明") or "当前没有适用场景说明"),
+                    "detail": str(item.get("detail", "当前没有额外说明") or "当前没有额外说明"),
+                }
+        return {
+            "key": key,
+            "label": fallback_label,
+            "fit": "当前没有适用场景说明",
+            "detail": "当前没有额外说明",
+        }
+
+    def _build_selection_story(
+        self,
+        *,
+        option_catalogs: dict[str, object],
+        research_preset_key: str,
+        research_template: str,
+        model_key: str,
+        label_preset_key: str,
+        label_mode: str,
+        label_trigger_basis: str,
+        holding_window_label: str,
+        min_days: int,
+        max_days: int,
+        label_target_pct: str,
+        label_stop_pct: str,
+        train_ratio: str,
+        validation_ratio: str,
+        test_ratio: str,
+    ) -> dict[str, object]:
+        """把当前研究模板、模型和标签选择压成结构化说明。"""
+
+        research_preset = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("research_preset_catalog") or []) if isinstance(item, dict)],
+            key=research_preset_key,
+            fallback_label=research_preset_key,
+        )
+        research_template_item = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("research_template_catalog") or []) if isinstance(item, dict)],
+            key=research_template,
+            fallback_label=research_template,
+        )
+        model_item = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("model_catalog") or []) if isinstance(item, dict)],
+            key=model_key,
+            fallback_label=model_key,
+        )
+        label_preset = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("label_preset_catalog") or []) if isinstance(item, dict)],
+            key=label_preset_key,
+            fallback_label=label_preset_key,
+        )
+        label_mode_item = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("label_mode_catalog") or []) if isinstance(item, dict)],
+            key=label_mode,
+            fallback_label=label_mode,
+        )
+        label_trigger = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("label_trigger_catalog") or []) if isinstance(item, dict)],
+            key=label_trigger_basis,
+            fallback_label=label_trigger_basis,
+        )
+        holding_window = self._resolve_catalog_item(
+            [dict(item) for item in list(option_catalogs.get("holding_window_catalog") or []) if isinstance(item, dict)],
+            key=holding_window_label,
+            fallback_label=holding_window_label,
+        )
+        return {
+            "headline": f"{research_template_item['label']} / {model_item['label']} / {label_preset['label']}",
+            "detail": f"未来 {min_days}-{max_days} 天窗口，目标 {label_target_pct}% / 止损 {label_stop_pct}%；训练切分 {train_ratio} / {validation_ratio} / {test_ratio}。",
+            "research_preset": research_preset,
+            "research_template": research_template_item,
+            "model": model_item,
+            "label_preset": label_preset,
+            "label_mode": label_mode_item,
+            "label_trigger_basis": label_trigger,
+            "holding_window": holding_window,
         }
 
 

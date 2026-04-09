@@ -83,6 +83,9 @@ export default async function ResearchPage() {
   const researchPresetCatalog = Array.isArray(controls.research_preset_catalog)
     ? controls.research_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
+  const researchTemplateCatalog = Array.isArray(controls.research_template_catalog)
+    ? controls.research_template_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
   const labelPresetCatalog = Array.isArray(controls.label_preset_catalog)
     ? controls.label_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
     : [];
@@ -114,6 +117,14 @@ export default async function ResearchPage() {
     { label: "信心阈值", value: workspace.controls.signal_confidence_floor },
   ];
   const selectedLabelPresetKey = String(controls.label_preset_key ?? "balanced_window");
+  const selectionStory = asRecord(workspace.selection_story);
+  const selectedResearchPreset = asRecord(selectionStory.research_preset);
+  const selectedResearchTemplate = asRecord(selectionStory.research_template);
+  const selectedModelStory = asRecord(selectionStory.model);
+  const selectedLabelPreset = asRecord(selectionStory.label_preset);
+  const selectedLabelMode = asRecord(selectionStory.label_mode);
+  const selectedLabelTrigger = asRecord(selectionStory.label_trigger_basis);
+  const selectedHoldingWindow = asRecord(selectionStory.holding_window);
 
   return (
     <AppShell
@@ -177,6 +188,46 @@ export default async function ResearchPage() {
 
           <Card className="bg-card/90">
             <CardHeader>
+              <CardTitle>当前研究选择</CardTitle>
+              <CardDescription>把这轮研究真正采用的预设、模板、模型和标签组合压成一屏，避免只看到字段名却不知道含义。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前组合" value={displayValue(selectionStory.headline, "当前还没有研究组合摘要")} />
+              <InfoBlock label="当前组合说明" value={displayValue(selectionStory.detail, "当前还没有组合说明")} />
+              <InfoBlock
+                label="研究预设"
+                value={`${displayValue(selectedResearchPreset.label, String(controls.research_preset_key ?? "baseline_balanced"))} / ${displayValue(selectedResearchPreset.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock
+                label="研究模板"
+                value={`${displayValue(selectedResearchTemplate.label, String(controls.research_template ?? "single_asset_timing"))} / ${displayValue(selectedResearchTemplate.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock
+                label="模型选择"
+                value={`${displayValue(selectedModelStory.label, MODEL_LABELS[selectedModelKey] || selectedModelKey)} / ${displayValue(selectedModelStory.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock
+                label="标签预设"
+                value={`${displayValue(selectedLabelPreset.label, selectedLabelPresetKey)} / ${displayValue(selectedLabelPreset.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock
+                label="标签方式"
+                value={`${displayValue(selectedLabelMode.label, resolvedLabelMode)} / ${displayValue(selectedLabelMode.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock
+                label="触发基础"
+                value={`${displayValue(selectedLabelTrigger.label, resolvedLabelTriggerBasis)} / ${displayValue(selectedLabelTrigger.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock
+                label="持有窗口"
+                value={`${displayValue(selectedHoldingWindow.label, String(controls.holding_window_label ?? "1-3d"))} / ${displayValue(selectedHoldingWindow.fit, "当前没有适用场景说明")}`}
+              />
+              <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
               <CardTitle>标签定义</CardTitle>
               <CardDescription>先把 buy / sell / watch 是怎么来的讲清楚。</CardDescription>
             </CardHeader>
@@ -206,6 +257,21 @@ export default async function ResearchPage() {
               />
             </CardContent>
           </Card>
+
+          <DataTable
+            columns={["研究模板说明", "更适合什么", "当前是否选中", "说明"]}
+            rows={researchTemplateCatalog.map((item, index) => ({
+              id: `${String(item.key ?? index)}`,
+              cells: [
+                String(item.label ?? item.key ?? "n/a"),
+                String(item.fit ?? "当前没有适用场景说明"),
+                String(item.key ?? "") === String(controls.research_template ?? "single_asset_timing") ? "当前模板" : "可切换",
+                String(item.detail ?? "当前没有模板说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有研究模板目录"
+            emptyDetail="先恢复研究工作台，系统才会给出研究模板说明目录。"
+          />
 
           <DataTable
             columns={["模型目录", "更适合什么", "当前是否选中", "说明"]}

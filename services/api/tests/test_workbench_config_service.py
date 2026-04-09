@@ -289,6 +289,8 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(options["research_preset_catalog"][0]["key"], "baseline_balanced")
         self.assertTrue(any(item["key"] == "momentum_breakout" for item in options["research_preset_catalog"]))
         self.assertTrue(any(item["key"] == "stability_first" for item in options["research_preset_catalog"]))
+        self.assertEqual(options["research_template_catalog"][0]["key"], "single_asset_timing")
+        self.assertTrue(any(item["key"] == "single_asset_timing_strict" for item in options["research_template_catalog"]))
         self.assertEqual(options["backtest_preset_catalog"][0]["key"], "realistic_standard")
         self.assertEqual(options["threshold_preset_catalog"][0]["key"], "standard_gate")
         self.assertEqual(options["candidate_pool_preset_catalog"][0]["key"], "top10_liquid")

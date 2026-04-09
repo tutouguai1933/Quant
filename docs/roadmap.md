@@ -5,6 +5,10 @@
 - 项目现在做到哪里
 - 接下来一段时间具体要做什么
 
+当前按顺序执行的细化待办见：
+
+- [docs/phase2-execution-todo.md](/home/djy/Quant/docs/phase2-execution-todo.md)
+
 ## 当前阶段判断
 
 ### Phase 1：主链打通

@@ -659,6 +659,25 @@ def _build_research_preset_catalog() -> list[dict[str, str]]:
     ]
 
 
+def _build_research_template_catalog() -> list[dict[str, str]]:
+    """返回研究模板目录。"""
+
+    return [
+        {
+            "key": "single_asset_timing",
+            "label": "single_asset_timing / 单币择时",
+            "fit": "先跑主研究链",
+            "detail": "默认研究模板，重点回答某个币在 1 到 3 天内是否值得买入、继续观察或回避。",
+        },
+        {
+            "key": "single_asset_timing_strict",
+            "label": "single_asset_timing_strict / 单币择时严格版",
+            "fit": "更偏收紧放行",
+            "detail": "会更强调趋势确认、一致性和稳定性，适合准备进入 dry-run 或 live 前再复核一次。",
+        },
+    ]
+
+
 def _build_threshold_preset_catalog() -> list[dict[str, str]]:
     """返回门槛预设目录。"""
 
@@ -1218,6 +1237,7 @@ class WorkbenchConfigService:
                 "models": list(SUPPORTED_MODELS),
                 "model_catalog": _build_model_catalog(),
                 "research_templates": list(SUPPORTED_RESEARCH_TEMPLATES),
+                "research_template_catalog": _build_research_template_catalog(),
                 "label_modes": list(SUPPORTED_LABEL_MODES),
                 "label_mode_catalog": _build_label_mode_catalog(),
                 "label_trigger_bases": list(SUPPORTED_LABEL_TRIGGER_BASES),
