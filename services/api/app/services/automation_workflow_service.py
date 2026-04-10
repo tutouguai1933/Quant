@@ -14,6 +14,7 @@ from services.api.app.services.signal_service import signal_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
 from services.api.app.services.sync_service import sync_service
 from services.api.app.services.strategy_dispatch_service import strategy_dispatch_service
+from services.api.app.services.research_execution_arbitration_service import research_execution_arbitration_service
 from services.api.app.services.validation_workflow_service import validation_workflow_service
 from services.api.app.services.workbench_config_service import workbench_config_service
 from services.api.app.tasks.scheduler import task_scheduler
@@ -22,7 +23,18 @@ from services.api.app.tasks.scheduler import task_scheduler
 class AutomationWorkflowService:
     """按当前自动化模式执行统一工作流。"""
 
-    def __init__(self, *, scheduler=None, automation=None, research=None, signals=None, dispatcher=None, reviewer=None, syncer=None) -> None:
+    def __init__(
+        self,
+        *,
+        scheduler=None,
+        automation=None,
+        research=None,
+        signals=None,
+        dispatcher=None,
+        reviewer=None,
+        syncer=None,
+        arbiter=None,
+    ) -> None:
         self._scheduler = scheduler or task_scheduler
         self._automation = automation or automation_service
         self._research = research or research_service
@@ -30,6 +42,7 @@ class AutomationWorkflowService:
         self._dispatcher = dispatcher or strategy_dispatch_service
         self._reviewer = reviewer or validation_workflow_service
         self._syncer = syncer or sync_service
+        self._arbiter = arbiter or research_execution_arbitration_service
 
     def get_status(self) -> dict[str, object]:
         """返回自动化状态和健康摘要。"""
@@ -53,7 +66,7 @@ class AutomationWorkflowService:
             runtime_window=runtime_window,
             resume_checklist=list(health.get("resume_checklist") or []),
         )
-        return {
+        status_payload = {
             "state": state,
             "health": health,
             "operations": operations,
@@ -76,6 +89,14 @@ class AutomationWorkflowService:
             "alerts": alerts,
             "failure_policy": self._build_failure_policy(operations=operations),
         }
+        try:
+            status_payload["arbitration"] = self._arbiter.build_decision(automation_status=status_payload)
+        except Exception:
+            status_payload["arbitration"] = research_execution_arbitration_service.build_decision(
+                automation_status=status_payload,
+                evaluation_workspace={},
+            )
+        return status_payload
 
     def run_cycle(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:
         """执行一轮自动化工作流。"""

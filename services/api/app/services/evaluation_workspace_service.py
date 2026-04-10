@@ -2023,6 +2023,7 @@ class EvaluationWorkspaceService:
                 "latest_sync_status": latest_sync_status,
                 "difference_summary": "当前还没有足够结果可对齐",
                 "difference_severity": "unknown",
+                "difference_codes": ["research_missing"],
                 "difference_reasons": ["当前还没有研究候选，先补研究结果。"],
                 "next_step": "先补研究结果、执行同步或 dry-run，再回来复核。",
             }
@@ -2037,25 +2038,33 @@ class EvaluationWorkspaceService:
                 "latest_sync_status": latest_sync_status,
                 "difference_summary": "当前执行侧还没有可对齐结果",
                 "difference_severity": "unknown",
+                "difference_codes": ["execution_unavailable"],
                 "difference_reasons": ["执行侧还没有最新对齐结果，先补执行同步或 dry-run。"],
                 "next_step": "先补执行同步或 dry-run，再回来复核。",
             }
         difference_reasons: list[str] = []
+        difference_codes: list[str] = []
         if research_symbol and last_order_symbol and research_symbol != last_order_symbol:
+            difference_codes.append("order_symbol_mismatch")
             difference_reasons.append(f"最近订单仍是 {last_order_symbol}")
         if research_symbol and last_position_symbol and research_symbol != last_position_symbol:
+            difference_codes.append("position_symbol_mismatch")
             difference_reasons.append(f"最近持仓仍是 {last_position_symbol}")
         if latest_sync_status == "failed":
+            difference_codes.append("sync_failed")
             difference_reasons.append("同步失败")
         if runtime_mode == "manual" and research_action == "enter_dry_run":
+            difference_codes.append("manual_mode_confirmation_required")
             difference_reasons.append("当前仍在手动模式，需要人工确认")
         if not difference_reasons:
+            difference_codes.append("aligned")
             difference_reasons.append("当前没有明显差异")
         if difference_reasons == ["当前没有明显差异"]:
             difference_summary = "研究标的、最近订单和最近持仓已经对上"
             difference_severity = "low"
             next_step = "继续观察 dry-run 或小额 live 的复盘结果。"
         elif status == "waiting_research":
+            difference_codes.append("waiting_same_cycle")
             difference_summary = f"研究侧推荐 {research_symbol or 'n/a'}，但执行侧还没进入同一轮"
             difference_severity = "medium"
             next_step = "先回到研究、回测和评估链补强候选，再决定是否放行。"
@@ -2075,6 +2084,7 @@ class EvaluationWorkspaceService:
             "latest_sync_status": latest_sync_status,
             "difference_summary": difference_summary,
             "difference_severity": difference_severity,
+            "difference_codes": difference_codes,
             "difference_reasons": difference_reasons,
             "next_step": next_step,
         }

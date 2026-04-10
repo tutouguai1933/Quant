@@ -110,19 +110,39 @@
 - 解释为什么推荐
 - 解释为什么淘汰
 - 解释研究与执行差异
+- 把研究结论和执行状态收成统一仲裁输入
 
 当前状态：
 
 - 已有统一研究报告
 - 已有实验对比
 - 已有研究 / 回测 / 执行对照
+- 已补结构化执行差异码，供仲裁层稳定判断“是该继续研究，还是该先补同步 / dry-run / live”
 
 关键目录：
 
 - `services/api/app/services/research_factory_service.py`
+- `services/api/app/services/evaluation_workspace_service.py`
 - `apps/web/app/evaluation`
 
-### 6. 执行层
+### 6. 研究到执行仲裁层
+
+作用：
+
+- 把研究推荐、执行健康、运行窗口和人工接管压成单一下一步结论
+
+当前状态：
+
+- `tasks/automation` 状态接口已经会返回统一 `arbitration`
+- 已能区分继续研究、等待同步、进入 dry-run、进入 live、手动模式、人工接管、冷却窗口和日内等待
+- 仲裁层已经有异常回退，不会因为评估层临时失败就把状态接口拖挂
+
+关键目录：
+
+- `services/api/app/services/research_execution_arbitration_service.py`
+- `services/api/app/services/automation_workflow_service.py`
+
+### 7. 执行层
 
 作用：
 
@@ -142,7 +162,7 @@
 - `services/api/app/services/signal_service.py`
 - `infra/freqtrade/`
 
-### 7. 自动化层
+### 8. 自动化层
 
 作用：
 
@@ -164,7 +184,7 @@
 - `services/api/app/services/automation_*`
 - `apps/web/app/tasks`
 
-### 8. 控制平面
+### 9. 控制平面
 
 作用：
 

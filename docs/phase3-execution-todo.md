@@ -52,7 +52,7 @@
 
 ## B. 研究到执行仲裁层
 
-- [ ] B1. 新增研究到执行仲裁服务
+- [x] B1. 新增研究到执行仲裁服务
   - 目标：把研究推荐、门控结果、执行状态、人工接管、长期运行窗口合成一份单一仲裁结论
   - 重点后端：`services/api/app/services/automation_workflow_service.py`、`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：无，先固定后端契约
