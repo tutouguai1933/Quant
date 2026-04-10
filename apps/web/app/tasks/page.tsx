@@ -81,6 +81,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const focusCards = asRecord(automationHealth.focus_cards);
   const takeoverSummary = asRecord(automationHealth.takeover_summary);
   const alertSummary = asRecord(automationHealth.alert_summary);
+  const alertStory = asRecord(automationHealth.alert_story);
   const alertGroups = Array.isArray(alertSummary.groups)
     ? alertSummary.groups.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
@@ -125,6 +126,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     recoveryAction,
   });
   const guidanceAlert = buildAlertSummaryCard({
+    alertStory,
     alertSummary,
     latestAlert,
     cycleCount: Number(automation.dailySummary.cycle_count ?? 0),
@@ -180,6 +182,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     fallbackDetail: primaryOperatorDetail,
   });
   const primaryAlertSummary = buildPrimaryAlertSummary({
+    alertStory,
     alertSummary,
     latestAlert,
     restoreConclusion,
@@ -543,7 +546,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardDescription>{primaryAlertSummary.detail}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p>当前建议：{primaryAlertSummary.actionLabel}</p>
+                  <p>最近发生了什么：{readText(alertStory.what_happened, primaryAlertSummary.detail)}</p>
+                  <p>你现在该做什么：{readText(alertStory.what_to_do, primaryAlertSummary.actionLabel)}</p>
                   <p>优先处理页：{primaryAlertSummary.targetPage}</p>
                   <div className="flex flex-wrap gap-3">
                     <Button asChild variant="outline" size="sm">
@@ -565,14 +569,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <CardContent className="grid gap-3">
                   <GuidanceBlock
                     label="当前先做什么"
-                    value={latestAlert ? formatAlertAction(readText(latestAlert.level, "info")) : "先看最近一轮自动化判断"}
-                    detail={latestAlert ? readText(latestAlert.message, "当前没有额外告警原因") : "当前没有活跃告警，先看最近一轮执行和复盘。"}
-                    tone={latestAlert ? resolveAlertTone(readText(latestAlert.level, "info")) : "default"}
+                    value={primaryAlertSummary.value}
+                    detail={readText(alertStory.what_to_do, latestAlert ? readText(latestAlert.message, "当前没有额外告警原因") : "当前没有活跃告警，先看最近一轮执行和复盘。")}
+                    tone={readText(alertStory.tone, latestAlert ? resolveAlertTone(readText(latestAlert.level, "info")) : "default")}
                   />
                   <GuidanceBlock
                     label="恢复前还差什么"
                     value={resumeBlockedItems.length ? resumeBlockedItems.join(" / ") : "当前恢复清单已经全部通过"}
-                    detail={latestAlert ? `头号告警：${readText(latestAlert.message, "当前没有额外说明")}` : "当前没有新的头号告警。"}
+                    detail={readText(alertStory.what_happened, latestAlert ? `头号告警：${readText(latestAlert.message, "当前没有额外说明")}` : "当前没有新的头号告警。")}
                     tone={resumeBlockedItems.length ? "warning" : "supportive"}
                   />
                 </CardContent>
@@ -587,9 +591,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <CardContent className="grid gap-3 md:grid-cols-3">
                   <GuidanceBlock
                     label="现在先处理什么"
-                    value={primaryAlertSummary.actionLabel}
+                    value={primaryAlertSummary.value}
                     detail={primaryAlertSummary.detail}
-                    tone="warning"
+                    tone={readText(alertStory.tone, "warning")}
                   />
                   <GuidanceBlock
                     label="调度什么时候继续"
@@ -1421,16 +1425,28 @@ function buildRecoverySummary({
 }
 
 function buildAlertSummaryCard({
+  alertStory,
   alertSummary,
   latestAlert,
   cycleCount,
   latestSyncStatus,
 }: {
+  alertStory: Record<string, unknown>;
   alertSummary: Record<string, unknown>;
   latestAlert: { level: string; code: string; message: string; createdAt: string } | undefined;
   cycleCount: number;
   latestSyncStatus: string;
 }) {
+  const storyHeadline = readText(alertStory.headline, "");
+  const storyDetail = readText(alertStory.what_happened, "");
+  const storyTone = readText(alertStory.tone, "");
+  if (storyHeadline) {
+    return {
+      tone: storyTone || "warning",
+      value: storyHeadline,
+      detail: storyDetail || "当前没有额外告警说明。",
+    };
+  }
   const latestCode = readText(alertSummary.latest_code, latestAlert?.code || "");
   const latestLevel = readText(alertSummary.latest_level, latestAlert?.level || "");
   const latestMessage = readText(alertSummary.latest_message, latestAlert?.message || "");
@@ -1447,16 +1463,32 @@ function buildAlertSummaryCard({
 }
 
 function buildPrimaryAlertSummary({
+  alertStory,
   alertSummary,
   latestAlert,
   restoreConclusion,
   runtimeWindowSummary,
 }: {
+  alertStory: Record<string, unknown>;
   alertSummary: Record<string, unknown>;
   latestAlert: { level: string; code: string; message: string; createdAt: string } | undefined;
   restoreConclusion: { actionLabel: string; summary: string; detail: string };
   runtimeWindowSummary: { nextAction: string; blockedReason: string };
 }) {
+  const storyHeadline = readText(alertStory.headline, "");
+  const storyHappened = readText(alertStory.what_happened, "");
+  const storyAction = readText(alertStory.what_to_do, "");
+  const storyTargetPage = readText(alertStory.target_page, "");
+  const storyTargetHref = readText(alertStory.target_href, storyTargetPage);
+  if (storyHeadline) {
+    return {
+      value: storyHeadline,
+      detail: storyHappened || "当前没有额外告警说明。",
+      actionLabel: storyAction || restoreConclusion.actionLabel,
+      targetPage: storyTargetPage || "任务页",
+      targetHref: storyTargetHref || "/tasks",
+    };
+  }
   const latestCode = readText(alertSummary.latest_code, latestAlert?.code || "");
   const latestLevel = readText(alertSummary.latest_level, latestAlert?.level || "");
   const latestSource = readText(alertSummary.latest_source, "tasks");

@@ -94,6 +94,8 @@ class TasksWorkspaceTests(unittest.TestCase):
         self.assertIn("重复次数", content)
         self.assertIn("告警处理建议", content)
         self.assertIn("头号告警怎么先处理", content)
+        self.assertIn("最近发生了什么", content)
+        self.assertIn("你现在该做什么", content)
         self.assertIn("当前先做什么", content)
         self.assertIn("恢复前还差什么", content)
         self.assertIn("现在先处理什么", content)

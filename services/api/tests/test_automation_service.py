@@ -397,6 +397,10 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["active_blockers"][0]["code"], "paused")
         self.assertIn("恢复自动化", [item["label"] for item in health["operator_actions"]])
         self.assertIn("查看执行器", [item["label"] for item in health["operator_actions"]])
+        self.assertIn("执行器离线", health["alert_story"]["headline"])
+        self.assertIn("最近发生了什么", health["alert_story"]["what_happened"])
+        self.assertIn("你现在该做什么", health["alert_story"]["what_to_do"])
+        self.assertEqual(health["alert_story"]["target_page"], "/strategies")
 
     def test_alert_summary_exposes_lifecycle_groups(self) -> None:
         service = AutomationService()
@@ -424,6 +428,16 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["severity_summary"]["level"], "critical")
         self.assertEqual(health["resume_checklist"][0]["label"], "告警强度")
         self.assertEqual(health["resume_checklist"][0]["status"], "pending")
+
+    def test_alert_story_falls_back_to_safe_waiting_message_when_no_alert_exists(self) -> None:
+        service = AutomationService()
+
+        health = service.build_health_summary(task_health={})
+
+        self.assertIn("当前没有需要立即处理的告警", health["alert_story"]["headline"])
+        self.assertIn("最近没有新的错误或警告", health["alert_story"]["what_happened"])
+        self.assertIn("继续观察下一轮", health["alert_story"]["what_to_do"])
+        self.assertEqual(health["alert_story"]["target_page"], "/tasks")
 
     def test_health_summary_tracks_failure_streak_and_escalation_level(self) -> None:
         service = AutomationService()

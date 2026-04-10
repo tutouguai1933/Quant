@@ -421,6 +421,13 @@ class AutomationService:
             last_alert=last_alert,
             run_health=run_health,
         )
+        alert_story = self._build_alert_story(
+            alert_summary=alert_summary,
+            active_blockers=active_blockers,
+            operator_actions=operator_actions,
+            last_alert=last_alert,
+            run_health=run_health,
+        )
         severity_summary = self._build_severity_summary(
             active_blockers=active_blockers,
             last_alert=last_alert,
@@ -455,6 +462,7 @@ class AutomationService:
             "active_blockers": active_blockers,
             "operator_actions": operator_actions,
             "alert_summary": alert_summary,
+            "alert_story": alert_story,
             "run_health": run_health,
             "focus_cards": focus_cards,
             "severity_summary": severity_summary,
@@ -700,6 +708,68 @@ class AutomationService:
             ),
         }
 
+    def _build_alert_story(
+        self,
+        *,
+        alert_summary: dict[str, object],
+        active_blockers: list[dict[str, str]],
+        operator_actions: list[dict[str, str]],
+        last_alert: dict[str, object] | None,
+        run_health: dict[str, object],
+    ) -> dict[str, str]:
+        """把告警压成“发生了什么 / 该做什么”的统一摘要。"""
+
+        latest_code = str(alert_summary.get("latest_code", "") or "")
+        latest_level = str(alert_summary.get("latest_level", "") or "").lower()
+        latest_message = str(alert_summary.get("latest_message", "") or "")
+        latest_source = str(alert_summary.get("latest_source", "") or "tasks")
+        escalation_level = str(run_health.get("escalation_level", "normal") or "normal")
+        primary_blocker = active_blockers[0] if active_blockers else {}
+        primary_action = operator_actions[0] if operator_actions else {}
+        target_page = self._resolve_alert_target_page(
+            code=latest_code,
+            level=latest_level,
+            source=latest_source,
+        )
+        target_href = target_page
+
+        if not latest_code and not latest_message:
+            return {
+                "tone": "ok",
+                "headline": "当前没有需要立即处理的告警",
+                "what_happened": "最近没有新的错误或警告，自动化可以继续观察下一轮。",
+                "what_to_do": "你现在该做什么：继续观察下一轮自动化结果，按恢复清单定期复核即可。",
+                "action_label": str(primary_action.get("label", "") or "继续观察"),
+                "target_page": target_page,
+                "target_href": target_href,
+            }
+
+        alert_label = self._describe_alert_label(code=latest_code, message=latest_message)
+        blocker_detail = str(primary_blocker.get("detail", "") or "")
+        action_detail = str(primary_action.get("detail", "") or "")
+        if latest_level == "error" or escalation_level == "critical":
+            headline = f"{alert_label}，先不要继续自动化"
+        elif latest_level == "warning":
+            headline = f"{alert_label}，这轮先别急着放开自动化"
+        else:
+            headline = f"{alert_label}，先确认后再继续观察"
+
+        what_happened = f"最近发生了什么：{latest_message or blocker_detail or '系统刚刚捕获到一条需要关注的告警。'}"
+        what_to_do = (
+            f"你现在该做什么：{action_detail}"
+            if action_detail
+            else "你现在该做什么：先看任务页和执行页，再决定是否恢复自动化。"
+        )
+        return {
+            "tone": "critical" if latest_level == "error" or escalation_level == "critical" else "warning" if latest_level == "warning" else "info",
+            "headline": headline,
+            "what_happened": what_happened,
+            "what_to_do": what_to_do,
+            "action_label": str(primary_action.get("label", "") or "去处理"),
+            "target_page": target_page,
+            "target_href": target_href,
+        }
+
     @staticmethod
     def _build_alert_focus_card(
         *,
@@ -878,6 +948,43 @@ class AutomationService:
             "latest_alert_code": str(last_alert.get("code", "")) if last_alert else "",
             "primary_blocker": str(primary_blocker.get("label", "")),
         }
+
+    @staticmethod
+    def _describe_alert_label(*, code: str, message: str) -> str:
+        """把告警码翻译成更直白的标题。"""
+
+        normalized = str(code or "").strip().lower()
+        mapping = {
+            "executor_offline": "执行器离线",
+            "sync_failed": "同步失败",
+            "sync_delayed": "同步延迟",
+            "stale_data": "数据已经陈旧",
+            "train_failed": "自动训练失败",
+            "infer_failed": "自动推理失败",
+            "dispatch_execution_failed": "执行派发失败",
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+        return str(message or code or "当前有新的告警").strip()
+
+    @staticmethod
+    def _resolve_alert_target_page(*, code: str, level: str, source: str) -> str:
+        """按告警类型给出最合适的处理页面。"""
+
+        normalized_code = str(code or "").strip().lower()
+        normalized_source = str(source or "").strip().lower()
+        normalized_level = str(level or "").strip().lower()
+        if any(key in normalized_code for key in ("train", "infer", "research")):
+            return "/research"
+        if any(key in normalized_code for key in ("backtest", "gate", "evaluation")):
+            return "/evaluation"
+        if any(key in normalized_code for key in ("executor", "execution", "dispatch", "order", "position")):
+            return "/strategies"
+        if "sync" in normalized_code or normalized_source == "sync":
+            return "/tasks"
+        if normalized_level == "warning":
+            return "/evaluation"
+        return "/tasks"
 
     def _build_resume_checklist(
         self,

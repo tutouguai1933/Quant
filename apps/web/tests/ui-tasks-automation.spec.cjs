@@ -31,6 +31,8 @@ test("tasks page shows latest automation decision after login", async ({ page })
   await expect(page.getByText("风险等级摘要", { exact: true })).toBeVisible();
   await expect(page.getByText("恢复清单", { exact: true })).toBeVisible();
   await expect(page.getByText("头号告警", { exact: true })).toBeVisible();
+  await expect(page.locator("body")).toContainText("最近发生了什么", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("你现在该做什么", { timeout: 60000 });
   await expect(page.getByText("最早恢复时间", { exact: true })).toBeVisible();
   await expect(page.getByText("接管复核截止", { exact: true })).toBeVisible();
   await expect(page.getByText("自动化运行参数", { exact: true })).toBeVisible();
