@@ -4,13 +4,14 @@ import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
+import { EvaluationDecisionCenter } from "../../components/evaluation-decision-center";
 import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { getEvaluationWorkspace } from "../../lib/api";
+import { getAutomationStatus, getAutomationStatusFallback, getEvaluationWorkspace } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
 import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 
@@ -21,8 +22,15 @@ type PageProps = {
 export default async function EvaluationPage({ searchParams }: PageProps) {
   const params = (await searchParams) ?? {};
   const session = await getControlSessionState();
-  const response = await getEvaluationWorkspace();
+  const [response, automationResponse] = await Promise.all([
+    getEvaluationWorkspace(),
+    session.token ? getAutomationStatus(session.token) : Promise.resolve(null),
+  ]);
   const workspace = response.data.item;
+  const automation =
+    automationResponse && !automationResponse.error
+      ? automationResponse.data.item
+      : getAutomationStatusFallback().item;
   const evaluation = asRecord(workspace.evaluation);
   const candidateScope = asRecord(workspace.candidate_scope);
   const candidateSymbols = toStringArray(candidateScope.candidate_symbols);
@@ -55,9 +63,6 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const bestExperiment = asRecord(workspace.best_experiment);
   const bestStageCandidates = asRecord(workspace.best_stage_candidates);
   const decisionBoard = asRecord(workspace.decision_board);
-  const decisionCards = Array.isArray(decisionBoard.cards)
-    ? decisionBoard.cards.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
   const bestDryRunCandidate = asRecord(bestStageCandidates.dry_run);
   const bestLiveCandidate = asRecord(bestStageCandidates.live);
   const recommendationExplanation = asRecord(workspace.recommendation_explanation);
@@ -184,6 +189,14 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
         note={configAlignmentCallout}
         staleFields={evaluationStaleFields}
         editable={workspace.status !== "unavailable"}
+      />
+
+      <EvaluationDecisionCenter
+        arbitration={asRecord(automation.arbitration)}
+        decisionBoard={decisionBoard}
+        stageDecisionSummary={asRecord(workspace.stage_decision_summary)}
+        bestExperiment={bestExperiment}
+        recommendationExplanation={recommendationExplanation}
       />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
@@ -569,33 +582,8 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
 
           <Card className="bg-card/90">
             <CardHeader>
-              <p className="eyebrow">决策入口</p>
-              <CardTitle>{String(decisionBoard.headline ?? "当前还没有推进决策")}</CardTitle>
-              <CardDescription>{String(decisionBoard.summary ?? "先完成研究、回测和评估，系统才会告诉你现在该推进哪一层。")}</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="现在先推进哪一层" value={formatDecisionStage(String(decisionBoard.primary_stage ?? "research"))} />
-              <InfoBlock label="当前下一步" value={formatDecisionAction(String(decisionBoard.next_action ?? "continue_research"))} />
-              {decisionCards.length ? decisionCards.map((item, index) => (
-                <InfoBlock
-                  key={`${String(item.stage ?? index)}-${index}`}
-                  label={`${formatDecisionStage(String(item.stage ?? "research"))} 决策`}
-                  value={[
-                    String(item.decision ?? "当前还没有决策"),
-                    `候选：${String(item.symbol ?? "n/a")}`,
-                    `当前状态：${formatDecisionReadiness(String(item.readiness ?? "waiting"))}`,
-                    `主要卡点：${String(item.blocking ?? item.reason ?? "当前还没有说明")}`,
-                    `下一步：${formatDecisionAction(String(item.next_step ?? "continue_research"))}`,
-                  ].join("；")}
-                />
-              )) : <InfoBlock label="决策状态" value="当前还没有可展示的推进决策。" />}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
               <CardTitle>当前最佳实验</CardTitle>
-              <CardDescription>这里直接说明哪一轮更值得进入 dry-run，哪一轮更值得进入 live。</CardDescription>
+              <CardDescription>这里是研究侧的最佳实验记录，用来解释当前结论为什么成立，但它不是当前动作本身。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
               <InfoBlock label="最佳标的" value={String(bestExperiment.symbol ?? "未推荐")} />
@@ -652,8 +640,8 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
         <div className="space-y-5">
           <Card className="bg-card/90">
             <CardHeader>
-              <CardTitle>为什么现在更适合</CardTitle>
-              <CardDescription>把推荐阶段、推荐理由和研究与执行差异压成一组最短判断，不用再自己拼多张卡片。</CardDescription>
+              <CardTitle>研究侧当前摘要</CardTitle>
+              <CardDescription>这一组只解释研究侧现在怎么想，真正当前动作以上面的仲裁结论为准。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
               <InfoBlock label="当前推荐候选" value={readText(workspace.overview.recommended_symbol, "当前还没有推荐候选")} />
@@ -683,8 +671,8 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
 
           <Card className="bg-card/90">
             <CardHeader>
-              <CardTitle>还差什么才能进入下一阶段</CardTitle>
-              <CardDescription>先看当前最主要的淘汰原因，再决定该改门槛、重跑研究，还是先停在 dry-run。</CardDescription>
+              <CardTitle>研究侧主要阻塞</CardTitle>
+              <CardDescription>这一组只解释研究门控为什么拦住候选，不直接代替当前仲裁动作。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
               <InfoBlock label="当前主要阻塞" value={readText(workspace.stage_decision_summary?.why_blocked, "当前没有明显阻塞")} />
@@ -1170,40 +1158,6 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value}</p>
     </div>
   );
-}
-
-function formatDecisionStage(stage: string): string {
-  if (stage === "live") {
-    return "进入 live";
-  }
-  if (stage === "dry_run") {
-    return "进入 dry-run";
-  }
-  return "继续研究";
-}
-
-function formatDecisionAction(action: string): string {
-  const normalized = action.trim();
-  const labels: Record<string, string> = {
-    continue_research: "继续研究",
-    run_training: "运行研究训练",
-    run_inference: "运行研究推理",
-    go_dry_run: "推进到 dry-run",
-    enter_dry_run: "推进到 dry-run",
-    continue_dry_run: "继续 dry-run 观察",
-    review_dry_run: "先看 dry-run 复盘",
-    go_live: "推进到 live",
-    enter_live: "推进到 live",
-    wait_live: "继续等待 live",
-  };
-  return labels[normalized] ?? (normalized || "继续研究");
-}
-
-function formatDecisionReadiness(readiness: string): string {
-  if (readiness === "ready") {
-    return "可以推进";
-  }
-  return "暂时等待";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

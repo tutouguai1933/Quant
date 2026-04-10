@@ -200,6 +200,7 @@ export type AutomationStatusModel = {
   operations: Record<string, unknown>;
   automationConfig: Record<string, unknown>;
   executionPolicy: Record<string, unknown>;
+  arbitration: Record<string, unknown>;
   severitySummary: Record<string, unknown>;
   resumeChecklist: Array<Record<string, unknown>>;
 };
@@ -1323,6 +1324,7 @@ export async function getAutomationStatus(
         operations: isPlainObject(item.operations) ? item.operations : {},
         automationConfig: isPlainObject(item.automation_config) ? item.automation_config : {},
         executionPolicy: isPlainObject(item.execution_policy) ? item.execution_policy : {},
+        arbitration: isPlainObject(item.arbitration) ? item.arbitration : {},
         severitySummary: isPlainObject(item.severity_summary) ? item.severity_summary : {},
         resumeChecklist: Array.isArray(item.resume_checklist) ? item.resume_checklist.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
       },
@@ -3458,6 +3460,35 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
         live_summary: "当前未配置",
         live_max_stake_usdt: "6",
         live_max_open_trades: "1",
+      },
+      arbitration: {
+        status: "continue_research",
+        headline: "当前还需要继续研究",
+        detail: "自动化状态暂时不可用，这一块先按安全口径回到研究工作台。",
+        symbol: "",
+        recommended_stage: "research",
+        research_action: "continue_research",
+        reason_items: ["当前还没有可用自动化仲裁结果。"],
+        blocking_items: [
+          {
+            code: "arbitration_unavailable",
+            label: "仲裁结果暂时不可用",
+            detail: "先恢复自动化状态接口，再判断现在该推进哪一层。",
+            source: "automation",
+            blocking: true,
+          },
+        ],
+        suggested_action: {
+          action: "continue_research",
+          label: "去研究页继续训练和推理",
+          target_page: "/research",
+        },
+        inputs: {
+          mode: "manual",
+          runtime_blocked_reason: "manual_mode",
+          latest_sync_status: "unknown",
+          execution_state: "manual",
+        },
       },
       operations: {
         operations_preset_key: "balanced_guard",

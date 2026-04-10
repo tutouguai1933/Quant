@@ -61,7 +61,7 @@
     - 后端单测覆盖研究通过但执行未对齐、执行已对齐但研究过期、人工接管阻断、冷却窗口阻断
     - 契约测试覆盖仲裁结果字段和回退字段
 
-- [ ] B2. 把评估页升级成真正的仲裁决策中心
+- [x] B2. 把评估页升级成真正的仲裁决策中心
   - 目标：评估页直接回答“现在先推进哪一层、为什么、还差什么、下一步去哪”
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：`apps/web/app/evaluation/page.tsx`
