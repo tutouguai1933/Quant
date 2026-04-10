@@ -31,6 +31,7 @@ class ResearchWorkspaceService:
         configured_features = dict((controls.get("config") or {}).get("features") or {})
         configured_research = dict((controls.get("config") or {}).get("research") or {})
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
+        candidate_scope = workbench_config_service.build_candidate_scope_contract(dict(controls.get("config") or {}))
         option_catalogs = dict(controls.get("options") or {})
         min_days = int(configured_research.get("min_holding_days", 1) or 1)
         max_days = int(configured_research.get("max_holding_days", 3) or 3)
@@ -43,6 +44,8 @@ class ResearchWorkspaceService:
         research_template = str(configured_research.get("research_template", "single_asset_timing") or "single_asset_timing")
         model_key = str(configured_research.get("model_key", "heuristic_v1") or "heuristic_v1")
         holding_window_label = str(configured_research.get("holding_window_label", "1-3d") or "1-3d")
+        training_template_key = self._extract_training_template_key(latest_training)
+        inference_template_key = self._extract_inference_template_key(latest_inference)
         strategy_templates = sorted(
             {
                 str(item.get("strategy_template", "")).strip()
@@ -96,6 +99,12 @@ class ResearchWorkspaceService:
                 ),
                 "backend": str(report.get("backend", "qlib-fallback") or "qlib-fallback"),
             },
+            "artifact_templates": self._build_artifact_templates(
+                option_catalogs=option_catalogs,
+                training_template_key=training_template_key,
+                inference_template_key=inference_template_key,
+                current_template_key=research_template,
+            ),
             "controls": {
                 "research_preset_key": research_preset_key,
                 "label_preset_key": label_preset_key,
@@ -144,6 +153,7 @@ class ResearchWorkspaceService:
                 "symbols": [str(item) for item in list(training_context.get("symbols") or [])],
                 "timeframes": [str(item) for item in list(training_context.get("timeframes") or [])],
             },
+            "candidate_scope": candidate_scope,
             "readiness": self._build_readiness(
                 configured_data=configured_data,
                 latest_training=latest_training,
@@ -391,6 +401,111 @@ class ResearchWorkspaceService:
             "label_trigger_basis": label_trigger,
             "holding_window": holding_window,
         }
+
+    @staticmethod
+    def _extract_training_template_key(latest_training: dict[str, object]) -> str:
+        """从最近训练产物里提取研究模板。"""
+
+        training_context = dict(latest_training.get("training_context") or {})
+        parameters = dict(training_context.get("parameters") or {})
+        return str(
+            latest_training.get("research_template")
+            or parameters.get("research_template")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _extract_inference_template_key(latest_inference: dict[str, object]) -> str:
+        """从最近推理产物里提取研究模板。"""
+
+        inference_context = dict(latest_inference.get("inference_context") or {})
+        input_summary = dict(inference_context.get("input_summary") or {})
+        return str(
+            latest_inference.get("research_template")
+            or input_summary.get("research_template")
+            or ""
+        ).strip()
+
+    def _build_artifact_templates(
+        self,
+        *,
+        option_catalogs: dict[str, object],
+        training_template_key: str,
+        inference_template_key: str,
+        current_template_key: str,
+    ) -> dict[str, object]:
+        """把最近训练、推理和当前配置模板压成一份对齐摘要。"""
+
+        catalog = [
+            dict(item)
+            for item in list(option_catalogs.get("research_template_catalog") or [])
+            if isinstance(item, dict)
+        ]
+        training_item = self._resolve_template_item(catalog=catalog, key=training_template_key)
+        inference_item = self._resolve_template_item(catalog=catalog, key=inference_template_key)
+        current_item = self._resolve_template_item(catalog=catalog, key=current_template_key)
+
+        if not training_template_key and not inference_template_key:
+            return {
+                "training": training_item,
+                "inference": inference_item,
+                "current": current_item,
+                "alignment_status": "missing",
+                "note": "最近训练和推理产物都还没生成，先运行研究训练，再继续研究推理。",
+            }
+        if not training_template_key or not inference_template_key:
+            return {
+                "training": training_item,
+                "inference": inference_item,
+                "current": current_item,
+                "alignment_status": "missing",
+                "note": "最近训练和推理产物还没凑齐，建议补跑完整研究流水线后再判断当前模板。",
+            }
+        if training_template_key == inference_template_key == current_template_key:
+            return {
+                "training": training_item,
+                "inference": inference_item,
+                "current": current_item,
+                "alignment_status": "aligned",
+                "note": f"最近训练和推理都使用 {training_item['label']}，和当前配置一致。",
+            }
+        if training_template_key == inference_template_key:
+            return {
+                "training": training_item,
+                "inference": inference_item,
+                "current": current_item,
+                "alignment_status": "drifted",
+                "note": f"最近训练和推理都还停在 {training_item['label']}，但当前配置已经切到 {current_item['label']}，建议重新跑训练和推理对齐。",
+            }
+        return {
+            "training": training_item,
+            "inference": inference_item,
+            "current": current_item,
+            "alignment_status": "drifted",
+            "note": f"最近训练是 {training_item['label']}，最近推理是 {inference_item['label']}，两轮产物已经不一致，建议重跑完整流水线。",
+        }
+
+    def _resolve_template_item(
+        self,
+        *,
+        catalog: list[dict[str, object]],
+        key: str,
+    ) -> dict[str, str]:
+        """把模板 key 转成可直接展示的人话说明。"""
+
+        normalized_key = str(key or "").strip()
+        if not normalized_key:
+            return {
+                "key": "",
+                "label": "未生成",
+                "fit": "当前还没有这类研究产物",
+                "detail": "先运行研究训练和推理，系统才会记录实际使用的模板。",
+            }
+        return self._resolve_catalog_item(
+            catalog,
+            key=normalized_key,
+            fallback_label=normalized_key,
+        )
 
 
 research_workspace_service = ResearchWorkspaceService()

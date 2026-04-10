@@ -20,7 +20,7 @@
 
 ## A. 多模板研究与统一候选池
 
-- [ ] A1. 固定统一候选池与 `live` 子集契约
+- [x] A1. 固定统一候选池与 `live` 子集契约
   - 目标：研究、评估、策略、自动化四处都读同一份候选池和 `live` 子集，不再各自解释
   - 重点后端：`services/api/app/services/workbench_config_service.py`、`services/api/app/services/evaluation_workspace_service.py`、`services/api/app/services/automation_service.py`
   - 重点前端：`apps/web/app/research/page.tsx`、`apps/web/app/evaluation/page.tsx`、`apps/web/app/strategies/page.tsx`
@@ -30,7 +30,7 @@
     - Playwright 覆盖研究页、评估页、策略页的候选池展示一致
     - 真实页面检查候选池说明和 `live` 子集说明是否同步变化
 
-- [ ] A2. 把研究模板扩成真正可切换的多模板
+- [x] A2. 把研究模板扩成真正可切换的多模板
   - 目标：研究页不再只是单一模板，而是能稳定切换 2-3 套研究模板，并记录到训练 / 推理产物
   - 重点后端：`services/api/app/services/research_service.py`、`services/api/app/routes/signals.py`
   - 重点前端：`apps/web/app/research/page.tsx`

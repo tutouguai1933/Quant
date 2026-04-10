@@ -118,6 +118,11 @@ export default async function ResearchPage() {
   ];
   const selectedLabelPresetKey = String(controls.label_preset_key ?? "balanced_window");
   const selectionStory = asRecord(workspace.selection_story);
+  const candidateScope = workspace.candidate_scope;
+  const candidateScopeHeadline = displayValue(candidateScope.headline, "当前还没有候选范围说明");
+  const candidateScopeDetail = displayValue(candidateScope.detail, "当前还没有候选池和 live 子集的统一说明");
+  const candidateScopeNextStep = displayValue(candidateScope.next_step, "先确认候选池，再决定 live 子集");
+  const artifactTemplates = workspace.artifact_templates;
   const selectedResearchPreset = asRecord(selectionStory.research_preset);
   const selectedResearchTemplate = asRecord(selectionStory.research_template);
   const selectedModelStory = asRecord(selectionStory.model);
@@ -223,6 +228,35 @@ export default async function ResearchPage() {
                 value={`${displayValue(selectedHoldingWindow.label, String(controls.holding_window_label ?? "1-3d"))} / ${displayValue(selectedHoldingWindow.fit, "当前没有适用场景说明")}`}
               />
               <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>模板产物对齐</CardTitle>
+              <CardDescription>直接对照当前配置模板、最近训练模板和最近推理模板，避免切了模板却还在看旧结果。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前配置模板" value={`${displayValue(artifactTemplates.current.label, "未选择")} / ${displayValue(artifactTemplates.current.fit, "当前没有模板说明")}`} />
+              <InfoBlock label="最近训练模板" value={`${displayValue(artifactTemplates.training.label, "未生成")} / ${displayValue(artifactTemplates.training.fit, "当前还没有训练产物")}`} />
+              <InfoBlock label="最近推理模板" value={`${displayValue(artifactTemplates.inference.label, "未生成")} / ${displayValue(artifactTemplates.inference.fit, "当前还没有推理产物")}`} />
+              <InfoBlock label="模板对齐状态" value={displayValue(artifactTemplates.alignment_status, "missing")} />
+              <InfoBlock label="模板对齐说明" value={displayValue(artifactTemplates.note, "当前还没有模板对齐说明")} />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>候选范围契约</CardTitle>
+              <CardDescription>研究、评估、策略和自动化现在共用同一份候选池与 live 子集说明，不再各自解释。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="统一说明" value={candidateScopeHeadline} />
+              <InfoBlock label="为什么这样分层" value={candidateScopeDetail} />
+              <InfoBlock label="研究 / dry-run 候选池" value={candidateScope.candidate_symbols.length ? candidateScope.candidate_symbols.join(" / ") : "当前未配置"} />
+              <InfoBlock label="候选池预设" value={displayValue(candidateScope.candidate_pool_preset_detail, "当前没有候选池预设说明")} />
+              <InfoBlock label="live 子集" value={candidateScope.live_allowed_symbols.length ? candidateScope.live_allowed_symbols.join(" / ") : "当前未配置"} />
+              <InfoBlock label="下一步" value={candidateScopeNextStep} />
             </CardContent>
           </Card>
 
@@ -381,6 +415,7 @@ export default async function ResearchPage() {
               <InfoBlock label="数据快照" value={workspace.execution_preview.data_scope || "当前没有数据范围摘要"} />
               <InfoBlock label="特征快照" value={workspace.execution_preview.factor_mix || "当前没有因子组合摘要"} />
               <InfoBlock label="研究快照" value={workspace.execution_preview.label_scope || "当前没有研究范围摘要"} />
+              <InfoBlock label="候选范围快照" value={candidateScopeHeadline} />
               <InfoBlock
                 label="门槛快照"
                 value={`${workspace.execution_preview.dry_run_gate || "当前没有 dry-run 门槛摘要"} / ${workspace.execution_preview.live_gate || "当前没有 live 门槛摘要"}`}

@@ -25,13 +25,33 @@ class _FakeResearchService:
         return {"run_id": "infer-demo", "status": "completed"}
 
     def get_latest_result(self) -> dict[str, object]:
-        return {"latest_training": {"model_version": "model-demo"} if self.has_training else {}}
+        if not self.has_training:
+            return {"latest_training": {}}
+        return {
+            "latest_training": {
+                "model_version": "model-demo",
+                "training_context": {
+                    "parameters": {
+                        "research_template": "single_asset_timing_strict",
+                    }
+                },
+            },
+            "latest_inference": {
+                "inference_context": {
+                    "input_summary": {
+                        "research_template": "single_asset_timing_strict",
+                    }
+                }
+            },
+        }
 
     def get_research_recommendation(self) -> dict[str, object]:
         return {
             "symbol": "ETHUSDT",
             "next_action": "enter_dry_run",
+            "research_template": "single_asset_timing_strict",
             "strategy_id": 1,
+            "strategy_template": "trend_pullback_timing",
         }
 
 
@@ -173,6 +193,8 @@ class ResearchRuntimeServiceTests(unittest.TestCase):
         self.assertEqual(recorded_cycle["source"], "manual_pipeline")
         self.assertEqual(recorded_cycle["recommended_symbol"], "ETHUSDT")
         self.assertEqual(recorded_cycle["next_action"], "enter_dry_run")
+        self.assertEqual(recorded_cycle["research_template"], "single_asset_timing_strict")
+        self.assertEqual(recorded_cycle["strategy_template"], "trend_pullback_timing")
 
     def test_start_pipeline_records_manual_cycle_as_running_before_background_job_finishes(self) -> None:
         deferred_jobs: list[object] = []
@@ -187,6 +209,8 @@ class ResearchRuntimeServiceTests(unittest.TestCase):
         self.assertEqual(recorded_cycle["status"], "running")
         self.assertEqual(recorded_cycle["next_action"], "wait_pipeline_completion")
         self.assertEqual(recorded_cycle["recommended_symbol"], "ETHUSDT")
+        self.assertEqual(recorded_cycle["research_template"], "single_asset_timing_strict")
+        self.assertEqual(recorded_cycle["strategy_template"], "trend_pullback_timing")
         self.assertEqual(len(deferred_jobs), 1)
         self.assertEqual(accepted["action"], "pipeline")
 

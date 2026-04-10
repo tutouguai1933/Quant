@@ -56,6 +56,13 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["selection_story"]["model"]["key"], "heuristic_v1")
         self.assertEqual(item["selection_story"]["label_preset"]["key"], "balanced_window")
         self.assertEqual(item["selection_story"]["holding_window"]["key"], "1-3d")
+        self.assertEqual(item["artifact_templates"]["training"]["key"], "single_asset_timing")
+        self.assertEqual(item["artifact_templates"]["inference"]["key"], "single_asset_timing")
+        self.assertEqual(item["artifact_templates"]["alignment_status"], "aligned")
+        self.assertEqual(item["candidate_scope"]["status"], "ready")
+        self.assertEqual(item["candidate_scope"]["candidate_symbols"], ["BTCUSDT", "ETHUSDT"])
+        self.assertEqual(item["candidate_scope"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT"])
+        self.assertIn("范围契约", item["candidate_scope"]["detail"])
 
     def test_workspace_describes_window_majority_label_definition(self) -> None:
         service = ResearchWorkspaceService(
@@ -79,10 +86,26 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["status"], "unavailable")
         self.assertEqual(item["strategy_templates"], [])
         self.assertEqual(item["parameters"], {})
+        self.assertEqual(item["artifact_templates"]["alignment_status"], "missing")
         self.assertTrue(item["readiness"]["train_ready"])
         self.assertFalse(item["readiness"]["infer_ready"])
         self.assertEqual(item["readiness"]["blocking_reasons"], [])
         self.assertIn("先运行研究训练", item["readiness"]["next_step"])
+        self.assertEqual(item["candidate_scope"]["status"], "ready")
+
+    def test_workspace_marks_template_drift_between_current_choice_and_latest_runs(self) -> None:
+        service = ResearchWorkspaceService(
+            report_reader=_DriftedArtifactResearchService(),
+            controls_builder=_fake_controls,
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["artifact_templates"]["training"]["key"], "single_asset_timing_strict")
+        self.assertEqual(item["artifact_templates"]["inference"]["key"], "single_asset_timing_strict")
+        self.assertEqual(item["artifact_templates"]["current"]["key"], "single_asset_timing")
+        self.assertEqual(item["artifact_templates"]["alignment_status"], "drifted")
+        self.assertIn("最近训练和推理", item["artifact_templates"]["note"])
 
 
 class _FakeResearchService:
@@ -112,6 +135,7 @@ class _FakeResearchService:
                         "backtest": {"count": 30},
                     },
                     "parameters": {
+                        "research_template": "single_asset_timing",
                         "backtest_fee_bps": "10",
                         "backtest_slippage_bps": "5",
                     },
@@ -119,6 +143,11 @@ class _FakeResearchService:
             },
             "latest_inference": {
                 "model_version": "qlib-minimal-1",
+                "inference_context": {
+                    "input_summary": {
+                        "research_template": "single_asset_timing",
+                    }
+                },
             },
             "candidates": [
                 {"symbol": "ETHUSDT", "strategy_template": "trend_breakout_timing"},
@@ -136,10 +165,15 @@ def _fake_controls() -> dict[str, object]:
     return {
         "config": {
             "data": {
+                "candidate_pool_preset_key": "majors_focus",
                 "selected_symbols": ["BTCUSDT", "ETHUSDT"],
                 "timeframes": ["4h"],
                 "lookback_days": 30,
                 "sample_limit": 120,
+            },
+            "execution": {
+                "live_subset_preset_key": "strict_pairs",
+                "live_allowed_symbols": ["BTCUSDT", "ETHUSDT"],
             },
             "features": {
                 "primary_factors": ["ema20_gap_pct", "ema55_gap_pct"],
@@ -178,7 +212,10 @@ def _fake_controls() -> dict[str, object]:
             "models": ["heuristic_v1", "trend_bias_v2"],
             "model_catalog": [{"key": "heuristic_v1", "label": "基础启发式", "fit": "最小闭环", "detail": "先跑通"}],
             "research_templates": ["single_asset_timing", "single_asset_timing_strict"],
-            "research_template_catalog": [{"key": "single_asset_timing", "label": "单币择时", "fit": "默认主链", "detail": "先跑主研究链"}],
+            "research_template_catalog": [
+                {"key": "single_asset_timing", "label": "单币择时", "fit": "默认主链", "detail": "先跑主研究链"},
+                {"key": "single_asset_timing_strict", "label": "单币择时严格版", "fit": "收紧放行", "detail": "更强调一致性"},
+            ],
             "label_modes": ["earliest_hit", "close_only"],
             "label_mode_catalog": [{"key": "earliest_hit", "label": "最早命中", "fit": "更接近真实退出", "detail": "先命中先记账"}],
             "label_trigger_bases": ["close", "high_low"],
@@ -249,6 +286,27 @@ def _fake_controls_window_majority() -> dict[str, object]:
         },
         "options": options,
     }
+
+
+class _DriftedArtifactResearchService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        latest_training = dict(payload.get("latest_training") or {})
+        training_context = dict(latest_training.get("training_context") or {})
+        parameters = dict(training_context.get("parameters") or {})
+        parameters["research_template"] = "single_asset_timing_strict"
+        training_context["parameters"] = parameters
+        latest_training["training_context"] = training_context
+        payload["latest_training"] = latest_training
+
+        latest_inference = dict(payload.get("latest_inference") or {})
+        inference_context = dict(latest_inference.get("inference_context") or {})
+        input_summary = dict(inference_context.get("input_summary") or {})
+        input_summary["research_template"] = "single_asset_timing_strict"
+        inference_context["input_summary"] = input_summary
+        latest_inference["inference_context"] = inference_context
+        payload["latest_inference"] = latest_inference
+        return payload
 
 
 if __name__ == "__main__":

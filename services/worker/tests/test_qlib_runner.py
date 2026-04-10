@@ -707,6 +707,28 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertTrue(result["candidates"]["items"])
         self.assertTrue(all(item["strategy_template"] == "trend_pullback_timing" for item in result["candidates"]["items"]))
 
+    def test_training_and_inference_expose_research_template_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={
+                    "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                    "QUANT_QLIB_RESEARCH_TEMPLATE": "single_asset_timing_strict",
+                },
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            dataset = {"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)}
+            training = runner.train(dataset=dataset)
+
+            result = runner.infer(dataset=dataset)
+
+        self.assertEqual(training["research_template"], "single_asset_timing_strict")
+        self.assertEqual(result["research_template"], "single_asset_timing_strict")
+        self.assertEqual(training["training_context"]["parameters"]["research_template"], "single_asset_timing_strict")
+        self.assertEqual(result["inference_context"]["input_summary"]["research_template"], "single_asset_timing_strict")
+
     def test_inference_returns_experiment_report(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)

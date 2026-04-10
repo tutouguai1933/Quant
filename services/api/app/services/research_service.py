@@ -155,6 +155,10 @@ class ResearchService:
         source_items = ready_items or candidates
         recommendation = sorted(source_items, key=_candidate_sort_key)[0]
         dry_run_gate = dict(recommendation.get("dry_run_gate") or {})
+        latest_training = dict(report.get("latest_training") or {})
+        latest_inference = dict(report.get("latest_inference") or {})
+        training_parameters = dict(dict(latest_training.get("training_context") or {}).get("parameters") or {})
+        input_summary = dict(dict(latest_inference.get("inference_context") or {}).get("input_summary") or {})
         return {
             "symbol": str(recommendation.get("symbol", "")),
             "score": str(recommendation.get("score", "")),
@@ -162,6 +166,12 @@ class ResearchService:
             "allowed_to_live": bool(recommendation.get("allowed_to_live")),
             "forced_for_validation": bool(recommendation.get("forced_for_validation")),
             "forced_reason": str(recommendation.get("forced_reason", "")),
+            "research_template": str(
+                recommendation.get("research_template")
+                or input_summary.get("research_template")
+                or training_parameters.get("research_template")
+                or ""
+            ),
             "strategy_template": str(recommendation.get("strategy_template", "")),
             "dry_run_gate": dry_run_gate,
             "live_gate": dict(recommendation.get("live_gate") or {}),

@@ -51,6 +51,23 @@ export type WorkspaceResearchOverview = {
   signal_count: number;
 };
 
+export type CandidateScopeModel = {
+  status?: string;
+  headline?: string;
+  detail?: string;
+  next_step?: string;
+  candidate_pool_preset_key?: string;
+  candidate_pool_preset_detail?: string;
+  candidate_pool_preset_catalog?: Array<Record<string, unknown>>;
+  candidate_symbols: string[];
+  candidate_summary?: string;
+  live_subset_preset_key?: string;
+  live_subset_preset_detail?: string;
+  live_subset_preset_catalog?: Array<Record<string, unknown>>;
+  live_allowed_symbols: string[];
+  live_summary?: string;
+};
+
 export type StrategyWorkspaceModel = {
   overview: {
     strategy_count: number;
@@ -563,6 +580,28 @@ export type ResearchWorkspaceModel = {
     model_version: string;
     backend: string;
   };
+  artifact_templates: {
+    training: {
+      key: string;
+      label: string;
+      fit: string;
+      detail: string;
+    };
+    inference: {
+      key: string;
+      label: string;
+      fit: string;
+      detail: string;
+    };
+    current: {
+      key: string;
+      label: string;
+      fit: string;
+      detail: string;
+    };
+    alignment_status: string;
+    note: string;
+  };
   controls: {
     research_preset_key?: string;
     research_template: string;
@@ -599,6 +638,7 @@ export type ResearchWorkspaceModel = {
     symbols: string[];
     timeframes: string[];
   };
+  candidate_scope: CandidateScopeModel;
   readiness: {
     train_ready: boolean;
     infer_ready: boolean;
@@ -699,14 +739,7 @@ export type EvaluationWorkspaceModel = {
     recommended_action: string;
     candidate_count: number;
   };
-  candidate_scope: {
-    candidate_pool_preset_key?: string;
-    candidate_pool_preset_detail?: string;
-    candidate_symbols: string[];
-    live_subset_preset_key?: string;
-    live_subset_preset_detail?: string;
-    live_allowed_symbols: string[];
-  };
+  candidate_scope: CandidateScopeModel;
   controls: {
     threshold_preset_key?: string;
     dry_run_min_score: string;
@@ -1703,6 +1736,28 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
       model_version: "",
       backend: "qlib-fallback",
     },
+    artifact_templates: {
+      training: {
+        key: "",
+        label: "未生成",
+        fit: "当前还没有训练产物",
+        detail: "先运行研究训练。",
+      },
+      inference: {
+        key: "",
+        label: "未生成",
+        fit: "当前还没有推理产物",
+        detail: "先运行研究推理。",
+      },
+      current: {
+        key: "single_asset_timing",
+        label: "单币择时",
+        fit: "默认主链",
+        detail: "先跑主研究链。",
+      },
+      alignment_status: "missing",
+      note: "最近训练和推理产物都还没生成，先运行研究训练，再继续研究推理。",
+    },
     controls: {
       research_template: "single_asset_timing",
       model_key: "heuristic_v1",
@@ -1734,6 +1789,22 @@ export function getResearchWorkspaceFallback(): ResearchWorkspaceModel {
     selectors: {
       symbols: [],
       timeframes: [],
+    },
+    candidate_scope: {
+      status: "candidate_pool_missing",
+      headline: "当前还没有统一候选池",
+      detail: "当前工作台暂时不可用，先恢复研究接口和配置，再看候选池与 live 子集。",
+      next_step: "先恢复研究接口，再重新读取候选池与 live 子集。",
+      candidate_pool_preset_key: "top10_liquid",
+      candidate_pool_preset_detail: "",
+      candidate_pool_preset_catalog: [],
+      candidate_symbols: [],
+      candidate_summary: "当前未配置",
+      live_subset_preset_key: "core_live",
+      live_subset_preset_detail: "",
+      live_subset_preset_catalog: [],
+      live_allowed_symbols: [],
+      live_summary: "当前未配置",
     },
     readiness: {
       train_ready: false,
@@ -1835,12 +1906,20 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     selection_story: {},
     threshold_catalog: [],
     candidate_scope: {
+      status: "candidate_pool_missing",
+      headline: "当前还没有统一候选池",
+      detail: "当前评估工作台暂时不可用，先恢复接口和配置，再看候选池与 live 子集。",
+      next_step: "先恢复评估工作台，再确认候选池与 live 子集。",
       candidate_pool_preset_key: "top10_liquid",
       candidate_pool_preset_detail: "候选池预设：top10_liquid / 当前还没有候选池说明",
-      candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+      candidate_pool_preset_catalog: [],
+      candidate_symbols: [],
+      candidate_summary: "当前未配置",
       live_subset_preset_key: "core_live",
       live_subset_preset_detail: "live 子集预设：core_live / 当前还没有 live 子集说明",
-      live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
+      live_subset_preset_catalog: [],
+      live_allowed_symbols: [],
+      live_summary: "当前未配置",
     },
     controls: {
       threshold_preset_key: "standard_gate",
@@ -2219,6 +2298,18 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
   const readiness = isPlainObject(row.readiness) ? row.readiness : {};
   const executionPreview = isPlainObject(row.execution_preview) ? row.execution_preview : {};
   const labelRuleSummary = isPlainObject(row.label_rule_summary) ? row.label_rule_summary : {};
+  const artifactTemplates = isPlainObject(row.artifact_templates) ? row.artifact_templates : {};
+  const trainingArtifact = isPlainObject(artifactTemplates.training) ? artifactTemplates.training : {};
+  const inferenceArtifact = isPlainObject(artifactTemplates.inference) ? artifactTemplates.inference : {};
+  const currentArtifact = isPlainObject(artifactTemplates.current) ? artifactTemplates.current : {};
+  const candidateScope = normalizeCandidateScope(row.candidate_scope, {
+    status: "candidate_pool_missing",
+    headline: "当前还没有统一候选池",
+    detail: "先恢复数据和执行配置，研究工作台才会说明候选池和 live 子集怎么衔接。",
+    next_step: "先在数据工作台选好候选池，再决定 live 子集。",
+    candidate_symbols: [],
+    live_allowed_symbols: [],
+  });
 
   return {
     status: String(row.status ?? "unavailable"),
@@ -2249,6 +2340,28 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       model_key: String(model.model_key ?? ""),
       model_version: String(model.model_version ?? ""),
       backend: String(model.backend ?? "qlib-fallback"),
+    },
+    artifact_templates: {
+      training: {
+        key: String(trainingArtifact.key ?? ""),
+        label: String(trainingArtifact.label ?? "未生成"),
+        fit: String(trainingArtifact.fit ?? "当前还没有训练产物"),
+        detail: String(trainingArtifact.detail ?? "先运行研究训练。"),
+      },
+      inference: {
+        key: String(inferenceArtifact.key ?? ""),
+        label: String(inferenceArtifact.label ?? "未生成"),
+        fit: String(inferenceArtifact.fit ?? "当前还没有推理产物"),
+        detail: String(inferenceArtifact.detail ?? "先运行研究推理。"),
+      },
+      current: {
+        key: String(currentArtifact.key ?? ""),
+        label: String(currentArtifact.label ?? "未选择"),
+        fit: String(currentArtifact.fit ?? "当前没有模板说明"),
+        detail: String(currentArtifact.detail ?? "先确认当前研究模板。"),
+      },
+      alignment_status: String(artifactTemplates.alignment_status ?? "missing"),
+      note: String(artifactTemplates.note ?? ""),
     },
     controls: {
       research_template: String(controls.research_template ?? ""),
@@ -2291,6 +2404,7 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       symbols: normalizeStringArray(selectors.symbols, []),
       timeframes: normalizeStringArray(selectors.timeframes, []),
     },
+    candidate_scope: candidateScope,
     readiness: {
       train_ready: Boolean(readiness.train_ready),
       infer_ready: Boolean(readiness.infer_ready),
@@ -2407,6 +2521,14 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
   const overview = isPlainObject(row.overview) ? row.overview : {};
   const controls = isPlainObject(row.controls) ? row.controls : {};
   const operations = isPlainObject(row.operations) ? row.operations : {};
+  const candidateScope = normalizeCandidateScope(row.candidate_scope, {
+    status: "candidate_pool_missing",
+    headline: "当前还没有统一候选池",
+    detail: "先恢复评估工作台，系统才会说明候选池和 live 子集怎么衔接。",
+    next_step: "先恢复评估工作台，再确认候选池与 live 子集。",
+    candidate_symbols: [],
+    live_allowed_symbols: [],
+  });
 
   return {
     status: String(row.status ?? "unavailable"),
@@ -2419,14 +2541,7 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
       recommended_action: String(overview.recommended_action ?? ""),
       candidate_count: Number(overview.candidate_count ?? 0),
     },
-    candidate_scope: {
-      candidate_pool_preset_key: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_pool_preset_key ?? "top10_liquid" : "top10_liquid"),
-      candidate_pool_preset_detail: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_pool_preset_detail ?? "" : ""),
-      candidate_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.candidate_symbols : [], DEFAULT_CANDIDATE_SYMBOLS),
-      live_subset_preset_key: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_subset_preset_key ?? "core_live" : "core_live"),
-      live_subset_preset_detail: String(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_subset_preset_detail ?? "" : ""),
-      live_allowed_symbols: normalizeStringArray(isPlainObject(row.candidate_scope) ? row.candidate_scope.live_allowed_symbols : [], DEFAULT_LIVE_ALLOWED_SYMBOLS),
-    },
+    candidate_scope: candidateScope,
     controls: {
       threshold_preset_key: String(controls.threshold_preset_key ?? "standard_gate"),
       dry_run_min_score: String(controls.dry_run_min_score ?? ""),
@@ -3327,14 +3442,20 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
         alert_cleanup_minutes: "15",
       },
       executionPolicy: {
+        status: "candidate_pool_missing",
+        headline: "当前还没有统一候选池",
+        detail: "自动化状态暂时不可用，先恢复接口和配置，再看候选池与 live 子集。",
+        next_step: "先恢复自动化状态，再确认候选池与 live 子集。",
         candidate_pool_preset_key: "top10_liquid",
         candidate_pool_preset_detail: "候选池预设：top10_liquid / 当前还没有候选池说明",
-        candidate_symbols: DEFAULT_CANDIDATE_SYMBOLS,
+        candidate_symbols: [],
         candidate_pool_preset_catalog: [],
+        candidate_summary: "当前未配置",
         live_subset_preset_key: "core_live",
         live_subset_preset_detail: "live 子集预设：core_live / 当前还没有 live 子集说明",
         live_subset_preset_catalog: [],
-        live_allowed_symbols: DEFAULT_LIVE_ALLOWED_SYMBOLS,
+        live_allowed_symbols: [],
+        live_summary: "当前未配置",
         live_max_stake_usdt: "6",
         live_max_open_trades: "1",
       },
@@ -3394,6 +3515,33 @@ function normalizeStringArray(value: unknown, fallback: string[]): string[] {
 
   const items = value.map((item) => String(item ?? "").trim()).filter(Boolean);
   return items.length ? items : fallback;
+}
+
+function normalizePresentStringArray(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+  return value.map((item) => String(item ?? "").trim()).filter((item) => item.length > 0);
+}
+
+function normalizeCandidateScope(value: unknown, fallback: CandidateScopeModel): CandidateScopeModel {
+  const row = isPlainObject(value) ? value : {};
+  return {
+    status: String(row.status ?? fallback.status ?? ""),
+    headline: String(row.headline ?? fallback.headline ?? ""),
+    detail: String(row.detail ?? fallback.detail ?? ""),
+    next_step: String(row.next_step ?? fallback.next_step ?? ""),
+    candidate_pool_preset_key: String(row.candidate_pool_preset_key ?? fallback.candidate_pool_preset_key ?? "top10_liquid"),
+    candidate_pool_preset_detail: String(row.candidate_pool_preset_detail ?? fallback.candidate_pool_preset_detail ?? ""),
+    candidate_pool_preset_catalog: normalizeObjectArray(row.candidate_pool_preset_catalog ?? fallback.candidate_pool_preset_catalog ?? []),
+    candidate_symbols: normalizePresentStringArray(row.candidate_symbols, fallback.candidate_symbols),
+    candidate_summary: String(row.candidate_summary ?? fallback.candidate_summary ?? ""),
+    live_subset_preset_key: String(row.live_subset_preset_key ?? fallback.live_subset_preset_key ?? "core_live"),
+    live_subset_preset_detail: String(row.live_subset_preset_detail ?? fallback.live_subset_preset_detail ?? ""),
+    live_subset_preset_catalog: normalizeObjectArray(row.live_subset_preset_catalog ?? fallback.live_subset_preset_catalog ?? []),
+    live_allowed_symbols: normalizePresentStringArray(row.live_allowed_symbols, fallback.live_allowed_symbols),
+    live_summary: String(row.live_summary ?? fallback.live_summary ?? ""),
+  };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

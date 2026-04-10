@@ -198,13 +198,16 @@ class ResearchRuntimeService:
         """把手动流水线写进统一工作流摘要。"""
 
         overview = dict(review_report.get("overview") or {})
-        recommendation = self._research_service.get_research_recommendation() or {}
+        latest_result = self._read_latest_result()
+        recommendation = self._read_recommendation()
         summary = {
             "status": "succeeded" if str(review_task.get("status", "")) == "succeeded" else "attention_required",
             "mode": "manual",
             "source": "manual_pipeline",
             "recommended_symbol": str(recommendation.get("symbol") or overview.get("recommended_symbol") or ""),
             "recommended_strategy_id": recommendation.get("strategy_id") or "",
+            "research_template": self._resolve_research_template(latest_result=latest_result, recommendation=recommendation),
+            "strategy_template": str(recommendation.get("strategy_template") or ""),
             "next_action": str(overview.get("next_action") or recommendation.get("next_action") or "continue_research"),
             "message": "手动信号流水线已完成，这一轮结果已经同步进统一复盘和任务页。",
             "failure_reason": "",
@@ -220,7 +223,8 @@ class ResearchRuntimeService:
     def _record_manual_cycle_started(self) -> None:
         """把手动流水线已进入后台的状态提前写进统一工作流摘要。"""
 
-        recommendation = self._research_service.get_research_recommendation() or {}
+        latest_result = self._read_latest_result()
+        recommendation = self._read_recommendation()
         self._automation.record_cycle(
             {
                 "status": "running",
@@ -228,6 +232,8 @@ class ResearchRuntimeService:
                 "source": "manual_pipeline",
                 "recommended_symbol": str(recommendation.get("symbol") or ""),
                 "recommended_strategy_id": recommendation.get("strategy_id") or "",
+                "research_template": self._resolve_research_template(latest_result=latest_result, recommendation=recommendation),
+                "strategy_template": str(recommendation.get("strategy_template") or ""),
                 "next_action": "wait_pipeline_completion",
                 "message": "手动信号流水线已进入后台，当前可以去研究页、评估页和任务页跟进阶段变化。",
                 "failure_reason": "",
@@ -253,12 +259,51 @@ class ResearchRuntimeService:
                 "source": "manual_pipeline",
                 "recommended_symbol": "",
                 "recommended_strategy_id": "",
+                "research_template": "",
+                "strategy_template": "",
                 "next_action": "manual_review",
                 "message": message,
                 "failure_reason": "manual_pipeline_failed",
                 "dispatch": {"status": "failed", "meta": {"source": "manual_pipeline"}},
             },
             count_towards_daily=False,
+        )
+
+    def _read_latest_result(self) -> dict[str, object]:
+        """读取最近一次研究结果。"""
+
+        payload = self._research_service.get_latest_result()
+        return payload if isinstance(payload, dict) else {}
+
+    def _read_recommendation(self) -> dict[str, object]:
+        """读取最近一次研究推荐。"""
+
+        payload = self._research_service.get_research_recommendation()
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _resolve_research_template(
+        *,
+        latest_result: dict[str, object],
+        recommendation: dict[str, object],
+    ) -> str:
+        """统一提取当前这轮流水线应归属的研究模板。"""
+
+        latest_training = dict(latest_result.get("latest_training") or {})
+        training_context = dict(latest_training.get("training_context") or {})
+        training_parameters = dict(training_context.get("parameters") or {})
+        latest_inference = dict(latest_result.get("latest_inference") or {})
+        inference_context = dict(latest_inference.get("inference_context") or {})
+        input_summary = dict(inference_context.get("input_summary") or {})
+        configured_research = dict(workbench_config_service.get_config().get("research") or {})
+        return str(
+            latest_inference.get("research_template")
+            or input_summary.get("research_template")
+            or latest_training.get("research_template")
+            or training_parameters.get("research_template")
+            or recommendation.get("research_template")
+            or configured_research.get("research_template")
+            or ""
         )
 
     @staticmethod

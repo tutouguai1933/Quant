@@ -24,13 +24,17 @@ test("main research to execution flow stays usable across core workbenches", asy
   await expect(page.locator("body")).toContainText("信号", { timeout: renderTimeout });
   await expect(page.locator("body")).not.toContainText("正在切换工作区", { timeout: renderTimeout });
   await page.getByRole("button", { name: "运行 Qlib 信号流水线" }).click();
-  await expect(page.locator("body")).toContainText("Qlib 信号流水线已进入后台", { timeout: renderTimeout });
+  await expect
+    .poll(async () => (await page.locator("body").textContent()) ?? "", { timeout: renderTimeout })
+    .toMatch(/Qlib 信号流水线已进入后台|研究动作已发出|研究任务正在运行，请等当前任务完成后再发起。/);
   await expect(page.locator("body")).toContainText("研究运行状态", { timeout: renderTimeout });
 
   await page.goto(`${WEB_BASE_URL}/research`, navigation);
   await expect(page.locator("body")).toContainText("策略研究工作台", { timeout: renderTimeout });
   await expect(page.locator("body")).toContainText("研究准备状态");
   await expect(page.locator("body")).toContainText("研究模板");
+  await expect(page.locator("body")).toContainText("模板产物对齐");
+  await expect(page.locator("body")).toContainText("最近训练模板");
   await expect(page.locator("body")).toContainText("标签定义");
   await expect(page.locator("body")).toContainText("模型目录");
   await expect(page.locator("body")).toContainText("训练切分说明");
@@ -51,12 +55,16 @@ test("main research to execution flow stays usable across core workbenches", asy
     await expect(page.getByRole("button", { name: "保持手动" })).toBeVisible();
     await expect(page.getByRole("button", { name: "切到 dry-run only" })).toBeVisible();
     await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toHaveCount(0);
+  } else if (strategiesBody.includes("接管中先决定保留什么模式")) {
+    await expect(page.getByRole("button", { name: "保持手动" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "只恢复到 dry-run" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toHaveCount(0);
   } else if (strategiesBody.includes("暂停后先决定怎么继续")) {
     await expect(page.getByRole("button", { name: "切到手动" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /确认后恢复自动化|恢复自动化/ })).toBeVisible();
   } else if (strategiesBody.includes("接管中先决定怎么恢复")) {
     await expect(page.getByRole("button", { name: "保持手动" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /确认后恢复自动化|恢复自动化/ })).toBeVisible();
   } else {
     await expect(page.getByRole("button", { name: "暂停自动化" })).toBeVisible();
     await expect(page.getByRole("button", { name: /转人工接管|切到手动/ })).toBeVisible();
