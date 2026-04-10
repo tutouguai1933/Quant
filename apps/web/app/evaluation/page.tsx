@@ -644,7 +644,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
             </CardHeader>
             <CardContent className="grid gap-3">
               <InfoBlock label="当前主要阻塞" value={readText(workspace.stage_decision_summary?.why_blocked, "当前没有明显阻塞")} />
-              <InfoBlock label="修复方向" value={readText(workspace.alignment_story?.next_step, "先继续观察。")} />
+              <InfoBlock label="修复方向" value={readText(eliminationExplanation.next_step, readText(workspace.alignment_story?.next_step, "先继续观察。"))} />
             </CardContent>
           </Card>
 
@@ -670,7 +670,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
             <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
               <div className="grid gap-3 md:grid-cols-2">
                 <InfoBlock label="先淘汰谁" value={String(eliminationExplanation.primary_symbol ?? eliminationExplanation.symbol ?? "当前还没有淘汰标的")} />
+                <InfoBlock label="当前卡在哪个门" value={String(eliminationExplanation.primary_gate ?? "当前还没有主要门控")} />
                 <InfoBlock label="为什么淘汰" value={String(eliminationExplanation.detail ?? "当前还没有淘汰原因说明。")} />
+                <InfoBlock label="先怎么修" value={String(eliminationExplanation.next_step ?? "当前还没有修复方向。")} />
               </div>
               {(Array.isArray(eliminationExplanation.evidence) ? eliminationExplanation.evidence : []).length ? (
                 (eliminationExplanation.evidence as unknown[]).map((item, index) => (

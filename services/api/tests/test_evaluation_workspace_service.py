@@ -107,14 +107,14 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["threshold_catalog"][5]["key"], "live_gate")
         self.assertEqual(item["threshold_catalog"][6]["key"], "gate_switches")
         self.assertIn("当前优先进入 dry-run", item["recommendation_explanation"]["headline"])
-        self.assertIn("主要卡在", item["elimination_explanation"]["headline"])
+        self.assertIn("BTCUSDT", item["elimination_explanation"]["headline"])
         self.assertIsInstance(item["recommendation_explanation"]["evidence"], list)
         self.assertEqual(len(item["recommendation_explanation"]["evidence"]), 3)
         self.assertIn("分数", item["recommendation_explanation"]["evidence"][0])
         self.assertIsInstance(item["elimination_explanation"]["evidence"], list)
-        self.assertIn("主要原因", item["elimination_explanation"]["evidence"][1])
-        self.assertIn("研究和执行", item["alignment_story"]["headline"])
-        self.assertEqual(item["alignment_story"]["evidence"], ["当前没有明显差异"])
+        self.assertIn("验证门", item["elimination_explanation"]["evidence"][1])
+        self.assertIn("研究标的、最近订单和最近持仓已经对上", item["alignment_story"]["headline"])
+        self.assertEqual(item["alignment_story"]["evidence"], ["研究标的、最近订单和最近持仓已经对上"])
         self.assertEqual(item["operations"]["review_limit"], "10")
         self.assertEqual(item["comparison_summary"]["training_model_version"], "model-a")
         self.assertEqual(item["comparison_summary"]["inference_model_version"], "model-a")
@@ -149,6 +149,40 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
             item["comparison_summary"]["experiment_alignment_note"],
             "当前还没有训练或推理记录，先跑实验再来看对比。",
         )
+
+    def test_workspace_builds_stable_elimination_story(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertIn("BTCUSDT", item["elimination_explanation"]["headline"])
+        self.assertIn("验证门", item["elimination_explanation"]["headline"])
+        self.assertIn("样本数不足", item["elimination_explanation"]["detail"])
+        self.assertEqual(item["elimination_explanation"]["primary_symbol"], "BTCUSDT")
+        self.assertEqual(item["elimination_explanation"]["primary_gate"], "validation_gate")
+        self.assertIn("先补验证样本量", item["elimination_explanation"]["next_step"])
+        self.assertIn("验证门", item["elimination_explanation"]["evidence"][1])
+        self.assertIn("样本数不足", item["stage_decision_summary"]["why_blocked"])
+
+    def test_workspace_builds_stable_alignment_story(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_DivergedValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertIn("研究侧推荐 ETHUSDT", item["alignment_story"]["headline"])
+        self.assertIn("执行侧最近订单仍是 BTCUSDT", item["alignment_story"]["detail"])
+        self.assertIn("执行同步失败", item["alignment_story"]["detail"])
+        self.assertIn("当前仍在手动模式", item["alignment_story"]["detail"])
+        self.assertIn("研究侧推荐 ETHUSDT", item["stage_decision_summary"]["execution_gap"])
+        self.assertIn("先恢复同步", item["alignment_story"]["next_step"])
 
     def test_workspace_humanizes_missing_training_reason_when_no_candidates(self) -> None:
         service = EvaluationWorkspaceService(
@@ -324,7 +358,7 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         item = service.get_workspace()
 
         self.assertEqual(item["alignment_details"]["difference_severity"], "high")
-        self.assertIn("研究建议 ETHUSDT", item["alignment_details"]["difference_summary"])
+        self.assertIn("研究侧推荐 ETHUSDT", item["alignment_details"]["difference_summary"])
         self.assertIn("最近订单仍是 BTCUSDT", item["alignment_details"]["difference_reasons"])
         self.assertIn("同步失败", item["alignment_details"]["difference_reasons"])
         self.assertEqual(item["alignment_details"]["next_step"], "先恢复同步，再确认是否真的把研究候选派发到执行侧。")

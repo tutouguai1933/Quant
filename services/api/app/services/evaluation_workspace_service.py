@@ -69,7 +69,10 @@ class EvaluationWorkspaceService:
             best_experiment=best_experiment,
             review_result=str(dict(reviews.get("research") or {}).get("result", "") or ""),
         )
-        elimination_explanation = self._build_elimination_explanation(leaderboard=leaderboard)
+        elimination_explanation = self._build_elimination_explanation(
+            leaderboard=leaderboard,
+            gate_matrix=gate_matrix,
+        )
         alignment_details = self._build_alignment_details(
             overview=overview,
             execution_alignment=execution_alignment,
@@ -625,7 +628,11 @@ class EvaluationWorkspaceService:
         }
 
     @staticmethod
-    def _build_elimination_explanation(*, leaderboard: list[dict[str, object]]) -> dict[str, str]:
+    def _build_elimination_explanation(
+        *,
+        leaderboard: list[dict[str, object]],
+        gate_matrix: list[dict[str, object]],
+    ) -> dict[str, object]:
         """把淘汰原因压成一段更直白的说明。"""
 
         blocked_rows = [dict(item) for item in leaderboard if str(item.get("elimination_reason", "已通过")) != "已通过"]
@@ -634,16 +641,30 @@ class EvaluationWorkspaceService:
                 "headline": "当前没有明显淘汰项",
                 "detail": "这一轮候选要么已通过，要么还没有生成足够多的阻断记录。",
                 "top_reason": "当前没有主要淘汰原因",
+                "primary_symbol": "",
+                "primary_gate": "",
+                "next_step": "继续保持当前门槛，等下一轮候选进入评估。",
+                "evidence": [],
             }
         top_row = blocked_rows[0]
-        top_reason = str(top_row.get("elimination_reason", "")).strip() or "当前没有主要淘汰原因"
+        symbol = str(top_row.get("symbol", "")).strip() or "当前候选"
+        gate_row = EvaluationWorkspaceService._find_gate_row(gate_matrix=gate_matrix, symbol=symbol)
+        primary_gate = str(gate_row.get("blocking_gate", "")).strip() or "unknown"
+        top_reason = EvaluationWorkspaceService._format_reason_text(str(top_row.get("elimination_reason", "")).strip()) or "当前没有主要淘汰原因"
+        gate_label = EvaluationWorkspaceService._format_gate_name(primary_gate)
+        next_step = EvaluationWorkspaceService._build_gate_fix_action(primary_gate=primary_gate)
         return {
-            "headline": f"这轮主要卡在 {top_reason}",
-            "detail": f"当前共有 {len(blocked_rows)} 个候选被拦下，先处理最靠前的阻断原因，再决定要不要继续放量。",
+            "headline": f"{symbol} 当前主要卡在{gate_label}",
+            "detail": f"{symbol} 目前被 {gate_label} 拦下，主要原因是 {top_reason}，先处理这个卡点，再决定要不要继续放量。",
             "top_reason": top_reason,
+            "primary_symbol": symbol,
+            "primary_gate": primary_gate,
+            "next_step": next_step,
             "evidence": [
                 f"当前被拦下 {len(blocked_rows)} 个候选",
+                f"最靠前候选：{symbol} / {gate_label}",
                 f"主要原因：{top_reason}",
+                f"修复方向：{next_step}",
             ],
         }
 
@@ -658,12 +679,29 @@ class EvaluationWorkspaceService:
         reasons = [str(item) for item in list(alignment_details.get("difference_reasons") or []) if str(item).strip()]
         first_action = dict(alignment_actions[0] or {}) if alignment_actions else {}
         summary = str(alignment_details.get("difference_summary", "") or "当前还没有足够结果可对齐")
-        if "研究和执行" not in summary:
-            summary = f"研究和执行：{summary}"
+        research_symbol = str(alignment_details.get("research_symbol", "")).strip()
+        last_order_symbol = str(alignment_details.get("last_order_symbol", "")).strip()
+        last_position_symbol = str(alignment_details.get("last_position_symbol", "")).strip()
+        headline = (
+            f"研究侧推荐 {research_symbol}，执行侧还没完全对齐"
+            if research_symbol and reasons != ["当前没有明显差异"]
+            else summary
+        )
+        detail = " / ".join(
+            EvaluationWorkspaceService._format_alignment_reason(item)
+            for item in reasons[:4]
+        ) if reasons else "当前没有明显差异。"
+        if reasons == ["当前没有明显差异"]:
+            detail = "研究侧推荐、最近订单和最近持仓目前一致。"
         return {
-            "headline": summary,
-            "detail": " / ".join(reasons[:3]) if reasons else "当前没有明显差异。",
-            "evidence": reasons if reasons else [summary],
+            "headline": headline,
+            "detail": detail,
+            "evidence": [
+                f"研究侧：{research_symbol or '当前还没有推荐标的'}",
+                f"执行侧最近订单：{last_order_symbol or '当前没有订单'}",
+                f"执行侧最近持仓：{last_position_symbol or '当前没有持仓'}",
+                f"主要卡点：{detail}",
+            ] if reasons != ["当前没有明显差异"] else [headline],
             "next_step": str(alignment_details.get("next_step", "") or first_action.get("detail", "") or "先继续观察。"),
         }
 
@@ -840,11 +878,63 @@ class EvaluationWorkspaceService:
             "candidate_blocked": "候选暂未通过",
             "training_missing": "训练结果缺失",
             "inference_missing": "推理结果缺失",
+            "sample_count_too_low": "样本数不足",
+            "validation_score_too_low": "验证分数不足",
+            "score_below_live_floor": "live 分数不足",
+            "live_threshold_not_met": "live 门槛未满足",
             "waiting": "当前仍在等待",
             "failed": "当前已失败",
         }
         text = str(value or "").strip()
         return mapping.get(text, text)
+
+    @staticmethod
+    def _format_gate_name(value: str) -> str:
+        """把门控字段翻译成页面可读名称。"""
+
+        mapping = {
+            "rule_gate": "规则门",
+            "validation_gate": "验证门",
+            "backtest_gate": "回测门",
+            "consistency_gate": "一致性门",
+            "dry_run_gate": "dry-run 门",
+            "live_gate": "live 门",
+            "passed": "已通过",
+            "unknown": "当前门控",
+        }
+        text = str(value or "").strip()
+        return mapping.get(text, text or "当前门控")
+
+    @staticmethod
+    def _build_gate_fix_action(*, primary_gate: str) -> str:
+        """按主要卡点给出一句修复方向。"""
+
+        mapping = {
+            "rule_gate": "先补趋势、量能或波动过滤，再重跑研究。",
+            "validation_gate": "先补验证样本量或样本外收益，再决定要不要继续推进。",
+            "backtest_gate": "先回看回测收益、回撤和成本模型，再决定要不要继续放行。",
+            "consistency_gate": "先缩小训练/验证/回测之间的漂移，再继续推进。",
+            "dry_run_gate": "先让候选满足 dry-run 门，再考虑进入观察阶段。",
+            "live_gate": "先补 live 门要求，再考虑进入小额 live。",
+        }
+        return mapping.get(str(primary_gate).strip(), "先补主要卡点，再决定要不要继续推进。")
+
+    @staticmethod
+    def _format_alignment_reason(value: str) -> str:
+        """把研究/执行差异翻译成统一口径。"""
+
+        text = str(value or "").strip()
+        if text.startswith("最近订单仍是 "):
+            return f"执行侧最近订单仍是 {text.removeprefix('最近订单仍是 ')}"
+        if text.startswith("最近持仓仍是 "):
+            return f"执行侧最近持仓仍是 {text.removeprefix('最近持仓仍是 ')}"
+        if text == "同步失败":
+            return "执行同步失败"
+        if text == "当前仍在手动模式，需要人工确认":
+            return "当前仍在手动模式，需要人工确认"
+        if text == "当前没有明显差异":
+            return "研究和执行当前没有明显差异"
+        return text
 
     @staticmethod
     def _resolve_elimination_reason(*, row: dict[str, object], failure_reasons: list[str]) -> str:
@@ -1506,12 +1596,12 @@ class EvaluationWorkspaceService:
             difference_severity = "low"
             next_step = "继续观察 dry-run 或小额 live 的复盘结果。"
         elif status == "waiting_research":
-            difference_summary = f"研究建议 {research_symbol or 'n/a'} 还没放行到执行"
+            difference_summary = f"研究侧推荐 {research_symbol or 'n/a'}，但执行侧还没进入同一轮"
             difference_severity = "medium"
             next_step = "先回到研究、回测和评估链补强候选，再决定是否放行。"
         else:
             difference_summary = (
-                f"研究建议 {research_symbol or 'n/a'}，但执行侧还没完全对齐。"
+                f"研究侧推荐 {research_symbol or 'n/a'}，但执行侧还没完全对齐。"
             )
             difference_severity = "high" if latest_sync_status == "failed" else "medium"
             next_step = "先恢复同步，再确认是否真的把研究候选派发到执行侧。"

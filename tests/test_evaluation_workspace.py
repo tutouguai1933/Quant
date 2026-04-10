@@ -76,6 +76,8 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("live_max_turnover", content)
         self.assertIn("live_min_sample_count", content)
         self.assertIn("淘汰原因说明", content)
+        self.assertIn("当前卡在哪个门", content)
+        self.assertIn("先怎么修", content)
         self.assertIn("研究结果 vs 执行结果", content)
         self.assertIn("对齐结论", content)
         self.assertIn("执行现状", content)

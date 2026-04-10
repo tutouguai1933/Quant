@@ -87,9 +87,14 @@ test("evaluation and strategies pages show stable recommendation story", async (
   await expect(page.locator("body")).toContainText("推荐摘要", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("当前优先进入 dry-run", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("当前综合排序第一", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("当前卡在哪个门", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("先怎么修", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("研究侧", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("执行侧", { timeout: 60000 });
 
   await page.goto(`${WEB_BASE_URL}/strategies`, { waitUntil: "commit", timeout: 90000 });
   await expect(page.locator("body")).toContainText("策略中心", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("为什么先推进", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("当前综合排序第一", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("研究 / 执行差异", { timeout: 60000 });
 });

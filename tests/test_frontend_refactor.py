@@ -367,6 +367,8 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("现在先处理什么", content)
         self.assertIn("调度什么时候继续", content)
         self.assertIn("人工接管后怎么恢复", content)
+        self.assertIn("研究 / 执行差异", content)
+        self.assertIn("当前主要阻塞", content)
 
     def test_evaluation_page_explains_research_vs_execution_alignment(self) -> None:
         content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
@@ -399,6 +401,8 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("推荐摘要", content)
         self.assertIn("淘汰摘要", content)
         self.assertIn("差异摘要", content)
+        self.assertIn("当前卡在哪个门", content)
+        self.assertIn("先怎么修", content)
 
     def test_strategies_page_surfaces_manual_takeover_risk_state(self) -> None:
         content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")

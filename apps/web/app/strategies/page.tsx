@@ -300,6 +300,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
               <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>评估中心推荐：{readText(evaluation.overview.recommended_symbol, "n/a")}</p>
                   <p>推荐原因：{readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, "未生成"))}</p>
+                  <p>研究 / 执行差异：{readText(stageDecisionSummary.execution_gap, "当前还没有差异说明")}</p>
                   <div className="flex flex-wrap gap-3">
                     <Button asChild variant="outline">
                       <Link href="/research">研究工作台</Link>

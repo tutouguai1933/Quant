@@ -56,6 +56,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const latestAlert = automation.alerts[0];
   const reviewOverview = asRecord(review.overview);
   const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
+  const recommendationExplanation = asRecord(evaluation.recommendation_explanation);
+  const stageDecisionSummary = asRecord(evaluation.stage_decision_summary);
   const executionHealth = asRecord(automation.executionHealth);
   const automationHealth = asRecord(automation.health);
   const lastCycle = asRecord(automation.lastCycle);
@@ -1132,6 +1134,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>推荐标的：{String(reviewOverview.recommended_symbol ?? automation.researchOverview.recommended_symbol ?? "n/a")}</p>
                   <p>推荐动作：{String(reviewOverview.recommended_action ?? automation.researchOverview.recommended_action ?? "n/a")}</p>
+                  <p>研究 / 执行差异：{readText(stageDecisionSummary.execution_gap, "当前还没有差异说明")}</p>
                   <p>候选数量：{String(reviewOverview.candidate_count ?? automation.researchOverview.candidate_count ?? 0)}</p>
                   <p>可进 dry-run：{String(reviewOverview.ready_count ?? automation.researchOverview.ready_count ?? 0)}</p>
                 </CardContent>
@@ -1144,7 +1147,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>评估中心推荐：{readText(evaluation.overview.recommended_symbol, "n/a")}</p>
-                  <p>推荐原因：{readText(evaluationReview.result, "未生成")}</p>
+                  <p>推荐原因：{readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, readText(evaluationReview.result, "未生成")))}</p>
+                  <p>当前主要阻塞：{readText(stageDecisionSummary.why_blocked, "当前没有明显阻塞")}</p>
                   <div className="flex flex-wrap gap-3">
                     <Button asChild variant="outline">
                       <Link href="/research">回到研究链</Link>

@@ -61,13 +61,13 @@
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：`apps/web/app/evaluation/page.tsx`
 
-- [ ] B3. 把淘汰原因压成稳定结论
+- [x] B3. 把淘汰原因压成稳定结论
   - 目标：评估页能明确看到每个候选是卡在规则门、验证门、回测门还是一致性门
   - 重点页面：`/evaluation`
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：`apps/web/app/evaluation/page.tsx`
 
-- [ ] B4. 把研究结果和执行结果差异压成统一口径
+- [x] B4. 把研究结果和执行结果差异压成统一口径
   - 目标：评估页、任务页、策略页都能用一致术语解释研究 / 回测 / 执行差异
   - 重点页面：`/evaluation`、`/tasks`、`/strategies`
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
@@ -109,13 +109,11 @@
 
 1. A5
 2. B1
-3. B3
-4. B4
-5. B5
-6. C1
-7. C2
-8. C3
-9. C4
+3. B5
+4. C1
+5. C2
+6. C3
+7. C4
 
 ## 当前备注
 
@@ -127,3 +125,5 @@
 - A5 已完成：评估页现在会显式说明当前准入组合、`dry-run / validation / consistency / live` 四层门槛、准入门槛目录和 `live` 门卡点；评估页展示不再丢掉 `selection_story`、`threshold_catalog` 和 `gate_matrix.live_gate`
 - B1 已完成：研究层运行产物现在会把 `research_preset_key / label_preset_key / label_trigger_basis` 写进训练和推理上下文；评估页最近两轮变化、自选实验对比和配置差异终于能把研究预设与标签预设讲清楚
 - B2 已完成：评估页和策略页现在统一使用“当前优先进入哪一层 / 当前综合排序第一 / 门控是否通过 / 研究复盘建议”这组稳定人话结论；没有训练结果时也不再把 `training_missing` 这类内部状态码直接暴露到页面
+- B3 已完成：评估页现在会稳定说明“哪个币卡在哪个门、主要原因是什么、先怎么修”，不再只显示 `sample_count_too_low` 这类原因码
+- B4 已完成：评估页、策略页、任务页现在统一使用“研究侧 / 执行侧 / 主要卡点 / 下一步”这套差异口径，不再各自拼接不同说法
