@@ -583,6 +583,53 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["resume_checklist"][0]["label"], "告警强度")
         self.assertEqual(health["resume_checklist"][0]["status"], "pending")
 
+    def test_expired_alerts_do_not_keep_current_health_in_critical_state(self) -> None:
+        service = AutomationService()
+        service.record_alert(level="error", code="sync_failed", message="同步失败", source="sync")
+        service._alerts[0]["created_at"] = "2000-01-01T00:00:00+00:00"  # noqa: SLF001
+
+        health = service.build_health_summary(task_health={})
+
+        self.assertEqual(health["alert_summary"]["error_count"], 0)
+        self.assertEqual(health["alert_summary"]["history_error_count"], 1)
+        self.assertEqual(health["alert_summary"]["alert_count"], 0)
+        self.assertEqual(health["alert_summary"]["history_count"], 1)
+        self.assertIn("当前没有需要立即处理的告警", health["alert_story"]["headline"])
+        self.assertEqual(health["severity_summary"]["level"], "normal")
+        self.assertEqual(health["resume_checklist"][0]["status"], "ready")
+
+    def test_alert_summary_separates_active_and_history_counts(self) -> None:
+        service = AutomationService()
+        service.record_alert(level="warning", code="sync_delayed", message="同步延迟", source="sync")
+        service._alerts[0]["created_at"] = "2000-01-01T00:00:00+00:00"  # noqa: SLF001
+        service.record_alert(level="error", code="executor_offline", message="执行器离线", source="watchdog")
+
+        health = service.build_health_summary(task_health={})
+
+        self.assertEqual(health["alert_summary"]["warning_count"], 0)
+        self.assertEqual(health["alert_summary"]["history_warning_count"], 1)
+        self.assertEqual(health["alert_summary"]["error_count"], 1)
+        self.assertEqual(health["alert_summary"]["history_error_count"], 1)
+        self.assertEqual(health["alert_summary"]["latest_code"], "executor_offline")
+        self.assertEqual(health["alert_summary"]["history_latest_code"], "executor_offline")
+        self.assertEqual(len(health["alert_summary"]["groups"]), 1)
+        self.assertEqual(len(health["alert_summary"]["history_groups"]), 2)
+
+    def test_status_keeps_history_alert_fields_and_exposes_current_alert_fields(self) -> None:
+        service = AutomationService()
+        service.record_alert(level="error", code="sync_failed", message="同步失败", source="sync")
+        service._alerts[0]["created_at"] = "2000-01-01T00:00:00+00:00"  # noqa: SLF001
+
+        status = service.get_status(task_health={})
+
+        self.assertEqual(status["alerts_count"], 1)
+        self.assertEqual(status["history_alerts_count"], 1)
+        self.assertEqual(status["active_alerts_count"], 0)
+        self.assertEqual(status["latest_alert_level"], "error")
+        self.assertEqual(status["latest_alert_title"], "同步失败")
+        self.assertEqual(status["current_alert_level"], "")
+        self.assertEqual(status["current_alert_title"], "")
+
     def test_alert_story_falls_back_to_safe_waiting_message_when_no_alert_exists(self) -> None:
         service = AutomationService()
 

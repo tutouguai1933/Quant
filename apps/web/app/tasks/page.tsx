@@ -53,7 +53,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
     }
   }
 
-  const latestAlert = automation.alerts[0];
   const reviewOverview = asRecord(review.overview);
   const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
   const recommendationExplanation = asRecord(evaluation.recommendation_explanation);
@@ -112,6 +111,30 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const takeoverSince = readText(takeoverSummary.takeover_since, automation.manualTakeoverAt);
   const lastFailureAt = readText(takeoverSummary.last_failure_at, automation.lastFailureAt);
   const syncFailureCount = Number(runHealth.sync_failure_count ?? 0);
+  const operationsConfig = {
+    operationsPresetKey: readText(operations.operations_preset_key, "balanced_guard"),
+    operationsPresetDetail: readText(operations.operations_preset_detail, "当前还没有长期运行预设说明。"),
+    pauseAfterFailures: readText(operations.pause_after_consecutive_failures, "2"),
+    staleSyncThreshold: readText(operations.stale_sync_failure_threshold, "1"),
+    autoPauseOnError: String(operations.auto_pause_on_error ?? true) === "false" ? "false" : "true",
+    reviewLimit: readText(operations.review_limit, "10"),
+    comparisonRunLimit: readText(operations.comparison_run_limit, "5"),
+    cycleCooldownMinutes: readText(operations.cycle_cooldown_minutes, "15"),
+    maxDailyCycleCount: readText(operations.max_daily_cycle_count, "8"),
+  };
+  const automationConfig = asRecord(automation.automationConfig);
+  const alertCleanupMinutesValue = readText(automationConfig.alert_cleanup_minutes, "15");
+  const activeAlerts = filterActiveAlerts(automation.alerts, alertCleanupMinutesValue);
+  const activeAlertKeys = new Set(activeAlerts.map((item) => buildAlertIdentity(item)));
+  const latestAlert = activeAlerts[0];
+  const historyAlerts = automation.alerts.filter((item) => !activeAlertKeys.has(buildAlertIdentity(item)));
+  const historyLatestAlert = historyAlerts[0];
+  const automationConfigSummary = {
+    automationPresetKey: readText(automationConfig.automation_preset_key, "balanced_runtime"),
+    automationPresetDetail: readText(automationConfig.automation_preset_detail, "当前还没有自动化运行预设说明。"),
+    longRunSeconds: readText(automationConfig.long_run_seconds, "300"),
+    alertCleanupMinutes: alertCleanupMinutesValue,
+  };
   const primaryBlocker = asRecord(activeBlockers[0]);
   const guidanceCurrentBlock = buildCurrentBlockSummary({
     primaryBlocker,
@@ -140,24 +163,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const alertFocus = resolveFocusCard(asRecord(focusCards.alert), guidanceAlert);
   const takeoverFocus = resolveFocusCard(asRecord(focusCards.takeover), guidanceTakeover);
   const recoveryFocus = resolveFocusCard(asRecord(focusCards.recovery), guidanceRecovery);
-  const operationsConfig = {
-    operationsPresetKey: readText(operations.operations_preset_key, "balanced_guard"),
-    operationsPresetDetail: readText(operations.operations_preset_detail, "当前还没有长期运行预设说明。"),
-    pauseAfterFailures: readText(operations.pause_after_consecutive_failures, "2"),
-    staleSyncThreshold: readText(operations.stale_sync_failure_threshold, "1"),
-    autoPauseOnError: String(operations.auto_pause_on_error ?? true) === "false" ? "false" : "true",
-    reviewLimit: readText(operations.review_limit, "10"),
-    comparisonRunLimit: readText(operations.comparison_run_limit, "5"),
-    cycleCooldownMinutes: readText(operations.cycle_cooldown_minutes, "15"),
-    maxDailyCycleCount: readText(operations.max_daily_cycle_count, "8"),
-  };
-  const automationConfig = asRecord(automation.automationConfig);
-  const automationConfigSummary = {
-    automationPresetKey: readText(automationConfig.automation_preset_key, "balanced_runtime"),
-    automationPresetDetail: readText(automationConfig.automation_preset_detail, "当前还没有自动化运行预设说明。"),
-    longRunSeconds: readText(automationConfig.long_run_seconds, "300"),
-    alertCleanupMinutes: readText(automationConfig.alert_cleanup_minutes, "15"),
-  };
   const runtimeWindowSummary = {
     currentCycleCount: readText(runtimeWindow.current_cycle_count, "0"),
     dailyLimit: readText(runtimeWindow.daily_limit, operationsConfig.maxDailyCycleCount),
@@ -222,7 +227,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
     label: item,
     checked: executionAllowedSymbols.includes(item),
   }));
-  const activeAlerts = filterActiveAlerts(automation.alerts, automationConfigSummary.alertCleanupMinutes);
   const latestAlertId = Number(latestAlert?.id ?? 0);
   const latestAlertIdValue = latestAlertId > 0 ? String(latestAlertId) : "";
   const hasClearableAlerts = activeAlerts.some((item) => {
@@ -958,12 +962,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <p>错误告警：{String(alertSummary.error_count ?? 0)}</p>
                   <p>警告告警：{String(alertSummary.warning_count ?? 0)}</p>
                   <p>信息提示：{String(alertSummary.info_count ?? 0)}</p>
-                  <p>活跃错误：{String(alertSummary.active_error_count ?? alertSummary.error_count ?? 0)}</p>
-                  <p>活跃警告：{String(alertSummary.active_warning_count ?? alertSummary.warning_count ?? 0)}</p>
-                  <p>活跃信息：{String(alertSummary.active_info_count ?? alertSummary.info_count ?? 0)}</p>
+                  <p>历史错误：{String(alertSummary.history_error_count ?? alertSummary.error_count ?? 0)}</p>
+                  <p>历史警告：{String(alertSummary.history_warning_count ?? alertSummary.warning_count ?? 0)}</p>
+                  <p>历史提示：{String(alertSummary.history_info_count ?? alertSummary.info_count ?? 0)}</p>
                   <p>活跃告警窗口：{String(alertSummary.cleanup_minutes ?? automationConfigSummary.alertCleanupMinutes)} 分钟</p>
-                  <p>最近错误：{readText(alertSummary.latest_code, "当前没有错误告警")}</p>
-                  <p>最近说明：{readText(alertSummary.latest_message, "当前没有额外说明")}</p>
+                  <p>当前头号告警：{readText(alertSummary.latest_code, "当前没有活跃告警")}</p>
+                  <p>当前说明：{readText(alertSummary.latest_message, "当前没有额外说明")}</p>
+                  <p>最近历史告警：{readText(alertSummary.history_latest_code, historyLatestAlert?.code || "当前没有历史告警")}</p>
                 </CardContent>
               </Card>
 
@@ -1692,15 +1697,23 @@ function formatAlertLevel(level: string) {
   return mapping[level] ?? (level || "告警");
 }
 
+function buildAlertIdentity(alert: { id?: number; level?: string; code?: string; message?: string; createdAt?: string }) {
+  return [
+    String(alert.id ?? ""),
+    String(alert.level ?? ""),
+    String(alert.code ?? ""),
+    String(alert.message ?? ""),
+    String(alert.createdAt ?? ""),
+  ].join("::");
+}
+
 function filterActiveAlerts(
   alerts: Array<{ id?: number; level: string; code: string; message: string; createdAt: string }>,
   cleanupMinutes: string,
 ) {
   const minutes = Number.parseInt(cleanupMinutes, 10);
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    return alerts.slice(0, 5);
-  }
-  const cutoff = Date.now() - minutes * 60 * 1000;
+  const effectiveMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 15;
+  const cutoff = Date.now() - effectiveMinutes * 60 * 1000;
   return alerts.filter((item) => {
     const timestamp = Date.parse(item.createdAt || "");
     return Number.isFinite(timestamp) && timestamp >= cutoff;

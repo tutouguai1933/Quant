@@ -121,6 +121,7 @@ class AutomationService:
 
             task_health = task_scheduler.get_health_summary()
         health = self.build_health_summary(task_health=task_health or {})
+        alert_summary = dict(health.get("alert_summary") or {})
         return {
             "state": self.get_state(),
             "health": health,
@@ -131,12 +132,16 @@ class AutomationService:
             "operator_actions": list(health.get("operator_actions") or []),
             "control_actions": list(health.get("control_actions") or []),
             "takeover_summary": dict(health.get("takeover_summary") or {}),
-            "alert_summary": dict(health.get("alert_summary") or {}),
+            "alert_summary": alert_summary,
             "severity_summary": dict(health.get("severity_summary") or {}),
             "resume_checklist": list(health.get("resume_checklist") or []),
             "alerts_count": len(self._alerts),
+            "history_alerts_count": int(alert_summary.get("history_count", 0) or 0),
+            "active_alerts_count": int(alert_summary.get("alert_count", 0) or 0),
             "latest_alert_level": str(self._alerts[0]["level"]) if self._alerts else "",
             "latest_alert_title": str(self._alerts[0]["message"]) if self._alerts else "",
+            "current_alert_level": str(alert_summary.get("latest_level", "") or ""),
+            "current_alert_title": str(alert_summary.get("latest_message", "") or ""),
             "daily_summary": dict(self._daily_summary),
         }
 
@@ -408,8 +413,8 @@ class AutomationService:
         latest_failure = dict(task_health.get("latest_failure_by_type") or {})
         failure_counts = dict(task_health.get("consecutive_failure_count_by_type") or {})
         last_cycle = dict(self._last_cycle)
-        last_alert = self._alerts[0] if self._alerts else None
         alert_summary = self._build_alert_summary()
+        last_alert = dict(alert_summary.get("latest_alert") or {}) or None
         run_health = self._build_run_health(
             latest_status=latest_status,
             latest_failure=latest_failure,
@@ -466,7 +471,8 @@ class AutomationService:
             "latest_infer_status": str(latest_status.get("research_infer", "unknown")),
             "latest_sync_status": str(latest_status.get("sync", "unknown")),
             "latest_review_status": str(latest_status.get("review", "unknown")),
-            "alert_count": len(self._alerts),
+            "alert_count": int(alert_summary.get("alert_count", 0) or 0),
+            "history_alert_count": int(alert_summary.get("history_count", 0) or 0),
             "last_alert": dict(last_alert) if last_alert else None,
             "daily_summary_date": str(self._daily_summary.get("date", "")),
             "takeover_summary": takeover_summary,
@@ -486,27 +492,62 @@ class AutomationService:
 
         automation = self._get_automation_config()
         cleanup_minutes = int(automation.get("alert_cleanup_minutes", 15) or 15)
+        active_alerts = self._filter_active_alerts(cleanup_minutes=cleanup_minutes)
+        current_summary = self._summarize_alert_collection(active_alerts)
+        history_summary = self._summarize_alert_collection(self._alerts)
+        summary = {
+            "error_count": int(current_summary.get("error_count", 0) or 0),
+            "warning_count": int(current_summary.get("warning_count", 0) or 0),
+            "info_count": int(current_summary.get("info_count", 0) or 0),
+            "active_error_count": int(current_summary.get("error_count", 0) or 0),
+            "active_warning_count": int(current_summary.get("warning_count", 0) or 0),
+            "active_info_count": int(current_summary.get("info_count", 0) or 0),
+            "alert_count": int(current_summary.get("alert_count", 0) or 0),
+            "latest_code": str(current_summary.get("latest_code", "") or ""),
+            "latest_message": str(current_summary.get("latest_message", "") or ""),
+            "latest_level": str(current_summary.get("latest_level", "") or ""),
+            "latest_source": str(current_summary.get("latest_source", "") or ""),
+            "latest_alert": dict(current_summary.get("latest_alert") or {}),
+            "cleanup_minutes": cleanup_minutes,
+            "groups": list(current_summary.get("groups") or []),
+            "history_error_count": int(history_summary.get("error_count", 0) or 0),
+            "history_warning_count": int(history_summary.get("warning_count", 0) or 0),
+            "history_info_count": int(history_summary.get("info_count", 0) or 0),
+            "history_count": int(history_summary.get("alert_count", 0) or 0),
+            "history_latest_code": str(history_summary.get("latest_code", "") or ""),
+            "history_latest_message": str(history_summary.get("latest_message", "") or ""),
+            "history_latest_level": str(history_summary.get("latest_level", "") or ""),
+            "history_latest_source": str(history_summary.get("latest_source", "") or ""),
+            "history_latest_alert": dict(history_summary.get("latest_alert") or {}),
+            "history_groups": list(history_summary.get("groups") or []),
+        }
+        return summary
+
+    @staticmethod
+    def _summarize_alert_collection(items: list[dict[str, object]]) -> dict[str, object]:
+        """把一组告警压成当前页面可直接消费的摘要。"""
+
         summary = {
             "error_count": 0,
             "warning_count": 0,
             "info_count": 0,
-            "active_error_count": 0,
-            "active_warning_count": 0,
-            "active_info_count": 0,
+            "alert_count": len(items),
             "latest_code": "",
             "latest_message": "",
             "latest_level": "",
             "latest_source": "",
-            "cleanup_minutes": cleanup_minutes,
+            "latest_alert": {},
             "groups": [],
         }
-        if self._alerts:
-            summary["latest_code"] = str(self._alerts[0].get("code", ""))
-            summary["latest_message"] = str(self._alerts[0].get("message", ""))
-            summary["latest_level"] = str(self._alerts[0].get("level", ""))
-            summary["latest_source"] = str(self._alerts[0].get("source", ""))
-        active_alerts = self._filter_active_alerts(cleanup_minutes=cleanup_minutes)
-        for item in self._alerts:
+        if items:
+            latest = dict(items[0])
+            summary["latest_code"] = str(latest.get("code", "") or "")
+            summary["latest_message"] = str(latest.get("message", "") or "")
+            summary["latest_level"] = str(latest.get("level", "") or "")
+            summary["latest_source"] = str(latest.get("source", "") or "")
+            summary["latest_alert"] = latest
+        groups: dict[str, dict[str, object]] = {}
+        for item in items:
             level = str(item.get("level", "")).strip().lower()
             if level == "error":
                 summary["error_count"] = int(summary["error_count"]) + 1
@@ -514,23 +555,13 @@ class AutomationService:
                 summary["warning_count"] = int(summary["warning_count"]) + 1
             elif level == "info":
                 summary["info_count"] = int(summary["info_count"]) + 1
-        for item in active_alerts:
-            level = str(item.get("level", "")).strip().lower()
-            if level == "error":
-                summary["active_error_count"] = int(summary["active_error_count"]) + 1
-            elif level == "warning":
-                summary["active_warning_count"] = int(summary["active_warning_count"]) + 1
-            elif level == "info":
-                summary["active_info_count"] = int(summary["active_info_count"]) + 1
-        groups: dict[str, dict[str, object]] = {}
-        for item in self._alerts:
             code = str(item.get("code", "")).strip() or "unknown"
             row = groups.get(code)
             created_at = str(item.get("created_at", "")).strip()
             if row is None:
                 row = {
                     "code": code,
-                    "level": str(item.get("level", "")).strip().lower(),
+                    "level": level,
                     "message": str(item.get("message", "")).strip(),
                     "source": str(item.get("source", "")).strip(),
                     "occurrence_count": 0,
