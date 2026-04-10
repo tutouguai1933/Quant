@@ -28,6 +28,8 @@ test("main research to execution flow stays usable across core workbenches", asy
     .poll(async () => (await page.locator("body").textContent()) ?? "", { timeout: renderTimeout })
     .toMatch(/Qlib 信号流水线已进入后台|研究动作已发出|研究任务正在运行，请等当前任务完成后再发起。/);
   await expect(page.locator("body")).toContainText("研究运行状态", { timeout: renderTimeout });
+  await expect(page.locator("body")).toContainText("模板适配判断", { timeout: renderTimeout });
+  await page.waitForURL(/\/signals(?:\?|$)/, { timeout: renderTimeout });
 
   await page.goto(`${WEB_BASE_URL}/research`, navigation);
   await expect(page.locator("body")).toContainText("策略研究工作台", { timeout: renderTimeout });
@@ -45,6 +47,7 @@ test("main research to execution flow stays usable across core workbenches", asy
   await expect(page.locator("body")).toContainText("评估与实验中心", { timeout: renderTimeout });
   await expect(page.locator("body")).toContainText("最近两轮对比");
   await expect(page.locator("body")).toContainText("配置差异拆解");
+  await expect(page.locator("body")).toContainText("更适合哪套模板", { timeout: renderTimeout });
 
   await page.goto(`${WEB_BASE_URL}/strategies`, navigation);
   await expect(page.locator("body")).toContainText("先看判断，再决定要不要派发", { timeout: renderTimeout });

@@ -9,8 +9,6 @@ from services.api.app.services.research_service import research_service
 from services.api.app.services.validation_workflow_service import validation_workflow_service
 from services.api.app.services.workbench_config_service import (
     _build_automation_preset_catalog,
-    _build_candidate_pool_preset_catalog,
-    _build_live_subset_preset_catalog,
     _build_operations_preset_catalog,
     _describe_catalog_item,
     workbench_config_service,
@@ -32,7 +30,6 @@ class EvaluationWorkspaceService:
         review_limit = self._resolve_review_limit(controls)
         comparison_run_limit = self._resolve_comparison_run_limit(controls)
         report = self._read_factory_report()
-        leaderboard = self._build_leaderboard(report)
         evaluation = dict(report.get("evaluation") or {})
         reviews = dict(report.get("reviews") or {})
         overview = dict(report.get("overview") or {})
@@ -44,24 +41,34 @@ class EvaluationWorkspaceService:
         configured_thresholds = dict((controls.get("config") or {}).get("thresholds") or {})
         configured_operations = dict((controls.get("config") or {}).get("operations") or {})
         configured_automation = dict((controls.get("config") or {}).get("automation") or {})
-        configured_data = dict((controls.get("config") or {}).get("data") or {})
-        configured_execution = dict((controls.get("config") or {}).get("execution") or {})
+        configured_research = dict((controls.get("config") or {}).get("research") or {})
+        candidate_scope = workbench_config_service.build_candidate_scope_contract(dict(controls.get("config") or {}))
         option_catalogs = dict(controls.get("options") or {})
-        candidate_symbols = [str(item) for item in list(configured_data.get("selected_symbols") or []) if str(item).strip()]
-        live_allowed_symbols = [str(item) for item in list(configured_execution.get("live_allowed_symbols") or []) if str(item).strip()]
         gate_matrix = self._build_gate_matrix(report)
+        current_research_template = self._resolve_current_research_template(
+            report=report,
+            configured_research=configured_research,
+        )
+        leaderboard = self._build_leaderboard(
+            report,
+            gate_matrix=gate_matrix,
+            current_research_template=current_research_template,
+            option_catalogs=option_catalogs,
+        )
         best_experiment = self._build_best_experiment(
             leaderboard=leaderboard,
             gate_matrix=gate_matrix,
             overview=overview,
             research_reviews=reviews,
             validation_reviews=validation_reviews,
+            candidate_scope=candidate_scope,
         )
         best_stage_candidates = self._build_best_stage_candidates(
             leaderboard=leaderboard,
             gate_matrix=gate_matrix,
             overview=overview,
             validation_reviews=validation_reviews,
+            candidate_scope=candidate_scope,
         )
         recommendation_explanation = self._build_recommendation_explanation(
             leaderboard=leaderboard,
@@ -109,22 +116,7 @@ class EvaluationWorkspaceService:
                 "recommended_action": str(overview.get("recommended_action", "")),
                 "candidate_count": int(overview.get("candidate_count", 0) or 0),
             },
-            "candidate_scope": {
-                "candidate_pool_preset_key": str(configured_data.get("candidate_pool_preset_key", "top10_liquid")),
-                "candidate_pool_preset_detail": _describe_catalog_item(
-                    _build_candidate_pool_preset_catalog(),
-                    key=str(configured_data.get("candidate_pool_preset_key", "top10_liquid")),
-                    title="候选池预设",
-                ),
-                "candidate_symbols": candidate_symbols,
-                "live_subset_preset_key": str(configured_execution.get("live_subset_preset_key", "core_live")),
-                "live_subset_preset_detail": _describe_catalog_item(
-                    _build_live_subset_preset_catalog(),
-                    key=str(configured_execution.get("live_subset_preset_key", "core_live")),
-                    title="live 子集预设",
-                ),
-                "live_allowed_symbols": live_allowed_symbols,
-            },
+            "candidate_scope": candidate_scope,
             "selection_story": self._build_selection_story(
                 option_catalogs=option_catalogs,
                 thresholds=configured_thresholds,
@@ -489,14 +481,28 @@ class EvaluationWorkspaceService:
         return max(value, 1)
 
     @staticmethod
-    def _build_leaderboard(report: dict[str, object]) -> list[dict[str, object]]:
+    def _build_leaderboard(
+        report: dict[str, object],
+        *,
+        gate_matrix: list[dict[str, object]],
+        current_research_template: str,
+        option_catalogs: dict[str, object],
+    ) -> list[dict[str, object]]:
         """把实验排行整理成可直接展示推荐原因和淘汰原因的结构。"""
 
+        candidate_by_symbol = {
+            str(item.get("symbol", "")).strip(): dict(item)
+            for item in list(report.get("candidates") or [])
+            if isinstance(item, dict) and str(item.get("symbol", "")).strip()
+        }
         rows: list[dict[str, object]] = []
         for item in list(report.get("leaderboard") or []):
             if not isinstance(item, dict):
                 continue
             row = dict(item)
+            symbol = str(row.get("symbol", "")).strip()
+            gate_row = EvaluationWorkspaceService._find_gate_row(gate_matrix=gate_matrix, symbol=symbol)
+            candidate = candidate_by_symbol.get(symbol, {})
             failure_reasons = [
                 str(reason).strip()
                 for reason in list(row.get("failure_reasons") or [])
@@ -506,6 +512,19 @@ class EvaluationWorkspaceService:
             row["failure_reasons"] = failure_reasons
             row["recommendation_reason"] = str(row.get("recommendation_reason", "")).strip()
             row["elimination_reason"] = elimination_reason
+            template_fit = EvaluationWorkspaceService._build_template_fit_story(
+                symbol=symbol or "当前候选",
+                current_research_template=current_research_template,
+                option_catalogs=option_catalogs,
+                gate_row=gate_row,
+                next_action=str(row.get("next_action", "")).strip(),
+                raw_reason=str(row.get("recommendation_reason", "") or elimination_reason),
+                strategy_template=str(candidate.get("strategy_template", "") or row.get("strategy_template", "")).strip(),
+            )
+            row["research_template"] = current_research_template
+            row["template_fit_status"] = str(template_fit.get("status", "unavailable"))
+            row["template_fit_headline"] = str(template_fit.get("headline", "当前还没有模板适配结论"))
+            row["template_fit_detail"] = str(template_fit.get("detail", "当前还没有模板适配说明"))
             rows.append(row)
         return rows
 
@@ -517,6 +536,7 @@ class EvaluationWorkspaceService:
         overview: dict[str, object],
         research_reviews: dict[str, object],
         validation_reviews: dict[str, object],
+        candidate_scope: dict[str, object],
     ) -> dict[str, object]:
         """提炼当前最值得继续推进的一轮实验。"""
 
@@ -529,9 +549,17 @@ class EvaluationWorkspaceService:
             or research_review.get("next_action", "")
             or overview.get("recommended_action", "")
         ).strip()
+        gate_row = EvaluationWorkspaceService._find_gate_row(gate_matrix=gate_matrix, symbol=symbol)
+        requested_stage = EvaluationWorkspaceService._resolve_requested_stage(next_action=next_action, symbol=symbol)
         recommended_stage = EvaluationWorkspaceService._resolve_recommended_stage(
             next_action=next_action,
             symbol=symbol,
+            candidate_scope=candidate_scope,
+            gate_row=gate_row,
+        )
+        normalized_next_action = EvaluationWorkspaceService._normalize_next_action_for_stage(
+            stage=recommended_stage,
+            next_action=next_action,
         )
         reason = str(
             top.get("recommendation_reason", "")
@@ -546,15 +574,24 @@ class EvaluationWorkspaceService:
             symbol=symbol or "当前候选",
             stage=recommended_stage,
             score=score,
-            next_action=next_action,
+            next_action=normalized_next_action,
             raw_reason=reason,
             review_result=str(research_review.get("result", "") or validation_review.get("result", "") or ""),
-            gate_row=EvaluationWorkspaceService._find_gate_row(gate_matrix=gate_matrix, symbol=symbol),
+            gate_row=gate_row,
+            scope_reason=(
+                EvaluationWorkspaceService._build_candidate_scope_block_reason(
+                    candidate_scope=candidate_scope,
+                    stage=requested_stage,
+                    symbol=symbol,
+                )
+                if requested_stage != recommended_stage
+                else ""
+            ),
         )
         return {
             "symbol": symbol,
             "recommended_stage": recommended_stage,
-            "next_action": next_action
+            "next_action": normalized_next_action
             or (
                 "go_live"
                 if recommended_stage == "live"
@@ -582,7 +619,7 @@ class EvaluationWorkspaceService:
         score = str(best_experiment.get("score", "") or top.get("score", "")).strip() or "n/a"
         action = str(best_experiment.get("next_action", "") or top.get("next_action", "")).strip() or "continue_research"
         raw_reason = str(top.get("recommendation_reason", "")).strip()
-        return EvaluationWorkspaceService._build_recommendation_story(
+        story = EvaluationWorkspaceService._build_recommendation_story(
             symbol=symbol,
             stage=stage,
             score=score,
@@ -591,6 +628,13 @@ class EvaluationWorkspaceService:
             review_result=review_result,
             gate_row=EvaluationWorkspaceService._find_gate_row(gate_matrix=gate_matrix, symbol=symbol),
         )
+        story["template_fit"] = {
+            "status": str(top.get("template_fit_status", "unavailable") or "unavailable"),
+            "template_key": str(top.get("research_template", "") or ""),
+            "headline": str(top.get("template_fit_headline", "当前还没有模板适配结论") or "当前还没有模板适配结论"),
+            "detail": str(top.get("template_fit_detail", "当前还没有模板适配说明") or "当前还没有模板适配说明"),
+        }
+        return story
 
     @staticmethod
     def _build_best_stage_candidates(
@@ -599,6 +643,7 @@ class EvaluationWorkspaceService:
         gate_matrix: list[dict[str, object]],
         overview: dict[str, object],
         validation_reviews: dict[str, object],
+        candidate_scope: dict[str, object],
     ) -> dict[str, dict[str, str]]:
         """按阶段提炼最值得继续推进的候选。"""
 
@@ -617,6 +662,13 @@ class EvaluationWorkspaceService:
                     continue
                 if not bool(gate.get(allow_key)):
                     continue
+                if not EvaluationWorkspaceService._candidate_scope_allows_stage(
+                    candidate_scope=candidate_scope,
+                    stage=stage,
+                    symbol=symbol,
+                    gate_row=gate,
+                ):
+                    continue
                 score = str(item.get("score", "")).strip() or "n/a"
                 next_action = str(item.get("next_action", "")).strip() or ("go_live" if stage == "live" else "enter_dry_run")
                 default_reason = (
@@ -632,12 +684,17 @@ class EvaluationWorkspaceService:
                 }
             fallback_symbol = str(overview.get("recommended_symbol", "")).strip() or "当前还没有候选"
             fallback_action = str(research_review.get("next_action", "") or overview.get("recommended_action", "")).strip()
+            scope_reason = EvaluationWorkspaceService._build_candidate_scope_block_reason(
+                candidate_scope=candidate_scope,
+                stage=stage,
+                symbol=fallback_symbol,
+            )
             return {
                 "symbol": fallback_symbol,
                 "stage": stage,
                 "score": "n/a",
-                "next_action": fallback_action or "continue_research",
-                "reason": f"当前还没有候选明确满足 {'live' if stage == 'live' else 'dry-run'} 放行条件。",
+                "next_action": "continue_research" if scope_reason else fallback_action or "continue_research",
+                "reason": scope_reason or f"当前还没有候选明确满足 {'live' if stage == 'live' else 'dry-run'} 放行条件。",
             }
 
         return {
@@ -678,6 +735,12 @@ class EvaluationWorkspaceService:
             "primary_symbol": symbol,
             "primary_gate": primary_gate,
             "next_step": next_step,
+            "template_fit": {
+                "status": str(top_row.get("template_fit_status", "unavailable") or "unavailable"),
+                "template_key": str(top_row.get("research_template", "") or ""),
+                "headline": str(top_row.get("template_fit_headline", "当前还没有模板适配结论") or "当前还没有模板适配结论"),
+                "detail": str(top_row.get("template_fit_detail", "当前还没有模板适配说明") or "当前还没有模板适配说明"),
+            },
             "evidence": [
                 f"当前被拦下 {len(blocked_rows)} 个候选",
                 f"最靠前候选：{symbol} / {gate_label}",
@@ -798,7 +861,101 @@ class EvaluationWorkspaceService:
             "why_recommended": str(recommendation_explanation.get("detail", "")).strip() or "当前还没有足够理由说明为什么推荐。",
             "why_blocked": str(elimination_explanation.get("detail", "")).strip() or "当前没有额外淘汰说明。",
             "execution_gap": str(alignment_details.get("difference_summary", "")).strip() or "当前还没有研究与执行差异摘要。",
+            "template_fit": str(
+                dict(recommendation_explanation.get("template_fit") or {}).get("detail", "")
+                or dict(elimination_explanation.get("template_fit") or {}).get("detail", "")
+                or "当前还没有模板适配说明。"
+            ).strip(),
             "next_step": str(best_experiment.get("next_action", "")).strip() or "continue_research",
+        }
+
+    @staticmethod
+    def _resolve_current_research_template(
+        *,
+        report: dict[str, object],
+        configured_research: dict[str, object],
+    ) -> str:
+        """优先读取当前配置，再回退到最近产物。"""
+
+        configured_template = str(configured_research.get("research_template", "") or "").strip()
+        if configured_template:
+            return configured_template
+        latest_training = dict(report.get("latest_training") or {})
+        training_context = dict(latest_training.get("training_context") or {})
+        training_parameters = dict(training_context.get("parameters") or {})
+        latest_inference = dict(report.get("latest_inference") or {})
+        inference_context = dict(latest_inference.get("inference_context") or {})
+        input_summary = dict(inference_context.get("input_summary") or {})
+        return str(
+            latest_inference.get("research_template")
+            or input_summary.get("research_template")
+            or latest_training.get("research_template")
+            or training_parameters.get("research_template")
+            or "single_asset_timing"
+        ).strip()
+
+    @staticmethod
+    def _build_template_fit_story(
+        *,
+        symbol: str,
+        current_research_template: str,
+        option_catalogs: dict[str, object],
+        gate_row: dict[str, object],
+        next_action: str,
+        raw_reason: str,
+        strategy_template: str,
+    ) -> dict[str, str]:
+        """把候选和当前研究模板的关系翻译成一段直白说明。"""
+
+        template_catalog = [
+            dict(item)
+            for item in list(option_catalogs.get("research_template_catalog") or [])
+            if isinstance(item, dict)
+        ]
+        template_key = str(current_research_template or "single_asset_timing").strip() or "single_asset_timing"
+        template_item = EvaluationWorkspaceService._resolve_catalog_item(
+            template_catalog,
+            key=template_key,
+            fallback_label=template_key,
+        )
+        allowed_to_dry_run = bool(gate_row.get("allowed_to_dry_run"))
+        allowed_to_live = bool(gate_row.get("allowed_to_live"))
+        primary_reason = str(gate_row.get("primary_reason", "")).strip()
+        cleaned_reason = EvaluationWorkspaceService._format_reason_text(raw_reason)
+        stage = EvaluationWorkspaceService._resolve_requested_stage(next_action=next_action, symbol=symbol)
+        detail_parts: list[str] = []
+        if template_key == "single_asset_timing_strict":
+            if allowed_to_live or stage == "live":
+                headline = f"{symbol} 更适合 {template_item['label']}"
+                status = "matched"
+                detail_parts.append(f"当前模板是 {template_item['label']}，更强调趋势、量能和波动一致性，这只币已经够格继续往更严格阶段推进")
+            elif allowed_to_dry_run:
+                headline = f"{symbol} 先按 {template_item['label']} 继续观察"
+                status = "guarded"
+                detail_parts.append(f"当前模板是 {template_item['label']}，这只币已经过了 dry-run 门，但还没同时满足更严格的放量条件")
+            else:
+                headline = f"{symbol} 暂时不适合 {template_item['label']}"
+                status = "blocked"
+                detail_parts.append(f"当前模板是 {template_item['label']}，这只币还没满足更强调一致性的筛选要求")
+        else:
+            if allowed_to_dry_run:
+                headline = f"{symbol} 更适合 {template_item['label']}"
+                status = "matched"
+                detail_parts.append(f"当前模板是 {template_item['label']}，更适合先抓趋势和动量，这只币已经过了 dry-run 门")
+            else:
+                headline = f"{symbol} 暂时不适合 {template_item['label']}"
+                status = "blocked"
+                detail_parts.append(f"当前模板是 {template_item['label']}，会先用更宽一点的择时口径筛候选，但这只币暂时还没过 dry-run 门")
+        if strategy_template:
+            detail_parts.append(f"当前会承接到 {strategy_template} 这套执行模板")
+        if primary_reason and primary_reason != "已通过":
+            detail_parts.append(f"主要卡点是 {primary_reason}")
+        elif cleaned_reason and cleaned_reason not in {"候选已就绪"}:
+            detail_parts.append(f"研究侧判断是 {cleaned_reason}")
+        return {
+            "status": status,
+            "headline": headline,
+            "detail": "；".join(detail_parts) + "。",
         }
 
     @staticmethod
@@ -918,6 +1075,7 @@ class EvaluationWorkspaceService:
         raw_reason: str,
         review_result: str,
         gate_row: dict[str, object],
+        scope_reason: str = "",
     ) -> dict[str, object]:
         """把推荐理由压成稳定的人话结论。"""
 
@@ -953,10 +1111,14 @@ class EvaluationWorkspaceService:
         cleaned_reason = EvaluationWorkspaceService._format_reason_text(raw_reason)
         if cleaned_reason and cleaned_reason not in {"候选已就绪"}:
             detail_parts.append(f"当前信号侧判断是：{cleaned_reason}")
+        if scope_reason:
+            detail_parts.append(scope_reason)
 
         gate_summary = f"dry-run 门：{dry_run_status}；live 门：{live_status}"
         if live_status != "通过" and primary_reason and primary_reason != "已通过":
             gate_summary = f"{gate_summary}（当前卡点：{primary_reason}）"
+        if scope_reason:
+            gate_summary = f"{gate_summary}；范围契约：{scope_reason}"
 
         return {
             "headline": (
@@ -973,7 +1135,7 @@ class EvaluationWorkspaceService:
         }
 
     @staticmethod
-    def _resolve_recommended_stage(*, next_action: str, symbol: str) -> str:
+    def _resolve_requested_stage(*, next_action: str, symbol: str) -> str:
         """按下一步动作判断当前更适合停在哪一层。"""
 
         if not symbol.strip():
@@ -984,6 +1146,135 @@ class EvaluationWorkspaceService:
         if action in {"go_dry_run", "enter_dry_run"}:
             return "dry_run"
         return "research"
+
+    @staticmethod
+    def _resolve_recommended_stage(
+        *,
+        next_action: str,
+        symbol: str,
+        candidate_scope: dict[str, object],
+        gate_row: dict[str, object],
+    ) -> str:
+        """结合统一范围契约和门控结果，判断当前更适合停在哪一层。"""
+
+        requested_stage = EvaluationWorkspaceService._resolve_requested_stage(next_action=next_action, symbol=symbol)
+        if requested_stage == "live":
+            if EvaluationWorkspaceService._candidate_scope_allows_stage(
+                candidate_scope=candidate_scope,
+                stage="live",
+                symbol=symbol,
+                gate_row=gate_row,
+            ):
+                return "live"
+            if EvaluationWorkspaceService._candidate_scope_allows_stage(
+                candidate_scope=candidate_scope,
+                stage="dry_run",
+                symbol=symbol,
+                gate_row=gate_row,
+            ):
+                return "dry_run"
+            return "research"
+        if requested_stage == "dry_run":
+            if EvaluationWorkspaceService._candidate_scope_allows_stage(
+                candidate_scope=candidate_scope,
+                stage="dry_run",
+                symbol=symbol,
+                gate_row=gate_row,
+            ):
+                return "dry_run"
+            return "research"
+        return "research"
+
+    @staticmethod
+    def _normalize_next_action_for_stage(*, stage: str, next_action: str) -> str:
+        """把动作和最终推荐阶段对齐。"""
+
+        action = str(next_action).strip()
+        if stage == "live":
+            return action if action in {"go_live", "enter_live"} else "go_live"
+        if stage == "dry_run":
+            return action if action in {"go_dry_run", "enter_dry_run"} else "go_dry_run"
+        return action if action in {"run_training", "run_inference", "wait_live", "continue_research"} else "continue_research"
+
+    @staticmethod
+    def _candidate_scope_allows_stage(
+        *,
+        candidate_scope: dict[str, object],
+        stage: str,
+        symbol: str,
+        gate_row: dict[str, object],
+    ) -> bool:
+        """判断统一范围契约是否允许当前标的进入目标阶段。"""
+
+        target_symbol = str(symbol or "").strip()
+        if not target_symbol:
+            return False
+        status = str(candidate_scope.get("status", "candidate_pool_missing") or "candidate_pool_missing")
+        candidate_symbols = {
+            str(item).strip()
+            for item in list(candidate_scope.get("candidate_symbols") or [])
+            if str(item).strip()
+        }
+        live_symbols = {
+            str(item).strip()
+            for item in list(candidate_scope.get("live_allowed_symbols") or [])
+            if str(item).strip()
+        }
+        if stage == "live":
+            return (
+                status == "ready"
+                and target_symbol in candidate_symbols
+                and target_symbol in live_symbols
+                and bool(gate_row.get("allowed_to_live"))
+            )
+        return (
+            status != "candidate_pool_missing"
+            and target_symbol in candidate_symbols
+            and bool(gate_row.get("allowed_to_dry_run"))
+        )
+
+    @staticmethod
+    def _build_candidate_scope_block_reason(
+        *,
+        candidate_scope: dict[str, object],
+        stage: str,
+        symbol: str,
+    ) -> str:
+        """把范围契约导致的阻断翻译成直白说明。"""
+
+        target_symbol = str(symbol or "").strip()
+        status = str(candidate_scope.get("status", "candidate_pool_missing") or "candidate_pool_missing")
+        candidate_symbols = {
+            str(item).strip()
+            for item in list(candidate_scope.get("candidate_symbols") or [])
+            if str(item).strip()
+        }
+        live_symbols = {
+            str(item).strip()
+            for item in list(candidate_scope.get("live_allowed_symbols") or [])
+            if str(item).strip()
+        }
+        removed_symbols = [
+            str(item).strip()
+            for item in list(candidate_scope.get("live_removed_symbols") or [])
+            if str(item).strip()
+        ]
+        if stage == "live":
+            if status == "candidate_pool_missing":
+                return "当前还没有统一候选池，先把研究 / dry-run 候选池固定下来。"
+            if status == "live_subset_missing":
+                return "当前 live 子集还没放行，先决定哪些币允许继续进入 live。"
+            if status == "live_subset_out_of_scope":
+                removed_summary = " / ".join(removed_symbols) if removed_symbols else "原 live 子集"
+                return f"当前 live 子集已经和候选池脱节，先把 {removed_summary} 收回到当前候选池内。"
+            if target_symbol and target_symbol not in live_symbols:
+                return f"{target_symbol} 当前不在 live 子集内，先留在 dry-run 继续观察。"
+        if stage == "dry_run":
+            if status == "candidate_pool_missing":
+                return "当前还没有统一候选池，先在数据工作台选好研究 / dry-run 候选池。"
+            if target_symbol and target_symbol not in candidate_symbols:
+                return f"{target_symbol} 当前不在统一候选池内，先回到数据工作台调整候选范围。"
+        return ""
 
     @staticmethod
     def _format_stage_label(stage: str) -> str:

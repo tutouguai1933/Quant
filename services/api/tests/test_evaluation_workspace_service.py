@@ -28,13 +28,17 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["candidate_scope"]["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"])
         self.assertEqual(item["candidate_scope"]["candidate_pool_preset_key"], "top10_liquid")
         self.assertEqual(item["candidate_scope"]["live_subset_preset_key"], "core_live")
+        self.assertEqual(item["candidate_scope"]["status"], "ready")
         self.assertIn("候选池", item["candidate_scope"]["candidate_pool_preset_detail"])
         self.assertIn("live", item["candidate_scope"]["live_subset_preset_detail"].lower())
+        self.assertIn("同一份范围契约", item["candidate_scope"]["detail"])
         self.assertEqual(item["evaluation"]["candidate_status"]["ready_count"], 1)
         self.assertIn("net_return_pct", item["evaluation"]["metrics_catalog"])
         self.assertEqual(item["reviews"]["research"]["result"], "candidate_ready")
         self.assertEqual(item["leaderboard"][0]["symbol"], "ETHUSDT")
         self.assertEqual(item["leaderboard"][0]["recommendation_reason"], "trend 行情下优先参考 trend+momentum")
+        self.assertEqual(item["leaderboard"][0]["template_fit_status"], "matched")
+        self.assertIn("单币择时", item["leaderboard"][0]["template_fit_headline"])
         self.assertEqual(item["leaderboard"][1]["elimination_reason"], "sample_count_too_low")
         self.assertEqual(item["execution_alignment"]["status"], "matched")
         self.assertEqual(item["gate_matrix"][0]["blocking_gate"], "passed")
@@ -115,6 +119,10 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["threshold_catalog"][6]["key"], "gate_switches")
         self.assertIn("当前优先进入 dry-run", item["recommendation_explanation"]["headline"])
         self.assertIn("BTCUSDT", item["elimination_explanation"]["headline"])
+        self.assertEqual(item["recommendation_explanation"]["template_fit"]["template_key"], "single_asset_timing")
+        self.assertIn("单币择时", item["recommendation_explanation"]["template_fit"]["headline"])
+        self.assertIn("趋势和动量", item["recommendation_explanation"]["template_fit"]["detail"])
+        self.assertIn("单币择时", item["stage_decision_summary"]["template_fit"])
         self.assertIsInstance(item["recommendation_explanation"]["evidence"], list)
         self.assertEqual(len(item["recommendation_explanation"]["evidence"]), 3)
         self.assertIn("分数", item["recommendation_explanation"]["evidence"][0])
@@ -234,6 +242,22 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("推进到 live", item["decision_board"]["headline"])
         self.assertIn("现在值得推进", item["decision_board"]["cards"][1]["decision"])
 
+    def test_workspace_does_not_promote_live_stage_when_symbol_is_not_in_live_subset(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_LivePromotionResearchService(),
+            controls_builder=lambda: _fake_controls(live_allowed_symbols=["BTCUSDT"]),
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["candidate_scope"]["status"], "ready")
+        self.assertEqual(item["best_experiment"]["recommended_stage"], "dry_run")
+        self.assertEqual(item["best_experiment"]["next_action"], "go_dry_run")
+        self.assertEqual(item["decision_board"]["primary_stage"], "dry_run")
+        self.assertEqual(item["best_stage_candidates"]["live"]["next_action"], "continue_research")
+        self.assertIn("live 子集", item["best_stage_candidates"]["live"]["reason"])
+
     def test_gate_matrix_accepts_status_based_gate_payloads(self) -> None:
         rows = EvaluationWorkspaceService._build_gate_matrix(
             {
@@ -337,6 +361,8 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("综合排序第一", item["recommendation_explanation"]["detail"])
         self.assertIn("虽然 live 门也已通过", item["recommendation_explanation"]["detail"])
         self.assertIn("先进入 dry-run", item["recommendation_explanation"]["detail"])
+        self.assertIn("单币择时", item["recommendation_explanation"]["template_fit"]["headline"])
+        self.assertIn("趋势和动量", item["recommendation_explanation"]["template_fit"]["detail"])
         self.assertIn("dry-run 门：通过", item["recommendation_explanation"]["evidence"][1])
         self.assertIn("live 门：通过", item["recommendation_explanation"]["evidence"][1])
         self.assertIn("候选已就绪，先进入 dry-run", item["recommendation_explanation"]["evidence"][2])
@@ -354,6 +380,8 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("当前优先进入 dry-run", item["recommendation_explanation"]["headline"])
         self.assertIn("综合排序第一", item["recommendation_explanation"]["detail"])
         self.assertIn("live 门还没放行", item["recommendation_explanation"]["detail"])
+        self.assertIn("单币择时", item["recommendation_explanation"]["template_fit"]["headline"])
+        self.assertIn("sample_count_too_low", item["recommendation_explanation"]["template_fit"]["detail"])
         self.assertIn("dry-run 门：通过", item["recommendation_explanation"]["evidence"][1])
         self.assertIn("live 门：拦下", item["recommendation_explanation"]["evidence"][1])
         self.assertIn("sample_count_too_low", item["recommendation_explanation"]["evidence"][1])
@@ -811,7 +839,12 @@ class _UnavailableExecutionButStaleHistoryReviewService(_FakeValidationReviewSer
         return payload
 
 
-def _fake_controls(*, review_limit: str = "10", comparison_run_limit: str = "5") -> dict[str, object]:
+def _fake_controls(
+    *,
+    review_limit: str = "10",
+    comparison_run_limit: str = "5",
+    live_allowed_symbols: list[str] | None = None,
+) -> dict[str, object]:
     return {
         "config": {
             "data": {
@@ -828,8 +861,11 @@ def _fake_controls(*, review_limit: str = "10", comparison_run_limit: str = "5")
                     "DOTUSDT",
                 ],
             },
+            "research": {
+                "research_template": "single_asset_timing",
+            },
             "execution": {
-                "live_allowed_symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"],
+                "live_allowed_symbols": live_allowed_symbols if live_allowed_symbols is not None else ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"],
             },
             "operations": {
                 "review_limit": review_limit,
@@ -869,6 +905,10 @@ def _fake_controls(*, review_limit: str = "10", comparison_run_limit: str = "5")
             },
         },
         "options": {
+            "research_template_catalog": [
+                {"key": "single_asset_timing", "label": "单币择时", "fit": "默认主链", "detail": "先抓趋势和动量，再继续验证。"},
+                {"key": "single_asset_timing_strict", "label": "单币择时严格版", "fit": "收紧放行", "detail": "更强调趋势、量能和波动一致性。"},
+            ],
             "threshold_presets": ["standard_gate", "strict_live_gate", "exploratory_dry_run"],
             "threshold_preset_catalog": [
                 {"key": "standard_gate", "label": "standard_gate / 标准准入", "fit": "默认口径", "detail": "适合先跑统一研究链，再看哪些候选可以进 dry-run。"},

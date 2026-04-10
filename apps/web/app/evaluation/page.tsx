@@ -31,6 +31,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const candidatePoolPresetDetail = readText(candidateScope.candidate_pool_preset_detail, "当前还没有候选池预设说明。");
   const liveSubsetPresetKey = readText(candidateScope.live_subset_preset_key, "core_live");
   const liveSubsetPresetDetail = readText(candidateScope.live_subset_preset_detail, "当前还没有 live 子集预设说明。");
+  const candidateScopeHeadline = readText(candidateScope.headline, "当前还没有统一候选池说明。");
+  const candidateScopeDetail = readText(candidateScope.detail, "当前还没有候选池和 live 子集的统一解释。");
+  const candidateScopeNextStep = readText(candidateScope.next_step, "先恢复候选池与 live 子集配置。");
   const candidateStatus = asRecord(evaluation.candidate_status);
   const eliminationRules = asRecord(evaluation.elimination_rules);
   const recommendedCandidate = asRecord(evaluation.recommended_candidate);
@@ -59,6 +62,8 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const bestLiveCandidate = asRecord(bestStageCandidates.live);
   const recommendationExplanation = asRecord(workspace.recommendation_explanation);
   const eliminationExplanation = asRecord(workspace.elimination_explanation);
+  const recommendationTemplateFit = asRecord(recommendationExplanation.template_fit);
+  const eliminationTemplateFit = asRecord(eliminationExplanation.template_fit);
   const alignmentStory = asRecord(workspace.alignment_story);
   const selectedThresholdPreset = asRecord(selectionStory.threshold_preset);
   const alignmentMetricRows = Array.isArray(workspace.alignment_metric_rows)
@@ -405,7 +410,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
           </Card>
 
           <DataTable
-            columns={["实验排行榜", "推荐原因", "下一步动作", "淘汰原因"]}
+            columns={["实验排行榜", "模板适配", "推荐原因", "下一步动作", "淘汰原因"]}
             rows={filteredLeaderboard.map((item, index) => {
               const row = asRecord(item);
               const reasons = String(row.elimination_reason ?? "已通过");
@@ -413,6 +418,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
                 id: `${row.symbol ?? index}`,
                 cells: [
                   String(row.symbol ?? "n/a"),
+                  String(row.template_fit_headline ?? row.template_fit_detail ?? "当前还没有模板适配说明"),
                   String(row.recommendation_reason ?? row.score ?? row.review_status ?? "n/a"),
                   String(row.next_action ?? "continue_research"),
                   reasons,
@@ -500,6 +506,8 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <CardDescription>这里直接展示系统为什么推荐这个币继续进入下一步。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="统一范围契约" value={candidateScopeHeadline} />
+              <InfoBlock label="为什么这样分层" value={candidateScopeDetail} />
               <InfoBlock
                 label="研究候选池"
                 value={candidateSymbols.length ? candidateSymbols.join(" / ") : "当前未配置"}
@@ -513,7 +521,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <InfoBlock label="推荐标的" value={String((recommendedCandidate.symbol ?? workspace.overview.recommended_symbol) || "未推荐")} />
               <InfoBlock label="推荐动作" value={String((bestExperiment.next_action ?? researchReview.next_action ?? workspace.overview.recommended_action) || "继续研究")} />
               <InfoBlock label="推荐分数" value={String(recommendedCandidate.score ?? "n/a")} />
+              <InfoBlock label="更适合哪套模板" value={String(recommendationTemplateFit.headline ?? "当前还没有模板适配结论。")} />
               <InfoBlock label="为什么先推进" value={String(recommendationExplanation.detail ?? "当前还没有推荐理由说明。")} />
+              <InfoBlock label="模板适配说明" value={String(recommendationTemplateFit.detail ?? "当前还没有模板适配说明。")} />
             </CardContent>
           </Card>
 
@@ -523,6 +533,8 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <CardDescription>把候选池、live 子集、长期运行预设和自动化运行预设放在一起看，方便直接判断这轮为什么推荐、为什么还不能继续放量。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前范围说明" value={candidateScopeHeadline} />
+              <InfoBlock label="下一步" value={candidateScopeNextStep} />
               <InfoBlock label="候选池预设" value={`${candidatePoolPresetKey} / ${candidatePoolPresetDetail}`} />
               <InfoBlock label="live 子集预设" value={`${liveSubsetPresetKey} / ${liveSubsetPresetDetail}`} />
               <InfoBlock label="长期运行预设" value={`${operationsPresetKey} / ${operationsPresetDetail}`} />
@@ -540,7 +552,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <div className="grid gap-3 md:grid-cols-2">
                 <InfoBlock label="这一轮更值得推进什么" value={String(recommendationExplanation.headline ?? workspace.overview.recommended_symbol ?? "当前还没有明确推荐")} />
                 <InfoBlock label="先推荐谁" value={String(workspace.overview.recommended_symbol ?? recommendedCandidate.symbol ?? "当前还没有推荐标的")} />
+                <InfoBlock label="更适合哪套模板" value={String(recommendationTemplateFit.headline ?? "当前还没有模板适配结论。")} />
                 <InfoBlock label="为什么推荐" value={String(recommendationExplanation.detail ?? researchReview.result ?? "当前还没有推荐理由说明。")} />
+                <InfoBlock label="模板适配说明" value={String(recommendationTemplateFit.detail ?? "当前还没有模板适配说明。")} />
                 <InfoBlock label="推荐下一步" value={String(bestExperiment.next_action ?? researchReview.next_action ?? workspace.overview.recommended_action ?? "继续研究")} />
               </div>
               {(Array.isArray(recommendationExplanation.evidence) ? recommendationExplanation.evidence : []).length ? (
@@ -645,6 +659,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <InfoBlock label="当前推荐候选" value={readText(workspace.overview.recommended_symbol, "当前还没有推荐候选")} />
               <InfoBlock label="当前判断" value={readText(workspace.stage_decision_summary?.headline, "当前还没有阶段判断")} />
               <InfoBlock label="推荐原因" value={readText(workspace.stage_decision_summary?.why_recommended, "当前还没有推荐原因")} />
+              <InfoBlock label="模板适配" value={readText(workspace.stage_decision_summary?.template_fit, "当前还没有模板适配说明")} />
               <InfoBlock label="研究与执行差异" value={readText(workspace.stage_decision_summary?.execution_gap, "当前还没有差异摘要")} />
               <InfoBlock label="下一步" value={readText(workspace.stage_decision_summary?.next_step, "continue_research")} />
             </CardContent>
@@ -700,7 +715,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               <div className="grid gap-3 md:grid-cols-2">
                 <InfoBlock label="先淘汰谁" value={String(eliminationExplanation.primary_symbol ?? eliminationExplanation.symbol ?? "当前还没有淘汰标的")} />
                 <InfoBlock label="当前卡在哪个门" value={String(eliminationExplanation.primary_gate ?? "当前还没有主要门控")} />
+                <InfoBlock label="当前模板为什么先不适合" value={String(eliminationTemplateFit.headline ?? "当前还没有模板适配结论。")} />
                 <InfoBlock label="为什么淘汰" value={String(eliminationExplanation.detail ?? "当前还没有淘汰原因说明。")} />
+                <InfoBlock label="模板适配说明" value={String(eliminationTemplateFit.detail ?? "当前还没有模板适配说明。")} />
                 <InfoBlock label="先怎么修" value={String(eliminationExplanation.next_step ?? "当前还没有修复方向。")} />
               </div>
               {(Array.isArray(eliminationExplanation.evidence) ? eliminationExplanation.evidence : []).length ? (
@@ -752,7 +769,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
           />
 
           <DataTable
-            columns={["候选推进板", "更适合去哪一层", "dry-run / live", "当前卡点", "为什么推荐或淘汰", "下一步"]}
+            columns={["候选推进板", "更适合哪套模板", "更适合去哪一层", "dry-run / live", "当前卡点", "为什么推荐或淘汰", "下一步"]}
             rows={filteredLeaderboard.map((item, index) => {
               const row = asRecord(item);
               const symbol = String(row.symbol ?? `candidate-${index}`);
@@ -771,6 +788,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
                 id: symbol,
                 cells: [
                   `${symbol} / ${String(row.score ?? "n/a")}`,
+                  String(row.template_fit_headline ?? row.template_fit_detail ?? "当前还没有模板适配说明"),
                   suggestedStage,
                   `${dryRunFit} / ${liveFit}`,
                   block,

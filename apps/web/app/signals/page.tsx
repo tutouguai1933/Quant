@@ -18,6 +18,8 @@ import { readFeedback } from "../../lib/feedback";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
+  getEvaluationWorkspace,
+  getEvaluationWorkspaceFallback,
   getResearchReport,
   getResearchReportFallback,
   getResearchRuntimeStatus,
@@ -39,12 +41,14 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   let researchReport = getResearchReportFallback().item;
   let runtimeStatus = getResearchRuntimeStatusFallback();
   let automation = getAutomationStatusFallback().item;
+  let evaluationWorkspace = getEvaluationWorkspaceFallback();
 
-  const [signalsResult, researchReportResult, runtimeResult, automationResult] = await Promise.allSettled([
+  const [signalsResult, researchReportResult, runtimeResult, automationResult, evaluationResult] = await Promise.allSettled([
     listSignals(),
     getResearchReport(),
     getResearchRuntimeStatus(),
     session.token ? getAutomationStatus(session.token) : Promise.resolve(null),
+    getEvaluationWorkspace(),
   ]);
   if (signalsResult.status === "fulfilled") {
     items = signalsResult.value.data.items;
@@ -58,12 +62,18 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
     automation = automationResult.value.data.item;
   }
+  if (evaluationResult.status === "fulfilled" && !evaluationResult.value.error) {
+    evaluationWorkspace = evaluationResult.value.data.item;
+  }
 
   const latestTraining = asRecord(researchReport.latest_training);
   const latestInference = asRecord(researchReport.latest_inference);
   const trainingExperiment = asRecord(researchReport.experiments.training);
   const inferenceExperiment = asRecord(researchReport.experiments.inference);
   const automationCycle = asRecord(automation.lastCycle);
+  const recommendationExplanation = asRecord(evaluationWorkspace.recommendation_explanation);
+  const recommendationTemplateFit = asRecord(recommendationExplanation.template_fit);
+  const stageDecisionSummary = asRecord(evaluationWorkspace.stage_decision_summary);
   const inferenceGeneratedAt = formatText(
     latestInference["generated_at"],
     formatText(inferenceExperiment["generated_at"], formatText(researchReport.overview.generated_at, "n/a")),
@@ -204,6 +214,19 @@ export default async function SignalsPage({ searchParams }: PageProps) {
                   />
                 </TabsContent>
               </Tabs>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <CardTitle>模板适配判断</CardTitle>
+              <CardDescription>这里直接回答当前推荐为什么更适合这套研究模板，不用切到评估页再拼上下文。</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="当前推荐" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
+              <InfoBlock label="更适合哪套模板" value={formatText(recommendationTemplateFit.headline, "当前还没有模板适配结论")} />
+              <InfoBlock label="模板适配说明" value={formatText(recommendationTemplateFit.detail, "当前还没有模板适配说明")} />
+              <InfoBlock label="下一步动作" value={formatText(stageDecisionSummary.next_step, "continue_research")} />
             </CardContent>
           </Card>
         </div>

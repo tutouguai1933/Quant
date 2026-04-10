@@ -40,7 +40,7 @@
     - Playwright 覆盖模板切换、刷新后保持、空态模板提示
     - 真实页面检查模板说明、参数区、训练入口是否跟着模板变化
 
-- [ ] A3. 给多模板结果补“模板适配解释”
+- [x] A3. 给多模板结果补“模板适配解释”
   - 目标：每个候选不只显示分数，还要说明当前更适合哪套模板、为什么
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：`apps/web/app/evaluation/page.tsx`、`apps/web/app/signals/page.tsx`
