@@ -106,7 +106,7 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["threshold_catalog"][2]["key"], "validation_gate")
         self.assertEqual(item["threshold_catalog"][5]["key"], "live_gate")
         self.assertEqual(item["threshold_catalog"][6]["key"], "gate_switches")
-        self.assertIn("更值得进入 dry-run", item["recommendation_explanation"]["headline"])
+        self.assertIn("当前优先进入 dry-run", item["recommendation_explanation"]["headline"])
         self.assertIn("主要卡在", item["elimination_explanation"]["headline"])
         self.assertIsInstance(item["recommendation_explanation"]["evidence"], list)
         self.assertEqual(len(item["recommendation_explanation"]["evidence"]), 3)
@@ -149,6 +149,18 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
             item["comparison_summary"]["experiment_alignment_note"],
             "当前还没有训练或推理记录，先跑实验再来看对比。",
         )
+
+    def test_workspace_humanizes_missing_training_reason_when_no_candidates(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_NoCandidateTrainingMissingResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertIn("训练结果缺失", item["best_experiment"]["reason"])
+        self.assertIn("训练结果缺失，先跑训练", item["recommendation_explanation"]["evidence"][2])
 
     def test_gate_matrix_accepts_status_based_gate_payloads(self) -> None:
         rows = EvaluationWorkspaceService._build_gate_matrix(
@@ -239,6 +251,41 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["recent_inference_runs"][0]["research_preset_key"], "baseline_balanced")
         self.assertEqual(item["recent_inference_runs"][0]["label_preset_key"], "balanced_window")
         self.assertEqual(item["recent_inference_runs"][0]["label_trigger_basis"], "close")
+
+    def test_workspace_builds_stable_recommendation_story_from_gates(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertIn("当前优先进入 dry-run", item["recommendation_explanation"]["headline"])
+        self.assertIn("综合排序第一", item["recommendation_explanation"]["detail"])
+        self.assertIn("虽然 live 门也已通过", item["recommendation_explanation"]["detail"])
+        self.assertIn("先进入 dry-run", item["recommendation_explanation"]["detail"])
+        self.assertIn("dry-run 门：通过", item["recommendation_explanation"]["evidence"][1])
+        self.assertIn("live 门：通过", item["recommendation_explanation"]["evidence"][1])
+        self.assertIn("候选已就绪，先进入 dry-run", item["recommendation_explanation"]["evidence"][2])
+        self.assertIn("综合排序第一", item["stage_decision_summary"]["why_recommended"])
+
+    def test_workspace_falls_back_to_gate_story_when_recommendation_reason_is_missing(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_MissingRecommendationReasonResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertIn("当前优先进入 dry-run", item["recommendation_explanation"]["headline"])
+        self.assertIn("综合排序第一", item["recommendation_explanation"]["detail"])
+        self.assertIn("live 门还没放行", item["recommendation_explanation"]["detail"])
+        self.assertIn("dry-run 门：通过", item["recommendation_explanation"]["evidence"][1])
+        self.assertIn("live 门：拦下", item["recommendation_explanation"]["evidence"][1])
+        self.assertIn("sample_count_too_low", item["recommendation_explanation"]["evidence"][1])
+        self.assertIn("综合排序第一", item["best_experiment"]["reason"])
 
     def test_workspace_uses_configured_review_limit(self) -> None:
         review_reader = _CapturingValidationReviewService()
@@ -519,6 +566,27 @@ class _UnavailableResearchService:
         return {"status": "unavailable"}
 
 
+class _NoCandidateTrainingMissingResearchService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        payload["overview"] = {
+            "recommended_symbol": "",
+            "recommended_action": "run_training",
+        }
+        payload["candidates"] = []
+        payload["leaderboard"] = []
+        payload["evaluation"]["candidate_status"] = {
+            "candidate_count": 0,
+            "ready_count": 0,
+            "blocked_count": 0,
+        }
+        payload["reviews"]["research"] = {
+            "result": "training_missing",
+            "next_action": "run_training",
+        }
+        return payload
+
+
 class _NoRecommendationResearchService(_FakeResearchService):
     def get_factory_report(self) -> dict[str, object]:
         payload = super().get_factory_report()
@@ -555,6 +623,15 @@ class _MissingContextResearchService(_FakeResearchService):
                 "dataset_snapshot": {"snapshot_id": "snapshot-prev"},
             },
         ]
+        return payload
+
+
+class _MissingRecommendationReasonResearchService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        payload["candidates"][0]["allowed_to_live"] = False
+        payload["candidates"][0]["live_gate"] = {"passed": False, "reasons": ["sample_count_too_low"]}
+        payload["leaderboard"][0]["recommendation_reason"] = ""
         return payload
 
 

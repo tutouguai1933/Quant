@@ -99,7 +99,7 @@ class EvaluationWorkspaceTests(unittest.TestCase):
         self.assertIn("下一步动作", content)
         self.assertIn("最近训练实验", content)
         self.assertIn("最近推理实验", content)
-        self.assertIn("更值得进入 dry-run", content)
+        self.assertIn("为什么先推进", content)
         self.assertIn("更值得进入 live", content)
         self.assertIn("分阶段最佳候选", content)
         self.assertIn("研究候选池", content)

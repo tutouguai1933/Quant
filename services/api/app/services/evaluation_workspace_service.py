@@ -49,20 +49,23 @@ class EvaluationWorkspaceService:
         option_catalogs = dict(controls.get("options") or {})
         candidate_symbols = [str(item) for item in list(configured_data.get("selected_symbols") or []) if str(item).strip()]
         live_allowed_symbols = [str(item) for item in list(configured_execution.get("live_allowed_symbols") or []) if str(item).strip()]
+        gate_matrix = self._build_gate_matrix(report)
         best_experiment = self._build_best_experiment(
             leaderboard=leaderboard,
+            gate_matrix=gate_matrix,
             overview=overview,
             research_reviews=reviews,
             validation_reviews=validation_reviews,
         )
         best_stage_candidates = self._build_best_stage_candidates(
             leaderboard=leaderboard,
-            gate_matrix=self._build_gate_matrix(report),
+            gate_matrix=gate_matrix,
             overview=overview,
             validation_reviews=validation_reviews,
         )
         recommendation_explanation = self._build_recommendation_explanation(
             leaderboard=leaderboard,
+            gate_matrix=gate_matrix,
             best_experiment=best_experiment,
             review_result=str(dict(reviews.get("research") or {}).get("result", "") or ""),
         )
@@ -193,7 +196,7 @@ class EvaluationWorkspaceService:
             "recent_training_runs": self._build_recent_run_history(report=report, run_type="training", limit=comparison_run_limit),
             "recent_inference_runs": self._build_recent_run_history(report=report, run_type="inference", limit=comparison_run_limit),
             "experiment_comparison": self._build_experiment_comparison(report, limit=comparison_run_limit),
-            "gate_matrix": self._build_gate_matrix(report),
+            "gate_matrix": gate_matrix,
             "workflow_alignment_timeline": self._build_workflow_alignment_timeline(review_report),
             "run_deltas": self._build_run_deltas(report, limit=comparison_run_limit),
             "delta_overview": self._build_delta_overview(report),
@@ -499,6 +502,7 @@ class EvaluationWorkspaceService:
     def _build_best_experiment(
         *,
         leaderboard: list[dict[str, object]],
+        gate_matrix: list[dict[str, object]],
         overview: dict[str, object],
         research_reviews: dict[str, object],
         validation_reviews: dict[str, object],
@@ -523,15 +527,21 @@ class EvaluationWorkspaceService:
         ).strip()
         if not reason:
             reason = "当前还没有足够结果判断哪一轮更适合继续推进。"
-        elif "更适合" not in reason:
-            target = "live" if recommended_stage == "live" else "dry-run"
-            reason = f"{symbol or '当前候选'} 更适合进入 {target}：{reason}"
         score = str(top.get("score", "")).strip()
+        recommendation_story = EvaluationWorkspaceService._build_recommendation_story(
+            symbol=symbol or "当前候选",
+            stage=recommended_stage,
+            score=score,
+            next_action=next_action,
+            raw_reason=reason,
+            review_result=str(research_review.get("result", "") or validation_review.get("result", "") or ""),
+            gate_row=EvaluationWorkspaceService._find_gate_row(gate_matrix=gate_matrix, symbol=symbol),
+        )
         return {
             "symbol": symbol,
             "recommended_stage": recommended_stage,
             "next_action": next_action or ("go_live" if recommended_stage == "live" else "go_dry_run"),
-            "reason": reason,
+            "reason": str(recommendation_story.get("detail", "")).strip() or reason,
             "score": score,
         }
 
@@ -539,29 +549,27 @@ class EvaluationWorkspaceService:
     def _build_recommendation_explanation(
         *,
         leaderboard: list[dict[str, object]],
+        gate_matrix: list[dict[str, object]],
         best_experiment: dict[str, object],
         review_result: str,
-    ) -> dict[str, str]:
+    ) -> dict[str, object]:
         """把推荐理由整理成前端可直接显示的解释摘要。"""
 
         top = dict(leaderboard[0] or {}) if leaderboard else {}
         symbol = str(best_experiment.get("symbol", "") or top.get("symbol", "")).strip() or "当前候选"
         stage = str(best_experiment.get("recommended_stage", "dry_run") or "dry_run")
-        target = "live" if stage == "live" else "dry-run"
         score = str(best_experiment.get("score", "") or top.get("score", "")).strip() or "n/a"
         action = str(best_experiment.get("next_action", "") or top.get("next_action", "")).strip() or "continue_research"
-        reason = str(best_experiment.get("reason", "") or top.get("recommendation_reason", "")).strip()
-        if not reason:
-            reason = f"{symbol} 当前是候选里最稳的一轮，优先继续进入 {target}。"
-        return {
-            "headline": f"{symbol} 更值得进入 {target}",
-            "detail": reason,
-            "evidence": [
-                f"分数 {score}",
-                f"下一步 {action}",
-                f"研究复盘 {review_result or 'n/a'}",
-            ],
-        }
+        raw_reason = str(top.get("recommendation_reason", "")).strip()
+        return EvaluationWorkspaceService._build_recommendation_story(
+            symbol=symbol,
+            stage=stage,
+            score=score,
+            next_action=action,
+            raw_reason=raw_reason,
+            review_result=review_result,
+            gate_row=EvaluationWorkspaceService._find_gate_row(gate_matrix=gate_matrix, symbol=symbol),
+        )
 
     @staticmethod
     def _build_best_stage_candidates(
@@ -729,6 +737,114 @@ class EvaluationWorkspaceService:
             "execution_gap": str(alignment_details.get("difference_summary", "")).strip() or "当前还没有研究与执行差异摘要。",
             "next_step": str(best_experiment.get("next_action", "")).strip() or "continue_research",
         }
+
+    @staticmethod
+    def _find_gate_row(*, gate_matrix: list[dict[str, object]], symbol: str) -> dict[str, object]:
+        """按标的查找当前候选的门控摘要。"""
+
+        target = str(symbol or "").strip()
+        if not target:
+            return {}
+        for item in gate_matrix:
+            if str(item.get("symbol", "")).strip() == target:
+                return dict(item)
+        return {}
+
+    @staticmethod
+    def _build_recommendation_story(
+        *,
+        symbol: str,
+        stage: str,
+        score: str,
+        next_action: str,
+        raw_reason: str,
+        review_result: str,
+        gate_row: dict[str, object],
+    ) -> dict[str, object]:
+        """把推荐理由压成稳定的人话结论。"""
+
+        target = "live" if stage == "live" else "dry-run"
+        dry_run_status = "通过" if bool(gate_row.get("allowed_to_dry_run")) else "拦下"
+        live_status = str(gate_row.get("live_gate", "n/a") or "n/a")
+        primary_reason = str(gate_row.get("primary_reason", "")).strip()
+        detail_parts = [f"{symbol} 当前综合排序第一，更适合先进入 {target}"]
+
+        if dry_run_status == "通过" and live_status == "通过" and stage != "live":
+            detail_parts.append("虽然 live 门也已通过，但当前流程仍先进入 dry-run，再决定是否继续放到 live")
+        elif dry_run_status == "通过" and live_status == "通过":
+            detail_parts.append("dry-run 和 live 门都已通过，可以直接继续推进 live")
+        elif dry_run_status == "通过":
+            if primary_reason and primary_reason != "已通过":
+                detail_parts.append(f"dry-run 门已通过，但 live 门还没放行，当前主要卡点是 {primary_reason}")
+            else:
+                detail_parts.append("dry-run 门已通过，但 live 门还没放行，先进入 dry-run 继续观察")
+        else:
+            if primary_reason and primary_reason != "已通过":
+                detail_parts.append(f"当前还没过 dry-run 门，主要卡点是 {primary_reason}")
+            else:
+                detail_parts.append("当前还没过 dry-run 门，先继续研究")
+
+        cleaned_reason = EvaluationWorkspaceService._format_reason_text(raw_reason)
+        if cleaned_reason and cleaned_reason not in {"候选已就绪"}:
+            detail_parts.append(f"当前信号侧判断是：{cleaned_reason}")
+
+        gate_summary = f"dry-run 门：{dry_run_status}；live 门：{live_status}"
+        if live_status != "通过" and primary_reason and primary_reason != "已通过":
+            gate_summary = f"{gate_summary}（当前卡点：{primary_reason}）"
+
+        return {
+            "headline": f"{symbol} 当前优先进入 {target}",
+            "detail": "；".join(detail_parts) + "。",
+            "evidence": [
+                f"分数 {score or 'n/a'} / 当前综合排序第一",
+                gate_summary,
+                f"研究复盘：{EvaluationWorkspaceService._format_review_summary(review_result=review_result, next_action=next_action)}",
+            ],
+        }
+
+    @staticmethod
+    def _format_review_summary(*, review_result: str, next_action: str) -> str:
+        """把研究复盘结果翻译成前端可读说明。"""
+
+        result_label_map = {
+            "candidate_ready": "候选已就绪",
+            "candidate_blocked": "候选暂未通过",
+            "training_missing": "训练结果缺失",
+            "inference_missing": "推理结果缺失",
+            "waiting": "当前仍在等待",
+            "succeeded": "当前已完成",
+            "failed": "当前已失败",
+        }
+        action_label_map = {
+            "enter_dry_run": "先进入 dry-run",
+            "go_dry_run": "先进入 dry-run",
+            "go_live": "准备进入 live",
+            "enter_live": "准备进入 live",
+            "continue_research": "先继续研究",
+            "run_training": "先跑训练",
+            "run_inference": "先补推理",
+            "wait_live": "继续等待 live",
+        }
+        result_label = result_label_map.get(str(review_result).strip(), str(review_result).strip() or "当前还没有复盘结论")
+        action_label = action_label_map.get(str(next_action).strip(), str(next_action).strip() or "继续观察")
+        if result_label and action_label:
+            return f"{result_label}，{action_label}"
+        return result_label or action_label or "当前还没有复盘结论"
+
+    @staticmethod
+    def _format_reason_text(value: str) -> str:
+        """把内部原因码翻译成页面可读文本。"""
+
+        mapping = {
+            "candidate_ready": "候选已就绪",
+            "candidate_blocked": "候选暂未通过",
+            "training_missing": "训练结果缺失",
+            "inference_missing": "推理结果缺失",
+            "waiting": "当前仍在等待",
+            "failed": "当前已失败",
+        }
+        text = str(value or "").strip()
+        return mapping.get(text, text)
 
     @staticmethod
     def _resolve_elimination_reason(*, row: dict[str, object], failure_reasons: list[str]) -> str:

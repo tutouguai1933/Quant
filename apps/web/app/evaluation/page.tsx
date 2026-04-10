@@ -160,7 +160,11 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
         items={[
           { label: "推荐标的", value: workspace.overview.recommended_symbol || "未推荐", detail: workspace.overview.recommended_action || "当前无下一步动作" },
           { label: "候选数量", value: String(workspace.overview.candidate_count), detail: `可进 dry-run ${String(candidateStatus.ready_count ?? 0)}` },
-          { label: "推荐原因", value: String(researchReview.result ?? "未生成"), detail: String(researchReview.next_action ?? "继续研究") },
+          {
+            label: "推荐原因",
+            value: String(recommendationExplanation.headline ?? "未生成"),
+            detail: String(recommendationExplanation.detail ?? researchReview.result ?? "继续研究"),
+          },
           { label: "样本外稳定性", value: String(candidateStatus.pass_rate_pct ?? "n/a"), detail: "当前按统一评估口径整理" },
         ]}
       />
@@ -503,9 +507,9 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               />
               <InfoBlock label="live 子集预设" value={`${liveSubsetPresetKey} / ${liveSubsetPresetDetail}`} />
               <InfoBlock label="推荐标的" value={String((recommendedCandidate.symbol ?? workspace.overview.recommended_symbol) || "未推荐")} />
-              <InfoBlock label="推荐动作" value={String((researchReview.next_action ?? workspace.overview.recommended_action) || "继续研究")} />
+              <InfoBlock label="推荐动作" value={String((bestExperiment.next_action ?? researchReview.next_action ?? workspace.overview.recommended_action) || "继续研究")} />
               <InfoBlock label="推荐分数" value={String(recommendedCandidate.score ?? "n/a")} />
-              <InfoBlock label="进入 dry-run" value={String(candidateStatus.ready_count ?? 0)} />
+              <InfoBlock label="为什么先推进" value={String(recommendationExplanation.detail ?? "当前还没有推荐理由说明。")} />
             </CardContent>
           </Card>
 
@@ -533,7 +537,7 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
                 <InfoBlock label="这一轮更值得推进什么" value={String(recommendationExplanation.headline ?? workspace.overview.recommended_symbol ?? "当前还没有明确推荐")} />
                 <InfoBlock label="先推荐谁" value={String(workspace.overview.recommended_symbol ?? recommendedCandidate.symbol ?? "当前还没有推荐标的")} />
                 <InfoBlock label="为什么推荐" value={String(recommendationExplanation.detail ?? researchReview.result ?? "当前还没有推荐理由说明。")} />
-                <InfoBlock label="推荐下一步" value={String(researchReview.next_action ?? workspace.overview.recommended_action ?? "继续研究")} />
+                <InfoBlock label="推荐下一步" value={String(bestExperiment.next_action ?? researchReview.next_action ?? workspace.overview.recommended_action ?? "继续研究")} />
               </div>
               {(Array.isArray(recommendationExplanation.evidence) ? recommendationExplanation.evidence : []).length ? (
                 (recommendationExplanation.evidence as unknown[]).map((item, index) => (

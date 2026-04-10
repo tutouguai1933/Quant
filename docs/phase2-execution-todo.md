@@ -55,7 +55,7 @@
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：`apps/web/app/evaluation/page.tsx`
 
-- [ ] B2. 把推荐原因压成稳定结论
+- [x] B2. 把推荐原因压成稳定结论
   - 目标：评估页和策略页能更稳定地说明“为什么推荐这个币”
   - 重点页面：`/evaluation`、`/strategies`
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
@@ -109,14 +109,13 @@
 
 1. A5
 2. B1
-3. B2
-4. B3
-5. B4
-6. B5
-7. C1
-8. C2
-9. C3
-10. C4
+3. B3
+4. B4
+5. B5
+6. C1
+7. C2
+8. C3
+9. C4
 
 ## 当前备注
 
@@ -127,3 +126,4 @@
 - A4 已完成：回测页现在会显式说明当前回测组合、成本模型、规则过滤和结果口径，并把成本与过滤目录直接接到统一真相源；如果保存了新配置但还没重跑训练，页面也会明确提示“新配置尚未生效”
 - A5 已完成：评估页现在会显式说明当前准入组合、`dry-run / validation / consistency / live` 四层门槛、准入门槛目录和 `live` 门卡点；评估页展示不再丢掉 `selection_story`、`threshold_catalog` 和 `gate_matrix.live_gate`
 - B1 已完成：研究层运行产物现在会把 `research_preset_key / label_preset_key / label_trigger_basis` 写进训练和推理上下文；评估页最近两轮变化、自选实验对比和配置差异终于能把研究预设与标签预设讲清楚
+- B2 已完成：评估页和策略页现在统一使用“当前优先进入哪一层 / 当前综合排序第一 / 门控是否通过 / 研究复盘建议”这组稳定人话结论；没有训练结果时也不再把 `training_missing` 这类内部状态码直接暴露到页面

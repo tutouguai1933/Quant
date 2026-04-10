@@ -81,7 +81,8 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
     evaluation = evaluationResult.value.data.item;
   }
   const automationCycle = asRecord(automation.lastCycle);
-  const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
+  const recommendationExplanation = asRecord(evaluation.recommendation_explanation);
+  const stageDecisionSummary = asRecord(evaluation.stage_decision_summary);
   const configuration = asRecord(workspace.configuration);
   const executionPolicy = asRecord(automation.executionPolicy);
   const candidateSymbols = toStringArray(executionPolicy.candidate_symbols);
@@ -228,7 +229,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   />
                   <AutomationInfo
                     label="为什么先推进"
-                    value={workspace.research_recommendation?.next_action || readText(evaluationReview.next_action, "先继续研究，确认门控和执行差异")}
+                    value={readText(recommendationExplanation.detail, "先继续研究，确认门控和执行差异")}
                   />
                   <AutomationInfo
                     label="还差什么"
@@ -296,9 +297,9 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <CardTitle>先看研究工作台、回测工作台和评估与实验中心</CardTitle>
                   <CardDescription>执行页继续承接研究链，而不是让你自己在多个页面之间拼结论。</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>评估中心推荐：{readText(evaluation.overview.recommended_symbol, "n/a")}</p>
-                  <p>推荐原因：{readText(evaluationReview.result, "未生成")}</p>
+                  <p>推荐原因：{readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, "未生成"))}</p>
                   <div className="flex flex-wrap gap-3">
                     <Button asChild variant="outline">
                       <Link href="/research">研究工作台</Link>

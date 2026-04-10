@@ -1,7 +1,7 @@
 # 当前进度
 
-- 当前正在做：`Phase2` 决策中心收口，A1 / A2 / A3 / A4 / A5 / B1 已完成，下一步进入 B2 推荐原因稳定化。
-- 上次停留位置：评估页已经把实验历史里的 `研究预设 / 标签预设 / 标签触发口径` 接到真实研究产物，最近两轮对比不再只剩 `n/a`。
+- 当前正在做：`Phase2` 决策中心收口，A1 / A2 / A3 / A4 / A5 / B1 / B2 已完成，下一步进入 B3 淘汰原因稳定化。
+- 上次停留位置：评估页和策略页已经把“为什么推荐”改成统一人话结论，不再直接暴露 `candidate_ready / training_missing` 这类内部状态词。
 
 # 关键决定
 
@@ -70,8 +70,14 @@
   - 本地真实训练 + 推理已连续重跑 `2` 轮
   - `/api/v1/evaluation/workspace` 已验证最近训练 / 推理实验返回 `research_preset_key`、`label_preset_key`、`label_trigger_basis`
   - `/evaluation` 真实 HTML 已验证最近两轮自选实验对比出现 `baseline_balanced`、`balanced_window` 和 `close`
+- 这轮 B2 的验收口径固定为：
+  - Python 单测通过：`43`
+  - Playwright 定向回归通过：`3`
+  - `/api/v1/evaluation/workspace` 已验证返回稳定推荐说明：`当前优先进入 dry-run`、`当前综合排序第一`
+  - `/evaluation` 真实 HTML 已验证出现 `推荐摘要`、`当前优先进入 dry-run`、`当前综合排序第一`
+  - 浏览器真实路径已验证：`/evaluation` 与 `/strategies` 都能看到新的推荐说明，不再只显示内部状态码
 
 # 下一步
 
-- 继续推进 B2：把推荐原因压成稳定结论
-- 然后进入 B3：把淘汰原因压成稳定结论
+- 继续推进 B3：把淘汰原因压成稳定结论
+- 然后进入 B4：把研究结果和执行结果差异压成统一口径

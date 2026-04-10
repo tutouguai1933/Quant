@@ -78,3 +78,18 @@ test("evaluation workspace shows threshold story and live gate breakdown", async
   await expect(page.locator("body")).toContainText("门控分解", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("live 门", { timeout: 60000 });
 });
+
+test("evaluation and strategies pages show stable recommendation story", async ({ page }) => {
+  test.setTimeout(120000);
+
+  await loginAsAdmin(page, "/evaluation");
+
+  await expect(page.locator("body")).toContainText("推荐摘要", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("当前优先进入 dry-run", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("当前综合排序第一", { timeout: 60000 });
+
+  await page.goto(`${WEB_BASE_URL}/strategies`, { waitUntil: "commit", timeout: 90000 });
+  await expect(page.locator("body")).toContainText("策略中心", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("为什么先推进", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("当前综合排序第一", { timeout: 60000 });
+});

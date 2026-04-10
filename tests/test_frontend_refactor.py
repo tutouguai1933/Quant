@@ -337,7 +337,7 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("研究预设", evaluation_content)
         self.assertIn("标签预设", evaluation_content)
         self.assertIn("标签触发口径", evaluation_content)
-        self.assertIn("更值得进入 dry-run", evaluation_content)
+        self.assertIn("为什么先推进", evaluation_content)
         self.assertIn("严格规则", backtest_content)
         self.assertIn("门控开关", backtest_content)
         self.assertIn("分组摘要", features_content)
