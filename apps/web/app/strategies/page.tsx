@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
+import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
 import { AutomationControlCard } from "../../components/automation-control-card";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -82,15 +83,30 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
     evaluation = evaluationResult.value.data.item;
   }
   const automationCycle = asRecord(automation.lastCycle);
+  const arbitration = asRecord(automation.arbitration);
+  const arbitrationSuggestedAction = asRecord(arbitration.suggested_action);
   const controlActions = Array.isArray(automation.controlActions)
     ? automation.controlActions.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
+  const controlActionLabels = controlActions.map((item) => readText(item.label, ""));
+  const hasResumeAction = controlActionLabels.includes("确认后恢复自动化");
   const recommendationExplanation = asRecord(evaluation.recommendation_explanation);
   const stageDecisionSummary = asRecord(evaluation.stage_decision_summary);
   const configuration = asRecord(workspace.configuration);
+  const sharedCandidateScope = asRecord(configuration.candidate_scope);
   const executionPolicy = asRecord(automation.executionPolicy);
   const candidateSymbols = toStringArray(executionPolicy.candidate_symbols);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
+  const candidateScopeCandidateSymbols = toStringArray(sharedCandidateScope.candidate_symbols);
+  const candidateScopeLiveSymbols = toStringArray(sharedCandidateScope.live_allowed_symbols);
+  const candidateScopeHeadline = readText(sharedCandidateScope.headline, "研究和 dry-run 先共用候选池，再由更严格的 live 子集继续放行。");
+  const candidateScopeDetail = readText(sharedCandidateScope.detail, "当前还没有候选池和 live 子集的统一说明。");
+  const candidateScopeNextStep = readText(sharedCandidateScope.next_step, "先确认候选池排序，再决定哪些币进入 live 子集。");
+  const arbitrationActionLabel = readText(
+    arbitrationSuggestedAction.label,
+    workspace.research_recommendation?.next_action || "先进入 dry-run 观察。",
+  );
+  const arbitrationTargetPage = readText(arbitrationSuggestedAction.target_page, "/research");
   const executionSymbolOptions = Array.from(
     new Set([...(candidateSymbols.length ? candidateSymbols : workspace.whitelist), ...executionAllowedSymbols]),
   ).map((item) => ({
@@ -115,6 +131,8 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
         title="先看判断，再决定要不要派发"
         description="左侧先看推荐执行、研究候选和下一步动作，右侧只看执行器状态、账户收口和执行动作。"
       />
+
+      <ArbitrationHandoffCard arbitration={arbitration} isAuthenticated={isAuthenticated} surfaceLabel="策略页" />
 
       {focusSymbol ? (
         <Card>
@@ -175,8 +193,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                     : "当前处于手动模式"}
                 </CardTitle>
                 <CardDescription>
-                  {automation.manualTakeover
-                    ? "这意味着当前不应该继续自动推进。下面的快捷入口可以直接恢复、保持手动或继续停机；任务页只用来看完整时间线。"
+                  {automation.manualTakeover && hasResumeAction
+                    ? "这意味着当前不应该继续自动推进。下面的快捷入口会直接给你恢复、保持手动或继续停机；任务页只用来看完整时间线。"
+                    : automation.manualTakeover
+                    ? "这意味着当前不应该继续自动推进。下面的快捷入口会直接给你只回 dry-run、保持手动或继续停机；任务页只用来看完整时间线。"
                     : isManualMode
                     ? "这意味着系统当前不会自动推进。下面的快捷入口会直接给你保持手动、切回 dry-run only 或继续停机；任务页只用来看完整时间线。"
                     : "这意味着当前还停在暂停恢复链里。下面的快捷入口可以直接恢复、只回 dry-run、切到手动或继续停机；任务页只用来看完整时间线。"}
@@ -202,8 +222,8 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                     <CardTitle>{workspace.research_recommendation.symbol}</CardTitle>
                     <CardDescription>
                       研究门：{workspace.research_recommendation.dry_run_gate.status}
-                      {"，下一步动作："}
-                      {workspace.research_recommendation.next_action || "先进入 dry-run 观察。"}
+                      {"，当前仲裁动作："}
+                      {arbitrationActionLabel}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="action-grid">
@@ -235,7 +255,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 <CardContent className="grid gap-3 md:grid-cols-2">
                   <AutomationInfo
                     label="候选池先筛，live 子集后放"
-                    value={readText(configuration.candidate_pool_preset, "研究和 dry-run 先共用候选池，再由更严格的 live 子集继续放行。")}
+                    value={candidateScopeHeadline}
                   />
                   <AutomationInfo
                     label="这一轮先推进谁"
@@ -247,7 +267,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   />
                   <AutomationInfo
                     label="还差什么"
-                    value={readText(configuration.live_subset_preset, "先通过候选池和评估门，再进入更严格的 live 子集")}
+                    value={candidateScopeNextStep}
                   />
                 </CardContent>
               </Card>
@@ -257,7 +277,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 summary={candidateSnapshot.summary}
                 items={candidateSnapshot.items}
                 focusSymbol={focusSymbol}
-                nextStep={focusSymbol ? `下一步动作：先围绕 ${focusSymbol} 确认是否允许进入 dry-run，再决定是否派发。` : "下一步动作：优先看是否允许进入 dry-run，再决定要不要派发。"}
+                nextStep={focusSymbol ? `当前仲裁动作：${arbitrationActionLabel}；如果要继续围绕 ${focusSymbol} 判断，也先按这个动作承接。` : `当前仲裁动作：${arbitrationActionLabel}`}
               />
 
               <Card>
@@ -270,7 +290,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <AutomationInfo label="当前模式" value={readText(automation.mode, "manual")} />
                   <AutomationInfo label="最近一轮" value={readText(automationCycle.status, "waiting")} />
                   <AutomationInfo label="自动化推荐" value={readText(automationCycle.recommended_symbol, "n/a")} />
-                  <AutomationInfo label="下一步动作" value={readText(automationCycle.next_action, "continue_research")} />
+                  <AutomationInfo label="下一步动作" value={arbitrationActionLabel} />
                   <AutomationInfo label="是否暂停" value={automation.paused ? "已暂停" : "正常运行"} />
                   <AutomationInfo label="人工接管" value={automation.manualTakeover ? "人工接管中" : "当前未接管"} />
                   <AutomationInfo label="暂停原因" value={readText(automation.pauseReason, "当前没有暂停原因")} />
@@ -282,8 +302,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 <CardHeader>
                   <p className="eyebrow">自动化快捷入口</p>
                   <CardTitle>
-                    {automation.manualTakeover
+                    {automation.manualTakeover && hasResumeAction
                       ? "接管中先决定怎么恢复"
+                      : automation.manualTakeover
+                      ? "接管中先决定保留什么模式"
                       : isManualMode
                       ? "手动模式下决定何时重开自动化"
                       : automation.paused
@@ -291,8 +313,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                       : "需要时直接停下或切回手动"}
                   </CardTitle>
                   <CardDescription>
-                    {automation.manualTakeover
+                    {automation.manualTakeover && hasResumeAction
                       ? "策略页不必再跳回任务页找按钮，这里直接给你恢复、只回 dry-run、保持手动和停机入口。"
+                      : automation.manualTakeover
+                      ? "策略页不必再跳回任务页找按钮，这里直接给你只回 dry-run、保持手动和停机入口。"
                       : isManualMode
                       ? "策略页不必再跳回任务页找按钮，这里直接给你保持手动、切回 dry-run only 和停机入口。"
                       : automation.paused
@@ -325,19 +349,24 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
               <Card>
                 <CardHeader>
                   <p className="eyebrow">下一步动作</p>
-                  <CardTitle>把判断收口到可以执行的动作</CardTitle>
-                  <CardDescription>先确认研究候选是否允许进入 dry-run，再决定要不要围绕这个币继续派发。</CardDescription>
+                  <CardTitle>按仲裁动作承接下一步</CardTitle>
+                  <CardDescription>这块只承接当前仲裁动作，不再让策略页自己猜下一步。</CardDescription>
                 </CardHeader>
-                <CardContent className="action-grid">
-                  <Button asChild variant="outline">
-                    <Link href={focusSymbol ? `/market/${encodeURIComponent(focusSymbol)}` : "/signals"}>去图表页确认</Link>
-                  </Button>
-                  <Button asChild variant="terminal">
-                    <Link href={focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies"}>围绕这个币继续执行</Link>
-                  </Button>
-                  <Button asChild variant="secondary">
-                    <Link href="/signals">回到信号页复核</Link>
-                  </Button>
+                <CardContent className="space-y-3">
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    当前仲裁建议先去：{formatTargetPage(arbitrationTargetPage)}。如果还要围绕单个币复核，也先以这一步为准。
+                  </p>
+                  <div className="action-grid">
+                    <Button asChild variant="terminal">
+                      <Link href={arbitrationTargetPage}>{arbitrationActionLabel}</Link>
+                    </Button>
+                    <Button asChild variant="outline">
+                      <Link href={focusSymbol ? `/market/${encodeURIComponent(focusSymbol)}` : "/signals"}>去图表页确认</Link>
+                    </Button>
+                    <Button asChild variant="secondary">
+                      <Link href="/signals">回到信号页复核</Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -372,9 +401,15 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <CardDescription>只保留当前判断和执行建议，不再把页面往纵向拉长。</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 xl:grid-cols-2">
-                  {workspace.strategies.map((item) => (
+                  {workspace.strategies.length ? workspace.strategies.map((item) => (
                     <StrategyCard key={item.key} item={item} />
-                  ))}
+                  )) : (
+                    <div className="rounded-2xl border border-dashed border-border/70 bg-muted/35 p-5 text-sm leading-6 text-muted-foreground xl:col-span-2">
+                      <p className="font-medium text-foreground">当前还没有可评估的策略对象</p>
+                      <p>统一候选池还是空的，所以策略页不会再回退到旧白名单假装继续评估。</p>
+                      <p>下一步：{candidateScopeNextStep}</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </section>
@@ -407,9 +442,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>研究范围：{readText(configuration.research_scope, "当前还没有研究范围摘要")}</p>
-                  <p>研究 / dry-run 候选池：{readText(configuration.candidate_pool, workspace.whitelist.join(" / ") || "当前未设置")}</p>
+                  <p>研究 / dry-run 候选池：{candidateScopeCandidateSymbols.length ? candidateScopeCandidateSymbols.join(" / ") : readText(configuration.candidate_pool, workspace.whitelist.join(" / ") || "当前未设置")}</p>
                   <p>验证策略：{readText(configuration.validation_policy, "当前还没有验证策略摘要")}</p>
-                  <p>live 子集：{executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
+                  <p>live 子集：{candidateScopeLiveSymbols.length ? candidateScopeLiveSymbols.join(" / ") : executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
+                  <p>范围契约：{candidateScopeDetail}</p>
                   <p>执行策略：{readText(configuration.execution_policy, "当前还没有执行策略摘要")}</p>
                   <p>门槛策略：{readText(configuration.threshold_policy, "当前还没有门槛策略摘要")}</p>
                   <p>自动化策略：{readText(configuration.automation_policy, "当前还没有自动化策略摘要")}</p>
@@ -498,8 +534,10 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <CardTitle>研究 / dry-run 和 live 用的是两层口径</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p>研究 / dry-run 候选池：{(candidateSymbols.length ? candidateSymbols : workspace.whitelist).join(" / ")}</p>
-                  <p>live 子集：{executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
+                  <p>{candidateScopeHeadline}</p>
+                  <p>研究 / dry-run 候选池：{(candidateScopeCandidateSymbols.length ? candidateScopeCandidateSymbols : candidateSymbols.length ? candidateSymbols : workspace.whitelist).join(" / ")}</p>
+                  <p>live 子集：{candidateScopeLiveSymbols.length ? candidateScopeLiveSymbols.join(" / ") : executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
+                  <p>下一步：{candidateScopeNextStep}</p>
                 </CardContent>
               </Card>
             </aside>
@@ -645,6 +683,16 @@ function formatLatestSignal(item: Record<string, unknown> | null): string {
     return "暂无持久化信号";
   }
   return `${String(item.symbol ?? "")} / ${String(item.status ?? "")}`;
+}
+
+function formatTargetPage(targetPage: string): string {
+  const labels: Record<string, string> = {
+    "/research": "研究页",
+    "/tasks": "任务页",
+    "/strategies": "策略页",
+    "/evaluation": "评估页",
+  };
+  return labels[targetPage] ?? targetPage;
 }
 
 function formatResearchScore(value: string): string {

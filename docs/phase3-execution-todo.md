@@ -70,7 +70,7 @@
     - Playwright 覆盖通过态、拒绝态、等待态、人工处理态
     - 真实页面检查“当前结论”和“历史记录”是否分区清楚
 
-- [ ] B3. 策略页和任务页统一承接仲裁动作
+- [x] B3. 策略页和任务页统一承接仲裁动作
   - 目标：策略页、任务页不再各自猜下一步动作，而是统一承接仲裁层给出的动作建议
   - 重点后端：`services/api/app/services/automation_service.py`、`services/api/app/routes/tasks.py`
   - 重点前端：`apps/web/app/strategies/page.tsx`、`apps/web/app/tasks/page.tsx`

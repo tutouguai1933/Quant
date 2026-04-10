@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
+import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
 import { AutomationControlCard } from "../../components/automation-control-card";
 import { AutomationLastCycleCard } from "../../components/automation-last-cycle-card";
 import { DataTable } from "../../components/data-table";
@@ -57,6 +58,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const evaluationReview = asRecord(asRecord(evaluation.reviews).research);
   const recommendationExplanation = asRecord(evaluation.recommendation_explanation);
   const stageDecisionSummary = asRecord(evaluation.stage_decision_summary);
+  const arbitration = asRecord(automation.arbitration);
+  const arbitrationSuggestedAction = asRecord(arbitration.suggested_action);
   const executionHealth = asRecord(automation.executionHealth);
   const automationHealth = asRecord(automation.health);
   const lastCycle = asRecord(automation.lastCycle);
@@ -220,6 +223,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
     runtimeWindowSummary,
   });
   const executionPolicy = asRecord(automation.executionPolicy);
+  const arbitrationActionLabel = readText(
+    arbitrationSuggestedAction.label,
+    String(reviewOverview.recommended_action ?? automation.researchOverview.recommended_action ?? "n/a"),
+  );
+  const arbitrationTargetPage = readText(arbitrationSuggestedAction.target_page, "/research");
   const candidateSymbols = toStringArray(executionPolicy.candidate_symbols);
   const executionAllowedSymbols = toStringArray(executionPolicy.live_allowed_symbols);
   const executionSymbolOptions = Array.from(new Set([...candidateSymbols, ...executionAllowedSymbols])).map((item) => ({
@@ -278,6 +286,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
         description="这页把自动化模式、停机入口、健康摘要和统一复盘放到一起，避免训练、推理、执行和复盘分散在不同页面里。"
       />
 
+      <ArbitrationHandoffCard arbitration={arbitration} isAuthenticated={isAuthenticated} surfaceLabel="任务页" />
+
       {!isAuthenticated ? (
         <Card>
           <CardHeader>
@@ -298,7 +308,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
               { label: "自动化模式", value: formatMode(automation.mode), detail: automation.paused ? "当前已暂停" : "当前允许继续推进" },
               { label: "最近工作流", value: String(asRecord(automation.lastCycle).status ?? "waiting"), detail: "看最近一轮有没有真正推进到执行和复盘" },
               { label: "最近同步", value: String(executionHealth.latest_sync_status ?? "unknown"), detail: "自动化执行后先看同步有没有成功" },
-              { label: "推荐动作", value: String(reviewOverview.recommended_action ?? automation.researchOverview.recommended_action ?? "n/a"), detail: "统一复盘会告诉你下一步该继续研究、dry-run 还是 live" },
+              { label: "推荐动作", value: arbitrationActionLabel, detail: "任务页现在直接承接仲裁动作，不再自己猜下一步。" },
             ]}
           />
 
@@ -1169,11 +1179,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
               <Card>
                 <CardHeader>
                   <p className="eyebrow">研究与执行对齐</p>
-                  <CardTitle>当前推荐和下一步动作</CardTitle>
+                  <CardTitle>当前仲裁和下一步动作</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p>推荐标的：{String(reviewOverview.recommended_symbol ?? automation.researchOverview.recommended_symbol ?? "n/a")}</p>
-                  <p>推荐动作：{String(reviewOverview.recommended_action ?? automation.researchOverview.recommended_action ?? "n/a")}</p>
+                  <p>推荐标的：{readText(arbitration.symbol, String(reviewOverview.recommended_symbol ?? automation.researchOverview.recommended_symbol ?? "n/a"))}</p>
+                  <p>推荐动作：{arbitrationActionLabel}</p>
+                  <p>当前仲裁结论：{readText(arbitration.headline, "当前还没有仲裁结论")}</p>
+                  <p>现在建议去：{formatTargetPage(arbitrationTargetPage)}</p>
                   <p>研究 / 执行差异：{readText(stageDecisionSummary.execution_gap, "当前还没有差异说明")}</p>
                   <p>候选数量：{String(reviewOverview.candidate_count ?? automation.researchOverview.candidate_count ?? 0)}</p>
                   <p>可进 dry-run：{String(reviewOverview.ready_count ?? automation.researchOverview.ready_count ?? 0)}</p>
@@ -1183,13 +1195,17 @@ export default async function TasksPage({ searchParams }: PageProps) {
               <Card>
                 <CardHeader>
                   <p className="eyebrow">回到研究链</p>
-                  <CardTitle>先回到研究链，再决定自动化动作</CardTitle>
+                  <CardTitle>先按仲裁回到对应工作台</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>评估中心推荐：{readText(evaluation.overview.recommended_symbol, "n/a")}</p>
-                  <p>推荐原因：{readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, readText(evaluationReview.result, "未生成")))}</p>
-                  <p>当前主要阻塞：{readText(stageDecisionSummary.why_blocked, "当前没有明显阻塞")}</p>
+                  <p>当前仲裁动作：{arbitrationActionLabel}</p>
+                  <p>仲裁原因：{readText(arbitration.detail, readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, readText(evaluationReview.result, "未生成"))))}</p>
+                  <p>当前主要阻塞：{readText(stageDecisionSummary.why_blocked, readText(asRecord((Array.isArray(arbitration.blocking_items) ? arbitration.blocking_items[0] : {})).detail, "当前没有明显阻塞"))}</p>
                   <div className="flex flex-wrap gap-3">
+                    <Button asChild variant="terminal">
+                      <Link href={arbitrationTargetPage}>{arbitrationActionLabel}</Link>
+                    </Button>
                     <Button asChild variant="outline">
                       <Link href="/research">回到研究链</Link>
                     </Button>
@@ -1936,6 +1952,16 @@ function formatRelativeMoment(value: string) {
 function formatMoment(value: string) {
   const normalized = String(value || "").trim();
   return normalized || "当前没有明确时间";
+}
+
+function formatTargetPage(targetPage: string): string {
+  const labels: Record<string, string> = {
+    "/research": "研究页",
+    "/tasks": "任务页",
+    "/strategies": "策略页",
+    "/evaluation": "评估页",
+  };
+  return labels[targetPage] ?? targetPage;
 }
 
 function readText(value: unknown, fallback: string): string {
