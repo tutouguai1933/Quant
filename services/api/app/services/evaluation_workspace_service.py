@@ -1735,6 +1735,20 @@ class EvaluationWorkspaceService:
                 "difference_reasons": ["当前还没有研究候选，先补研究结果。"],
                 "next_step": "先补研究结果、执行同步或 dry-run，再回来复核。",
             }
+        if status == "unavailable":
+            return {
+                "research_symbol": research_symbol,
+                "research_action": research_action,
+                "last_order_symbol": last_order_symbol,
+                "last_position_symbol": last_position_symbol,
+                "alignment_state": alignment_state,
+                "runtime_mode": runtime_mode,
+                "latest_sync_status": latest_sync_status,
+                "difference_summary": "当前执行侧还没有可对齐结果",
+                "difference_severity": "unknown",
+                "difference_reasons": ["执行侧还没有最新对齐结果，先补执行同步或 dry-run。"],
+                "next_step": "先补执行同步或 dry-run，再回来复核。",
+            }
         difference_reasons: list[str] = []
         if research_symbol and last_order_symbol and research_symbol != last_order_symbol:
             difference_reasons.append(f"最近订单仍是 {last_order_symbol}")

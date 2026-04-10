@@ -598,6 +598,57 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["severity_summary"]["level"], "normal")
         self.assertEqual(health["resume_checklist"][0]["status"], "ready")
 
+    def test_legacy_alerts_without_valid_timestamp_restore_as_history_only(self) -> None:
+        state_path = Path(os.environ["QUANT_AUTOMATION_STATE_PATH"])
+        state_path.write_text(
+            """{
+  "mode": "auto_live",
+  "paused": false,
+  "paused_reason": "",
+  "manual_takeover": false,
+  "updated_at": "2026-04-10T00:00:00+00:00",
+  "last_cycle": {},
+  "alerts": [
+    {
+      "id": 1,
+      "level": "error",
+      "code": "legacy_missing_created_at",
+      "message": "旧告警没有时间戳",
+      "source": "legacy"
+    },
+    {
+      "id": 2,
+      "level": "warning",
+      "code": "legacy_invalid_created_at",
+      "message": "旧告警时间戳非法",
+      "source": "legacy",
+      "created_at": "invalid-date"
+    }
+  ],
+  "next_alert_id": 3,
+  "armed_symbol": "",
+  "armed_at": "",
+  "daily_summary": {},
+  "consecutive_failure_count": 0,
+  "last_success_at": "",
+  "last_failure_at": "",
+  "paused_at": "",
+  "manual_takeover_at": ""
+}""",
+            encoding="utf-8",
+        )
+
+        service = AutomationService()
+
+        status = service.get_status(task_health={})
+
+        self.assertEqual(status["active_alerts_count"], 0)
+        self.assertEqual(status["history_alerts_count"], 2)
+        self.assertEqual(status["current_alert_level"], "")
+        self.assertEqual(status["current_alert_title"], "")
+        self.assertEqual(status["severity_summary"]["level"], "normal")
+        self.assertIn("当前没有需要立即处理的告警", status["health"]["alert_story"]["headline"])
+
     def test_alert_summary_separates_active_and_history_counts(self) -> None:
         service = AutomationService()
         service.record_alert(level="warning", code="sync_delayed", message="同步延迟", source="sync")
@@ -702,6 +753,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(result["failure_reason"], "daily_cycle_limit_reached")
         self.assertIn("今日轮次上限", result["message"])
         self.assertEqual(scheduler.named_calls, [])
+        self.assertEqual(automation.get_status(task_health={})["daily_summary"]["cycle_count"], 1)
 
     def test_run_cycle_waits_when_cooldown_is_active(self) -> None:
         scheduler = _FakeScheduler()
@@ -728,6 +780,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(result["failure_reason"], "cycle_cooldown_active")
         self.assertIn("冷却", result["message"])
         self.assertEqual(scheduler.named_calls, [])
+        self.assertEqual(automation.get_status(task_health={})["daily_summary"]["cycle_count"], 1)
 
     def test_run_cycle_stops_for_consecutive_failure_threshold(self) -> None:
         scheduler = _FakeScheduler()

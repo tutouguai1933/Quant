@@ -1389,12 +1389,10 @@ class AutomationService:
         for item in self._alerts:
             created_at = str(item.get("created_at", "") or "").strip()
             if not created_at:
-                active.append(item)
                 continue
             try:
                 created = datetime.fromisoformat(created_at)
             except ValueError:
-                active.append(item)
                 continue
             if created.tzinfo is None:
                 created = created.replace(tzinfo=timezone.utc)

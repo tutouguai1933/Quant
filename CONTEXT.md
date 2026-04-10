@@ -1,138 +1,36 @@
 # 当前进度
 
-- 当前正在做：`Phase2` 已收口完成，A1 / A2 / A3 / A4 / A5 / B1 / B2 / B3 / B4 / B5 / C1 / C2 / C3 / C4 全部完成，下一步进入 `Phase3` 预备开发。
-- 上次停留位置：C4 已把长期运行摘要拆成“当前活跃告警”和“历史告警”，任务页当前判断不再被旧告警干扰。
+- 当前正在做：`Phase1 / Phase2` 的全面验收已经完成，review、全量后端测试、前端构建、Playwright 全量回归和真实页面联调都已跑通，下一步进入 `Phase3`。
+- 上次停留位置：`Phase2` 功能已收口，但还缺一次把代码、测试和页面一起扫完的总验收。
 
 # 关键决定
 
-- 当前主真相源固定为：
-  - `README.md`
-  - `CONTEXT.md`
-  - `plan.md`
-  - `docs/roadmap.md`
-  - `docs/system-flow-guide.md`
-  - `docs/architecture.md`
-- 合并回主线前，主文档统一使用 `/home/djy/Quant` 和正式端口 `9011-9020`；临时联调端口只作为说明，不再写死在主入口。
-- 浏览器验证统一改成生产形态：
-  - 前端先 `pnpm build`
-  - 再 `pnpm start`
-  - `Playwright` 默认单 worker，避免流式工作台页面被并发压垮
-- 研究工作台这次新增的真相源是：
-  - `selection_story`
-  - `research_template_catalog`
-  - 标签结构字段：`label_preset_key`、`label_trigger_basis`、`holding_window_label`、`label_target_pct`、`label_stop_pct`
-- 特征工作台这次新增的真相源是：
-  - `selection_story`
-  - `category_catalog`
-  - 当研究报告没有 `factor_protocol` 时，自动回退到默认 `FEATURE_PROTOCOL`，继续展示主判断、辅助确认和类别目录
-- 回测工作台这次新增的真相源是：
-  - `selection_story`
-  - `cost_filter_catalog`
-  - 页面不再本地拼接回测解释，优先展示后端返回的成本模型、过滤摘要、结果口径和门控目录
-- 评估工作台这次新增的真相源是：
-  - `selection_story`
-  - `threshold_catalog`
-  - `gate_matrix.live_gate`
-  - 页面现在直接展示当前准入组合、四层门槛摘要和 `live` 门卡点，不再只靠本地占位文案
-- 研究运行链这次新增的真相源是：
-  - `training_context.parameters.research_preset_key`
-  - `training_context.parameters.label_preset_key`
-  - `inference_context.input_summary.research_preset_key`
-  - `inference_context.input_summary.label_preset_key`
-  - 评估页最近训练 / 推理实验、配置差异和自选实验对比，终于能看懂研究预设与标签预设变化
-- 登录与动作按钮的浏览器测试不再依赖 `data-hydrated`，统一改成等待真实按钮文案和可见状态，避免测试继续绑定旧 DOM 细节。
-- 自动化状态接口现在补齐 `comparison_run_limit`，任务页和评估页的长期运行配置终于能对齐。
-- 当前真实主链仍固定为：`Qlib 研究 -> 候选筛选 -> dry-run -> 小额 live -> 复盘`。
-- 这轮 A1 / A2 的验收口径固定为：
-  - 后端单测通过：`24`
+- 手动接管的状态契约固定为：
+  - `mode` 保持当前自动模式
+  - `paused` 和 `manual_takeover` 表示进入接管
+  - `paused_reason` 记录接管原因
+  - 路由测试已经按这个真实语义对齐
+- 评估页里 `execution_alignment.status == unavailable` 时，不再因为旧订单 / 旧持仓碰巧同币而误判“研究和执行已对齐”。
+- 自动化工作流里“只是等待”的分支不再计入日轮次：
+  - 暂停中
+  - 连续失败等待人工处理
+  - 同步陈旧等待恢复
+  - 日内轮次上限
+  - 冷却窗口
+- 自动化旧状态文件里没有合法 `created_at` 的告警，只算历史告警，不再抬高当前活跃告警和恢复阻塞。
+- 研究工作台在 `workspace.status == unavailable` 时会锁住配置保存；信号页“推理摘要”的生成时间优先使用 `latest_inference.generated_at`。
+- 本轮验收口径固定为：
+  - Python 单测通过：`335`
   - 前端生产构建通过：`1`
-  - Playwright 回归通过：`40`
-  - 研究页真实保存动作已验证，并已恢复到原配置
-- 这轮 A3 的验收口径固定为：
-  - 后端单测通过：`27`
-  - 前端生产构建通过：`1`
-  - Playwright 回归通过：`40`
-  - 特征页真实页面和配置切换已验证，并已恢复到原配置
-- 这轮 A4 的验收口径固定为：
-  - Python 单测通过：`60`
-  - 前端生产构建通过：`1`
-  - Playwright 回归通过：`40`
-  - `/backtest` 真实 HTML 已验证出现“当前回测选择”“结果口径”“过滤参数目录”和最新配置项
-- 这轮 A5 的验收口径固定为：
-  - Python 单测通过：`11`
-  - 前端生产构建通过：`1`
-  - Playwright 回归通过：`41`
-  - `/evaluation` 真实 HTML 已验证出现“当前准入选择”“准入门槛目录”“live 门槛”“门控分解”和 `live 门`
-  - `/api/v1/evaluation/workspace` 已验证返回 `selection_story`、`threshold_catalog` 和 `live_gate`
-- 这轮 B1 的验收口径固定为：
-  - Python 单测通过：`80`
-  - Playwright 定向回归通过：`3`
-  - 本地真实训练 + 推理已连续重跑 `2` 轮
-  - `/api/v1/evaluation/workspace` 已验证最近训练 / 推理实验返回 `research_preset_key`、`label_preset_key`、`label_trigger_basis`
-  - `/evaluation` 真实 HTML 已验证最近两轮自选实验对比出现 `baseline_balanced`、`balanced_window` 和 `close`
-- 这轮 B2 的验收口径固定为：
-  - Python 单测通过：`43`
-  - Playwright 定向回归通过：`3`
-  - `/api/v1/evaluation/workspace` 已验证返回稳定推荐说明：`当前优先进入 dry-run`、`当前综合排序第一`
-  - `/evaluation` 真实 HTML 已验证出现 `推荐摘要`、`当前优先进入 dry-run`、`当前综合排序第一`
-  - 浏览器真实路径已验证：`/evaluation` 与 `/strategies` 都能看到新的推荐说明，不再只显示内部状态码
-- 这轮 B3 / B4 的验收口径固定为：
-  - Python 单测通过：`45`
-  - Playwright 定向回归通过：`3`
-  - `/api/v1/evaluation/workspace` 已验证返回 `primary_gate`、`next_step`、`alignment_story`、`difference_summary`
-  - 浏览器真实路径已验证：`/evaluation` 出现 `当前卡在哪个门`、`先怎么修`，并且差异区使用 `研究侧 / 执行侧` 统一说法
-  - 浏览器真实路径已验证：`/tasks` 与 `/strategies` 都能看到统一的 `研究 / 执行差异` 或对应结论，不再各自拼不同术语
-- 这轮 B5 的验收口径固定为：
-  - Python 单测通过：`47`
-  - Playwright 定向回归通过：`3`
-  - `/api/v1/evaluation/workspace` 已验证返回 `decision_board`、`primary_stage`、`cards`
-  - `/evaluation` 真实 HTML 已验证出现 `决策入口`、`现在先推进哪一层`、`主要卡点`
-  - `/evaluation` 页面现在会直接说明：先推进哪一层、两层候选各自现在值不值得推进、主要卡点、当前状态和下一步动作，并且不再直接暴露 `research / dry_run / continue_research` 这类内部键名
-- 这轮 C1 的验收口径固定为：
-  - Python 单测通过：`56`
-  - Playwright 定向回归通过：`1`
-  - `/tasks` 真实 HTML 已验证出现 `头号告警`、`最近发生了什么`、`你现在该做什么`
-  - 任务页现在优先使用后端返回的 `alert_story`，把告警收成“发生了什么 / 该做什么 / 去哪里处理”，不再主要依赖 `code / level`
-- 这轮 C2 的验收口径固定为：
-  - Python 单测通过：`30`
-  - 前端生产构建通过：`1`
-  - Playwright 定向回归通过：`1`
-  - `/tasks` 真实 HTML 已验证出现 `系统在等什么`、`为什么现在还不能恢复`、`最早恢复时间`、`恢复确认`、`恢复导航`
-  - `/api/control/tasks/automation` 已验证返回 `runtime_window.story` 和 `resume_status`
-  - 当前口径已经拆开：`恢复自动化` 只表示解除人工暂停 / 接管；`冷却中` 和 `日内轮次用尽` 只表示等待调度窗口，不再误写成“现在可以恢复”
-- 这轮 C3 的验收口径固定为：
-  - Python 单测通过：`35`
-  - 前端生产构建通过：`1`
-  - Playwright 定向回归通过：`2`
-  - `/actions` 真实提交已验证：
-    - 手动模式下点击 `恢复自动化` 会返回 warning，不再误报“自动化已恢复”
-    - 暂停自动化后，真实动作会显示 `确认后恢复自动化 / 只恢复到 dry-run / 切到手动`
-  - `/api/v1/tasks/automation` 已验证：
-    - 纯手动模式返回 `manual_mode`，并只暴露 `保持手动 / 切到 dry-run only / Kill Switch`
-    - 暂停自动模式返回 `auto_live + paused + manual_takeover=false`，并暴露 `确认后恢复自动化 / 只恢复到 dry-run / 切到手动 / Kill Switch`
-  - `/tasks` 与 `/strategies` 真实 HTML 已验证：
-    - 纯手动模式下不再出现 `确认后恢复自动化`
-    - 暂停自动模式下出现 `确认后恢复自动化` 与 `切到手动`
-- 这轮 C4 的验收口径固定为：
-  - Python 单测通过：`38`
-  - 前端生产构建通过：`1`
-  - Playwright 定向回归通过：`2`
-  - `/api/control/tasks/automation` 已验证返回：
-    - `alert_summary.alert_count = 0`
-    - `alert_summary.history_count = 20`
-    - `alert_summary.groups = []`
-    - `alert_summary.history_groups` 保留历史分组
-  - `/tasks` 真实 HTML 已验证出现：
-    - `当前头号告警`
-    - `最近历史告警`
-    - `历史错误 / 历史警告 / 历史提示`
-    - `当前没有活跃告警`
-  - 当前决定固定为：
-    - 后端当前健康判断只看活跃告警
-    - 历史告警继续保留给复盘和趋势判断
-    - 顶层兼容字段 `alerts_count / latest_alert_*` 保持历史语义，新增当前活跃口径字段承接新页面
+  - Playwright 全量回归通过：`42`
+  - 真实页面联调已验证：
+    - 正常链路下 `/signals`、`/research`、`/evaluation`、`/strategies`、`/tasks` 可正常登录、跳转、提交动作和展示结果
+    - 研究接口不可用时，`/research` 会显示“工作台暂时不可用”，并把配置表单锁成 `disabled`
 
 # 下一步
 
-- `Phase2` 已收口完成
-- 下一步进入 `Phase3` 预备方向：多模板 + 统一候选池 + 更稳长期运行
+- 正式进入 `Phase3`
+- 主线先做：
+  - 多模板 + 统一候选池
+  - 研究到执行的仲裁层
+  - 更稳的长期运行与人工接管

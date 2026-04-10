@@ -47,7 +47,7 @@ export default async function ResearchPage() {
       : getResearchRuntimeStatusFallback();
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
-  const configEditable = true;
+  const configEditable = workspace.status !== "unavailable";
   const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
   const hasResearchResults = workspace.status !== "unavailable";
   const readinessTrainLabel = hasResearchResults

@@ -64,6 +64,10 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   const trainingExperiment = asRecord(researchReport.experiments.training);
   const inferenceExperiment = asRecord(researchReport.experiments.inference);
   const automationCycle = asRecord(automation.lastCycle);
+  const inferenceGeneratedAt = formatText(
+    latestInference["generated_at"],
+    formatText(inferenceExperiment["generated_at"], formatText(researchReport.overview.generated_at, "n/a")),
+  );
 
   return (
     <AppShell
@@ -183,7 +187,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
                       label="推理摘要"
                       title="研究推理"
                       status={formatText(inferenceExperiment["status"], "unavailable")}
-                      meta={`生成时间：${formatText(researchReport.overview.generated_at, "n/a")}`}
+                      meta={`生成时间：${inferenceGeneratedAt}`}
                     />
                   </div>
                 </TabsContent>

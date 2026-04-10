@@ -419,6 +419,23 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["alignment_gaps"][0]["severity"], "unknown")
         self.assertEqual(item["alignment_actions"][0]["label"], "继续研究")
 
+    def test_workspace_does_not_claim_alignment_when_execution_result_is_unavailable(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_UnavailableExecutionButStaleHistoryReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["execution_alignment"]["status"], "unavailable")
+        self.assertEqual(item["alignment_details"]["difference_severity"], "unknown")
+        self.assertEqual(item["alignment_details"]["difference_summary"], "当前执行侧还没有可对齐结果")
+        self.assertEqual(item["alignment_details"]["difference_reasons"], ["执行侧还没有最新对齐结果，先补执行同步或 dry-run。"])
+        self.assertEqual(item["alignment_details"]["next_step"], "先补执行同步或 dry-run，再回来复核。")
+        self.assertEqual(item["alignment_gaps"][0]["severity"], "unknown")
+        self.assertEqual(item["alignment_actions"][0]["label"], "继续研究")
+
 
 class _FakeResearchService:
     def get_factory_report(self) -> dict[str, object]:
@@ -769,6 +786,26 @@ class _UnavailableAlignmentReviewService(_FakeValidationReviewService):
                 "matched_position_count": 0,
                 "orders": [],
                 "positions": [],
+            },
+        }
+        return payload
+
+
+class _UnavailableExecutionButStaleHistoryReviewService(_FakeValidationReviewService):
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        payload = super().build_report(limit=limit)
+        payload["execution_comparison"] = {
+            "status": "unavailable",
+            "symbol": "",
+            "recommended_action": "",
+            "note": "执行侧还没有产出当前轮次的对齐结果",
+            "execution": {
+                "runtime_mode": "dry-run",
+                "latest_sync_status": "unknown",
+                "matched_order_count": 0,
+                "matched_position_count": 0,
+                "orders": [{"symbol": "ETHUSDT", "status": "filled"}],
+                "positions": [{"symbol": "ETHUSDT", "side": "long"}],
             },
         }
         return payload

@@ -98,7 +98,7 @@ class AutomationWorkflowService:
                 "message": "自动化当前处于暂停状态",
                 "armed_symbol": armed_symbol,
             }
-            self._automation.record_cycle(summary)
+            self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
         pause_after_failures = int(operations.get("pause_after_consecutive_failures", 2) or 2)
@@ -123,7 +123,7 @@ class AutomationWorkflowService:
                 "failure_policy_action": "manual_takeover" if auto_pause_on_error else "review_before_retry",
                 "armed_symbol": armed_symbol,
             }
-            self._automation.record_cycle(summary)
+            self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
         stale_sync_threshold = int(operations.get("stale_sync_failure_threshold", 1) or 1)
@@ -149,7 +149,7 @@ class AutomationWorkflowService:
                 "failure_policy_action": "manual_takeover" if auto_pause_on_error else "review_sync",
                 "armed_symbol": armed_symbol,
             }
-            self._automation.record_cycle(summary)
+            self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
         daily_limit = int(operations.get("max_daily_cycle_count", 8) or 8)
@@ -171,7 +171,7 @@ class AutomationWorkflowService:
                 "failure_reason": "daily_cycle_limit_reached",
                 "armed_symbol": armed_symbol,
             }
-            self._automation.record_cycle(summary)
+            self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
         cooldown_minutes = int(operations.get("cycle_cooldown_minutes", 15) or 0)
@@ -193,7 +193,7 @@ class AutomationWorkflowService:
                 "failure_reason": "cycle_cooldown_active",
                 "armed_symbol": armed_symbol,
             }
-            self._automation.record_cycle(summary)
+            self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
         train_task = self._scheduler.run_named_task(task_type="research_train", source=source, target_type="system")

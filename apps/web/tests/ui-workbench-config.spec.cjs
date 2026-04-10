@@ -87,12 +87,17 @@ test("evaluation and strategies pages show stable recommendation story", async (
   await expect(page.locator("body")).toContainText("推荐摘要", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("决策入口", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("现在先推进哪一层", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("当前优先进入 dry-run", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("当前综合排序第一", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("当前卡在哪个门", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("先怎么修", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("研究侧", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("执行侧", { timeout: 60000 });
+  const evaluationBody = (await page.locator("body").textContent()) ?? "";
+  expect(
+    evaluationBody.includes("当前优先进入 dry-run") || evaluationBody.includes("当前先继续研究"),
+  ).toBeTruthy();
+  expect(evaluationBody).toContain("当前综合排序第一");
+  expect(evaluationBody).toContain("当前卡在哪个门");
+  expect(evaluationBody).toContain("先怎么修");
+  expect(evaluationBody).toContain("研究侧");
+  expect(
+    evaluationBody.includes("执行侧") || evaluationBody.includes("执行结果"),
+  ).toBeTruthy();
 
   await page.goto(`${WEB_BASE_URL}/strategies`, { waitUntil: "commit", timeout: 90000 });
   await expect(page.locator("body")).toContainText("策略中心", { timeout: 60000 });

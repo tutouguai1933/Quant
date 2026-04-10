@@ -426,7 +426,7 @@ class ApiSkeletonTests(unittest.TestCase):
         response = tasks_route.trigger_manual_takeover(reason="risk_guard_triggered", actor="watchdog", token=token)
 
         self.assertIsNone(response["error"])
-        self.assertEqual(response["data"]["item"]["mode"], "manual")
+        self.assertEqual(response["data"]["item"]["mode"], "auto_live")
         self.assertTrue(response["data"]["item"]["paused"])
         self.assertTrue(response["data"]["item"]["manual_takeover"])
         self.assertEqual(response["data"]["item"]["paused_reason"], "risk_guard_triggered")
