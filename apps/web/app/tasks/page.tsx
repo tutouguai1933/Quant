@@ -3,10 +3,10 @@
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
+import { AutomationControlCard } from "../../components/automation-control-card";
 import { AutomationLastCycleCard } from "../../components/automation-last-cycle-card";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
-import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
@@ -94,6 +94,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const runtimeWindow = asRecord(automation.runtimeWindow);
   const runtimeStory = asRecord(runtimeWindow.story);
   const resumeStatus = asRecord(automation.resumeStatus);
+  const controlActions = Array.isArray(automation.controlActions)
+    ? automation.controlActions.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
   const primaryOperatorAction = asRecord(operatorActions[0]);
   const primaryOperatorLabel = readText(primaryOperatorAction.label, "当前可以继续下一轮自动化");
   const primaryOperatorDetail = readText(primaryOperatorAction.detail, "当前没有额外阻塞说明。");
@@ -304,9 +307,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardDescription>先决定是手动、自动 dry-run 还是自动小额 live；真正有风险时，直接暂停自动化。</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 md:grid-cols-3">
-                  <ActionCard action="automation_mode_manual" label="手动模式" detail="只保留人工操作，不再自动推进。" />
-                  <ActionCard action="automation_mode_auto_dry_run" label="自动 dry-run" detail="研究通过后自动进入 dry-run，先不碰真实资金。" />
-                  <ActionCard action="automation_mode_auto_live" label="自动小额 live" detail="在保留安全门的前提下自动进入小额 live。" />
+                  <AutomationControlCard action="automation_mode_manual" label="手动模式" detail="只保留人工操作，不再自动推进。" returnTo="/tasks" />
+                  <AutomationControlCard action="automation_mode_auto_dry_run" label="自动 dry-run" detail="研究通过后自动进入 dry-run，先不碰真实资金。" returnTo="/tasks" />
+                  <AutomationControlCard action="automation_mode_auto_live" label="自动小额 live" detail="在保留安全门的前提下自动进入小额 live。" returnTo="/tasks" />
                 </CardContent>
               </Card>
 
@@ -316,13 +319,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardTitle>一键跑完整一轮自动化工作流</CardTitle>
                   <CardDescription>这轮会统一串起训练、推理、筛选、执行和复盘，不再靠你一页页点。</CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-3 md:grid-cols-3">
-                  <ActionCard action="automation_run_cycle" label="运行自动化工作流" detail="按当前模式推进一轮训练、推理、执行和复盘。" />
-                  <ActionCard action="automation_pause" label="暂停自动化" detail="停止后续自动推进，切回人工接管。" danger />
-                  <ActionCard action="automation_manual_takeover" label="人工立即接管" detail="立刻切到人工接管并暂停后续自动推进，先人工确认，再决定是否恢复。" danger />
-                  <ActionCard action="automation_resume" label="恢复自动化" detail="恢复当前模式，让系统继续自动推进。" />
-                  <ActionCard action="automation_dry_run_only" label="dry-run only" detail="只保留自动 dry-run，不再继续自动小额 live。" />
-                  <ActionCard action="automation_kill_switch" label="Kill Switch" detail="一键停机，立即切回人工接管。" danger />
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  <AutomationControlCard action="automation_run_cycle" label="运行自动化工作流" detail="按当前模式推进一轮训练、推理、执行和复盘。" returnTo="/tasks" />
+                  <AutomationControlCard action="automation_pause" label="暂停自动化" detail="先停住后续自动推进，回到人工判断。" returnTo="/tasks" />
                 </CardContent>
               </Card>
 
@@ -761,9 +760,16 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     <p>当前结论：{restoreConclusion.summary}</p>
                   </div>
                   <div className="grid gap-3">
-                    <ActionCard action="automation_manual_takeover" label="先人工接管" detail="出现执行器异常、同步失败或高风险告警时，先停在人工接管，不再继续自动推进。" danger />
-                    <ActionCard action="automation_dry_run_only" label="只恢复到 dry-run" detail="如果研究链已经恢复，但你还不想放开真实资金，先切回只保留 dry-run。" />
-                    <ActionCard action="automation_resume" label="确认后恢复自动化" detail="只有在告警已处理、同步已恢复、接管原因已清除后，才恢复当前自动化模式。" />
+                    {controlActions.map((item, index) => (
+                      <AutomationControlCard
+                        key={`${readText(item.action, "automation")}-${index}`}
+                        action={readText(item.action, "automation_mode_manual")}
+                        label={readText(item.label, "自动化动作")}
+                        detail={readText(item.detail, "当前没有额外说明。")}
+                        returnTo="/tasks"
+                        danger={Boolean(item.danger)}
+                      />
+                    ))}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Button asChild variant="outline" size="sm">
@@ -1047,18 +1053,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <CardDescription>错误告警先人工处理；信息和警告告警可以在这里直接确认或清理，避免它们一直挂在任务页上干扰判断。</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 md:grid-cols-2">
-                  <ActionCard
+                  <AutomationControlCard
                     action="automation_confirm_alert"
                     label="确认头号告警"
                     detail="把当前最靠前那条告警标记为已处理，适合告警已经人工确认、不需要继续占住头号位置的时候使用。"
+                    returnTo="/tasks"
                     hiddenFields={{ alert_id: latestAlertIdValue }}
                     disabled={!latestAlertIdValue}
                     disabledHint="当前没有可确认的头号告警。"
                   />
-                  <ActionCard
+                  <AutomationControlCard
                     action="automation_clear_non_error_alerts"
                     label="清理非错误告警"
                     detail="批量清掉 info 和 warning，只把真正需要人工处理的 error 留在列表里。"
+                    returnTo="/tasks"
                     hiddenFields={{ levels: "info,warning" }}
                     disabled={!hasClearableAlerts}
                     disabledHint="当前没有可清理的 info / warning 告警。"
@@ -1204,52 +1212,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
         </>
       )}
     </AppShell>
-  );
-}
-
-function ActionCard({
-  action,
-  label,
-  detail,
-  danger = false,
-  hiddenFields = {},
-  disabled = false,
-  disabledHint = "",
-}: {
-  action: string;
-  label: string;
-  detail: string;
-  danger?: boolean;
-  hiddenFields?: Record<string, string>;
-  disabled?: boolean;
-  disabledHint?: string;
-}) {
-  return (
-    <Card className={danger ? "border-rose-500/30 bg-rose-500/10" : "bg-[color:var(--panel-strong)]/80"}>
-      <CardContent className="p-4">
-        <form action="/actions" method="post" className="space-y-4">
-          <input type="hidden" name="action" value={action} />
-          <input type="hidden" name="returnTo" value="/tasks" />
-          {Object.entries(hiddenFields).map(([name, value]) => (
-            <input key={name} type="hidden" name={name} value={value} />
-          ))}
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-foreground">{label}</p>
-            <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
-          </div>
-          <FormSubmitButton
-            type="submit"
-            variant={danger ? "danger" : "terminal"}
-            size="sm"
-            idleLabel={label}
-            pendingLabel={`${label}运行中…`}
-            pendingHint="自动化动作已提交，页面会在状态更新后自动刷新。"
-            disabled={disabled}
-          />
-          {disabled && disabledHint ? <p className="text-xs leading-5 text-muted-foreground">{disabledHint}</p> : null}
-        </form>
-      </CardContent>
-    </Card>
   );
 }
 

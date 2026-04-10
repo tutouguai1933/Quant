@@ -45,6 +45,22 @@ test("main research to execution flow stays usable across core workbenches", asy
   await page.goto(`${WEB_BASE_URL}/strategies`, navigation);
   await expect(page.locator("body")).toContainText("先看判断，再决定要不要派发", { timeout: renderTimeout });
   await expect(page.locator("body")).toContainText("为什么现在先推进这个币");
+  await expect(page.locator("body")).toContainText("自动化快捷入口");
+  const strategiesBody = (await page.locator("body").textContent()) ?? "";
+  if (strategiesBody.includes("手动模式下决定何时重开自动化")) {
+    await expect(page.getByRole("button", { name: "保持手动" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "切到 dry-run only" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toHaveCount(0);
+  } else if (strategiesBody.includes("暂停后先决定怎么继续")) {
+    await expect(page.getByRole("button", { name: "切到手动" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toBeVisible();
+  } else if (strategiesBody.includes("接管中先决定怎么恢复")) {
+    await expect(page.getByRole("button", { name: "保持手动" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toBeVisible();
+  } else {
+    await expect(page.getByRole("button", { name: "暂停自动化" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /转人工接管|切到手动/ })).toBeVisible();
+  }
 
   await page.goto(`${WEB_BASE_URL}/tasks`, navigation);
   await expect(page.locator("body")).toContainText("先确认自动化模式，再决定要不要触发下一轮工作流。", { timeout: renderTimeout });

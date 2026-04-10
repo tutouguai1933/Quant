@@ -129,6 +129,7 @@ class AutomationService:
             "execution_policy": self._get_execution_policy(),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
+            "control_actions": list(health.get("control_actions") or []),
             "takeover_summary": dict(health.get("takeover_summary") or {}),
             "alert_summary": dict(health.get("alert_summary") or {}),
             "severity_summary": dict(health.get("severity_summary") or {}),
@@ -146,11 +147,14 @@ class AutomationService:
         if normalized not in AUTOMATION_MODES:
             raise ValueError("automation mode must be manual, auto_dry_run or auto_live")
         self._mode = normalized
-        self._manual_takeover = normalized == "manual"
-        if not self._manual_takeover:
-            self._manual_takeover_at = ""
         if normalized == "manual":
-            self.clear_armed_symbol()
+            self._paused = False
+            self._paused_reason = ""
+            self._manual_takeover = False
+            self._paused_at = ""
+            self._manual_takeover_at = ""
+            self._armed_symbol = ""
+            self._armed_at = ""
         self._updated_at = _utc_now()
         self._persist_state()
         return self.get_state()
@@ -206,11 +210,10 @@ class AutomationService:
 
         self._paused = True
         self._paused_reason = reason.strip() or "manual_pause"
-        self._manual_takeover = True
+        self._manual_takeover = False
         if not self._paused_at:
             self._paused_at = _utc_now()
-        if not self._manual_takeover_at:
-            self._manual_takeover_at = self._paused_at
+        self._manual_takeover_at = ""
         self._apply_execution_guard(paused=True, stop_executor=False)
         self._updated_at = _utc_now()
         self.record_alert(level="warning", code="automation_paused", message="自动化已暂停", source=actor)
@@ -223,14 +226,12 @@ class AutomationService:
     def manual_takeover(self, reason: str = "manual_takeover", *, actor: str = "user") -> dict[str, object]:
         """显式进入人工接管。"""
 
-        self._mode = "manual"
         self._paused = True
         self._paused_reason = reason.strip() or "manual_takeover"
         self._manual_takeover = True
         if not self._paused_at:
             self._paused_at = _utc_now()
         self._manual_takeover_at = _utc_now()
-        self.clear_armed_symbol()
         self._apply_execution_guard(paused=True, stop_executor=False)
         self._updated_at = _utc_now()
         self.record_alert(
@@ -254,6 +255,16 @@ class AutomationService:
         task_health = task_scheduler.get_health_summary()
         health_before = self.build_health_summary(task_health=task_health or {})
         resume_checklist = [dict(item) for item in list(health_before.get("resume_checklist") or [])]
+        if self._mode == "manual" and not self._paused and not self._manual_takeover:
+            return {
+                **self.get_state(),
+                "actor": actor,
+                "status": "blocked",
+                "blocked_reason": "manual_mode_requires_target",
+                "message": "当前还是手动模式，先切到 dry-run only 或自动模式，再继续自动化。",
+                "pending_items": [],
+                "resume_checklist": resume_checklist,
+            }
         pending_items = [item for item in resume_checklist if str(item.get("status", "") or "").strip().lower() == "pending"]
         if pending_items:
             return {
@@ -267,10 +278,9 @@ class AutomationService:
 
         self._paused = False
         self._paused_reason = ""
-        self._manual_takeover = self._mode == "manual"
+        self._manual_takeover = False
         self._paused_at = ""
-        if not self._manual_takeover:
-            self._manual_takeover_at = ""
+        self._manual_takeover_at = ""
         self._apply_execution_guard(paused=False, stop_executor=False)
         self._updated_at = _utc_now()
         self.record_alert(level="info", code="automation_resumed", message="自动化已恢复", source=actor)
@@ -414,6 +424,7 @@ class AutomationService:
         )
         takeover_summary = self._build_takeover_summary(active_blockers=active_blockers, run_health=run_health)
         operator_actions = self._build_operator_actions(latest_status=latest_status, run_health=run_health)
+        control_actions = self._build_control_actions()
         focus_cards = self._build_focus_cards(
             alert_summary=alert_summary,
             takeover_summary=takeover_summary,
@@ -461,6 +472,7 @@ class AutomationService:
             "takeover_summary": takeover_summary,
             "active_blockers": active_blockers,
             "operator_actions": operator_actions,
+            "control_actions": control_actions,
             "alert_summary": alert_summary,
             "alert_story": alert_story,
             "run_health": run_health,
@@ -548,10 +560,14 @@ class AutomationService:
     def _build_takeover_summary(self, *, active_blockers: list[dict[str, str]], run_health: dict[str, object]) -> dict[str, str]:
         """给出当前是否接管、为什么接管、恢复时先做什么。"""
 
-        if self._manual_takeover:
+        if self._paused_reason == "kill_switch":
+            state_label = "Kill Switch 已触发"
+        elif self._manual_takeover:
             state_label = "人工接管中"
         elif self._paused:
             state_label = "已暂停"
+        elif self._mode == "manual":
+            state_label = "手动模式"
         else:
             state_label = "自动化运行中"
 
@@ -561,6 +577,8 @@ class AutomationService:
             note = "当前已切到人工接管，恢复前先看阻塞原因和最近执行状态。"
         elif self._paused:
             note = "自动化已暂停，恢复前先确认暂停原因是否已经处理。"
+        elif self._mode == "manual":
+            note = "当前处于手动模式，系统不会自动推进，需你先人工确认再决定是否切回自动模式。"
         else:
             note = "当前没有接管或暂停，系统可以继续自动推进。"
         primary_blocker = active_blockers[0] if active_blockers else {}
@@ -570,11 +588,17 @@ class AutomationService:
             "state_label": state_label,
             "reason": reason,
             "reason_label": self._describe_pause_reason(reason),
-            "suggested_mode": "manual" if self._manual_takeover or self._paused else self._mode,
+            "suggested_mode": "manual" if self._manual_takeover or self._paused or self._mode == "manual" else self._mode,
             "note": note,
             "primary_blocker_code": str(primary_blocker.get("code", "")),
             "primary_blocker_detail": str(primary_blocker.get("detail", "")),
-            "next_step": "先处理阻塞原因，再恢复自动化" if self._manual_takeover or self._paused else "可以继续下一轮自动化",
+            "next_step": (
+                "先处理阻塞原因，再恢复自动化"
+                if self._manual_takeover or self._paused
+                else "当前保持手动，先人工确认再决定是否切回自动化"
+                if self._mode == "manual"
+                else "可以继续下一轮自动化"
+            ),
             "paused_since": self._paused_at,
             "takeover_since": self._manual_takeover_at,
             "last_failure_at": str(run_health.get("last_failure_at", "")),
@@ -591,13 +615,13 @@ class AutomationService:
         """把当前真正阻塞自动化继续推进的原因整理成列表。"""
 
         blockers: list[dict[str, str]] = []
-        if self._paused:
+        if self._paused_reason == "kill_switch":
             blockers.append(
                 {
-                    "code": "paused",
-                    "severity": "warning",
-                    "label": "自动化已暂停",
-                    "detail": f"自动化当前已暂停，原因：{self._paused_reason or 'manual_pause'}",
+                    "code": "kill_switch",
+                    "severity": "error",
+                    "label": "Kill Switch 已触发",
+                    "detail": "系统当前处于停机保护状态，需先确认执行器、仓位和同步都已收口。",
                 }
             )
         if self._manual_takeover:
@@ -607,6 +631,24 @@ class AutomationService:
                     "severity": "warning",
                     "label": "当前处于人工接管",
                     "detail": "当前处于人工接管状态，自动执行链不会继续推进。",
+                }
+            )
+        if self._paused and self._paused_reason != "kill_switch":
+            blockers.append(
+                {
+                    "code": "paused",
+                    "severity": "warning",
+                    "label": "自动化已暂停",
+                    "detail": f"自动化当前已暂停，原因：{self._paused_reason or 'manual_pause'}",
+                }
+            )
+        elif self._mode == "manual":
+            blockers.append(
+                {
+                    "code": "manual_mode",
+                    "severity": "info",
+                    "label": "当前处于手动模式",
+                    "detail": "系统当前不会自动推进，只有你切回自动模式后才会继续下一轮。",
                 }
             )
         latest_sync_status = str(latest_status.get("sync", "unknown"))
@@ -644,12 +686,21 @@ class AutomationService:
         """给前端一组直接可执行的恢复步骤。"""
 
         actions: list[dict[str, str]] = []
-        if self._paused or self._manual_takeover:
+        resumable_mode = self._mode in {"auto_dry_run", "auto_live"}
+        if (self._paused or self._manual_takeover) and resumable_mode:
             actions.append(
                 {
                     "action": "automation_resume",
                     "label": "恢复自动化",
                     "detail": "确认阻塞原因已处理后，再恢复当前自动化模式。",
+                }
+            )
+        elif self._mode == "manual":
+            actions.append(
+                {
+                    "action": "automation_dry_run_only",
+                    "label": "先切回 dry-run only",
+                    "detail": "如果你想重新打开自动化，先从 dry-run 开始更安全。",
                 }
             )
         if str(latest_status.get("sync", "unknown")) == "failed":
@@ -672,11 +723,134 @@ class AutomationService:
             actions.append(
                 {
                     "action": "automation_run_cycle",
-                    "label": "继续下一轮",
-                    "detail": "当前没有额外恢复步骤，可以直接继续下一轮自动化工作流。",
+                    "label": "继续下一轮" if self._mode != "manual" else "继续人工确认",
+                    "detail": (
+                        "当前没有额外恢复步骤，可以直接继续下一轮自动化工作流。"
+                        if self._mode != "manual"
+                        else "当前处于手动模式，先人工确认，再决定是否切回自动化。"
+                    ),
                 }
             )
         return actions
+
+    def _build_control_actions(self) -> list[dict[str, object]]:
+        """给任务页和策略页统一一组最常用的控制入口。"""
+
+        resumable_mode = self._mode in {"auto_dry_run", "auto_live"}
+        if self._manual_takeover:
+            actions: list[dict[str, object]] = []
+            if resumable_mode:
+                actions.append(
+                    {
+                        "action": "automation_resume",
+                        "label": "确认后恢复自动化",
+                        "detail": "只有在告警、同步和接管原因都处理完后，才恢复当前自动化模式。",
+                        "danger": False,
+                    }
+                )
+            actions.extend(
+                [
+                    {
+                        "action": "automation_dry_run_only",
+                        "label": "只恢复到 dry-run",
+                        "detail": "如果你还不想放开真实资金，先切回只保留 dry-run。",
+                        "danger": False,
+                    },
+                    {
+                        "action": "automation_mode_manual",
+                        "label": "保持手动",
+                        "detail": "结束当前接管恢复链，继续停在手动模式，先人工判断。",
+                        "danger": False,
+                    },
+                    {
+                        "action": "automation_kill_switch",
+                        "label": "Kill Switch",
+                        "detail": "一键停机，继续保持最保守状态。",
+                        "danger": True,
+                    },
+                ]
+            )
+            return actions
+        if self._paused:
+            return [
+                {
+                    "action": "automation_resume",
+                    "label": "确认后恢复自动化",
+                    "detail": "只有在告警、同步和暂停原因都处理完后，才恢复当前自动化模式。",
+                    "danger": False,
+                },
+                {
+                    "action": "automation_dry_run_only",
+                    "label": "只恢复到 dry-run",
+                    "detail": "如果你还不想放开真实资金，先切回只保留 dry-run。",
+                    "danger": False,
+                },
+                {
+                    "action": "automation_mode_manual",
+                    "label": "切到手动",
+                    "detail": "不再保持暂停恢复链，直接切到手动模式，后续由你人工判断。",
+                    "danger": False,
+                },
+                {
+                    "action": "automation_kill_switch",
+                    "label": "Kill Switch",
+                    "detail": "一键停机，继续保持最保守状态。",
+                    "danger": True,
+                },
+            ]
+        if self._mode == "manual":
+            return [
+                {
+                    "action": "automation_mode_manual",
+                    "label": "保持手动",
+                    "detail": "继续只保留人工操作，不让系统自动推进。",
+                    "danger": False,
+                },
+                {
+                    "action": "automation_dry_run_only",
+                    "label": "切到 dry-run only",
+                    "detail": "先恢复到自动 dry-run，不直接放开真实资金。",
+                    "danger": False,
+                },
+                {
+                    "action": "automation_kill_switch",
+                    "label": "Kill Switch",
+                    "detail": "一键停机，继续保持最保守状态。",
+                    "danger": True,
+                },
+            ]
+        return [
+            {
+                "action": "automation_pause",
+                "label": "暂停自动化",
+                "detail": "先停住后续自动推进，回到人工判断。",
+                "danger": False,
+            },
+            {
+                "action": "automation_manual_takeover",
+                "label": "转人工接管",
+                "detail": "立刻切到人工接管，先人工确认，再决定下一步。",
+                "danger": True,
+            },
+            {
+                "action": "automation_mode_manual",
+                "label": "切到手动",
+                "detail": "直接改成手动模式，不再继续自动推进。",
+                "danger": False,
+            },
+            {
+                "action": "automation_dry_run_only",
+                "label": "只保留 dry-run",
+                "detail": "继续自动研究和 dry-run，但不进入真实小额 live。",
+                "danger": False,
+            },
+            {
+                "action": "automation_kill_switch",
+                "label": "Kill Switch",
+                "detail": "一键停机，立即切回最保守状态。",
+                "danger": True,
+            },
+        ]
 
     def _build_focus_cards(
         self,
@@ -1018,7 +1192,11 @@ class AutomationService:
             },
             {
                 "label": "恢复前先做什么",
-                "status": "pending" if active_blockers and str(active_blockers[0].get("code", "")) != "none" else "ready",
+                "status": (
+                    "pending"
+                    if active_blockers and str(active_blockers[0].get("code", "")) not in {"none", "manual_mode"}
+                    else "ready"
+                ),
                 "detail": "按阻塞清单和恢复建议逐项处理完，再按恢复按钮继续自动化。",
             },
         ]
@@ -1273,6 +1451,12 @@ class AutomationService:
         self._last_failure_at = str(payload.get("last_failure_at", ""))
         self._paused_at = str(payload.get("paused_at", ""))
         self._manual_takeover_at = str(payload.get("manual_takeover_at", ""))
+        if self._mode == "manual" and not self._paused:
+            self._manual_takeover = False
+            self._manual_takeover_at = ""
+        if self._mode != "manual" and self._paused_reason in {"manual_pause", "manual_stop"} and self._paused:
+            self._manual_takeover = False
+            self._manual_takeover_at = ""
         self._ensure_daily_summary()
 
     def _apply_execution_guard(self, *, paused: bool, stop_executor: bool) -> None:

@@ -48,7 +48,7 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByRole("link", { name: "回到研究链" })).toBeVisible();
   await expect(page.getByRole("link", { name: "去回测工作台" })).toBeVisible();
   await expect(page.getByRole("link", { name: "去评估与实验中心" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Kill Switch" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Kill Switch" }).first()).toBeVisible();
   await expect(page.getByText("统一调度入口")).toBeVisible();
   await expect(page.getByText("长期运行窗口")).toBeVisible();
   await expect(page.getByText("本轮自动化判断")).toBeVisible();
@@ -56,6 +56,7 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("现在先处理什么", { exact: true })).toBeVisible();
   await expect(page.getByText("调度什么时候继续", { exact: true })).toBeVisible();
   await expect(page.getByText("人工接管后怎么恢复", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /保持手动|切到手动/ })).toBeVisible();
   await expect(page.getByText("告警快捷处理")).toBeVisible();
   await expect(page.getByRole("button", { name: "确认头号告警" })).toBeVisible();
   await expect(page.getByRole("button", { name: "清理非错误告警" })).toBeVisible();

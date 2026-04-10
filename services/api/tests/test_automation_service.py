@@ -207,6 +207,33 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(result["next_action"], "manual_review")
         self.assertEqual(result["message"], "当前处于手动模式，请先人工确认再继续。")
 
+    def test_resume_blocks_when_plain_manual_mode_has_no_auto_target(self) -> None:
+        service = AutomationService()
+
+        service.configure_mode("manual", actor="tester")
+        resumed = service.resume(actor="tester")
+
+        self.assertEqual(resumed["mode"], "manual")
+        self.assertEqual(resumed["status"], "blocked")
+        self.assertEqual(resumed["blocked_reason"], "manual_mode_requires_target")
+        self.assertIn("先切到 dry-run", str(resumed["message"]))
+
+    def test_configure_manual_mode_clears_pause_and_takeover_flags(self) -> None:
+        service = AutomationService()
+
+        service.configure_mode("auto_live", actor="tester")
+        service.manual_takeover(reason="manual_review", actor="tester")
+        configured = service.configure_mode("manual", actor="tester")
+        health = service.build_health_summary(task_health={})
+
+        self.assertEqual(configured["mode"], "manual")
+        self.assertFalse(configured["paused"])
+        self.assertFalse(configured["manual_takeover"])
+        labels = [item["label"] for item in health["control_actions"]]
+        self.assertNotIn("确认后恢复自动化", labels)
+        self.assertIn("保持手动", labels)
+        self.assertIn("切到 dry-run only", labels)
+
     def test_state_is_restored_from_local_state_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
             os.environ,
@@ -255,6 +282,7 @@ class AutomationServiceTests(unittest.TestCase):
     def test_status_exposes_scheduler_plan_and_failure_policy(self) -> None:
         scheduler = _FakeScheduler()
         automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
         automation_service_module.workbench_config_service.update_section(
             "execution",
             {
@@ -291,10 +319,12 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertFalse(status["resume_status"]["continue_after_resume"])
         self.assertIn("active_blockers", status["health"])
         self.assertIn("operator_actions", status["health"])
+        self.assertIn("control_actions", status["health"])
         self.assertIn("takeover_summary", status["health"])
         self.assertIn("alert_summary", status["health"])
         self.assertIn("active_blockers", status)
         self.assertIn("operator_actions", status)
+        self.assertIn("control_actions", status)
         self.assertIn("takeover_summary", status)
         self.assertIn("alert_summary", status)
         self.assertIn("operations", status)
@@ -443,11 +473,33 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertFalse(status["resume_status"]["resume_ready"])
         self.assertIn("恢复清单还有", status["resume_status"]["cannot_resume_reason"])
 
+    def test_runtime_window_marks_plain_manual_mode_as_waiting_for_mode_switch(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation.configure_mode("manual", actor="tester")
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["runtime_window"]["blocked_reason"], "manual_mode")
+        self.assertEqual(status["runtime_window"]["next_action"], "manual_review")
+        self.assertFalse(status["runtime_window"]["ready_for_cycle"])
+        self.assertEqual(status["resume_status"]["waiting_for"], "manual_mode")
+        self.assertFalse(status["resume_status"]["resume_needed"])
+        self.assertIn("手动模式", status["resume_status"]["cannot_resume_reason"])
+
     def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
         service = AutomationService()
         service.configure_mode("auto_live", actor="tester")
         service.arm_symbol("ETHUSDT")
-        service.pause("manual_stop", actor="tester")
+        service.manual_takeover(reason="manual_takeover", actor="tester")
         service.record_alert(level="warning", code="sync_delayed", message="同步延迟", source="watchdog")
         service.record_alert(level="error", code="executor_offline", message="执行器离线", source="watchdog")
 
@@ -463,19 +515,46 @@ class AutomationServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(health["takeover_summary"]["state_label"], "人工接管中")
+        self.assertEqual(health["active_blockers"][0]["code"], "manual_takeover")
         self.assertEqual(health["alert_summary"]["latest_code"], "executor_offline")
         self.assertEqual(health["alert_summary"]["error_count"], 1)
         self.assertEqual(health["alert_summary"]["warning_count"], 2)
         self.assertEqual(health["alert_summary"]["active_error_count"], 1)
         self.assertEqual(health["alert_summary"]["active_warning_count"], 2)
         self.assertEqual(health["alert_summary"]["cleanup_minutes"], 15)
-        self.assertEqual(health["active_blockers"][0]["code"], "paused")
         self.assertIn("恢复自动化", [item["label"] for item in health["operator_actions"]])
         self.assertIn("查看执行器", [item["label"] for item in health["operator_actions"]])
+        self.assertIn("确认后恢复自动化", [item["label"] for item in health["control_actions"]])
+        self.assertIn("保持手动", [item["label"] for item in health["control_actions"]])
         self.assertIn("执行器离线", health["alert_story"]["headline"])
         self.assertIn("最近发生了什么", health["alert_story"]["what_happened"])
         self.assertIn("你现在该做什么", health["alert_story"]["what_to_do"])
         self.assertEqual(health["alert_story"]["target_page"], "/strategies")
+
+    def test_health_summary_exposes_pause_actions_without_manual_copy(self) -> None:
+        service = AutomationService()
+        service.configure_mode("auto_live", actor="tester")
+        service.pause("manual_stop", actor="tester")
+
+        health = service.build_health_summary(task_health={})
+
+        self.assertEqual(health["takeover_summary"]["state_label"], "已暂停")
+        self.assertEqual(health["active_blockers"][0]["code"], "paused")
+        labels = [item["label"] for item in health["control_actions"]]
+        self.assertIn("确认后恢复自动化", labels)
+        self.assertIn("切到手动", labels)
+        self.assertNotIn("保持手动", labels)
+
+    def test_health_summary_exposes_control_actions_for_running_mode(self) -> None:
+        service = AutomationService()
+        service.configure_mode("auto_live", actor="tester")
+
+        health = service.build_health_summary(task_health={})
+
+        labels = [item["label"] for item in health["control_actions"]]
+        self.assertIn("暂停自动化", labels)
+        self.assertIn("转人工接管", labels)
+        self.assertIn("切到手动", labels)
 
     def test_alert_summary_exposes_lifecycle_groups(self) -> None:
         service = AutomationService()
@@ -686,7 +765,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["takeover_summary"]["takeover_since"], str(takeover["manual_takeover_at"]))
         self.assertEqual(health["run_health"]["last_sync_failure_at"], "2026-04-07T10:00:00+00:00")
 
-    def test_manual_takeover_entry_switches_to_manual_with_reason(self) -> None:
+    def test_manual_takeover_entry_keeps_auto_mode_and_marks_reason(self) -> None:
         service = AutomationService()
         service.configure_mode("auto_live", actor="tester")
         with mock.patch("services.api.app.services.automation_service.risk_service") as fake_risk, mock.patch(
@@ -694,7 +773,7 @@ class AutomationServiceTests(unittest.TestCase):
         ) as fake_executor:
             result = service.manual_takeover(reason="risk_guard_triggered", actor="watchdog")
 
-        self.assertEqual(result["mode"], "manual")
+        self.assertEqual(result["mode"], "auto_live")
         self.assertTrue(result["paused"])
         self.assertTrue(result["manual_takeover"])
         self.assertEqual(result["paused_reason"], "risk_guard_triggered")

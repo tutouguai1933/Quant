@@ -61,6 +61,7 @@ class AutomationWorkflowService:
             "execution_policy": dict(automation_status.get("execution_policy") or {}),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
+            "control_actions": list(health.get("control_actions") or []),
             "takeover_summary": dict(health.get("takeover_summary") or {}),
             "alert_summary": dict(health.get("alert_summary") or {}),
             "review_overview": dict(report.get("overview") or {}),
@@ -461,6 +462,7 @@ class AutomationWorkflowService:
             cooldown_minutes=cooldown_minutes,
         )
         long_run_seconds = int(automation_config.get("long_run_seconds", 300) or 300)
+        mode = str(state.get("mode", "manual") or "manual")
         paused = bool(state.get("paused"))
         manual_takeover = bool(state.get("manual_takeover"))
         paused_since = cls._parse_timestamp(str(state.get("paused_at", "") or ""))
@@ -481,6 +483,9 @@ class AutomationWorkflowService:
         elif paused:
             next_action = "resume_after_review"
             note = "当前处于暂停状态，先看恢复清单再继续。"
+        elif mode == "manual":
+            next_action = "manual_review"
+            note = "当前处于手动模式，只有切回自动模式后系统才会继续自动推进。"
         elif remaining_daily_cycle_count <= 0:
             next_action = "wait_next_window"
             note = "今日轮次已用完，先等下一轮时间窗口。"
@@ -504,11 +509,13 @@ class AutomationWorkflowService:
             blocked_reason = "manual_takeover_active"
         elif paused:
             blocked_reason = "paused_waiting_review"
+        elif mode == "manual":
+            blocked_reason = "manual_mode"
         elif remaining_daily_cycle_count <= 0:
             blocked_reason = "daily_limit_reached"
         elif cooldown_remaining_minutes > 0:
             blocked_reason = "cooldown_active"
-        ready_for_cycle = not paused and remaining_daily_cycle_count > 0 and cooldown_remaining_minutes <= 0
+        ready_for_cycle = not paused and mode != "manual" and remaining_daily_cycle_count > 0 and cooldown_remaining_minutes <= 0
         story = cls._build_runtime_window_story(
             next_action=next_action,
             blocked_reason=blocked_reason,
@@ -578,6 +585,14 @@ class AutomationWorkflowService:
                 "why_not_resume": "为什么现在不能恢复：暂停原因和恢复清单还没完全收口。",
                 "next_step": f"恢复前先做什么：{note or '先看恢复清单和同步失败细节。'}",
             }
+        if blocked_reason == "manual_mode":
+            return {
+                "headline": "当前处于手动模式",
+                "what_waiting_for": "系统现在不在等冷却或恢复按钮，而是在等你决定是否重新打开自动化。",
+                "when_it_runs": "下一步什么时候跑：只有切回 dry-run only 或自动模式后，系统才会继续下一轮。",
+                "why_not_resume": "为什么现在不能恢复：当前不是暂停恢复问题，而是系统本来就在手动模式。",
+                "next_step": f"恢复前先做什么：{note or '先人工确认，再决定是否切回自动模式。'}",
+            }
         if blocked_reason == "daily_limit_reached":
             return {
                 "headline": "今日自动化轮次已经用完",
@@ -643,10 +658,15 @@ class AutomationWorkflowService:
         elif blocked_reason == "cooldown_active":
             waiting_for = "cooldown_window"
             waiting_for_label = "系统在等冷却窗口结束"
+        elif blocked_reason == "manual_mode":
+            waiting_for = "manual_mode"
+            waiting_for_label = "系统在等你切回自动模式"
         else:
             waiting_for = "none"
             waiting_for_label = "当前不需要等待"
-        if blocked_items:
+        if blocked_reason == "manual_mode":
+            cannot_resume_reason = "当前不需要点恢复按钮，系统现在就在手动模式；想继续自动化请先切回 dry-run only 或自动模式。"
+        elif blocked_items:
             cannot_resume_reason = f"还不能恢复，因为恢复清单还有 {len(blocked_items)} 项未通过：{'、'.join(blocked_labels)}。"
         elif not resume_needed and ready_for_cycle:
             cannot_resume_reason = "当前不需要点恢复按钮，系统已经可以直接继续下一轮。"
@@ -658,7 +678,9 @@ class AutomationWorkflowService:
             cannot_resume_reason = "现在可以恢复，而且恢复后就能继续下一轮自动化。"
         else:
             cannot_resume_reason = str(story.get("why_not_resume", "") or "当前没有额外恢复限制说明。")
-        if next_run_at:
+        if blocked_reason == "manual_mode":
+            earliest_continue_text = "切回自动模式后可继续。"
+        elif next_run_at:
             earliest_continue_text = f"最早可在 {cls._format_runtime_deadline(next_run_at)} 继续。"
         elif blocked_reason == "daily_limit_reached":
             earliest_continue_text = "需等到下一日窗口后继续。"

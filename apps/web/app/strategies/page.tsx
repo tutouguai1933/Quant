@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
+import { AutomationControlCard } from "../../components/automation-control-card";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FormSubmitButton } from "../../components/form-submit-button";
@@ -81,6 +82,9 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
     evaluation = evaluationResult.value.data.item;
   }
   const automationCycle = asRecord(automation.lastCycle);
+  const controlActions = Array.isArray(automation.controlActions)
+    ? automation.controlActions.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
   const recommendationExplanation = asRecord(evaluation.recommendation_explanation);
   const stageDecisionSummary = asRecord(evaluation.stage_decision_summary);
   const configuration = asRecord(workspace.configuration);
@@ -94,6 +98,8 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
     label: item,
     checked: executionAllowedSymbols.includes(item),
   }));
+  const strategyReturnTo = focusSymbol ? `/strategies?symbol=${encodeURIComponent(focusSymbol)}` : "/strategies";
+  const isManualMode = automation.mode === "manual" && !automation.paused && !automation.manualTakeover;
 
   return (
     <AppShell
@@ -157,15 +163,23 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
             ]}
           />
 
-          {automation.paused || automation.manualTakeover ? (
+          {automation.paused || automation.manualTakeover || isManualMode ? (
             <Card>
               <CardHeader>
                 <p className="eyebrow">当前自动化状态</p>
-                <CardTitle>{automation.manualTakeover ? "当前已人工接管" : "当前已暂停自动化"}</CardTitle>
+                <CardTitle>
+                  {automation.manualTakeover
+                    ? "当前已人工接管"
+                    : automation.paused
+                    ? "当前已暂停自动化"
+                    : "当前处于手动模式"}
+                </CardTitle>
                 <CardDescription>
                   {automation.manualTakeover
-                    ? "这意味着当前不应该继续自动推进，先去任务页看接管原因、恢复步骤和最近失败。"
-                    : "这意味着当前不应该继续自动推进，先去任务页确认为什么暂停、什么时候恢复。"}
+                    ? "这意味着当前不应该继续自动推进。下面的快捷入口可以直接恢复、保持手动或继续停机；任务页只用来看完整时间线。"
+                    : isManualMode
+                    ? "这意味着系统当前不会自动推进。下面的快捷入口会直接给你保持手动、切回 dry-run only 或继续停机；任务页只用来看完整时间线。"
+                    : "这意味着当前还停在暂停恢复链里。下面的快捷入口可以直接恢复、只回 dry-run、切到手动或继续停机；任务页只用来看完整时间线。"}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-3">
@@ -173,7 +187,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 <AutomationInfo label="暂停原因" value={readText(automation.pauseReason, "当前没有暂停原因")} />
                 <AutomationInfo label="最近失败时间" value={readText(automation.lastFailureAt, "当前没有失败记录")} />
                 <Button asChild variant="outline">
-                  <Link href="/tasks">去任务页处理接管与恢复</Link>
+                  <Link href="/tasks">去任务页看完整时间线</Link>
                 </Button>
               </CardContent>
             </Card>
@@ -261,6 +275,42 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   <AutomationInfo label="人工接管" value={automation.manualTakeover ? "人工接管中" : "当前未接管"} />
                   <AutomationInfo label="暂停原因" value={readText(automation.pauseReason, "当前没有暂停原因")} />
                   <AutomationInfo label="上次失败时间" value={readText(automation.lastFailureAt, "当前没有失败记录")} />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <p className="eyebrow">自动化快捷入口</p>
+                  <CardTitle>
+                    {automation.manualTakeover
+                      ? "接管中先决定怎么恢复"
+                      : isManualMode
+                      ? "手动模式下决定何时重开自动化"
+                      : automation.paused
+                      ? "暂停后先决定怎么继续"
+                      : "需要时直接停下或切回手动"}
+                  </CardTitle>
+                  <CardDescription>
+                    {automation.manualTakeover
+                      ? "策略页不必再跳回任务页找按钮，这里直接给你恢复、只回 dry-run、保持手动和停机入口。"
+                      : isManualMode
+                      ? "策略页不必再跳回任务页找按钮，这里直接给你保持手动、切回 dry-run only 和停机入口。"
+                      : automation.paused
+                      ? "策略页不必再跳回任务页找按钮，这里直接给你恢复、只回 dry-run、切到手动和停机入口。"
+                      : "如果你在策略页就确认要暂停、转人工接管或切回手动，这里可以直接处理。"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-3 md:grid-cols-2">
+                  {controlActions.map((item, index) => (
+                    <AutomationControlCard
+                      key={`${readText(item.action, "automation")}-${index}`}
+                      action={readText(item.action, "automation_mode_manual")}
+                      label={readText(item.label, "自动化动作")}
+                      detail={readText(item.detail, "当前没有额外说明。")}
+                      returnTo={strategyReturnTo}
+                      danger={Boolean(item.danger)}
+                    />
+                  ))}
                 </CardContent>
               </Card>
 

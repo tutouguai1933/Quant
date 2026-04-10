@@ -177,6 +177,7 @@ export type AutomationStatusModel = {
   dailySummary: Record<string, unknown>;
   runtimeWindow: Record<string, unknown>;
   resumeStatus: Record<string, unknown>;
+  controlActions: Array<Record<string, unknown>>;
   schedulerPlan: Array<Record<string, unknown>>;
   failurePolicy: Record<string, unknown>;
   operations: Record<string, unknown>;
@@ -1283,6 +1284,7 @@ export async function getAutomationStatus(
         dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
         runtimeWindow: isPlainObject(item.runtime_window) ? item.runtime_window : {},
         resumeStatus: isPlainObject(item.resume_status) ? item.resume_status : {},
+        controlActions: Array.isArray(item.control_actions) ? item.control_actions.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
         operations: isPlainObject(item.operations) ? item.operations : {},
@@ -3311,6 +3313,7 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       dailySummary: {},
       runtimeWindow: {},
       resumeStatus: {},
+      controlActions: [],
       schedulerPlan: [],
       failurePolicy: {},
       severitySummary: {},
