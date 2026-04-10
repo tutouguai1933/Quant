@@ -48,7 +48,7 @@ test("tasks config save persists across tasks and evaluation workbenches", async
     await expect(savedTasksForm.locator('input[name="review_limit"]')).toHaveValue(nextReview);
 
     await page.goto(`${WEB_BASE_URL}/evaluation`, { waitUntil: "commit", timeout: 90000 });
-    await expect(page.locator("body")).toContainText("实验对比与复盘窗口", { timeout: 60000 });
+    await expect(page.locator("body")).toContainText("评估与实验中心", { timeout: 60000 });
     const evaluationForm = formFor(page);
     await expect(evaluationForm.locator('input[name="comparison_run_limit"]')).toHaveValue(nextComparison);
     await expect(evaluationForm.locator('input[name="review_limit"]')).toHaveValue(nextReview);
@@ -85,6 +85,8 @@ test("evaluation and strategies pages show stable recommendation story", async (
   await loginAsAdmin(page, "/evaluation");
 
   await expect(page.locator("body")).toContainText("推荐摘要", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("决策入口", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("现在先推进哪一层", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("当前优先进入 dry-run", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("当前综合排序第一", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("当前卡在哪个门", { timeout: 60000 });

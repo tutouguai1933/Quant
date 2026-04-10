@@ -338,6 +338,8 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("标签预设", evaluation_content)
         self.assertIn("标签触发口径", evaluation_content)
         self.assertIn("为什么先推进", evaluation_content)
+        self.assertIn("决策入口", evaluation_content)
+        self.assertIn("现在先推进哪一层", evaluation_content)
         self.assertIn("严格规则", backtest_content)
         self.assertIn("门控开关", backtest_content)
         self.assertIn("分组摘要", features_content)
@@ -403,6 +405,8 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("差异摘要", content)
         self.assertIn("当前卡在哪个门", content)
         self.assertIn("先怎么修", content)
+        self.assertIn("决策入口", content)
+        self.assertIn("现在先推进哪一层", content)
 
     def test_strategies_page_surfaces_manual_takeover_risk_state(self) -> None:
         content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")

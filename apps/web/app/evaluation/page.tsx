@@ -51,6 +51,10 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
   const automationPresetDetail = readText(operations.automation_preset_detail, "当前还没有自动化运行预设说明。");
   const bestExperiment = asRecord(workspace.best_experiment);
   const bestStageCandidates = asRecord(workspace.best_stage_candidates);
+  const decisionBoard = asRecord(workspace.decision_board);
+  const decisionCards = Array.isArray(decisionBoard.cards)
+    ? decisionBoard.cards.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    : [];
   const bestDryRunCandidate = asRecord(bestStageCandidates.dry_run);
   const bestLiveCandidate = asRecord(bestStageCandidates.live);
   const recommendationExplanation = asRecord(workspace.recommendation_explanation);
@@ -546,6 +550,31 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
               ) : (
                 <p>当前还没有推荐证据。</p>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/90">
+            <CardHeader>
+              <p className="eyebrow">决策入口</p>
+              <CardTitle>{String(decisionBoard.headline ?? "当前还没有推进决策")}</CardTitle>
+              <CardDescription>{String(decisionBoard.summary ?? "先完成研究、回测和评估，系统才会告诉你现在该推进哪一层。")}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              <InfoBlock label="现在先推进哪一层" value={formatDecisionStage(String(decisionBoard.primary_stage ?? "research"))} />
+              <InfoBlock label="当前下一步" value={formatDecisionAction(String(decisionBoard.next_action ?? "continue_research"))} />
+              {decisionCards.length ? decisionCards.map((item, index) => (
+                <InfoBlock
+                  key={`${String(item.stage ?? index)}-${index}`}
+                  label={`${formatDecisionStage(String(item.stage ?? "research"))} 决策`}
+                  value={[
+                    String(item.decision ?? "当前还没有决策"),
+                    `候选：${String(item.symbol ?? "n/a")}`,
+                    `当前状态：${formatDecisionReadiness(String(item.readiness ?? "waiting"))}`,
+                    `主要卡点：${String(item.blocking ?? item.reason ?? "当前还没有说明")}`,
+                    `下一步：${formatDecisionAction(String(item.next_step ?? "continue_research"))}`,
+                  ].join("；")}
+                />
+              )) : <InfoBlock label="决策状态" value="当前还没有可展示的推进决策。" />}
             </CardContent>
           </Card>
 
@@ -1123,6 +1152,40 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value}</p>
     </div>
   );
+}
+
+function formatDecisionStage(stage: string): string {
+  if (stage === "live") {
+    return "进入 live";
+  }
+  if (stage === "dry_run") {
+    return "进入 dry-run";
+  }
+  return "继续研究";
+}
+
+function formatDecisionAction(action: string): string {
+  const normalized = action.trim();
+  const labels: Record<string, string> = {
+    continue_research: "继续研究",
+    run_training: "运行研究训练",
+    run_inference: "运行研究推理",
+    go_dry_run: "推进到 dry-run",
+    enter_dry_run: "推进到 dry-run",
+    continue_dry_run: "继续 dry-run 观察",
+    review_dry_run: "先看 dry-run 复盘",
+    go_live: "推进到 live",
+    enter_live: "推进到 live",
+    wait_live: "继续等待 live",
+  };
+  return labels[normalized] ?? (normalized || "继续研究");
+}
+
+function formatDecisionReadiness(readiness: string): string {
+  if (readiness === "ready") {
+    return "可以推进";
+  }
+  return "暂时等待";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

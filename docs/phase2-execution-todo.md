@@ -73,7 +73,7 @@
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：`apps/web/app/evaluation/page.tsx`
 
-- [ ] B5. 更容易判断哪轮实验值得继续进入 `dry-run / live`
+- [x] B5. 更容易判断哪轮实验值得继续进入 `dry-run / live`
   - 目标：决策入口更清楚，不再只靠单个分数判断下一步
   - 重点页面：`/evaluation`、`/strategies`
   - 重点后端：`services/api/app/services/evaluation_workspace_service.py`
@@ -107,13 +107,10 @@
 
 ## 当前执行顺序
 
-1. A5
-2. B1
-3. B5
-4. C1
-5. C2
-6. C3
-7. C4
+1. C1
+2. C2
+3. C3
+4. C4
 
 ## 当前备注
 
@@ -127,3 +124,4 @@
 - B2 已完成：评估页和策略页现在统一使用“当前优先进入哪一层 / 当前综合排序第一 / 门控是否通过 / 研究复盘建议”这组稳定人话结论；没有训练结果时也不再把 `training_missing` 这类内部状态码直接暴露到页面
 - B3 已完成：评估页现在会稳定说明“哪个币卡在哪个门、主要原因是什么、先怎么修”，不再只显示 `sample_count_too_low` 这类原因码
 - B4 已完成：评估页、策略页、任务页现在统一使用“研究侧 / 执行侧 / 主要卡点 / 下一步”这套差异口径，不再各自拼接不同说法
+- B5 已完成：评估页现在新增“决策入口”，会直接说明当前先推进 `research / dry-run / live` 哪一层、两层候选各自现在值不值得推进、主要卡点和下一步动作，不再只靠单个推荐分数判断

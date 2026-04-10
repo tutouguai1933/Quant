@@ -76,6 +76,13 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["best_stage_candidates"]["dry_run"]["symbol"], "ETHUSDT")
         self.assertEqual(item["best_stage_candidates"]["live"]["symbol"], "ETHUSDT")
         self.assertEqual(item["best_stage_candidates"]["live"]["stage"], "live")
+        self.assertEqual(item["decision_board"]["primary_stage"], "dry_run")
+        self.assertIn("先把 ETHUSDT 推进到 dry-run", item["decision_board"]["headline"])
+        self.assertEqual(item["decision_board"]["cards"][0]["stage"], "dry_run")
+        self.assertIn("现在值得推进", item["decision_board"]["cards"][0]["decision"])
+        self.assertEqual(item["decision_board"]["cards"][1]["stage"], "live")
+        self.assertIn("暂时不优先", item["decision_board"]["cards"][1]["decision"])
+        self.assertIn("当前流程仍先看 dry-run", item["decision_board"]["cards"][1]["reason"])
         self.assertEqual(item["alignment_metric_rows"][0]["metric"], "研究结论")
         self.assertIn("ETHUSDT", item["alignment_metric_rows"][0]["research"])
         self.assertIn("dry-run", item["alignment_metric_rows"][1]["execution"])
@@ -195,6 +202,37 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
 
         self.assertIn("训练结果缺失", item["best_experiment"]["reason"])
         self.assertIn("训练结果缺失，先跑训练", item["recommendation_explanation"]["evidence"][2])
+        self.assertEqual(item["decision_board"]["primary_stage"], "research")
+        self.assertIn("先补研究结果", item["decision_board"]["headline"])
+        self.assertIn("暂时还不能推进", item["decision_board"]["cards"][0]["decision"])
+
+    def test_workspace_keeps_research_stage_when_action_is_still_research(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_ResearchOnlyRecommendationService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["best_experiment"]["recommended_stage"], "research")
+        self.assertEqual(item["decision_board"]["primary_stage"], "research")
+        self.assertIn("先补研究结果", item["decision_board"]["headline"])
+        self.assertIn("暂时还不能推进", item["decision_board"]["cards"][0]["decision"])
+
+    def test_workspace_promotes_live_stage_when_action_is_live(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_LivePromotionResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["best_experiment"]["recommended_stage"], "live")
+        self.assertEqual(item["decision_board"]["primary_stage"], "live")
+        self.assertIn("推进到 live", item["decision_board"]["headline"])
+        self.assertIn("现在值得推进", item["decision_board"]["cards"][1]["decision"])
 
     def test_gate_matrix_accepts_status_based_gate_payloads(self) -> None:
         rows = EvaluationWorkspaceService._build_gate_matrix(
@@ -628,6 +666,24 @@ class _NoRecommendationResearchService(_FakeResearchService):
             "recommended_symbol": "",
             "recommended_action": "run_inference",
         }
+        return payload
+
+
+class _ResearchOnlyRecommendationService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        payload["leaderboard"][0]["next_action"] = "run_inference"
+        payload["overview"]["recommended_action"] = "run_inference"
+        payload["reviews"]["research"]["next_action"] = "run_inference"
+        return payload
+
+
+class _LivePromotionResearchService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        payload["leaderboard"][0]["next_action"] = "go_live"
+        payload["overview"]["recommended_action"] = "go_live"
+        payload["reviews"]["research"]["next_action"] = "go_live"
         return payload
 
 

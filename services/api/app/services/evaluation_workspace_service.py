@@ -88,6 +88,13 @@ class EvaluationWorkspaceService:
             elimination_explanation=elimination_explanation,
             alignment_details=alignment_details,
         )
+        decision_board = self._build_decision_board(
+            best_experiment=best_experiment,
+            best_stage_candidates=best_stage_candidates,
+            recommendation_explanation=recommendation_explanation,
+            elimination_explanation=elimination_explanation,
+            alignment_story=alignment_story,
+        )
 
         status = str(report.get("status", "unavailable") or "unavailable")
         if evaluation or leaderboard or reviews:
@@ -193,6 +200,7 @@ class EvaluationWorkspaceService:
             "leaderboard": leaderboard,
             "best_experiment": best_experiment,
             "best_stage_candidates": best_stage_candidates,
+            "decision_board": decision_board,
             "recommendation_explanation": recommendation_explanation,
             "elimination_explanation": elimination_explanation,
             "recent_runs": [dict(item) for item in recent_runs if isinstance(item, dict)][:comparison_run_limit],
@@ -521,7 +529,10 @@ class EvaluationWorkspaceService:
             or research_review.get("next_action", "")
             or overview.get("recommended_action", "")
         ).strip()
-        recommended_stage = "live" if "live" in next_action.lower() else "dry_run"
+        recommended_stage = EvaluationWorkspaceService._resolve_recommended_stage(
+            next_action=next_action,
+            symbol=symbol,
+        )
         reason = str(
             top.get("recommendation_reason", "")
             or top.get("review_result", "")
@@ -543,7 +554,14 @@ class EvaluationWorkspaceService:
         return {
             "symbol": symbol,
             "recommended_stage": recommended_stage,
-            "next_action": next_action or ("go_live" if recommended_stage == "live" else "go_dry_run"),
+            "next_action": next_action
+            or (
+                "go_live"
+                if recommended_stage == "live"
+                else "go_dry_run"
+                if recommended_stage == "dry_run"
+                else "continue_research"
+            ),
             "reason": str(recommendation_story.get("detail", "")).strip() or reason,
             "score": score,
         }
@@ -743,7 +761,10 @@ class EvaluationWorkspaceService:
                 "metric": "阶段候选",
                 "research": f"dry-run：{str(dry_candidate.get('symbol', 'n/a'))} / {str(dry_candidate.get('reason', ''))}",
                 "backtest": f"live：{str(live_candidate.get('symbol', 'n/a'))} / {str(live_candidate.get('reason', ''))}",
-                "execution": f"下一步 {'dry-run' if str(best_experiment.get('recommended_stage', 'dry_run')) == 'dry_run' else 'live'} / {str(best_experiment.get('next_action', 'continue_research'))}",
+                "execution": (
+                    f"下一步 {EvaluationWorkspaceService._format_stage_label(str(best_experiment.get('recommended_stage', 'research')))}"
+                    f" / {str(best_experiment.get('next_action', 'continue_research'))}"
+                ),
                 "impact": "先分清现在更适合继续 dry-run，还是已经够格进入 live。",
             },
             {
@@ -766,14 +787,113 @@ class EvaluationWorkspaceService:
         """把“为什么推荐 / 为什么淘汰 / 和执行差在哪”压成直白摘要。"""
 
         symbol = str(best_experiment.get("symbol", "")).strip() or "当前候选"
-        stage = str(best_experiment.get("recommended_stage", "dry_run") or "dry_run")
-        stage_label = "live" if stage == "live" else "dry-run"
+        stage = str(best_experiment.get("recommended_stage", "research") or "research")
+        stage_label = EvaluationWorkspaceService._format_stage_label(stage)
         return {
-            "headline": f"{symbol} 现在更适合进入 {stage_label}",
+            "headline": (
+                f"{symbol} 现在更适合先继续研究"
+                if stage == "research"
+                else f"{symbol} 现在更适合进入 {stage_label}"
+            ),
             "why_recommended": str(recommendation_explanation.get("detail", "")).strip() or "当前还没有足够理由说明为什么推荐。",
             "why_blocked": str(elimination_explanation.get("detail", "")).strip() or "当前没有额外淘汰说明。",
             "execution_gap": str(alignment_details.get("difference_summary", "")).strip() or "当前还没有研究与执行差异摘要。",
             "next_step": str(best_experiment.get("next_action", "")).strip() or "continue_research",
+        }
+
+    @staticmethod
+    def _build_decision_board(
+        *,
+        best_experiment: dict[str, object],
+        best_stage_candidates: dict[str, dict[str, str]],
+        recommendation_explanation: dict[str, object],
+        elimination_explanation: dict[str, object],
+        alignment_story: dict[str, object],
+    ) -> dict[str, object]:
+        """把 dry-run / live 的推进判断收成统一决策入口。"""
+
+        primary_stage = str(best_experiment.get("recommended_stage", "research") or "research")
+        primary_symbol = str(best_experiment.get("symbol", "")).strip()
+        next_action = str(best_experiment.get("next_action", "")).strip() or "continue_research"
+        if not primary_symbol or primary_stage == "research":
+            primary_stage = "research"
+        if primary_stage == "live":
+            headline = f"现在先把 {primary_symbol or '当前候选'} 推进到 live"
+            summary = str(recommendation_explanation.get("detail", "")).strip() or "当前已经够格进入 live。"
+        elif primary_stage == "dry_run" and primary_symbol:
+            headline = f"现在先把 {primary_symbol} 推进到 dry-run"
+            summary = str(recommendation_explanation.get("detail", "")).strip() or "当前更适合先进入 dry-run。"
+        else:
+            primary_stage = "research"
+            headline = "现在先补研究结果，再决定推进哪一层"
+            summary = "当前还没有足够候选可以进入 dry-run 或 live。"
+
+        dry_candidate = dict(best_stage_candidates.get("dry_run") or {})
+        live_candidate = dict(best_stage_candidates.get("live") or {})
+
+        return {
+            "headline": headline,
+            "summary": summary,
+            "primary_stage": primary_stage,
+            "next_action": next_action,
+            "cards": [
+                EvaluationWorkspaceService._build_decision_card(
+                    stage="dry_run",
+                    candidate=dry_candidate,
+                    primary_stage=primary_stage,
+                    recommendation_explanation=recommendation_explanation,
+                    elimination_explanation=elimination_explanation,
+                    alignment_story=alignment_story,
+                ),
+                EvaluationWorkspaceService._build_decision_card(
+                    stage="live",
+                    candidate=live_candidate,
+                    primary_stage=primary_stage,
+                    recommendation_explanation=recommendation_explanation,
+                    elimination_explanation=elimination_explanation,
+                    alignment_story=alignment_story,
+                ),
+            ],
+        }
+
+    @staticmethod
+    def _build_decision_card(
+        *,
+        stage: str,
+        candidate: dict[str, str],
+        primary_stage: str,
+        recommendation_explanation: dict[str, object],
+        elimination_explanation: dict[str, object],
+        alignment_story: dict[str, object],
+    ) -> dict[str, str]:
+        """给 dry-run / live 各生成一张稳定决策卡。"""
+
+        stage_label = "live" if stage == "live" else "dry-run"
+        symbol = str(candidate.get("symbol", "")).strip() or "当前还没有候选"
+        reason = str(candidate.get("reason", "")).strip() or f"当前还没有候选明确满足 {stage_label} 放行条件。"
+        next_step = str(candidate.get("next_action", "")).strip() or "continue_research"
+
+        if primary_stage == "research":
+            decision = "暂时还不能推进"
+            decision_reason = "当前还没有足够研究结果，先补训练、推理和评估。"
+        elif stage == primary_stage:
+            decision = "现在值得推进"
+            decision_reason = str(recommendation_explanation.get("detail", "")).strip() or reason
+        elif stage == "live":
+            decision = "暂时不优先"
+            decision_reason = "当前流程仍先看 dry-run 复盘，不直接放到 live。"
+        else:
+            decision = "当前不是第一优先"
+            decision_reason = str(alignment_story.get("detail", "")).strip() or reason
+
+        return {
+            "stage": stage,
+            "symbol": symbol,
+            "decision": decision,
+            "reason": decision_reason,
+            "blocking": str(elimination_explanation.get("detail", "")).strip() if stage != primary_stage else str(candidate.get("reason", "")).strip() or str(elimination_explanation.get("detail", "")).strip(),
+            "next_step": next_step,
+            "readiness": "ready" if stage == primary_stage and primary_stage != "research" else "waiting",
         }
 
     @staticmethod
@@ -801,13 +921,21 @@ class EvaluationWorkspaceService:
     ) -> dict[str, object]:
         """把推荐理由压成稳定的人话结论。"""
 
-        target = "live" if stage == "live" else "dry-run"
+        target = EvaluationWorkspaceService._format_stage_label(stage)
         dry_run_status = "通过" if bool(gate_row.get("allowed_to_dry_run")) else "拦下"
         live_status = str(gate_row.get("live_gate", "n/a") or "n/a")
         primary_reason = str(gate_row.get("primary_reason", "")).strip()
-        detail_parts = [f"{symbol} 当前综合排序第一，更适合先进入 {target}"]
+        if stage == "research":
+            detail_parts = [f"{symbol} 当前综合排序第一，但还不能直接推进到 dry-run 或 live"]
+        else:
+            detail_parts = [f"{symbol} 当前综合排序第一，更适合先进入 {target}"]
 
-        if dry_run_status == "通过" and live_status == "通过" and stage != "live":
+        if stage == "research":
+            if primary_reason and primary_reason != "已通过":
+                detail_parts.append(f"当前主要卡点是 {primary_reason}")
+            else:
+                detail_parts.append("当前还需要先补训练、推理或复盘")
+        elif dry_run_status == "通过" and live_status == "通过" and stage != "live":
             detail_parts.append("虽然 live 门也已通过，但当前流程仍先进入 dry-run，再决定是否继续放到 live")
         elif dry_run_status == "通过" and live_status == "通过":
             detail_parts.append("dry-run 和 live 门都已通过，可以直接继续推进 live")
@@ -831,7 +959,11 @@ class EvaluationWorkspaceService:
             gate_summary = f"{gate_summary}（当前卡点：{primary_reason}）"
 
         return {
-            "headline": f"{symbol} 当前优先进入 {target}",
+            "headline": (
+                f"{symbol} 当前先继续研究"
+                if stage == "research"
+                else f"{symbol} 当前优先进入 {target}"
+            ),
             "detail": "；".join(detail_parts) + "。",
             "evidence": [
                 f"分数 {score or 'n/a'} / 当前综合排序第一",
@@ -839,6 +971,29 @@ class EvaluationWorkspaceService:
                 f"研究复盘：{EvaluationWorkspaceService._format_review_summary(review_result=review_result, next_action=next_action)}",
             ],
         }
+
+    @staticmethod
+    def _resolve_recommended_stage(*, next_action: str, symbol: str) -> str:
+        """按下一步动作判断当前更适合停在哪一层。"""
+
+        if not symbol.strip():
+            return "research"
+        action = str(next_action).strip().lower()
+        if action in {"go_live", "enter_live"}:
+            return "live"
+        if action in {"go_dry_run", "enter_dry_run"}:
+            return "dry_run"
+        return "research"
+
+    @staticmethod
+    def _format_stage_label(stage: str) -> str:
+        """把内部阶段键翻译成人话。"""
+
+        if stage == "live":
+            return "live"
+        if stage == "dry_run":
+            return "dry-run"
+        return "继续研究"
 
     @staticmethod
     def _format_review_summary(*, review_result: str, next_action: str) -> str:
