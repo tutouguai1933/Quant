@@ -48,6 +48,11 @@ class AutomationWorkflowService:
         review_limit = int(operations.get("review_limit", 10) or 10)
         report = self._reviewer.build_report(limit=review_limit)
         health = self._automation.build_health_summary(task_health=task_health)
+        runtime_window = self._build_runtime_window(state=state, operations=operations, automation_config=automation_config)
+        resume_status = self._build_resume_status(
+            runtime_window=runtime_window,
+            resume_checklist=list(health.get("resume_checklist") or []),
+        )
         return {
             "state": state,
             "health": health,
@@ -64,7 +69,8 @@ class AutomationWorkflowService:
                 automation_state=state,
             ),
             "daily_summary": dict(automation_status.get("daily_summary") or {}),
-            "runtime_window": self._build_runtime_window(state=state, operations=operations, automation_config=automation_config),
+            "runtime_window": runtime_window,
+            "resume_status": resume_status,
             "scheduler_plan": self._build_scheduler_plan(review_limit=review_limit),
             "alerts": alerts,
             "failure_policy": self._build_failure_policy(operations=operations),
@@ -502,6 +508,16 @@ class AutomationWorkflowService:
             blocked_reason = "daily_limit_reached"
         elif cooldown_remaining_minutes > 0:
             blocked_reason = "cooldown_active"
+        ready_for_cycle = not paused and remaining_daily_cycle_count > 0 and cooldown_remaining_minutes <= 0
+        story = cls._build_runtime_window_story(
+            next_action=next_action,
+            blocked_reason=blocked_reason,
+            note=note,
+            ready_for_cycle=ready_for_cycle,
+            cooldown_remaining_minutes=cooldown_remaining_minutes,
+            next_run_at=next_run_at,
+            takeover_review_due_at=takeover_review_due_at,
+        )
         return {
             "current_cycle_count": current_cycle_count,
             "daily_limit": daily_limit,
@@ -512,12 +528,154 @@ class AutomationWorkflowService:
             "paused_since": str(state.get("paused_at", "") or ""),
             "takeover_since": str(state.get("manual_takeover_at", "") or ""),
             "takeover_elapsed_seconds": takeover_elapsed_seconds,
-            "ready_for_cycle": not paused and remaining_daily_cycle_count > 0 and cooldown_remaining_minutes <= 0,
+            "ready_for_cycle": ready_for_cycle,
             "next_action": next_action,
             "next_run_at": next_run_at,
             "takeover_review_due_at": takeover_review_due_at,
             "blocked_reason": blocked_reason,
             "note": note,
+            "story": story,
+        }
+
+    @classmethod
+    def _build_runtime_window_story(
+        cls,
+        *,
+        next_action: str,
+        blocked_reason: str,
+        note: str,
+        ready_for_cycle: bool,
+        cooldown_remaining_minutes: int,
+        next_run_at: str,
+        takeover_review_due_at: str,
+    ) -> dict[str, str]:
+        """把等待和恢复流程压成任务页能直接读懂的摘要。"""
+
+        next_run_label = cls._format_runtime_deadline(next_run_at)
+        review_due_label = cls._format_runtime_deadline(takeover_review_due_at)
+        if ready_for_cycle:
+            return {
+                "headline": "当前已经可以继续下一轮",
+                "what_waiting_for": "系统现在不在等冷却窗口、轮次窗口或人工接管复核。",
+                "when_it_runs": "下一步什么时候跑：保持当前模式即可继续下一轮自动化。",
+                "why_not_resume": "为什么现在不能恢复：当前没有恢复阻塞，可以继续按当前模式推进。",
+                "next_step": "恢复前先做什么：先看最近一轮结果，确认无误后继续自动化。",
+            }
+        if blocked_reason == "manual_takeover_active":
+            due_text = f"最晚在 {review_due_label} 前先做接管复核。" if review_due_label else "接管持续较久时，先做接管复核。"
+            return {
+                "headline": "当前还在人工接管中",
+                "what_waiting_for": "系统现在在等人工确认，执行器、同步和账户状态都要先收口。",
+                "when_it_runs": f"下一步什么时候跑：{due_text}",
+                "why_not_resume": "为什么现在不能恢复：接管原因还没清掉，直接恢复会把旧问题带进下一轮。",
+                "next_step": f"恢复前先做什么：{note or '先处理接管原因，再决定是否恢复自动化。'}",
+            }
+        if blocked_reason == "paused_waiting_review":
+            return {
+                "headline": "当前处于暂停待复核状态",
+                "what_waiting_for": "系统现在在等恢复清单通过，再决定是否继续自动化。",
+                "when_it_runs": "下一步什么时候跑：先做完人工复核，再决定是否恢复当前模式。",
+                "why_not_resume": "为什么现在不能恢复：暂停原因和恢复清单还没完全收口。",
+                "next_step": f"恢复前先做什么：{note or '先看恢复清单和同步失败细节。'}",
+            }
+        if blocked_reason == "daily_limit_reached":
+            return {
+                "headline": "今日自动化轮次已经用完",
+                "what_waiting_for": "系统现在在等下一个时间窗口，今天不会再自动推进更多轮次。",
+                "when_it_runs": "下一步什么时候跑：等到新的日内窗口后，才会继续下一轮。",
+                "why_not_resume": "为什么现在不能恢复：不是按钮没生效，而是今日轮次上限已经触发。",
+                "next_step": f"恢复前先做什么：{note or '先等下一轮时间窗口。'}",
+            }
+        if blocked_reason == "cooldown_active":
+            when_text = (
+                f"下一步什么时候跑：最早 {next_run_label} 后才能继续，当前还要等约 {cooldown_remaining_minutes} 分钟。"
+                if next_run_label
+                else f"下一步什么时候跑：当前还要等约 {cooldown_remaining_minutes} 分钟。"
+            )
+            return {
+                "headline": "当前正在等待冷却窗口结束",
+                "what_waiting_for": "系统现在在等这轮冷却时间走完，避免过于频繁地重复推进。",
+                "when_it_runs": when_text,
+                "why_not_resume": "为什么现在不能恢复：冷却窗口还没结束，重复点击恢复也不会提前开跑。",
+                "next_step": f"恢复前先做什么：{note or '等冷却结束，期间先处理已有阻塞。'}",
+            }
+        return {
+            "headline": f"当前还在等待 {next_action or '下一步调度'}",
+            "what_waiting_for": "系统现在在等调度条件满足后，再继续自动推进。",
+            "when_it_runs": "下一步什么时候跑：等当前阻塞解除后，系统会继续下一轮。",
+            "why_not_resume": "为什么现在不能恢复：还有未完成的等待条件需要先清掉。",
+            "next_step": f"恢复前先做什么：{note or '先处理当前阻塞。'}",
+        }
+
+    @classmethod
+    def _build_resume_status(
+        cls,
+        *,
+        runtime_window: dict[str, object],
+        resume_checklist: list[dict[str, object]],
+    ) -> dict[str, object]:
+        """区分“能不能恢复”和“恢复后会不会立刻继续下一轮”。"""
+
+        blocked_items = [
+            {
+                "label": str(item.get("label", "") or "检查项"),
+                "detail": str(item.get("detail", "") or "当前没有额外说明。"),
+            }
+            for item in resume_checklist
+            if str(item.get("status", "ready") or "ready").strip().lower() != "ready"
+        ]
+        blocked_labels = [str(item.get("label", "") or "检查项") for item in blocked_items]
+        next_action = str(runtime_window.get("next_action", "") or "")
+        blocked_reason = str(runtime_window.get("blocked_reason", "") or "")
+        next_run_at = str(runtime_window.get("next_run_at", "") or "")
+        story = dict(runtime_window.get("story") or {})
+        ready_for_cycle = bool(runtime_window.get("ready_for_cycle"))
+        resume_needed = blocked_reason in {"manual_takeover_active", "paused_waiting_review"}
+        if blocked_reason == "manual_takeover_active":
+            waiting_for = "manual_takeover_review"
+            waiting_for_label = "系统在等人工接管处理完成"
+        elif blocked_reason == "paused_waiting_review":
+            waiting_for = "paused_review"
+            waiting_for_label = "系统在等暂停原因复核完成"
+        elif blocked_reason == "daily_limit_reached":
+            waiting_for = "next_daily_window"
+            waiting_for_label = "系统在等下一日调度窗口"
+        elif blocked_reason == "cooldown_active":
+            waiting_for = "cooldown_window"
+            waiting_for_label = "系统在等冷却窗口结束"
+        else:
+            waiting_for = "none"
+            waiting_for_label = "当前不需要等待"
+        if blocked_items:
+            cannot_resume_reason = f"还不能恢复，因为恢复清单还有 {len(blocked_items)} 项未通过：{'、'.join(blocked_labels)}。"
+        elif not resume_needed and ready_for_cycle:
+            cannot_resume_reason = "当前不需要点恢复按钮，系统已经可以直接继续下一轮。"
+        elif not resume_needed and blocked_reason == "cooldown_active":
+            cannot_resume_reason = "当前不需要点恢复按钮，系统会在冷却结束后自动具备继续条件。"
+        elif not resume_needed and blocked_reason == "daily_limit_reached":
+            cannot_resume_reason = "当前不需要点恢复按钮，系统会等下一日窗口后再继续下一轮。"
+        elif ready_for_cycle:
+            cannot_resume_reason = "现在可以恢复，而且恢复后就能继续下一轮自动化。"
+        else:
+            cannot_resume_reason = str(story.get("why_not_resume", "") or "当前没有额外恢复限制说明。")
+        if next_run_at:
+            earliest_continue_text = f"最早可在 {cls._format_runtime_deadline(next_run_at)} 继续。"
+        elif blocked_reason == "daily_limit_reached":
+            earliest_continue_text = "需等到下一日窗口后继续。"
+        elif blocked_items:
+            earliest_continue_text = "处理完当前阻塞后可立即继续。"
+        else:
+            earliest_continue_text = "当前没有额外等待时间，确认无误后可继续。"
+        return {
+            "waiting_for": waiting_for,
+            "waiting_for_label": waiting_for_label,
+            "earliest_continue_at": next_run_at,
+            "earliest_continue_text": earliest_continue_text,
+            "resume_needed": resume_needed,
+            "resume_ready": resume_needed and not blocked_items,
+            "resume_blockers": blocked_items,
+            "cannot_resume_reason": cannot_resume_reason,
+            "continue_after_resume": resume_needed and next_action == "run_next_cycle" and not blocked_items,
         }
 
     @staticmethod
@@ -595,6 +753,15 @@ class AutomationWorkflowService:
         if not manual_takeover or takeover_since is None or long_run_seconds <= 0:
             return ""
         return (takeover_since.astimezone(timezone.utc) + timedelta(seconds=long_run_seconds)).isoformat()
+
+    @staticmethod
+    def _format_runtime_deadline(value: str) -> str:
+        """把运行时间点压成更适合页面说明的短格式。"""
+
+        parsed = AutomationWorkflowService._parse_timestamp(value)
+        if parsed is None:
+            return ""
+        return parsed.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     @staticmethod
     def _parse_timestamp(value: str) -> datetime | None:

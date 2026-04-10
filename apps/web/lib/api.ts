@@ -176,6 +176,7 @@ export type AutomationStatusModel = {
   executionHealth: Record<string, unknown>;
   dailySummary: Record<string, unknown>;
   runtimeWindow: Record<string, unknown>;
+  resumeStatus: Record<string, unknown>;
   schedulerPlan: Array<Record<string, unknown>>;
   failurePolicy: Record<string, unknown>;
   operations: Record<string, unknown>;
@@ -759,6 +760,7 @@ export type EvaluationWorkspaceModel = {
   leaderboard: Array<Record<string, unknown>>;
   best_experiment: Record<string, unknown>;
   best_stage_candidates: Record<string, unknown>;
+  decision_board?: Record<string, unknown>;
   recommendation_explanation: Record<string, unknown>;
   elimination_explanation: Record<string, unknown>;
   recent_runs: Array<Record<string, unknown>>;
@@ -1280,6 +1282,7 @@ export async function getAutomationStatus(
         executionHealth: isPlainObject(item.execution_health) ? item.execution_health : {},
         dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
         runtimeWindow: isPlainObject(item.runtime_window) ? item.runtime_window : {},
+        resumeStatus: isPlainObject(item.resume_status) ? item.resume_status : {},
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
         operations: isPlainObject(item.operations) ? item.operations : {},
@@ -3307,6 +3310,7 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       executionHealth: {},
       dailySummary: {},
       runtimeWindow: {},
+      resumeStatus: {},
       schedulerPlan: [],
       failurePolicy: {},
       severitySummary: {},

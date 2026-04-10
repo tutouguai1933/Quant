@@ -92,6 +92,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
     : [];
   const operations = asRecord(automation.operations);
   const runtimeWindow = asRecord(automation.runtimeWindow);
+  const runtimeStory = asRecord(runtimeWindow.story);
+  const resumeStatus = asRecord(automation.resumeStatus);
   const primaryOperatorAction = asRecord(operatorActions[0]);
   const primaryOperatorLabel = readText(primaryOperatorAction.label, "当前可以继续下一轮自动化");
   const primaryOperatorDetail = readText(primaryOperatorAction.detail, "当前没有额外阻塞说明。");
@@ -164,6 +166,22 @@ export default async function TasksPage({ searchParams }: PageProps) {
     blockedReason: readText(runtimeWindow.blocked_reason, ""),
     note: readText(runtimeWindow.note, "当前没有额外长期运行说明。"),
     readyForCycle: Boolean(runtimeWindow.ready_for_cycle),
+    storyHeadline: readText(runtimeStory.headline, runtimeWindow.ready_for_cycle ? "当前已经可以继续下一轮" : "当前还在等待调度"),
+    storyWaitingFor: readText(runtimeStory.what_waiting_for, "系统现在在等调度条件满足后，再继续自动推进。"),
+    storyWhenItRuns: readText(runtimeStory.when_it_runs, "下一步什么时候跑：当前没有额外说明。"),
+    storyWhyNotResume: readText(runtimeStory.why_not_resume, "为什么现在不能恢复：当前没有额外说明。"),
+    storyNextStep: readText(runtimeStory.next_step, "恢复前先做什么：当前没有额外说明。"),
+  };
+  const resumeStatusSummary = {
+    waitingForLabel: readText(resumeStatus.waiting_for_label, runtimeWindowSummary.storyHeadline),
+    earliestContinueText: readText(resumeStatus.earliest_continue_text, runtimeWindowSummary.storyWhenItRuns),
+    cannotResumeReason: readText(resumeStatus.cannot_resume_reason, runtimeWindowSummary.storyWhyNotResume),
+    resumeNeeded: Boolean(resumeStatus.resume_needed),
+    resumeReady: Boolean(resumeStatus.resume_ready),
+    continueAfterResume: Boolean(resumeStatus.continue_after_resume),
+    blockers: Array.isArray(resumeStatus.resume_blockers)
+      ? resumeStatus.resume_blockers.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+      : [],
   };
   const resumeReadyCount = resumeChecklist.filter((item) => String(item.status ?? "ready") === "ready").length;
   const resumeBlockedItems = resumeChecklist
@@ -176,6 +194,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
     readyForCycle: runtimeWindowSummary.readyForCycle,
     nextAction: runtimeWindowSummary.nextAction,
     blockedItems: resumeBlockedItems,
+    resumeNeeded: resumeStatusSummary.resumeNeeded,
+    resumeReady: resumeStatusSummary.resumeReady,
+    continueAfterResume: resumeStatusSummary.continueAfterResume,
+    cannotResumeReason: resumeStatusSummary.cannotResumeReason,
+    earliestContinueText: resumeStatusSummary.earliestContinueText,
     manualTakeover: automation.manualTakeover,
     latestAlert,
     fallbackLabel: primaryOperatorLabel,
@@ -307,7 +330,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 <CardHeader>
                   <p className="eyebrow">长期运行窗口</p>
                   <CardTitle>这一轮之后还能不能继续自动跑</CardTitle>
-                  <CardDescription>把今日轮次、冷却时间和下一步动作压成一块，先判断现在该继续、该等待还是该人工接管。</CardDescription>
+                  <CardDescription>把系统在等什么、最早什么时候继续、为什么现在还不能恢复压成统一摘要，不再自己猜。</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 md:grid-cols-2">
                   <GuidanceBlock
@@ -316,20 +339,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     detail={`还剩 ${runtimeWindowSummary.remainingDailyCycles} 轮可跑`}
                   />
                   <GuidanceBlock
-                    label="冷却剩余"
-                    value={`${runtimeWindowSummary.cooldownRemainingMinutes} 分钟`}
-                    detail={runtimeWindowSummary.readyForCycle ? "当前已经可以继续下一轮" : "还在等待下一轮窗口"}
+                    label="系统在等什么"
+                    value={resumeStatusSummary.waitingForLabel}
+                    detail={runtimeWindowSummary.storyWaitingFor}
                   />
                   <GuidanceBlock
                     label="下一步动作"
-                    value={formatRuntimeWindowAction(runtimeWindowSummary.nextAction)}
-                    detail={runtimeWindowSummary.note}
+                    value={runtimeWindowSummary.storyHeadline}
+                    detail={runtimeWindowSummary.storyNextStep}
                     tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
                   />
                   <GuidanceBlock
                     label="最早恢复时间"
                     value={formatMoment(runtimeWindowSummary.nextRunAt)}
-                    detail={runtimeWindowSummary.nextRunAt ? "到了这个时间点后，系统才会结束当前冷却窗口。" : "当前没有额外冷却限制。"}
+                    detail={resumeStatusSummary.earliestContinueText}
                     tone={runtimeWindowSummary.nextRunAt ? "warning" : "supportive"}
                   />
                   <GuidanceBlock
@@ -341,7 +364,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   <GuidanceBlock
                     label="当前状态"
                     value={runtimeWindowSummary.readyForCycle ? "可以继续下一轮" : "先不要继续"}
-                    detail={runtimeWindowSummary.readyForCycle ? "当前没有冷却和轮次阻塞" : describeRuntimeBlockedReason(runtimeWindowSummary.blockedReason)}
+                    detail={resumeStatusSummary.cannotResumeReason}
                     tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
                   />
                 </CardContent>
@@ -597,8 +620,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   />
                   <GuidanceBlock
                     label="调度什么时候继续"
-                    value={formatRuntimeWindowAction(runtimeWindowSummary.nextAction)}
-                    detail={runtimeWindowSummary.readyForCycle ? "当前已经可以继续下一轮。" : runtimeWindowSummary.note}
+                    value={runtimeWindowSummary.storyHeadline}
+                    detail={runtimeWindowSummary.storyWhenItRuns}
                     tone={runtimeWindowSummary.readyForCycle ? "ok" : "warning"}
                   />
                   <GuidanceBlock
@@ -774,8 +797,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   />
                   <GuidanceBlock
                     label="调度状态"
-                    value={runtimeWindowSummary.readyForCycle ? "可以继续下一轮" : formatRuntimeWindowAction(runtimeWindowSummary.nextAction)}
-                    detail={runtimeWindowSummary.note}
+                    value={resumeStatusSummary.resumeNeeded ? (resumeStatusSummary.resumeReady ? "现在可以恢复" : "现在先不要恢复") : "当前不需要恢复"}
+                    detail={resumeStatusSummary.continueAfterResume ? "恢复后就能继续下一轮自动化。" : resumeStatusSummary.cannotResumeReason}
                     tone={runtimeWindowSummary.readyForCycle ? "supportive" : "warning"}
                   />
                   <GuidanceBlock
@@ -1277,6 +1300,11 @@ function buildRestoreConclusion({
   readyForCycle,
   nextAction,
   blockedItems,
+  resumeNeeded,
+  resumeReady,
+  continueAfterResume,
+  cannotResumeReason,
+  earliestContinueText,
   manualTakeover,
   latestAlert,
   fallbackLabel,
@@ -1285,6 +1313,11 @@ function buildRestoreConclusion({
   readyForCycle: boolean;
   nextAction: string;
   blockedItems: string[];
+  resumeNeeded: boolean;
+  resumeReady: boolean;
+  continueAfterResume: boolean;
+  cannotResumeReason: string;
+  earliestContinueText: string;
   manualTakeover: boolean;
   latestAlert: { level?: string; message?: string } | undefined;
   fallbackLabel: string;
@@ -1300,7 +1333,7 @@ function buildRestoreConclusion({
   if (blockedItems.length) {
     return {
       actionLabel: "先不要恢复",
-      summary: `现在先不要恢复，原因：${blockedItems.join(" / ")} 还没处理完。`,
+      summary: cannotResumeReason || `现在先不要恢复，原因：${blockedItems.join(" / ")} 还没处理完。`,
       detail: "先把恢复清单里未通过的检查项处理完，再考虑继续自动化。",
     };
   }
@@ -1313,15 +1346,17 @@ function buildRestoreConclusion({
   }
   if (!readyForCycle) {
     return {
-      actionLabel: "等待调度窗口",
+      actionLabel: resumeNeeded ? (resumeReady ? "现在可以恢复，但还要继续等待" : "先不要恢复") : "等待调度窗口",
       summary: `调度状态：${formatRuntimeWindowAction(nextAction)}。`,
-      detail: "当前还在等待冷却、轮次窗口或调度恢复，不需要额外重复点击。",
+      detail: resumeNeeded
+        ? (resumeReady ? `${cannotResumeReason} ${earliestContinueText}`.trim() : cannotResumeReason)
+        : `${cannotResumeReason} ${earliestContinueText}`.trim(),
     };
   }
   return {
     actionLabel: fallbackLabel || "可以继续自动化",
-    summary: "当前可以继续自动化，最近没有高风险告警。",
-    detail: fallbackDetail || "如果你已经看过评估、研究和回测结果，这一轮可以继续按当前模式推进。",
+    summary: continueAfterResume ? "当前可以恢复，而且恢复后就能继续下一轮自动化。" : "当前可以继续自动化，最近没有高风险告警。",
+    detail: fallbackDetail || earliestContinueText || "如果你已经看过评估、研究和回测结果，这一轮可以继续按当前模式推进。",
   };
 }
 

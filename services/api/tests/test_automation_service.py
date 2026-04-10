@@ -279,9 +279,16 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("failure_policy", status)
         self.assertEqual(status["failure_policy"]["research_train"], "manual_takeover")
         self.assertIn("runtime_window", status)
+        self.assertIn("resume_status", status)
         self.assertEqual(status["runtime_window"]["daily_limit"], 8)
         self.assertEqual(status["runtime_window"]["remaining_daily_cycle_count"], 8)
         self.assertEqual(status["runtime_window"]["next_action"], "run_next_cycle")
+        self.assertEqual(status["runtime_window"]["story"]["headline"], "当前已经可以继续下一轮")
+        self.assertIn("不在等冷却窗口", status["runtime_window"]["story"]["what_waiting_for"])
+        self.assertEqual(status["resume_status"]["waiting_for"], "none")
+        self.assertFalse(status["resume_status"]["resume_needed"])
+        self.assertFalse(status["resume_status"]["resume_ready"])
+        self.assertFalse(status["resume_status"]["continue_after_resume"])
         self.assertIn("active_blockers", status["health"])
         self.assertIn("operator_actions", status["health"])
         self.assertIn("takeover_summary", status["health"])
@@ -335,6 +342,14 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["runtime_window"]["next_action"], "wait_cooldown")
         self.assertTrue(status["runtime_window"]["next_run_at"])
         self.assertEqual(status["runtime_window"]["blocked_reason"], "cooldown_active")
+        self.assertEqual(status["runtime_window"]["story"]["headline"], "当前正在等待冷却窗口结束")
+        self.assertIn("最早", status["runtime_window"]["story"]["when_it_runs"])
+        self.assertIn("冷却窗口还没结束", status["runtime_window"]["story"]["why_not_resume"])
+        self.assertEqual(status["resume_status"]["waiting_for"], "cooldown_window")
+        self.assertFalse(status["resume_status"]["resume_needed"])
+        self.assertFalse(status["resume_status"]["resume_ready"])
+        self.assertFalse(status["resume_status"]["continue_after_resume"])
+        self.assertIn("不需要点恢复按钮", status["resume_status"]["cannot_resume_reason"])
 
     def test_runtime_window_requests_takeover_review_after_long_manual_takeover(self) -> None:
         scheduler = _FakeScheduler()
@@ -367,6 +382,66 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["runtime_window"]["takeover_elapsed_seconds"], 120)
         self.assertTrue(status["runtime_window"]["takeover_review_due_at"])
         self.assertEqual(status["runtime_window"]["blocked_reason"], "manual_takeover_active")
+        self.assertEqual(status["runtime_window"]["story"]["headline"], "当前还在人工接管中")
+        self.assertIn("执行器、同步和账户状态", status["runtime_window"]["story"]["what_waiting_for"])
+        self.assertIn("接管原因还没清掉", status["runtime_window"]["story"]["why_not_resume"])
+        self.assertEqual(status["resume_status"]["waiting_for"], "manual_takeover_review")
+        self.assertTrue(status["resume_status"]["resume_needed"])
+        self.assertFalse(status["resume_status"]["resume_ready"])
+        self.assertIn("恢复清单还有", status["resume_status"]["cannot_resume_reason"])
+
+    def test_runtime_window_marks_daily_limit_as_waiting_not_resume(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
+        automation_workflow_module.workbench_config_service.update_section(
+            "operations",
+            {
+                "max_daily_cycle_count": "1",
+            },
+        )
+        automation.record_cycle({"status": "succeeded", "next_action": "continue_dry_run"})
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["runtime_window"]["blocked_reason"], "daily_limit_reached")
+        self.assertEqual(status["resume_status"]["waiting_for"], "next_daily_window")
+        self.assertFalse(status["resume_status"]["resume_needed"])
+        self.assertFalse(status["resume_status"]["resume_ready"])
+        self.assertIn("下一日窗口", status["resume_status"]["cannot_resume_reason"])
+
+    def test_runtime_window_marks_paused_review_as_resume_flow(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
+        automation._paused = True  # noqa: SLF001
+        automation._paused_reason = "manual_stop"  # noqa: SLF001
+        automation._manual_takeover = False  # noqa: SLF001
+        automation._paused_at = "2026-04-08T00:00:00+00:00"  # noqa: SLF001
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["runtime_window"]["blocked_reason"], "paused_waiting_review")
+        self.assertEqual(status["resume_status"]["waiting_for"], "paused_review")
+        self.assertTrue(status["resume_status"]["resume_needed"])
+        self.assertFalse(status["resume_status"]["resume_ready"])
+        self.assertIn("恢复清单还有", status["resume_status"]["cannot_resume_reason"])
 
     def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
         service = AutomationService()
