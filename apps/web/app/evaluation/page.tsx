@@ -151,6 +151,17 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
       stageView,
     }),
   );
+  const priorityQueue = Array.isArray(workspace.priority_queue) ? workspace.priority_queue : [];
+  const filteredPriorityQueue = priorityQueue.filter((item) =>
+    matchesStageView({
+      row: item,
+      gateRow: {
+        allowed_to_dry_run: Boolean(item.allowed_to_dry_run),
+        allowed_to_live: Boolean(item.allowed_to_live),
+      },
+      stageView,
+    }),
+  );
   const stageFilterSummary = buildStageFilterSummary({
     leaderboard: workspace.leaderboard,
     gateMatrixBySymbol,
@@ -758,30 +769,57 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
 
           <DataTable
             columns={["候选推进板", "更适合哪套模板", "更适合去哪一层", "dry-run / live", "当前卡点", "为什么推荐或淘汰", "下一步"]}
-            rows={filteredLeaderboard.map((item, index) => {
+            rows={(filteredPriorityQueue.length ? filteredPriorityQueue : filteredLeaderboard).map((item, index) => {
               const row = asRecord(item);
               const symbol = String(row.symbol ?? `candidate-${index}`);
               const gateRow = gateMatrixBySymbol.get(symbol) ?? {};
               const nextAction = String(row.next_action ?? "continue_research");
-              const suggestedStage = nextAction.includes("live")
-                ? "live"
-                : nextAction.includes("dry")
+              const queueStage = String(row.recommended_stage ?? "");
+              const suggestedStage = queueStage
+                ? queueStage === "dry_run"
                   ? "dry-run"
-                  : "继续研究";
-              const dryRunFit = gateRow.allowed_to_dry_run ? "可进" : "未过";
-              const liveFit = gateRow.allowed_to_live ? "可进" : "未过";
-              const why = String(row.recommendation_reason ?? row.elimination_reason ?? row.review_status ?? "当前没有额外说明");
-              const block = String(gateRow.primary_reason ?? gateRow.blocking_gate ?? row.elimination_reason ?? "当前没有明显阻断");
+                  : queueStage === "live"
+                    ? "live"
+                    : "继续研究"
+                : nextAction.includes("live")
+                  ? "live"
+                  : nextAction.includes("dry")
+                    ? "dry-run"
+                    : "继续研究";
+              const dryRunFit = Boolean(row.allowed_to_dry_run ?? gateRow.allowed_to_dry_run) ? "可进" : "未过";
+              const liveFit = Boolean(row.allowed_to_live ?? gateRow.allowed_to_live) ? "可进" : "未过";
+              const why = String(
+                row.why_selected ??
+                  row.why_blocked ??
+                  row.dispatch_reason ??
+                  row.recommendation_reason ??
+                  row.elimination_reason ??
+                  row.review_status ??
+                  "当前没有额外说明",
+              );
+              const block = String(
+                row.skip_reason ??
+                  row.why_blocked ??
+                  gateRow.primary_reason ??
+                  gateRow.blocking_gate ??
+                  row.elimination_reason ??
+                  "当前没有明显阻断",
+              );
+              const nextStep = formatPriorityQueueNextStep(
+                nextAction,
+                String(row.target_page ?? ""),
+                String(row.dispatch_status ?? ""),
+              );
               return {
                 id: symbol,
                 cells: [
                   `${symbol} / ${String(row.score ?? "n/a")}`,
-                  String(row.template_fit_headline ?? row.template_fit_detail ?? "当前还没有模板适配说明"),
+                  String(row.template_fit_headline ?? row.template_fit_detail ?? row.strategy_template ?? "当前还没有模板适配说明"),
                   suggestedStage,
                   `${dryRunFit} / ${liveFit}`,
                   block,
                   why,
-                  nextAction,
+                  nextStep,
                 ],
               };
             })}
@@ -1085,13 +1123,19 @@ export default async function EvaluationPage({ searchParams }: PageProps) {
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>执行对齐明细</CardTitle>
-              <CardDescription>把研究标的、最近订单标的和最近持仓标的直接摆出来，避免只看到 matched 却不知道具体对齐到了什么。</CardDescription>
+              <CardDescription>把研究标的、最近订单标的、最近持仓标的和回填新鲜度直接摆出来，避免只看到 matched 却不知道这是当前轮、旧结果还是无结果。</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3">
+            <CardContent className="grid gap-3 md:grid-cols-2">
               <InfoBlock label="对齐状态" value={String(alignmentDetails.alignment_state ?? "当前没有执行对齐明细")} />
               <InfoBlock label="研究标的" value={String(alignmentDetails.research_symbol ?? "n/a")} />
               <InfoBlock label="最近订单标的" value={String(alignmentDetails.last_order_symbol ?? "n/a")} />
               <InfoBlock label="最近持仓标的" value={String(alignmentDetails.last_position_symbol ?? "n/a")} />
+              <InfoBlock label="订单回填" value={readText(alignmentDetails.order_backfill_state, "无结果")} />
+              <InfoBlock label="订单回填说明" value={readText(alignmentDetails.order_backfill_detail, "当前轮还没有订单回填")} />
+              <InfoBlock label="持仓回填" value={readText(alignmentDetails.position_backfill_state, "无结果")} />
+              <InfoBlock label="持仓回填说明" value={readText(alignmentDetails.position_backfill_detail, "当前轮还没有持仓回填")} />
+              <InfoBlock label="同步回填" value={readText(alignmentDetails.sync_backfill_state, "无结果")} />
+              <InfoBlock label="同步回填说明" value={readText(alignmentDetails.sync_backfill_detail, "当前还没有同步结果回填")} />
             </CardContent>
           </Card>
 
@@ -1543,6 +1587,54 @@ function buildChangedFieldSummary(row: Record<string, unknown>) {
   }
   const changedFields = normalizeChangedFields(row);
   return changedFields.length ? changedFields.join(" / ") : "当前没有额外配置变化";
+}
+
+function formatPriorityQueueNextStep(nextAction: string, targetPage: string, dispatchStatus: string) {
+  const actionLabel = formatActionLabel(nextAction);
+  const pageLabel = formatTargetPageLabel(targetPage);
+  if (actionLabel && pageLabel) {
+    return `${actionLabel} · 去${pageLabel}`;
+  }
+  if (actionLabel) {
+    return actionLabel;
+  }
+  const fallback: Record<string, string> = {
+    active: "当前正在推进",
+    blocked: "当前先处理卡点",
+    skipped: "暂时跳过，等条件变好再看",
+    standby: "排队等待上一位",
+  };
+  return fallback[dispatchStatus.trim()] ?? "当前没有明确下一步";
+}
+
+function formatActionLabel(action: string) {
+  const normalized = action.trim();
+  const labels: Record<string, string> = {
+    continue_research: "继续研究",
+    run_training: "运行研究训练",
+    run_inference: "运行研究推理",
+    go_dry_run: "推进到 dry-run",
+    enter_dry_run: "推进到 dry-run",
+    go_live: "推进到 live",
+    enter_live: "推进到 live",
+    wait_cooldown: "等待冷却结束",
+    wait_next_window: "等待下一日窗口",
+    review_sync: "先处理同步和执行差异",
+    review_takeover: "先处理人工接管",
+    review_resume: "先完成恢复复核",
+    switch_auto_mode: "先切回自动模式",
+  };
+  return labels[normalized] ?? "";
+}
+
+function formatTargetPageLabel(targetPage: string) {
+  const labels: Record<string, string> = {
+    "/research": "研究页",
+    "/tasks": "任务页",
+    "/strategies": "策略页",
+    "/evaluation": "评估页",
+  };
+  return labels[targetPage.trim()] ?? "";
 }
 
 function buildConfigDiffSections(row: Record<string, unknown>) {

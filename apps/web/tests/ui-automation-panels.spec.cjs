@@ -22,8 +22,8 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("自动化推荐").first()).toBeVisible();
   await expect(page.getByText("下一步动作").first()).toBeVisible();
   await expect(page.getByText("当前配置摘要")).toBeVisible();
-  await expect(page.getByText("为什么现在先推进这个币")).toBeVisible();
-  await expect(page.getByText("候选池先筛，live 子集后放")).toBeVisible();
+  await expect(page.getByText("为什么先推进")).toBeVisible();
+  await expect(page.getByText("候选池摘要").first()).toBeVisible();
   await expect(page.getByText("研究范围").first()).toBeVisible();
   await expect(page.getByText("自动化策略").first()).toBeVisible();
   await expect(page.getByText("执行安全门配置")).toBeVisible();
@@ -55,7 +55,7 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("恢复自动化前先把这几项过一遍").first()).toBeVisible();
   await expect(page.getByText("现在先处理什么", { exact: true })).toBeVisible();
   await expect(page.getByText("调度什么时候继续", { exact: true })).toBeVisible();
-  await expect(page.getByText("人工接管后怎么恢复", { exact: true })).toBeVisible();
+  await expect(page.getByText("恢复后先推谁", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /保持手动|切到手动/ })).toBeVisible();
   await expect(page.getByText("告警快捷处理")).toBeVisible();
   await expect(page.getByRole("button", { name: "确认头号告警" })).toBeVisible();
@@ -79,6 +79,14 @@ test("signals, strategies and tasks pages show automation summaries", async ({ p
   await expect(page.getByText("最近训练实验快照").first()).toBeVisible();
   await expect(page.getByText("最近推理实验快照").first()).toBeVisible();
   await expect(page.getByText("候选推进板").first()).toBeVisible();
+  const candidateBoardTable = page.getByRole("columnheader", { name: "候选推进板" }).locator("xpath=ancestor::table");
+  const nextStepCell = candidateBoardTable.getByRole("row").nth(1).getByRole("cell").nth(6);
+  await expect
+    .poll(async () => (await nextStepCell.textContent())?.trim() ?? "", { timeout: renderTimeout })
+    .toMatch(
+      /继续研究|推进到 dry-run|推进到 live|先处理同步和执行差异|先处理人工接管|先完成恢复复核|等待冷却结束|等待下一日窗口|当前正在推进|当前先处理卡点|暂时跳过|排队等待上一位|当前没有明确下一步/,
+    );
+  await expect(nextStepCell).not.toContainText(/^(active|blocked|skipped|standby)$/);
   await expect(page.getByRole("link", { name: "去任务页看自动化" })).toBeVisible();
   await page.goto(`${WEB_BASE_URL}/features`, navigation);
   await expect(page.locator("body")).toContainText("类别权重配置", { timeout: renderTimeout });

@@ -87,6 +87,12 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["decision_board"]["cards"][1]["stage"], "live")
         self.assertIn("暂时不优先", item["decision_board"]["cards"][1]["decision"])
         self.assertIn("当前流程仍先看 dry-run", item["decision_board"]["cards"][1]["reason"])
+        self.assertEqual(item["priority_queue_summary"]["active_symbol"], "ETHUSDT")
+        self.assertEqual(item["priority_queue"][0]["symbol"], "ETHUSDT")
+        self.assertEqual(item["priority_queue"][0]["queue_status"], "ready")
+        self.assertEqual(item["priority_queue"][1]["symbol"], "BTCUSDT")
+        self.assertEqual(item["priority_queue"][1]["queue_status"], "blocked")
+        self.assertIn("sample_count_too_low", item["priority_queue"][1]["why_blocked"])
         self.assertEqual(item["alignment_metric_rows"][0]["metric"], "研究结论")
         self.assertIn("ETHUSDT", item["alignment_metric_rows"][0]["research"])
         self.assertIn("dry-run", item["alignment_metric_rows"][1]["execution"])
@@ -427,6 +433,10 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("研究侧推荐 ETHUSDT", item["alignment_details"]["difference_summary"])
         self.assertIn("最近订单仍是 BTCUSDT", item["alignment_details"]["difference_reasons"])
         self.assertIn("同步失败", item["alignment_details"]["difference_reasons"])
+        self.assertEqual(item["alignment_details"]["order_backfill_state"], "旧结果")
+        self.assertEqual(item["alignment_details"]["position_backfill_state"], "旧结果")
+        self.assertEqual(item["alignment_details"]["sync_backfill_state"], "当前轮结果")
+        self.assertIn("同步失败", item["alignment_details"]["sync_backfill_detail"])
         self.assertEqual(item["alignment_details"]["next_step"], "先恢复同步，再确认是否真的把研究候选派发到执行侧。")
         self.assertEqual(item["alignment_gaps"][0]["severity"], "high")
         self.assertEqual(item["alignment_actions"][0]["label"], "先恢复同步")
@@ -460,9 +470,43 @@ class EvaluationWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["alignment_details"]["difference_severity"], "unknown")
         self.assertEqual(item["alignment_details"]["difference_summary"], "当前执行侧还没有可对齐结果")
         self.assertEqual(item["alignment_details"]["difference_reasons"], ["执行侧还没有最新对齐结果，先补执行同步或 dry-run。"])
+        self.assertEqual(item["alignment_details"]["order_backfill_state"], "旧结果")
+        self.assertEqual(item["alignment_details"]["position_backfill_state"], "旧结果")
+        self.assertEqual(item["alignment_details"]["sync_backfill_state"], "旧结果")
         self.assertEqual(item["alignment_details"]["next_step"], "先补执行同步或 dry-run，再回来复核。")
         self.assertEqual(item["alignment_gaps"][0]["severity"], "unknown")
         self.assertEqual(item["alignment_actions"][0]["label"], "继续研究")
+
+    def test_workspace_marks_no_execution_as_missing_current_cycle_results(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_NoExecutionButHealthySyncReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["execution_alignment"]["status"], "no_execution")
+        self.assertEqual(item["alignment_details"]["difference_severity"], "medium")
+        self.assertIn("当前轮执行结果还没回填到账本", item["alignment_details"]["difference_summary"])
+        self.assertIn("当前轮还没有订单回填", item["alignment_details"]["difference_reasons"])
+        self.assertEqual(item["alignment_details"]["order_backfill_state"], "无结果")
+        self.assertEqual(item["alignment_details"]["position_backfill_state"], "无结果")
+        self.assertEqual(item["alignment_details"]["sync_backfill_state"], "当前轮结果")
+        self.assertEqual(item["alignment_actions"][0]["label"], "先去策略页确认派发")
+
+    def test_workspace_normalizes_legacy_symbol_shapes_when_alignment_is_matched(self) -> None:
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_LegacySymbolMatchedReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["execution_alignment"]["status"], "matched")
+        self.assertEqual(item["alignment_details"]["difference_summary"], "研究标的、最近订单和最近持仓已经对上")
+        self.assertEqual(item["alignment_details"]["difference_reasons"], ["当前没有明显差异"])
 
 
 class _FakeResearchService:
@@ -834,6 +878,63 @@ class _UnavailableExecutionButStaleHistoryReviewService(_FakeValidationReviewSer
                 "matched_position_count": 0,
                 "orders": [{"symbol": "ETHUSDT", "status": "filled"}],
                 "positions": [{"symbol": "ETHUSDT", "side": "long"}],
+            },
+        }
+        return payload
+
+
+class _NoExecutionButHealthySyncReviewService(_FakeValidationReviewService):
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        payload = super().build_report(limit=limit)
+        payload["execution_comparison"] = {
+            "status": "no_execution",
+            "symbol": "ETHUSDT",
+            "recommended_action": "enter_dry_run",
+            "note": "研究侧已有候选，但当前执行结果里还没有看到对应动作",
+            "execution_backfill": {
+                "order": {
+                    "freshness": "unavailable",
+                    "symbol": "",
+                    "detail": "当前轮还没有订单回填",
+                },
+                "position": {
+                    "freshness": "unavailable",
+                    "symbol": "",
+                    "detail": "当前轮还没有持仓回填",
+                },
+                "sync": {
+                    "freshness": "current_cycle",
+                    "sync_status": "succeeded",
+                    "detail": "当前轮同步已完成（2026-04-07T12:05:00+00:00）",
+                },
+            },
+            "execution": {
+                "runtime_mode": "dry-run",
+                "latest_sync_status": "succeeded",
+                "matched_order_count": 0,
+                "matched_position_count": 0,
+                "orders": [],
+                "positions": [],
+            },
+        }
+        return payload
+
+
+class _LegacySymbolMatchedReviewService(_FakeValidationReviewService):
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        payload = super().build_report(limit=limit)
+        payload["execution_comparison"] = {
+            "status": "matched",
+            "symbol": "ETHUSDT",
+            "recommended_action": "enter_dry_run",
+            "note": "研究结果和执行结果已经对上",
+            "execution": {
+                "runtime_mode": "dry-run",
+                "latest_sync_status": "succeeded",
+                "matched_order_count": 1,
+                "matched_position_count": 1,
+                "orders": [{"symbol": "ETH/USDT", "status": "filled"}],
+                "positions": [{"symbol": "ETH", "side": "long"}],
             },
         }
         return payload

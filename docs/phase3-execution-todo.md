@@ -79,7 +79,7 @@
     - Playwright 覆盖策略页、任务页在不同仲裁状态下的按钮变化
     - 真实页面检查“能不能点”“点了去哪里”“为什么不能点”
 
-- [ ] B4. 把执行结果回填到研究与评估账本
+- [x] B4. 把执行结果回填到研究与评估账本
   - 目标：执行订单、持仓、同步结果回填到研究 / 评估，让“研究推荐”和“执行落地”形成闭环
   - 重点后端：`services/api/app/services/sync_service.py`、`services/api/app/services/evaluation_workspace_service.py`
   - 重点前端：`apps/web/app/evaluation/page.tsx`、`apps/web/app/strategies/page.tsx`
@@ -91,7 +91,7 @@
 
 ## C. 自动化优先级、恢复与长期运行
 
-- [ ] C1. 把多候选推进收成“优先级队列”
+- [x] C1. 把多候选推进收成“优先级队列”
   - 目标：不再只看单一 top1，而是允许从统一候选池里挑出少数优先候选，按优先级推进
   - 重点后端：`services/api/app/services/automation_workflow_service.py`、`services/api/app/services/automation_service.py`
   - 重点前端：`apps/web/app/tasks/page.tsx`、`apps/web/app/strategies/page.tsx`
@@ -99,18 +99,32 @@
   - 测试重点：
     - 后端单测覆盖多候选排序、跳过不可执行候选、候选耗尽
     - Playwright 覆盖任务页优先级摘要和策略页当前推进对象
+- [x] C1.1 先补 `B4` reviewer 找出的剩余边界
+  - 目标：修掉 `retrying` 时间戳误判和“旧成功时间压过新失败时间”的问题，避免后续优先级建立在错误回填上
+- [x] C1.2 把研究候选正式收成统一优先级队列
+  - 目标：把 `execution_priority / rank / live 子集 / 仲裁阻塞` 收成同一份队列账本
+- [x] C1.3 把优先推进对象、跳过对象和原因显化到任务页 / 策略页
+  - 目标：页面能直接回答“现在先推谁、为什么、谁被跳过、下一位是谁”
+- [x] C1.4 做 `C1` 定向 review / test / 页面联调
+  - 目标：先收口优先级规则和页面口径，再进入恢复流程
 
-- [ ] C2. 收紧恢复流程与人工接管入口
+- [x] C2. 收紧恢复流程与人工接管入口
   - 目标：恢复动作不只看暂停与否，还要看当前仲裁状态、候选优先级和执行闭环是否收口
   - 重点后端：`services/api/app/services/automation_service.py`、`services/api/app/services/automation_workflow_service.py`
-  - 重点前端：`apps/web/app/tasks/page.tsx`
+  - 重点前端：`apps/web/app/tasks/page.tsx`、`apps/web/app/strategies/page.tsx`
   - review 重点：恢复动作、保持手动、切回 dry-run only、Kill Switch 四类动作是否边界清楚
   - 测试重点：
     - 后端单测覆盖恢复被拦住、允许恢复、仅允许 dry-run 恢复、保持手动
     - Playwright 覆盖任务页恢复入口在不同状态下的显隐和动作反馈
     - 真实页面检查告警、恢复建议、人工接管说明是否统一
+- [x] C2.1 把恢复状态改成“等待 / 可恢复 / 仅 dry-run / 必须人工处理”四类明确口径
+  - 目标：恢复和接管不再只靠中文文案猜测
+- [x] C2.2 把控制动作、恢复清单和人工接管建议统一成一套动作矩阵
+  - 目标：任务页和策略页给出的动作、禁用态和原因完全一致
+- [x] C2.3 做 `C2` 定向 review / test / 页面联调
+  - 目标：确认恢复和人工接管入口不会说一套、做一套
 
-- [ ] C3. 补一轮 Phase3 综合验收
+- [x] C3. 补一轮 Phase3 综合验收
   - 目标：在 `Phase3` 收口前做一次和这轮 `Phase1 / Phase2` 一样严格的总验收
   - 重点后端：`services/api/tests`
   - 重点前端：`apps/web/tests`
@@ -121,6 +135,12 @@
     - Playwright 全量回归
     - 真实页面联调至少覆盖：`/signals`、`/research`、`/evaluation`、`/strategies`、`/tasks`
     - 至少补一条“接口不可用”的异常链路验收
+- [x] C3.1 跑后端单测、前端构建和 Playwright 回归
+  - 目标：先确认代码层、构建层、页面层都没有明显回归
+- [x] C3.2 做关键页面真实联调和异常链路检查
+  - 目标：至少覆盖主链页面和一条接口不可用兜底链
+- [x] C3.3 汇总 `Phase3` 验收结果、更新文档并收尾提交
+  - 目标：让下一轮接手时能直接知道现状、能力边界和下一步
 
 ## 当前执行顺序
 
@@ -131,9 +151,8 @@
 5. B2 决策中心
 6. B3 页面动作统一承接
 7. B4 执行结果回填
-8. C1 多候选优先级
-9. C2 恢复与人工接管
-10. C3 综合验收
+8. C2 恢复与人工接管
+9. C3 综合验收
 
 ## 当前备注
 
@@ -143,3 +162,26 @@
   - 每个任务优先拆成后端、前端、review / test 三路 subagent
   - 每项完成后立刻做定向回归，不累计到最后一起爆
   - reviewer 超时就由主 agent 补 review，避免任务卡住
+- `C1` 已完成：
+  - 后端统一产出 `priority_queue` / `priority_queue_summary`
+  - 自动化 `auto_dry_run` 不再误挡已激活候选
+  - 评估页、策略页、任务页已经统一承接优先级队列
+  - 后端定向单测和前端构建已通过
+  - 页面 HTML 已在本地 `pnpm start` 下核对；本地 `.venv` 缺少 `uvicorn`，所以这轮没有做 API 在线联调
+- `C2` 已完成：
+  - 自动化状态接口已产出 `recovery_state` 和 `control_matrix`
+  - 任务页、策略页已优先消费统一动作矩阵，恢复按钮禁用态和原因一致
+  - `auto_live` 无 `armed_symbol` 时会明确要求先回 `dry-run only`
+  - `kill_switch` 和长时间人工接管复核会明确落成“必须人工处理”
+  - 后端 `services.api.tests.test_automation_service` 全量通过
+  - 前端 `pnpm build` 已通过，`/tasks`、`/strategies` 已在本地 `pnpm start` + 假会话 cookie 下核对 HTML
+  - 本地 `.venv` 仍缺少 `uvicorn`，所以本轮仍未完成 API 在线联调
+- `C3` 已完成：
+  - 候选池契约补上大小写归一化，`candidate_symbols / live_allowed_symbols` 不会再因为大小写不同而误判
+  - 人工接管状态会稳定落成 `manual_required`，恢复清单和动作矩阵口径一致
+  - 评估页“下一步”列已经改成人话动作和目标页面，不再显示内部派发状态词
+  - 后端全量单测：`370 / 370`
+  - 前端生产构建：已通过
+  - Playwright 全量回归：`46 / 46`
+  - 关键页面联调：`/signals`、`/research`、`/evaluation`、`/strategies`、`/tasks`
+  - 异常链路联调：控制面 API 暂停时，`/tasks` 仍能返回安全回退页面

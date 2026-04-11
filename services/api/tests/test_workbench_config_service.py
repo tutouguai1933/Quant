@@ -296,6 +296,106 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(options["candidate_pool_preset_catalog"][0]["key"], "top10_liquid")
         self.assertEqual(options["live_subset_preset_catalog"][0]["key"], "core_live")
 
+    def test_candidate_scope_contract_uses_one_shared_scope_story(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            service.update_section(
+                "data",
+                {
+                    "candidate_pool_preset_key": "execution_focus",
+                    "selected_symbols": ["BTCUSDT", "ETHUSDT", "DOGEUSDT"],
+                },
+            )
+            service.update_section(
+                "execution",
+                {
+                    "live_subset_preset_key": "strict_pairs",
+                    "live_allowed_symbols": ["BTCUSDT", "ETHUSDT"],
+                },
+            )
+
+            contract = service.build_candidate_scope_contract()
+
+        self.assertEqual(contract["status"], "ready")
+        self.assertEqual(contract["candidate_pool_preset_key"], "execution_focus")
+        self.assertEqual(contract["candidate_symbols"], ["BTCUSDT", "ETHUSDT", "DOGEUSDT"])
+        self.assertEqual(contract["live_subset_preset_key"], "strict_pairs")
+        self.assertEqual(contract["live_allowed_symbols"], ["BTCUSDT", "ETHUSDT"])
+        self.assertIn("候选池预设", contract["candidate_pool_preset_detail"])
+        self.assertIn("live 子集预设", contract["live_subset_preset_detail"])
+        self.assertIn("3 个候选标的", contract["headline"])
+        self.assertIn("同一份范围契约", contract["detail"])
+
+    def test_candidate_scope_contract_handles_empty_pool(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+            service.update_section(
+                "data",
+                {
+                    "selected_symbols": [],
+                    "primary_symbol": "",
+                },
+            )
+            service.update_section(
+                "execution",
+                {
+                    "live_allowed_symbols": [],
+                },
+            )
+
+            contract = service.build_candidate_scope_contract()
+
+        self.assertEqual(contract["status"], "candidate_pool_missing")
+        self.assertEqual(contract["candidate_symbols"], [])
+        self.assertEqual(contract["live_allowed_symbols"], [])
+        self.assertEqual(contract["candidate_summary"], "当前未配置")
+        self.assertEqual(contract["live_summary"], "当前未配置")
+        self.assertIn("还没有统一候选池", contract["headline"])
+        self.assertIn("先在数据工作台选好候选池", contract["next_step"])
+
+    def test_candidate_scope_contract_drops_live_symbols_outside_candidate_pool(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            contract = service.build_candidate_scope_contract(
+                {
+                    "data": {
+                        "selected_symbols": ["BTCUSDT", "ETHUSDT"],
+                    },
+                    "execution": {
+                        "live_allowed_symbols": ["ETHUSDT", "DOGEUSDT"],
+                    },
+                }
+            )
+
+        self.assertEqual(contract["candidate_symbols"], ["BTCUSDT", "ETHUSDT"])
+        self.assertEqual(contract["live_allowed_symbols"], ["ETHUSDT"])
+        self.assertEqual(contract["status"], "live_subset_out_of_scope")
+        self.assertEqual(contract["live_removed_symbols"], ["DOGEUSDT"])
+        self.assertIn("已经和候选池脱节", contract["headline"])
+        self.assertIn("DOGEUSDT", contract["detail"])
+        self.assertIn("收回到当前候选池", contract["next_step"])
+
+    def test_candidate_scope_contract_normalizes_symbol_case_before_scope_filtering(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")
+
+            contract = service.build_candidate_scope_contract(
+                {
+                    "data": {
+                        "selected_symbols": ["ethusdt", "DOGEUSDT"],
+                    },
+                    "execution": {
+                        "live_allowed_symbols": ["ETHUSDT", "dogeusdt", "solusdt"],
+                    },
+                }
+            )
+
+        self.assertEqual(contract["candidate_symbols"], ["ETHUSDT", "DOGEUSDT"])
+        self.assertEqual(contract["live_allowed_symbols"], ["ETHUSDT", "DOGEUSDT"])
+        self.assertEqual(contract["live_removed_symbols"], ["SOLUSDT"])
+        self.assertEqual(contract["status"], "live_subset_out_of_scope")
+
     def test_update_section_can_apply_feature_research_label_backtest_and_threshold_presets(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             service = WorkbenchConfigService(config_path=Path(temp_dir) / "workbench.json")

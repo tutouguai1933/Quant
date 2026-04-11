@@ -1,7 +1,7 @@
 # 当前进度
 
-- 当前正在做：`Phase3` 的 `B3` 已完成，下一步进入 `B4`，把执行结果回填到研究与评估账本。
-- 上次停留位置：策略页和任务页现在已经补上统一的仲裁动作承接卡片，不再各自猜下一步动作。
+- 当前正在做：`Phase3` 的 `C3` 已完成，已经收完综合验收、关键页面联调和异常链路检查，正在整理提交。
+- 上次停留位置：`C3` 之前已经把恢复流程统一成四类状态和动作矩阵，这一轮继续把验收、回归和页面口径收口。
 
 # 关键决定
 
@@ -46,8 +46,37 @@
   - 策略页里的候选下一步、自动化判断、动作入口已经优先跟仲裁动作走
   - 任务页里的推荐动作和研究链入口已经改成优先承接仲裁动作
   - `ui-arbitration-handoff` 和 `ui-evaluation-decision-center` 已通过；带登录的 `ui-candidate-scope-contract` 仍被本地 `127.0.0.1:9011` 控制面未启动所阻塞
+- `B4` 新增的关键收口：
+  - `validation_workflow_service` 现在不会再把“同步失败 / 重试中的同标的旧结果”误判成当前轮回填
+  - `evaluation_workspace_service` 的回填账本已经稳定产出订单 / 持仓 / 同步三段人话说明
+  - 评估页和策略页的回填默认文案已经统一，不再一页显示“当前轮还没有回填”，另一页退回旧提示
+  - 策略页的“账户收口”卡片已经补上同步回填，和评估页不再缺一段
+  - `ui-execution-backfill` 已通过；后端 `validation / evaluation` 定向单测已通过
+- `C1` 新增的关键收口：
+  - 研究层已经能稳定产出统一 `priority_queue`，自动化状态和评估工作台都会直接带出 `priority_queue_summary`
+  - `auto_dry_run` 不再因为旧 `next_action` 误挡已激活候选，派发失败时也会明确落回 `review_and_decide`
+  - `auto_live` 等待上一轮 dry-run 验证的文案已经统一，不再出现句号口径漂移
+  - 评估页的“候选推进板”已经优先消费统一队列，策略页和任务页也开始显化“当前先推谁 / 下一位是谁 / 为什么跳过”
+  - 后端 `127` 条定向单测已通过，前端 `pnpm build` 已通过，页面 HTML 已通过本地 `pnpm start` + 假会话 cookie 核对
+  - 本地 `.venv` 仍缺少 `uvicorn`，所以这轮没有完成 API 在线联调，只完成了前端回退态页面验证
+- `C2` 新增的关键收口：
+  - 自动化状态接口新增 `resume_status.recovery_state`，明确区分 `waiting / recoverable / dry_run_only / manual_required`
+  - 自动化状态接口新增顶层 `control_matrix`，把恢复、只回 dry-run、保持手动、Kill Switch 收成统一动作矩阵
+  - `auto_live` 且没有 `armed_symbol` 时，不再伪装成“可恢复”，而是明确要求先回到 `dry-run only`
+  - `kill_switch`、长时间人工接管复核、硬暂停原因都会明确落到“必须人工处理”，不再给出误导性的恢复口径
+  - 任务页和策略页已改成优先消费 `control_matrix`，动作禁用态和禁用原因保持一致
+  - `services.api.tests.test_automation_service` 全量 `45` 条已通过；前端 `pnpm build` 已通过；`/tasks`、`/strategies` 已用本地 `pnpm start` + 假会话 cookie 核对 HTML 节点
+  - 本地 `.venv` 仍缺少 `uvicorn`，所以这轮仍未完成控制面 API 在线联调，页面验证基于前端回退态和服务端渲染 HTML
+- `C3` 新增的关键收口：
+  - 统一候选池契约在构建范围说明时也会做交易对大小写归一化，不会再因为 `ethusdt / ETHUSDT` 这种口径差把 `live` 子集误判成脱节
+  - 人工接管状态现在会稳定落成“必须人工处理”，恢复清单和动作矩阵不再把接管中的状态误报成“已就绪”
+  - 评估页“候选推进板”的“下一步”列已经改成人话动作，不再显示 `active / blocked` 这类内部状态词
+  - 后端全量单测已通过：`370 / 370`
+  - 前端生产构建已通过：`pnpm build`
+  - Playwright 全量回归已通过：`46 / 46`
+  - 关键页面登录态联调已覆盖：`/signals`、`/research`、`/evaluation`、`/strategies`、`/tasks`
+  - 异常链路已覆盖：控制面 API 停止时，`/tasks` 仍能返回回退页面，不会白屏或直接泄露连接错误
 
 # 下一步
 
-- 进入 `B4`：
-  - 把执行订单、持仓和同步结果回填到研究 / 评估账本
+- `Phase3` 综合验收已经完成，下一步可以基于当前已收口的研究、仲裁、执行和恢复链路进入新阶段规划。

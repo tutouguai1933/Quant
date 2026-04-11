@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from services.api.app.services.candidate_priority_service import candidate_priority_service
 from services.api.app.core.settings import Settings
 from services.api.app.services.automation_service import automation_service
 from services.api.app.services.research_service import research_service
@@ -63,8 +64,19 @@ class AutomationWorkflowService:
         health = self._automation.build_health_summary(task_health=task_health)
         runtime_window = self._build_runtime_window(state=state, operations=operations, automation_config=automation_config)
         resume_status = self._build_resume_status(
+            state=state,
             runtime_window=runtime_window,
             resume_checklist=list(health.get("resume_checklist") or []),
+        )
+        control_actions = list(automation_status.get("control_actions") or health.get("control_actions") or [])
+        control_matrix = self._build_control_matrix(
+            state=state,
+            resume_status=resume_status,
+            control_actions=control_actions,
+        )
+        priority_queue_payload = self._build_priority_queue_payload(
+            mode=str(state.get("mode", "manual") or "manual"),
+            armed_symbol=str(state.get("armed_symbol", "") or ""),
         )
         status_payload = {
             "state": state,
@@ -74,7 +86,8 @@ class AutomationWorkflowService:
             "execution_policy": dict(automation_status.get("execution_policy") or {}),
             "active_blockers": list(health.get("active_blockers") or []),
             "operator_actions": list(health.get("operator_actions") or []),
-            "control_actions": list(health.get("control_actions") or []),
+            "control_actions": control_actions,
+            "control_matrix": control_matrix,
             "takeover_summary": dict(health.get("takeover_summary") or {}),
             "alert_summary": dict(health.get("alert_summary") or {}),
             "review_overview": dict(report.get("overview") or {}),
@@ -85,6 +98,8 @@ class AutomationWorkflowService:
             "daily_summary": dict(automation_status.get("daily_summary") or {}),
             "runtime_window": runtime_window,
             "resume_status": resume_status,
+            "priority_queue": list(priority_queue_payload.get("items") or []),
+            "priority_queue_summary": dict(priority_queue_payload.get("summary") or {}),
             "scheduler_plan": self._build_scheduler_plan(review_limit=review_limit),
             "alerts": alerts,
             "failure_policy": self._build_failure_policy(operations=operations),
@@ -277,14 +292,24 @@ class AutomationWorkflowService:
                 auto_pause_on_error=auto_pause_on_error,
             )
 
-        recommendation = self._research.get_research_recommendation() or {}
-        next_action = str(recommendation.get("next_action", "")) or "continue_research"
-        recommended_symbol = str(recommendation.get("symbol", ""))
-        recommended_strategy_id = strategy_catalog_service.resolve_strategy_id(str(recommendation.get("strategy_template", ""))) or 1
+        priority_queue_payload = self._build_priority_queue_payload(
+            mode=mode,
+            armed_symbol=armed_symbol,
+        )
+        dispatch_queue = [
+            dict(item)
+            for item in list(priority_queue_payload.get("items") or [])
+            if isinstance(item, dict)
+        ]
+        active_candidate = next((item for item in dispatch_queue if str(item.get("dispatch_status", "")) == "active"), None)
+        focus_candidate = dict(active_candidate or (dispatch_queue[0] if dispatch_queue else {}) or {})
+        next_action = str(focus_candidate.get("next_action", "")) or "continue_research"
+        recommended_symbol = str(focus_candidate.get("symbol", ""))
+        recommended_strategy_id = strategy_catalog_service.resolve_strategy_id(str(focus_candidate.get("strategy_template", ""))) or 1
         live_ready = bool(
-            recommendation.get("allowed_to_live")
-            if recommendation.get("allowed_to_live") is not None
-            else recommendation.get("allowed_to_dry_run")
+            focus_candidate.get("allowed_to_live")
+            if focus_candidate.get("allowed_to_live") is not None
+            else focus_candidate.get("allowed_to_dry_run")
         )
         dispatch_result: dict[str, object] | None = None
         dispatch_status = "waiting"
@@ -294,17 +319,22 @@ class AutomationWorkflowService:
         if mode == "manual":
             next_action = "manual_review"
             cycle_message = "当前处于手动模式，请先人工确认再继续。"
-        elif next_action != "enter_dry_run":
+        elif not active_candidate:
+            next_action = "continue_dry_run" if mode == "auto_live" else (next_action or "continue_research")
+            dispatch_status = "blocked"
+            failure_reason = str(focus_candidate.get("dispatch_code", "") or "candidate_queue_blocked")
+            cycle_message = str(
+                focus_candidate.get("dispatch_reason", "")
+                or dict(priority_queue_payload.get("summary") or {}).get("detail", "")
+                or "当前还没有可推进候选。"
+            )
             self._automation.record_alert(
                 level="warning",
-                code="screening_blocked",
-                message="当前候选还没有通过研究筛选门",
+                code=failure_reason,
+                message=cycle_message,
                 source=source,
                 detail=recommended_symbol,
             )
-            dispatch_status = "blocked"
-            cycle_message = "当前候选还没有通过研究筛选门"
-            failure_reason = "screening_blocked"
         elif mode == "auto_live" and Settings.from_env().runtime_mode != "live":
             next_action = "continue_dry_run"
             self._automation.record_alert(
@@ -390,6 +420,7 @@ class AutomationWorkflowService:
             "failure_reason": failure_reason,
             "failure_policy_action": next_action if dispatch_status == "failed" else "",
             "armed_symbol": str(self._automation.get_state().get("armed_symbol", "")),
+            "priority_queue_summary": dict(priority_queue_payload.get("summary") or {}),
             "train_task": train_task,
             "infer_task": infer_task,
             "signal_task": signal_task,
@@ -399,6 +430,42 @@ class AutomationWorkflowService:
         }
         self._automation.record_cycle(summary)
         return summary
+
+    def _build_priority_queue_payload(self, *, mode: str, armed_symbol: str) -> dict[str, object]:
+        """读取研究队列，并转换成当前模式可直接消费的调度摘要。"""
+
+        getter = getattr(self._research, "get_research_priority_queue", None)
+        if callable(getter):
+            payload = getter()
+            if isinstance(payload, dict):
+                return candidate_priority_service.build_dispatch_queue(
+                    priority_queue=payload,
+                    mode=mode,
+                    armed_symbol=armed_symbol,
+                )
+        recommendation_getter = getattr(self._research, "get_research_recommendation", None)
+        recommendation = recommendation_getter() if callable(recommendation_getter) else None
+        fallback_queue = {
+            "items": [
+                {
+                    **dict(recommendation or {}),
+                    "queue_status": "ready" if bool(dict(recommendation or {}).get("allowed_to_dry_run")) else "blocked",
+                    "recommended_stage": "live"
+                    if bool(dict(recommendation or {}).get("allowed_to_live"))
+                    else "dry_run"
+                    if bool(dict(recommendation or {}).get("allowed_to_dry_run"))
+                    else "research",
+                }
+            ]
+            if isinstance(recommendation, dict) and recommendation
+            else [],
+            "summary": {},
+        }
+        return candidate_priority_service.build_dispatch_queue(
+            priority_queue=fallback_queue,
+            mode=mode,
+            armed_symbol=armed_symbol,
+        )
 
     def _finalize_failed_cycle(
         self,
@@ -647,6 +714,7 @@ class AutomationWorkflowService:
     def _build_resume_status(
         cls,
         *,
+        state: dict[str, object],
         runtime_window: dict[str, object],
         resume_checklist: list[dict[str, object]],
     ) -> dict[str, object]:
@@ -660,13 +728,35 @@ class AutomationWorkflowService:
             for item in resume_checklist
             if str(item.get("status", "ready") or "ready").strip().lower() != "ready"
         ]
-        blocked_labels = [str(item.get("label", "") or "检查项") for item in blocked_items]
         next_action = str(runtime_window.get("next_action", "") or "")
         blocked_reason = str(runtime_window.get("blocked_reason", "") or "")
         next_run_at = str(runtime_window.get("next_run_at", "") or "")
         story = dict(runtime_window.get("story") or {})
         ready_for_cycle = bool(runtime_window.get("ready_for_cycle"))
+        mode = str(state.get("mode", "manual") or "manual")
+        armed_symbol = str(state.get("armed_symbol", "") or "").strip().upper()
+        paused_reason = str(state.get("paused_reason", "") or "").strip()
         resume_needed = blocked_reason in {"manual_takeover_active", "paused_waiting_review"}
+        hard_pause_reasons = {
+            "kill_switch",
+            "risk_guard_triggered",
+            "consecutive_failure_guard_triggered",
+            "stale_sync_guard_triggered",
+            "workflow_train_failed",
+            "workflow_infer_failed",
+            "workflow_signal_output_failed",
+            "dispatch_execution_failed",
+        }
+        manual_required_reasons = hard_pause_reasons | {"manual_takeover", "manual_review"}
+        manual_required_reason = bool(state.get("manual_takeover")) or paused_reason in manual_required_reasons
+        if blocked_reason == "manual_takeover_active" and next_action == "review_takeover" and not blocked_items:
+            blocked_items = [
+                {
+                    "label": "人工接管复核",
+                    "detail": "人工接管已持续较久，先确认执行器、同步和账户状态，再决定是否恢复。",
+                }
+            ]
+        blocked_labels = [str(item.get("label", "") or "检查项") for item in blocked_items]
         if blocked_reason == "manual_takeover_active":
             waiting_for = "manual_takeover_review"
             waiting_for_label = "系统在等人工接管处理完成"
@@ -685,21 +775,53 @@ class AutomationWorkflowService:
         else:
             waiting_for = "none"
             waiting_for_label = "当前不需要等待"
+        recovery_state = "waiting"
+        primary_action = ""
+        primary_action_label = ""
+        primary_action_detail = ""
         if blocked_reason == "manual_mode":
+            primary_action = "automation_dry_run_only"
+            primary_action_label = "切到 dry-run only"
+            primary_action_detail = "当前是手动模式，想重新打开自动化时，先从 dry-run only 开始更安全。"
             cannot_resume_reason = "当前不需要点恢复按钮，系统现在就在手动模式；想继续自动化请先切回 dry-run only 或自动模式。"
         elif blocked_items:
+            recovery_state = "manual_required"
+            primary_action = "automation_mode_manual"
+            primary_action_label = "先人工处理"
+            primary_action_detail = "恢复清单还有未通过项，先处理这些阻塞，再决定是否恢复自动化。"
             cannot_resume_reason = f"还不能恢复，因为恢复清单还有 {len(blocked_items)} 项未通过：{'、'.join(blocked_labels)}。"
+        elif manual_required_reason:
+            recovery_state = "manual_required"
+            primary_action = "automation_mode_manual"
+            primary_action_label = "保持手动"
+            primary_action_detail = "当前还有风控、失败或执行异常需要人工处理，先保持手动并完成收口。"
+            cannot_resume_reason = "当前还有风险或异常需要人工处理，先保持手动并处理完接管原因，再决定是否恢复自动化。"
+        elif resume_needed and mode == "auto_live" and not armed_symbol:
+            recovery_state = "dry_run_only"
+            primary_action = "automation_dry_run_only"
+            primary_action_label = "只恢复到 dry-run"
+            primary_action_detail = "当前还没有 dry-run 验证通过的候选，先只恢复到 dry-run，再决定是否重新进入 live。"
+            cannot_resume_reason = "当前还没有 dry-run 验证通过的候选，不能直接恢复 live，先只恢复到 dry-run 更安全。"
+        elif resume_needed:
+            recovery_state = "recoverable"
+            primary_action = "automation_resume"
+            primary_action_label = "确认后恢复自动化"
+            primary_action_detail = "暂停原因已经处理完成，现在可以恢复当前自动化模式。"
+            cannot_resume_reason = "现在可以恢复，而且恢复后就能继续下一轮自动化。"
         elif not resume_needed and ready_for_cycle:
+            primary_action = "automation_run_cycle"
+            primary_action_label = "运行自动化工作流"
+            primary_action_detail = "当前没有恢复阻塞，可以直接继续下一轮训练、推理、执行和复盘。"
             cannot_resume_reason = "当前不需要点恢复按钮，系统已经可以直接继续下一轮。"
         elif not resume_needed and blocked_reason == "cooldown_active":
             cannot_resume_reason = "当前不需要点恢复按钮，系统会在冷却结束后自动具备继续条件。"
         elif not resume_needed and blocked_reason == "daily_limit_reached":
             cannot_resume_reason = "当前不需要点恢复按钮，系统会等下一日窗口后再继续下一轮。"
-        elif ready_for_cycle:
-            cannot_resume_reason = "现在可以恢复，而且恢复后就能继续下一轮自动化。"
         else:
             cannot_resume_reason = str(story.get("why_not_resume", "") or "当前没有额外恢复限制说明。")
-        if blocked_reason == "manual_mode":
+        if recovery_state == "dry_run_only":
+            earliest_continue_text = "先切回 dry-run only 后可继续。"
+        elif blocked_reason == "manual_mode":
             earliest_continue_text = "切回自动模式后可继续。"
         elif next_run_at:
             earliest_continue_text = f"最早可在 {cls._format_runtime_deadline(next_run_at)} 继续。"
@@ -719,6 +841,132 @@ class AutomationWorkflowService:
             "resume_blockers": blocked_items,
             "cannot_resume_reason": cannot_resume_reason,
             "continue_after_resume": resume_needed and next_action == "run_next_cycle" and not blocked_items,
+            "recovery_state": recovery_state,
+            "primary_action": primary_action,
+            "primary_action_label": primary_action_label,
+            "primary_action_detail": primary_action_detail,
+        }
+
+    @classmethod
+    def _build_control_matrix(
+        cls,
+        *,
+        state: dict[str, object],
+        resume_status: dict[str, object],
+        control_actions: list[dict[str, object]],
+    ) -> dict[str, object]:
+        """把恢复流程和人工接管入口统一成同一份动作矩阵。"""
+
+        recovery_state = str(resume_status.get("recovery_state", "waiting") or "waiting")
+        primary_action = str(resume_status.get("primary_action", "") or "")
+        primary_action_label = str(resume_status.get("primary_action_label", "") or "")
+        primary_action_detail = str(resume_status.get("primary_action_detail", "") or "")
+        cannot_resume_reason = str(resume_status.get("cannot_resume_reason", "") or "")
+        mode = str(state.get("mode", "manual") or "manual")
+        paused = bool(state.get("paused"))
+        manual_takeover = bool(state.get("manual_takeover"))
+        defaults: dict[str, dict[str, object]] = {
+            "automation_resume": {
+                "action": "automation_resume",
+                "label": "确认后恢复自动化",
+                "detail": "只有在告警、同步和暂停原因都处理完后，才恢复当前自动化模式。",
+                "danger": False,
+            },
+            "automation_dry_run_only": {
+                "action": "automation_dry_run_only",
+                "label": "只恢复到 dry-run",
+                "detail": "如果你还不想放开真实资金，先切回只保留 dry-run。",
+                "danger": False,
+            },
+            "automation_mode_manual": {
+                "action": "automation_mode_manual",
+                "label": "保持手动",
+                "detail": "继续停在手动模式，先人工判断和处理异常。",
+                "danger": False,
+            },
+            "automation_kill_switch": {
+                "action": "automation_kill_switch",
+                "label": "Kill Switch",
+                "detail": "一键停机，继续保持最保守状态。",
+                "danger": True,
+            },
+            "automation_pause": {
+                "action": "automation_pause",
+                "label": "暂停自动化",
+                "detail": "先停住后续自动推进，回到人工判断。",
+                "danger": False,
+            },
+            "automation_manual_takeover": {
+                "action": "automation_manual_takeover",
+                "label": "转人工接管",
+                "detail": "立刻切到人工接管，先人工确认，再决定下一步。",
+                "danger": True,
+            },
+            "automation_run_cycle": {
+                "action": "automation_run_cycle",
+                "label": "运行自动化工作流",
+                "detail": "按当前模式推进一轮训练、推理、执行和复盘。",
+                "danger": False,
+            },
+        }
+        merged_actions: dict[str, dict[str, object]] = {}
+        for item in control_actions:
+            action = str(item.get("action", "") or "").strip()
+            if not action:
+                continue
+            merged_actions[action] = {
+                **defaults.get(action, {}),
+                **dict(item),
+            }
+        if recovery_state in {"recoverable", "dry_run_only", "manual_required"}:
+            action_order = ["automation_resume", "automation_dry_run_only", "automation_mode_manual", "automation_kill_switch"]
+        elif paused or manual_takeover:
+            action_order = ["automation_resume", "automation_dry_run_only", "automation_mode_manual", "automation_kill_switch"]
+        elif mode == "manual":
+            action_order = ["automation_mode_manual", "automation_dry_run_only", "automation_kill_switch"]
+        else:
+            action_order = [
+                str(item.get("action", "") or "").strip()
+                for item in control_actions
+                if str(item.get("action", "") or "").strip()
+            ]
+            if not action_order:
+                action_order = [
+                    "automation_pause",
+                    "automation_manual_takeover",
+                    "automation_mode_manual",
+                    "automation_dry_run_only",
+                    "automation_kill_switch",
+                ]
+        items: list[dict[str, object]] = []
+        for action in action_order:
+            row = {
+                **defaults.get(action, {"action": action, "label": action, "detail": "当前没有额外说明。", "danger": False}),
+                **merged_actions.get(action, {}),
+            }
+            enabled = True
+            disabled_reason = ""
+            if action == "automation_resume":
+                enabled = recovery_state == "recoverable"
+                if not enabled:
+                    if recovery_state == "dry_run_only":
+                        disabled_reason = "当前还没有 dry-run 验证通过的候选，先只恢复到 dry-run。"
+                    elif recovery_state == "manual_required":
+                        disabled_reason = "当前还有风险或异常需要先人工处理，暂时不能直接恢复自动化。"
+                    else:
+                        disabled_reason = cannot_resume_reason or "当前不需要点恢复按钮。"
+            elif action == "automation_dry_run_only" and recovery_state == "manual_required":
+                enabled = False
+                disabled_reason = "当前还有风险或异常需要先人工处理，先保持手动更安全。"
+            row["enabled"] = enabled
+            row["disabled_reason"] = disabled_reason
+            items.append(row)
+        return {
+            "state": recovery_state,
+            "primary_action": primary_action,
+            "primary_action_label": primary_action_label,
+            "primary_action_detail": primary_action_detail,
+            "items": items,
         }
 
     @staticmethod

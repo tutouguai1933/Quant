@@ -68,6 +68,21 @@ export type CandidateScopeModel = {
   live_summary?: string;
 };
 
+export type PriorityQueueItemModel = Record<string, unknown> & {
+  symbol: string;
+  queue_status?: string;
+  dispatch_status?: string;
+  dispatch_reason?: string;
+  recommended_stage?: string;
+  next_action?: string;
+  skip_reason?: string;
+  why_selected?: string;
+  why_blocked?: string;
+  priority_rank?: number;
+};
+
+export type PriorityQueueSummaryModel = Record<string, unknown>;
+
 export type StrategyWorkspaceModel = {
   overview: {
     strategy_count: number;
@@ -90,6 +105,17 @@ export type StrategyWorkspaceModel = {
   recent_orders: Array<Record<string, unknown>>;
   account_state: WorkspaceAccountState;
   configuration: Record<string, unknown>;
+};
+
+const DEFAULT_EVALUATION_ALIGNMENT_DETAILS = {
+  research_symbol: "",
+  research_action: "continue_research",
+  order_backfill_state: "无结果",
+  order_backfill_detail: "当前轮还没有订单回填",
+  position_backfill_state: "无结果",
+  position_backfill_detail: "当前轮还没有持仓回填",
+  sync_backfill_state: "无结果",
+  sync_backfill_detail: "当前还没有同步结果回填",
 };
 
 const DEFAULT_CANDIDATE_SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT"];
@@ -194,6 +220,7 @@ export type AutomationStatusModel = {
   dailySummary: Record<string, unknown>;
   runtimeWindow: Record<string, unknown>;
   resumeStatus: Record<string, unknown>;
+  controlMatrix: Record<string, unknown>;
   controlActions: Array<Record<string, unknown>>;
   schedulerPlan: Array<Record<string, unknown>>;
   failurePolicy: Record<string, unknown>;
@@ -203,6 +230,8 @@ export type AutomationStatusModel = {
   arbitration: Record<string, unknown>;
   severitySummary: Record<string, unknown>;
   resumeChecklist: Array<Record<string, unknown>>;
+  priorityQueue: PriorityQueueItemModel[];
+  priorityQueueSummary: PriorityQueueSummaryModel;
 };
 
 export type WorkbenchControlOptions = {
@@ -814,6 +843,8 @@ export type EvaluationWorkspaceModel = {
   alignment_actions: Array<Record<string, unknown>>;
   workflow_alignment_timeline: Array<Record<string, unknown>>;
   stage_decision_summary?: Record<string, unknown>;
+  priority_queue: PriorityQueueItemModel[];
+  priority_queue_summary: PriorityQueueSummaryModel;
 };
 
 export type ValidationReviewItem = {
@@ -1318,6 +1349,7 @@ export async function getAutomationStatus(
         dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
         runtimeWindow: isPlainObject(item.runtime_window) ? item.runtime_window : {},
         resumeStatus: isPlainObject(item.resume_status) ? item.resume_status : {},
+        controlMatrix: isPlainObject(item.control_matrix) ? item.control_matrix : {},
         controlActions: Array.isArray(item.control_actions) ? item.control_actions.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         failurePolicy: isPlainObject(item.failure_policy) ? item.failure_policy : {},
@@ -1327,6 +1359,8 @@ export async function getAutomationStatus(
         arbitration: isPlainObject(item.arbitration) ? item.arbitration : {},
         severitySummary: isPlainObject(item.severity_summary) ? item.severity_summary : {},
         resumeChecklist: Array.isArray(item.resume_checklist) ? item.resume_checklist.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
+        priorityQueue: normalizePriorityQueue(item.priority_queue),
+        priorityQueueSummary: isPlainObject(item.priority_queue_summary) ? item.priority_queue_summary : {},
       },
     },
   };
@@ -1990,11 +2024,13 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
     comparison_summary: {},
     execution_alignment: {},
     stage_decision_summary: {},
-    alignment_details: {},
+    alignment_details: { ...DEFAULT_EVALUATION_ALIGNMENT_DETAILS },
     alignment_story: {},
     alignment_metric_rows: [],
     alignment_gaps: [],
     alignment_actions: [],
+    priority_queue: [],
+    priority_queue_summary: {},
   };
 }
 
@@ -2611,11 +2647,21 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     comparison_summary: isPlainObject(row.comparison_summary) ? row.comparison_summary : {},
     execution_alignment: isPlainObject(row.execution_alignment) ? row.execution_alignment : {},
     stage_decision_summary: isPlainObject(row.stage_decision_summary) ? row.stage_decision_summary : {},
-    alignment_details: isPlainObject(row.alignment_details) ? row.alignment_details : {},
+    alignment_details: normalizeEvaluationAlignmentDetails(row.alignment_details),
     alignment_story: isPlainObject(row.alignment_story) ? row.alignment_story : {},
     alignment_metric_rows: Array.isArray(row.alignment_metric_rows) ? row.alignment_metric_rows.filter(isPlainObject) : [],
     alignment_gaps: Array.isArray(row.alignment_gaps) ? row.alignment_gaps.filter(isPlainObject) : [],
     alignment_actions: Array.isArray(row.alignment_actions) ? row.alignment_actions.filter(isPlainObject) : [],
+    priority_queue: normalizePriorityQueue(row.priority_queue),
+    priority_queue_summary: isPlainObject(row.priority_queue_summary) ? row.priority_queue_summary : {},
+  };
+}
+
+function normalizeEvaluationAlignmentDetails(value: unknown): Record<string, unknown> {
+  const details = isPlainObject(value) ? value : {};
+  return {
+    ...DEFAULT_EVALUATION_ALIGNMENT_DETAILS,
+    ...details,
   };
 }
 
@@ -3430,11 +3476,45 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       dailySummary: {},
       runtimeWindow: {},
       resumeStatus: {},
+      controlMatrix: {
+        state: "waiting",
+        primary_action: "automation_dry_run_only",
+        primary_action_label: "切到 dry-run only",
+        primary_action_detail: "当前是回退状态，先恢复控制面后再继续自动化。",
+        items: [
+          {
+            action: "automation_mode_manual",
+            label: "保持手动",
+            detail: "继续只保留人工操作，不让系统自动推进。",
+            enabled: true,
+            disabled_reason: "",
+            danger: false,
+          },
+          {
+            action: "automation_dry_run_only",
+            label: "切到 dry-run only",
+            detail: "先恢复到自动 dry-run，不直接放开真实资金。",
+            enabled: true,
+            disabled_reason: "",
+            danger: false,
+          },
+          {
+            action: "automation_kill_switch",
+            label: "Kill Switch",
+            detail: "一键停机，继续保持最保守状态。",
+            enabled: true,
+            disabled_reason: "",
+            danger: true,
+          },
+        ],
+      },
       controlActions: [],
       schedulerPlan: [],
       failurePolicy: {},
       severitySummary: {},
       resumeChecklist: [],
+      priorityQueue: [],
+      priorityQueueSummary: {},
       automationConfig: {
         automation_preset_key: "balanced_runtime",
         automation_preset_detail: "自动化运行预设：balanced_runtime / 当前还没有自动化运行预设说明",
@@ -3573,6 +3653,32 @@ function normalizeCandidateScope(value: unknown, fallback: CandidateScopeModel):
     live_allowed_symbols: normalizePresentStringArray(row.live_allowed_symbols, fallback.live_allowed_symbols),
     live_summary: String(row.live_summary ?? fallback.live_summary ?? ""),
   };
+}
+
+function normalizePriorityQueue(value: unknown): PriorityQueueItemModel[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item) => isPlainObject(item))
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return {
+        ...row,
+        symbol: String(row.symbol ?? "").trim().toUpperCase(),
+        queue_status: String(row.queue_status ?? ""),
+        dispatch_status: String(row.dispatch_status ?? ""),
+        dispatch_reason: String(row.dispatch_reason ?? ""),
+        recommended_stage: String(row.recommended_stage ?? ""),
+        next_action: String(row.next_action ?? ""),
+        skip_reason: String(row.skip_reason ?? ""),
+        why_selected: String(row.why_selected ?? ""),
+        why_blocked: String(row.why_blocked ?? ""),
+        priority_rank: Number(row.priority_rank ?? 0),
+      };
+    })
+    .filter((item) => item.symbol.length > 0);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

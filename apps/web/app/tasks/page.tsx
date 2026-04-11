@@ -96,9 +96,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const runtimeWindow = asRecord(automation.runtimeWindow);
   const runtimeStory = asRecord(runtimeWindow.story);
   const resumeStatus = asRecord(automation.resumeStatus);
+  const controlMatrix = asRecord(automation.controlMatrix);
   const controlActions = Array.isArray(automation.controlActions)
     ? automation.controlActions.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
+  const controlMatrixItems = Array.isArray(controlMatrix.items)
+    ? controlMatrix.items.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
+  const effectiveControlActions = controlMatrixItems.length ? controlMatrixItems : controlActions;
   const primaryOperatorAction = asRecord(operatorActions[0]);
   const primaryOperatorLabel = readText(primaryOperatorAction.label, "当前可以继续下一轮自动化");
   const primaryOperatorDetail = readText(primaryOperatorAction.detail, "当前没有额外阻塞说明。");
@@ -251,6 +256,28 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const recentReviewTasks = Array.isArray(evaluation.recent_review_tasks)
     ? evaluation.recent_review_tasks.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
+  const evaluationPriorityQueue = Array.isArray(evaluation.priority_queue) ? evaluation.priority_queue : [];
+  const automationPriorityQueue = Array.isArray(automation.priorityQueue) ? automation.priorityQueue : [];
+  const priorityQueue = automationPriorityQueue.length ? automationPriorityQueue : evaluationPriorityQueue;
+  const priorityQueueSummary = asRecord(
+    Object.keys(asRecord(automation.priorityQueueSummary)).length ? automation.priorityQueueSummary : evaluation.priority_queue_summary,
+  );
+  const priorityQueueHeadline = readText(priorityQueueSummary.headline, "当前还没有可推进候选");
+  const priorityQueueDetail = readText(priorityQueueSummary.detail, "先恢复研究、评估和自动化状态后，再看当前先推进谁。");
+  const priorityQueueRows = (priorityQueue.length ? priorityQueue : []).slice(0, 3).map((item, index) => {
+    const row = asRecord(item);
+    const queueState = readText(row.dispatch_status, readText(row.queue_status, "unknown"));
+    const queueReason = readText(row.dispatch_reason, readText(row.skip_reason, readText(row.why_selected, readText(row.why_blocked, "当前没有额外说明"))));
+    return {
+      id: `${readText(row.symbol, `candidate-${index}`)}-${index}`,
+      cells: [
+        `${index + 1}. ${readText(row.symbol, "n/a")}`,
+        queueState,
+        queueReason,
+        readText(row.target_page, String(row.next_action ?? "/evaluation")),
+      ],
+    };
+  });
   const executionConfig = {
     candidatePoolPresetKey: readText(executionPolicy.candidate_pool_preset_key, "top10_liquid"),
     candidatePoolPresetDetail: readText(executionPolicy.candidate_pool_preset_detail, "当前还没有候选池预设说明。"),
@@ -537,27 +564,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
               <DataTable
                 columns={["当前处理队列", "建议动作", "为什么先做", "下一步去哪里"]}
-                rows={operatorActions.map((item, index) => {
-                  const row = asRecord(item);
-                  const action = String(row.action ?? `step-${index}`);
-                  return {
-                    id: `${action}-${index}`,
-                    cells: [
-                      String(row.label ?? "继续处理"),
-                      action,
-                      String(row.detail ?? "当前没有额外说明"),
-                      action.includes("sync")
-                        ? "/tasks"
-                        : action.includes("takeover")
-                          ? "/tasks"
-                          : action.includes("resume")
-                            ? "/tasks"
-                            : "/evaluation",
-                    ],
-                  };
-                })}
+                rows={priorityQueueRows}
                 emptyTitle="当前没有额外处理队列"
-                emptyDetail="最近没有新的高风险告警时，这里会保持空白。"
+                emptyDetail="当前还没有统一优先队列，先完成研究、评估或自动化状态刷新。"
               />
 
               <DataTable
@@ -638,9 +647,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     tone={runtimeWindowSummary.readyForCycle ? "ok" : "warning"}
                   />
                   <GuidanceBlock
-                    label="人工接管后怎么恢复"
-                    value={restoreConclusion.actionLabel}
-                    detail={restoreConclusion.detail}
+                    label="恢复后先推谁"
+                    value={priorityQueueHeadline}
+                    detail={priorityQueueDetail}
                     tone={automation.manualTakeover ? "critical" : "info"}
                   />
                 </CardContent>
@@ -774,7 +783,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                     <p>当前结论：{restoreConclusion.summary}</p>
                   </div>
                   <div className="grid gap-3">
-                    {controlActions.map((item, index) => (
+                    {effectiveControlActions.map((item, index) => (
                       <AutomationControlCard
                         key={`${readText(item.action, "automation")}-${index}`}
                         action={readText(item.action, "automation_mode_manual")}
@@ -782,6 +791,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
                         detail={readText(item.detail, "当前没有额外说明。")}
                         returnTo="/tasks"
                         danger={Boolean(item.danger)}
+                        disabled={String(item.enabled ?? "true") === "false"}
+                        disabledHint={readText(item.disabled_reason, "")}
                       />
                     ))}
                   </div>

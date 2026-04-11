@@ -15,8 +15,6 @@ from services.api.app.core.settings import Settings
 from services.api.app.services.risk_service import risk_service
 from services.api.app.services.workbench_config_service import (
     _build_automation_preset_catalog,
-    _build_candidate_pool_preset_catalog,
-    _build_live_subset_preset_catalog,
     _build_operations_preset_catalog,
     _describe_catalog_item,
     workbench_config_service,
@@ -278,6 +276,16 @@ class AutomationService:
                 "status": "blocked",
                 "blocked_reason": "resume_checklist_pending",
                 "pending_items": pending_items,
+                "resume_checklist": resume_checklist,
+            }
+        if self._mode == "auto_live" and not self._armed_symbol:
+            return {
+                **self.get_state(),
+                "actor": actor,
+                "status": "blocked",
+                "blocked_reason": "resume_requires_dry_run_only",
+                "message": "当前还没有 dry-run 验证通过的候选，先只恢复到 dry-run，再决定是否重新进入 live。",
+                "pending_items": [],
                 "resume_checklist": resume_checklist,
             }
 
@@ -1205,6 +1213,19 @@ class AutomationService:
         groups = list(alert_summary.get("groups") or [])
         group_codes = {str(item.get("code", "") or "") for item in groups}
         has_error_alert = bool(last_alert and str(last_alert.get("level", "")).lower() == "error") or int(alert_summary.get("error_count", 0) or 0) > 0 or "sync_failed" in group_codes
+        hard_pause_reasons = {
+            "kill_switch",
+            "risk_guard_triggered",
+            "consecutive_failure_guard_triggered",
+            "stale_sync_guard_triggered",
+            "workflow_train_failed",
+            "workflow_infer_failed",
+            "workflow_signal_output_failed",
+            "dispatch_execution_failed",
+        }
+        primary_blocker_code = str((active_blockers[0] if active_blockers else {}).get("code", "") or "")
+        manual_pending_reasons = hard_pause_reasons | {"manual_takeover", "manual_review"}
+        has_manual_reason_pending = self._manual_takeover or self._paused_reason in manual_pending_reasons
         return [
             {
                 "label": "告警强度",
@@ -1213,8 +1234,8 @@ class AutomationService:
             },
             {
                 "label": "人工接管原因",
-                "status": "pending" if self._manual_takeover or self._paused else "ready",
-                "detail": "如果当前仍在暂停或人工接管，先确认原因已经处理。",
+                "status": "pending" if has_manual_reason_pending else "ready",
+                "detail": "如果这次暂停或接管来自风控、连续失败或执行异常，先把根因处理完。",
             },
             {
                 "label": "同步状态",
@@ -1225,7 +1246,7 @@ class AutomationService:
                 "label": "恢复前先做什么",
                 "status": (
                     "pending"
-                    if active_blockers and str(active_blockers[0].get("code", "")) not in {"none", "manual_mode"}
+                    if active_blockers and primary_blocker_code not in {"none", "manual_mode", "paused", "manual_takeover"}
                     else "ready"
                 ),
                 "detail": "按阻塞清单和恢复建议逐项处理完，再按恢复按钮继续自动化。",
@@ -1242,6 +1263,7 @@ class AutomationService:
             "manual_pause": "人工暂停自动化",
             "manual_stop": "人工暂停自动化",
             "manual_takeover": "人工主动接管",
+            "manual_review": "人工复核中",
             "risk_guard_triggered": "风控触发人工接管",
             "consecutive_failure_guard_triggered": "连续失败阈值触发人工接管",
             "stale_sync_guard_triggered": "同步陈旧阈值触发人工接管",
@@ -1334,27 +1356,10 @@ class AutomationService:
         """读取当前执行安全门配置。"""
 
         config = workbench_config_service.get_config()
-        data = dict(config.get("data") or {})
         execution = dict(config.get("execution") or {})
-        candidate_preset_key = str(data.get("candidate_pool_preset_key", "top10_liquid"))
-        live_subset_preset_key = str(execution.get("live_subset_preset_key", "core_live"))
+        candidate_scope = workbench_config_service.build_candidate_scope_contract(config)
         return {
-            "candidate_pool_preset_key": candidate_preset_key,
-            "candidate_pool_preset_detail": _describe_catalog_item(
-                _build_candidate_pool_preset_catalog(),
-                key=candidate_preset_key,
-                title="候选池预设",
-            ),
-            "candidate_pool_preset_catalog": _build_candidate_pool_preset_catalog(),
-            "candidate_symbols": [str(item) for item in list(data.get("selected_symbols") or []) if str(item).strip()],
-            "live_subset_preset_key": live_subset_preset_key,
-            "live_subset_preset_detail": _describe_catalog_item(
-                _build_live_subset_preset_catalog(),
-                key=live_subset_preset_key,
-                title="live 子集预设",
-            ),
-            "live_subset_preset_catalog": _build_live_subset_preset_catalog(),
-            "live_allowed_symbols": [str(item) for item in list(execution.get("live_allowed_symbols") or []) if str(item).strip()],
+            **candidate_scope,
             "live_max_stake_usdt": str(execution.get("live_max_stake_usdt", "")),
             "live_max_open_trades": str(execution.get("live_max_open_trades", "")),
         }

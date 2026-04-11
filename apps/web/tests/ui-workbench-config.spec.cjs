@@ -85,7 +85,7 @@ test("evaluation and strategies pages show stable recommendation story", async (
   await loginAsAdmin(page, "/evaluation");
 
   await expect(page.locator("body")).toContainText("推荐摘要", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("决策入口", { timeout: 60000 });
+  await expect(page.locator("body")).toContainText("当前仲裁结论", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("现在先推进哪一层", { timeout: 60000 });
   const evaluationBody = (await page.locator("body").textContent()) ?? "";
   expect(

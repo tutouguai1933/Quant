@@ -40,13 +40,13 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
 
             workspace = service.get_workspace(signal_limit=5, order_limit=5)
 
-        self.assertEqual(workspace["overview"]["strategy_count"], 2)
-        self.assertEqual(workspace["overview"]["whitelist_count"], 2)
+        self.assertEqual(workspace["overview"]["strategy_count"], 0)
+        self.assertEqual(workspace["overview"]["whitelist_count"], 0)
         self.assertIn("configuration", workspace)
         self.assertIn("priority_tags", workspace["configuration"])
-        self.assertEqual(workspace["whitelist"], ["BTCUSDT", "ETHUSDT"])
+        self.assertEqual(workspace["whitelist"], [])
         self.assertEqual(workspace["executor_runtime"]["backend"], "memory")
-        self.assertEqual(len(workspace["strategies"]), 2)
+        self.assertEqual(len(workspace["strategies"]), 0)
         self.assertEqual(workspace["recent_signals"][0]["strategy_id"], 1)
         self.assertEqual(workspace["recent_orders"][0]["status"], "filled")
         self.assertEqual(workspace["research"]["status"], "ready")
@@ -58,11 +58,13 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("automation_policy", workspace["configuration"])
         self.assertIn("candidate_pool_preset", workspace["configuration"])
         self.assertIn("live_subset_preset", workspace["configuration"])
+        self.assertEqual(workspace["configuration"]["candidate_scope"]["status"], "candidate_pool_missing")
+        self.assertIn("范围契约", workspace["configuration"]["candidate_scope"]["detail"])
 
     def test_workspace_cards_include_runtime_status_signal_and_evaluation(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
             "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
-            return_value={"data": {"selected_symbols": []}},
+            return_value={"data": {"selected_symbols": ["BTCUSDT", "ETHUSDT"]}},
         ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
@@ -96,7 +98,7 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
     def test_workspace_uses_single_research_snapshot_for_summary_and_gate(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
             "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
-            return_value={"data": {"selected_symbols": []}},
+            return_value={"data": {"selected_symbols": ["BTCUSDT", "ETHUSDT"]}},
         ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
@@ -126,7 +128,7 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
             clear=False,
         ), patch(
             "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
-            return_value={"data": {"selected_symbols": []}},
+            return_value={"data": {"selected_symbols": ["BTCUSDT", "ETHUSDT"]}},
         ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
@@ -146,7 +148,7 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
     def test_workspace_prefers_ready_research_candidate(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
             "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
-            return_value={"data": {"selected_symbols": []}},
+            return_value={"data": {"selected_symbols": ["BTCUSDT", "ETHUSDT"]}},
         ):
             service = StrategyWorkspaceService(
                 catalog_service=_FakeCatalogService(),
@@ -193,6 +195,7 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(workspace["overview"]["whitelist_count"], 3)
         self.assertEqual(workspace["strategies"][0]["symbols"], ["ETHUSDT", "XRPUSDT", "DOGEUSDT"])
         self.assertIn("候选池预设", workspace["configuration"]["candidate_pool_preset"])
+        self.assertEqual(workspace["configuration"]["candidate_scope"]["candidate_symbols"], ["ETHUSDT", "XRPUSDT", "DOGEUSDT"])
 
 
 class _FakeCatalogService:

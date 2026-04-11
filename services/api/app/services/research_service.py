@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Callable
 
+from services.api.app.services.candidate_priority_service import candidate_priority_service
 from services.api.app.services.market_service import MarketService
 from services.api.app.services.strategy_catalog import strategy_catalog_service
 from services.api.app.services.workbench_config_service import workbench_config_service
@@ -147,13 +148,22 @@ class ResearchService:
     def get_research_recommendation(self) -> dict[str, object] | None:
         """返回当前最值得继续进入执行链的研究候选。"""
 
-        report = self.get_factory_report()
-        candidates = list(report.get("candidates") or [])
-        if not candidates:
+        priority_queue = self.get_research_priority_queue()
+        ready_items = [
+            dict(item)
+            for item in list(priority_queue.get("items") or [])
+            if isinstance(item, dict) and str(item.get("queue_status", "") or "") == "ready"
+        ]
+        blocked_items = [
+            dict(item)
+            for item in list(priority_queue.get("items") or [])
+            if isinstance(item, dict)
+        ]
+        selected_item = ready_items[0] if ready_items else (blocked_items[0] if blocked_items else {})
+        recommendation = dict(selected_item or {})
+        if not recommendation:
             return None
-        ready_items = [item for item in candidates if bool(item.get("allowed_to_dry_run"))]
-        source_items = ready_items or candidates
-        recommendation = sorted(source_items, key=_candidate_sort_key)[0]
+        report = self.get_factory_report()
         dry_run_gate = dict(recommendation.get("dry_run_gate") or {})
         latest_training = dict(report.get("latest_training") or {})
         latest_inference = dict(report.get("latest_inference") or {})
@@ -181,6 +191,16 @@ class ResearchService:
             "failure_reasons": list(dry_run_gate.get("reasons") or []),
             "recommended_for_execution": bool(recommendation.get("allowed_to_dry_run")),
         }
+
+    def get_research_priority_queue(self) -> dict[str, object]:
+        """返回统一候选优先级队列。"""
+
+        report = self.get_factory_report()
+        candidate_scope = workbench_config_service.build_candidate_scope_contract(self._workbench_config_reader())
+        return candidate_priority_service.build_priority_queue(
+            report=report,
+            candidate_scope=candidate_scope,
+        )
 
     def _prepare_dataset(self) -> tuple[dict[str, dict[str, list[dict[str, object]]]], dict[str, int]]:
         """准备最小研究输入。"""

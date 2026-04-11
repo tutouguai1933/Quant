@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from services.api.app.services.candidate_priority_service import candidate_priority_service
 from services.api.app.services.research_service import research_service
 from services.api.app.services.validation_workflow_service import validation_workflow_service
 from services.api.app.services.workbench_config_service import (
@@ -48,6 +49,10 @@ class EvaluationWorkspaceService:
         current_research_template = self._resolve_current_research_template(
             report=report,
             configured_research=configured_research,
+        )
+        priority_queue_payload = candidate_priority_service.build_priority_queue(
+            report=report,
+            candidate_scope=candidate_scope,
         )
         leaderboard = self._build_leaderboard(
             report,
@@ -190,6 +195,8 @@ class EvaluationWorkspaceService:
             },
             "recent_review_tasks": recent_review_tasks,
             "leaderboard": leaderboard,
+            "priority_queue": list(priority_queue_payload.get("items") or []),
+            "priority_queue_summary": dict(priority_queue_payload.get("summary") or {}),
             "best_experiment": best_experiment,
             "best_stage_candidates": best_stage_candidates,
             "decision_board": decision_board,
@@ -1987,6 +1994,10 @@ class EvaluationWorkspaceService:
         """把研究和执行的最近标的对齐成更直白的明细。"""
 
         execution = dict(execution_alignment.get("execution") or {})
+        execution_backfill = EvaluationWorkspaceService._resolve_execution_backfill(execution_alignment)
+        order_backfill = dict(execution_backfill.get("order") or {})
+        position_backfill = dict(execution_backfill.get("position") or {})
+        sync_backfill = dict(execution_backfill.get("sync") or {})
         orders = [dict(item) for item in list(execution.get("orders") or []) if isinstance(item, dict)]
         positions = [dict(item) for item in list(execution.get("positions") or []) if isinstance(item, dict)]
         research_symbol = str(
@@ -2004,6 +2015,12 @@ class EvaluationWorkspaceService:
         latest_sync_status = str(execution.get("latest_sync_status", "") or "unknown")
         runtime_mode = str(execution.get("runtime_mode", "") or "unknown")
         status = str(execution_alignment.get("status", "") or "unavailable")
+        order_backfill_state = EvaluationWorkspaceService._format_backfill_state(str(order_backfill.get("freshness", "")))
+        position_backfill_state = EvaluationWorkspaceService._format_backfill_state(str(position_backfill.get("freshness", "")))
+        sync_backfill_state = EvaluationWorkspaceService._format_backfill_state(str(sync_backfill.get("freshness", "")))
+        order_backfill_detail = str(order_backfill.get("detail", "") or "当前轮还没有订单回填")
+        position_backfill_detail = str(position_backfill.get("detail", "") or "当前轮还没有持仓回填")
+        sync_backfill_detail = str(sync_backfill.get("detail", "") or "当前还没有同步结果回填")
         if status == "matched":
             alignment_state = "研究和执行已对齐"
         elif status == "waiting_research":
@@ -2021,6 +2038,12 @@ class EvaluationWorkspaceService:
                 "alignment_state": alignment_state,
                 "runtime_mode": runtime_mode,
                 "latest_sync_status": latest_sync_status,
+                "order_backfill_state": order_backfill_state,
+                "order_backfill_detail": order_backfill_detail,
+                "position_backfill_state": position_backfill_state,
+                "position_backfill_detail": position_backfill_detail,
+                "sync_backfill_state": sync_backfill_state,
+                "sync_backfill_detail": sync_backfill_detail,
                 "difference_summary": "当前还没有足够结果可对齐",
                 "difference_severity": "unknown",
                 "difference_codes": ["research_missing"],
@@ -2036,6 +2059,12 @@ class EvaluationWorkspaceService:
                 "alignment_state": alignment_state,
                 "runtime_mode": runtime_mode,
                 "latest_sync_status": latest_sync_status,
+                "order_backfill_state": order_backfill_state,
+                "order_backfill_detail": order_backfill_detail,
+                "position_backfill_state": position_backfill_state,
+                "position_backfill_detail": position_backfill_detail,
+                "sync_backfill_state": sync_backfill_state,
+                "sync_backfill_detail": sync_backfill_detail,
                 "difference_summary": "当前执行侧还没有可对齐结果",
                 "difference_severity": "unknown",
                 "difference_codes": ["execution_unavailable"],
@@ -2044,10 +2073,10 @@ class EvaluationWorkspaceService:
             }
         difference_reasons: list[str] = []
         difference_codes: list[str] = []
-        if research_symbol and last_order_symbol and research_symbol != last_order_symbol:
+        if research_symbol and last_order_symbol and not EvaluationWorkspaceService._alignment_symbols_match(research_symbol, last_order_symbol):
             difference_codes.append("order_symbol_mismatch")
             difference_reasons.append(f"最近订单仍是 {last_order_symbol}")
-        if research_symbol and last_position_symbol and research_symbol != last_position_symbol:
+        if research_symbol and last_position_symbol and not EvaluationWorkspaceService._alignment_symbols_match(research_symbol, last_position_symbol):
             difference_codes.append("position_symbol_mismatch")
             difference_reasons.append(f"最近持仓仍是 {last_position_symbol}")
         if latest_sync_status == "failed":
@@ -2056,6 +2085,13 @@ class EvaluationWorkspaceService:
         if runtime_mode == "manual" and research_action == "enter_dry_run":
             difference_codes.append("manual_mode_confirmation_required")
             difference_reasons.append("当前仍在手动模式，需要人工确认")
+        if status == "no_execution":
+            if str(order_backfill.get("freshness", "")) == "unavailable":
+                difference_codes.append("order_missing")
+                difference_reasons.append("当前轮还没有订单回填")
+            if str(position_backfill.get("freshness", "")) == "unavailable":
+                difference_codes.append("position_missing")
+                difference_reasons.append("当前轮还没有持仓回填")
         if not difference_reasons:
             difference_codes.append("aligned")
             difference_reasons.append("当前没有明显差异")
@@ -2063,6 +2099,10 @@ class EvaluationWorkspaceService:
             difference_summary = "研究标的、最近订单和最近持仓已经对上"
             difference_severity = "low"
             next_step = "继续观察 dry-run 或小额 live 的复盘结果。"
+        elif status == "no_execution" and "当前轮还没有订单回填" in difference_reasons:
+            difference_summary = f"研究侧推荐 {research_symbol or 'n/a'}，但当前轮执行结果还没回填到账本。"
+            difference_severity = "medium"
+            next_step = "先去策略页确认派发，再回来检查执行账本是否已经更新。"
         elif status == "waiting_research":
             difference_codes.append("waiting_same_cycle")
             difference_summary = f"研究侧推荐 {research_symbol or 'n/a'}，但执行侧还没进入同一轮"
@@ -2082,12 +2122,127 @@ class EvaluationWorkspaceService:
             "alignment_state": alignment_state,
             "runtime_mode": runtime_mode,
             "latest_sync_status": latest_sync_status,
+            "order_backfill_state": order_backfill_state,
+            "order_backfill_detail": order_backfill_detail,
+            "position_backfill_state": position_backfill_state,
+            "position_backfill_detail": position_backfill_detail,
+            "sync_backfill_state": sync_backfill_state,
+            "sync_backfill_detail": sync_backfill_detail,
             "difference_summary": difference_summary,
             "difference_severity": difference_severity,
             "difference_codes": difference_codes,
             "difference_reasons": difference_reasons,
             "next_step": next_step,
         }
+
+    @staticmethod
+    def _resolve_execution_backfill(execution_alignment: dict[str, object]) -> dict[str, object]:
+        """兼容读取执行回填账本，旧结构缺失时按现有字段兜底推断。"""
+
+        existing = dict(execution_alignment.get("execution_backfill") or {})
+        if existing:
+            return existing
+        execution = dict(execution_alignment.get("execution") or {})
+        alignment_status = str(execution_alignment.get("status", "") or "unavailable")
+        orders = [dict(item) for item in list(execution.get("orders") or []) if isinstance(item, dict)]
+        positions = [dict(item) for item in list(execution.get("positions") or []) if isinstance(item, dict)]
+        latest_sync_status = str(execution.get("latest_sync_status", "") or "unknown")
+        return {
+            "order": EvaluationWorkspaceService._build_fallback_backfill_entry(
+                entry_type="order",
+                items=orders,
+                freshness="current_cycle" if alignment_status == "matched" and orders else "stale",
+            ),
+            "position": EvaluationWorkspaceService._build_fallback_backfill_entry(
+                entry_type="position",
+                items=positions,
+                freshness="current_cycle" if alignment_status == "matched" and positions else "stale",
+            ),
+            "sync": {
+                "freshness": "current_cycle" if latest_sync_status in {"succeeded", "failed", "retrying"} else ("stale" if orders or positions else "unavailable"),
+                "sync_status": latest_sync_status,
+                "detail": (
+                    "当前轮同步失败"
+                    if latest_sync_status == "failed"
+                    else "当前轮同步已完成"
+                    if latest_sync_status == "succeeded"
+                    else "当前轮同步仍在重试"
+                    if latest_sync_status == "retrying"
+                    else "当前轮还没有同步回填，页面上的执行结果可能是旧的"
+                    if orders or positions
+                    else "当前还没有同步结果回填"
+                ),
+            },
+        }
+
+    @staticmethod
+    def _build_fallback_backfill_entry(
+        *,
+        entry_type: str,
+        items: list[dict[str, object]],
+        freshness: str,
+    ) -> dict[str, str]:
+        """旧结构缺少回填账本时，按已有订单/持仓兜底。"""
+
+        if not items:
+            return {
+                "freshness": "unavailable",
+                "symbol": "",
+                "side": "",
+                "quantity": "",
+                "status": "",
+                "detail": f"当前轮还没有{'订单' if entry_type == 'order' else '持仓'}回填",
+            }
+        item = dict(items[0])
+        quantity = str(item.get("executedQty") or item.get("quantity") or item.get("origQty") or "")
+        status = str(item.get("status") or item.get("positionStatus") or "")
+        prefix = "当前轮" if freshness == "current_cycle" else "页面上仍是旧"
+        return {
+            "freshness": freshness,
+            "symbol": str(item.get("symbol", "") or ""),
+            "side": str(item.get("side", "") or ""),
+            "quantity": quantity,
+            "status": status,
+            "detail": (
+                f"{prefix}{'订单' if entry_type == 'order' else '持仓'}："
+                f"{str(item.get('symbol', '') or 'n/a')} / {status or str(item.get('side', '') or '状态待确认')}"
+                f"{f' / {quantity}' if quantity else ''}"
+            ),
+        }
+
+    @staticmethod
+    def _format_backfill_state(freshness: str) -> str:
+        """把回填新鲜度转换成人话。"""
+
+        mapping = {
+            "current_cycle": "当前轮结果",
+            "stale": "旧结果",
+            "unavailable": "无结果",
+        }
+        return mapping.get(freshness, "待确认")
+
+    @staticmethod
+    def _alignment_symbols_match(left: str, right: str) -> bool:
+        """统一处理 BTCUSDT / BTC / BTC/USDT 这类旧结构差异。"""
+
+        return bool(
+            EvaluationWorkspaceService._alignment_symbol_aliases(left).intersection(
+                EvaluationWorkspaceService._alignment_symbol_aliases(right)
+            )
+        )
+
+    @staticmethod
+    def _alignment_symbol_aliases(symbol: str) -> set[str]:
+        """给评估页的 symbol 对齐补一组别名。"""
+
+        compact = str(symbol or "").strip().upper().replace("/", "")
+        if not compact:
+            return set()
+        aliases = {compact}
+        for quote in ("USDT", "USDC", "BUSD"):
+            if compact.endswith(quote) and len(compact) > len(quote):
+                aliases.add(compact[: -len(quote)])
+        return aliases
 
     @staticmethod
     def _build_alignment_gaps(

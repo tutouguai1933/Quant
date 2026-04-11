@@ -35,7 +35,9 @@ test("tasks page shows latest automation decision after login", async ({ page })
   await expect(page.locator("body")).toContainText("你现在该做什么", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("系统在等什么", { timeout: 60000 });
   await expect(page.locator("body")).toContainText("为什么现在还不能恢复", { timeout: 60000 });
-  await expect(page.locator("body")).toContainText("还不能恢复，因为恢复清单还有", { timeout: 60000 });
+  await expect
+    .poll(async () => (await page.locator("body").textContent()) ?? "", { timeout: 60000 })
+    .toMatch(/还不能恢复，因为恢复清单还有|当前还有风险或异常需要先人工处理/);
   await expect(page.getByText("最早恢复时间", { exact: true })).toBeVisible();
   await expect(page.getByText("接管复核截止", { exact: true })).toBeVisible();
   await expect(page.getByText("自动化运行参数", { exact: true })).toBeVisible();

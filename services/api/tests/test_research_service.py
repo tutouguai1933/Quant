@@ -158,6 +158,104 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertIn("allowed_to_live", item)
         self.assertIn("live_gate", item)
 
+    def test_research_service_recommendation_returns_none_when_priority_queue_is_empty(self) -> None:
+        self._write_json(
+            self.runtime_root / "latest_training.json",
+            {
+                "run_id": "train-empty",
+                "status": "completed",
+                "generated_at": "2026-04-03T10:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "artifact_path": "/tmp/model.json",
+            },
+        )
+        self._write_json(
+            self.runtime_root / "latest_inference.json",
+            {
+                "run_id": "infer-empty",
+                "status": "completed",
+                "generated_at": "2026-04-03T11:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "signals": [],
+                "candidates": {
+                    "items": [],
+                    "summary": {"candidate_count": 0, "ready_count": 0},
+                },
+            },
+        )
+
+        item = self.service.get_research_recommendation()
+
+        self.assertIsNone(item)
+
+    def test_research_service_builds_priority_queue_from_candidates(self) -> None:
+        self._write_json(
+            self.runtime_root / "latest_training.json",
+            {
+                "run_id": "train-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T10:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "artifact_path": "/tmp/model.json",
+            },
+        )
+        self._write_json(
+            self.runtime_root / "latest_inference.json",
+            {
+                "run_id": "infer-1",
+                "status": "completed",
+                "generated_at": "2026-04-03T11:00:00+00:00",
+                "model_version": "qlib-minimal-1",
+                "signals": [
+                    {"symbol": "BTCUSDT", "signal": "long", "score": "0.7200"},
+                    {"symbol": "ETHUSDT", "signal": "long", "score": "0.8100"},
+                ],
+                "candidates": {
+                    "items": [
+                        {
+                            "rank": 1,
+                            "symbol": "BTCUSDT",
+                            "strategy_template": "trend_breakout_timing",
+                            "score": "0.7200",
+                            "backtest": {"metrics": {}},
+                            "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
+                            "allowed_to_dry_run": False,
+                            "allowed_to_live": False,
+                            "review_status": "needs_research_iteration",
+                            "next_action": "continue_research",
+                            "execution_priority": 100,
+                        },
+                        {
+                            "rank": 2,
+                            "symbol": "ETHUSDT",
+                            "strategy_template": "trend_pullback_timing",
+                            "score": "0.8100",
+                            "backtest": {"metrics": {}},
+                            "dry_run_gate": {"status": "passed", "reasons": []},
+                            "live_gate": {"status": "failed", "reasons": ["live_score_too_low"]},
+                            "allowed_to_dry_run": True,
+                            "allowed_to_live": False,
+                            "review_status": "ready_for_dry_run",
+                            "next_action": "enter_dry_run",
+                            "execution_priority": 0,
+                        },
+                    ],
+                    "summary": {"candidate_count": 2, "ready_count": 1},
+                },
+            },
+        )
+
+        queue = self.service.get_research_priority_queue()
+
+        self.assertEqual(queue["summary"]["active_symbol"], "ETHUSDT")
+        self.assertEqual(queue["summary"]["blocked_count"], 1)
+        self.assertEqual(queue["items"][0]["symbol"], "ETHUSDT")
+        self.assertEqual(queue["items"][0]["queue_status"], "ready")
+        self.assertEqual(queue["items"][0]["priority_rank"], 1)
+        self.assertEqual(queue["items"][1]["symbol"], "BTCUSDT")
+        self.assertEqual(queue["items"][1]["queue_status"], "blocked")
+        self.assertIn("drawdown_too_large", queue["items"][1]["why_blocked"])
+
     def test_research_service_returns_unified_report(self) -> None:
         self.service.run_training()
         self.service.run_inference()

@@ -54,10 +54,9 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(configured["mode"], "auto_dry_run")
         self.assertTrue(paused["paused"])
         self.assertEqual(paused["paused_reason"], "manual_stop")
-        self.assertTrue(resumed["paused"])
-        self.assertEqual(resumed["status"], "blocked")
-        self.assertEqual(resumed["blocked_reason"], "resume_checklist_pending")
-        self.assertTrue(resumed["pending_items"])
+        self.assertFalse(resumed["paused"])
+        self.assertEqual(resumed["status"], "succeeded")
+        self.assertEqual(resumed["pending_items"], [])
 
     def test_resume_refuses_when_resume_checklist_has_pending_items(self) -> None:
         service = AutomationService()
@@ -149,7 +148,7 @@ class AutomationServiceTests(unittest.TestCase):
         workflow = AutomationWorkflowService(
             scheduler=scheduler,
             automation=automation,
-            research=_ReadyResearchService(),
+            research=_LiveReadyResearchService(),
             dispatcher=_PassingDispatchService(runtime_mode="live"),
             reviewer=_FakeReviewer(),
             syncer=_FakeSyncService(runtime_mode="live"),
@@ -171,7 +170,7 @@ class AutomationServiceTests(unittest.TestCase):
         workflow = AutomationWorkflowService(
             scheduler=scheduler,
             automation=automation,
-            research=_ReadyResearchService(),
+            research=_LiveReadyResearchService(),
             dispatcher=dispatcher,
             reviewer=_FakeReviewer(),
             syncer=_FakeSyncService(runtime_mode="live"),
@@ -187,6 +186,47 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(result["message"], "自动小额 live 已完成，本轮结果可进入统一复盘。")
         self.assertEqual(automation.get_state()["armed_symbol"], "")
         self.assertEqual(dispatcher.calls[0]["strategy_id"], 2)
+
+    def test_auto_dry_run_cycle_skips_blocked_top_candidate_and_dispatches_next_queue_candidate(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        dispatcher = _PassingDispatchService(runtime_mode="dry-run")
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_QueuedResearchService(),
+            dispatcher=dispatcher,
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        automation.configure_mode("auto_dry_run", actor="tester")
+        result = workflow.run_cycle(source="tester")
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["recommended_symbol"], "ETHUSDT")
+        self.assertEqual(result["recommended_strategy_id"], 2)
+        self.assertEqual(result["message"], "候选已通过自动 dry-run，等待下一轮 live 验证。")
+        self.assertEqual(dispatcher.calls[0]["strategy_id"], 2)
+
+    def test_automation_status_exposes_priority_queue_summary(self) -> None:
+        scheduler = mock.Mock()
+        scheduler.get_health_summary.return_value = {}
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_QueuedResearchService(),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertIn("priority_queue", status)
+        self.assertIn("priority_queue_summary", status)
+        self.assertEqual(status["priority_queue_summary"]["active_symbol"], "ETHUSDT")
+        self.assertEqual(status["priority_queue"][0]["symbol"], "ETHUSDT")
 
     def test_manual_mode_cycle_reports_manual_review_message(self) -> None:
         scheduler = _FakeScheduler()
@@ -341,7 +381,9 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["execution_policy"]["live_allowed_symbols"], ["ETHUSDT", "DOGEUSDT"])
         self.assertEqual(status["execution_policy"]["candidate_pool_preset_key"], "top10_liquid")
         self.assertEqual(status["execution_policy"]["live_subset_preset_key"], "core_live")
+        self.assertEqual(status["execution_policy"]["status"], "ready")
         self.assertIn("候选池", status["execution_policy"]["candidate_pool_preset_detail"])
+        self.assertIn("同一份范围契约", status["execution_policy"]["detail"])
         self.assertEqual(status["execution_policy"]["live_max_stake_usdt"], "8")
         self.assertEqual(status["execution_policy"]["live_max_open_trades"], "2")
         self.assertIn("severity_summary", status["health"])
@@ -349,6 +391,29 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("last_failure_at", status["state"])
         self.assertIn("paused_at", status["state"])
         self.assertIn("manual_takeover_at", status["state"])
+
+    def test_execution_policy_preserves_empty_candidate_scope(self) -> None:
+        automation_service_module.workbench_config_service.update_section(
+            "data",
+            {
+                "selected_symbols": [],
+                "primary_symbol": "",
+            },
+        )
+        automation_service_module.workbench_config_service.update_section(
+            "execution",
+            {
+                "live_allowed_symbols": [],
+            },
+        )
+        service = AutomationService()
+
+        status = service.get_status(task_health={})
+
+        self.assertEqual(status["execution_policy"]["status"], "candidate_pool_missing")
+        self.assertEqual(status["execution_policy"]["candidate_symbols"], [])
+        self.assertEqual(status["execution_policy"]["live_allowed_symbols"], [])
+        self.assertIn("还没有统一候选池", status["execution_policy"]["headline"])
 
     def test_status_exposes_runtime_window_when_cooldown_or_daily_limit_is_active(self) -> None:
         scheduler = _FakeScheduler()
@@ -470,8 +535,99 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["runtime_window"]["blocked_reason"], "paused_waiting_review")
         self.assertEqual(status["resume_status"]["waiting_for"], "paused_review")
         self.assertTrue(status["resume_status"]["resume_needed"])
-        self.assertFalse(status["resume_status"]["resume_ready"])
-        self.assertIn("恢复清单还有", status["resume_status"]["cannot_resume_reason"])
+        self.assertTrue(status["resume_status"]["resume_ready"])
+        self.assertEqual(status["resume_status"]["recovery_state"], "recoverable")
+        self.assertEqual(status["control_matrix"]["state"], "recoverable")
+        self.assertEqual(status["control_matrix"]["primary_action"], "automation_resume")
+
+    def test_resume_blocks_auto_live_without_armed_symbol_and_requests_dry_run_only(self) -> None:
+        service = AutomationService()
+        service.configure_mode("auto_live", actor="tester")
+        service.pause("manual_stop", actor="tester")
+
+        resumed = service.resume(actor="tester")
+
+        self.assertTrue(resumed["paused"])
+        self.assertEqual(resumed["status"], "blocked")
+        self.assertEqual(resumed["blocked_reason"], "resume_requires_dry_run_only")
+        self.assertIn("dry-run", str(resumed["message"]))
+
+    def test_runtime_window_marks_auto_live_resume_as_dry_run_only_when_no_armed_symbol(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation.configure_mode("auto_live", actor="tester")
+        automation._paused = True  # noqa: SLF001
+        automation._paused_reason = "manual_stop"  # noqa: SLF001
+        automation._manual_takeover = False  # noqa: SLF001
+        automation._paused_at = "2026-04-08T00:00:00+00:00"  # noqa: SLF001
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="live"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="live"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["resume_status"]["recovery_state"], "dry_run_only")
+        self.assertEqual(status["control_matrix"]["state"], "dry_run_only")
+        self.assertEqual(status["control_matrix"]["primary_action"], "automation_dry_run_only")
+        disabled_resume = next((item for item in status["control_matrix"]["items"] if item["action"] == "automation_resume"), None)
+        self.assertIsNotNone(disabled_resume)
+        self.assertFalse(bool(disabled_resume["enabled"]))
+        self.assertIn("dry-run", str(disabled_resume["disabled_reason"]))
+
+    def test_runtime_window_marks_kill_switch_as_manual_required(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation.configure_mode("auto_live", actor="tester")
+        automation.kill_switch(actor="tester")
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="live"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="live"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["resume_status"]["recovery_state"], "manual_required")
+        self.assertEqual(status["control_matrix"]["state"], "manual_required")
+        self.assertEqual(status["control_matrix"]["primary_action"], "automation_mode_manual")
+        disabled_resume = next((item for item in status["control_matrix"]["items"] if item["action"] == "automation_resume"), None)
+        self.assertIsNotNone(disabled_resume)
+        self.assertFalse(bool(disabled_resume["enabled"]))
+        self.assertIn("人工处理", str(disabled_resume["disabled_reason"]))
+
+    def test_runtime_window_keeps_manual_takeover_as_manual_required(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
+        automation.manual_takeover(reason="manual_takeover", actor="tester")
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        manual_reason = next((item for item in status["health"]["resume_checklist"] if item["label"] == "人工接管原因"), None)
+        self.assertIsNotNone(manual_reason)
+        self.assertEqual(manual_reason["status"], "pending")
+        self.assertEqual(status["resume_status"]["recovery_state"], "manual_required")
+        self.assertEqual(status["control_matrix"]["primary_action"], "automation_mode_manual")
+        disabled_resume = next((item for item in status["control_matrix"]["items"] if item["action"] == "automation_resume"), None)
+        self.assertIsNotNone(disabled_resume)
+        self.assertFalse(bool(disabled_resume["enabled"]))
+        self.assertIn("人工处理", str(disabled_resume["disabled_reason"]))
 
     def test_runtime_window_marks_plain_manual_mode_as_waiting_for_mode_switch(self) -> None:
         scheduler = _FakeScheduler()
@@ -934,9 +1090,105 @@ class _ReadyResearchService:
         return {
             "symbol": "ETHUSDT",
             "allowed_to_dry_run": True,
+            "allowed_to_live": True,
             "forced_for_validation": False,
             "strategy_template": "trend_pullback_timing",
-            "next_action": "enter_dry_run",
+            "next_action": "go_live",
+        }
+
+    def get_research_priority_queue(self) -> dict[str, object]:
+        return {
+            "items": [
+                {
+                    "priority_rank": 1,
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "queue_status": "ready",
+                    "recommended_stage": "live",
+                    "allowed_to_dry_run": True,
+                    "allowed_to_live": True,
+                    "next_action": "go_live",
+                }
+            ],
+            "summary": {
+                "active_symbol": "ETHUSDT",
+                "next_symbol": "",
+                "ready_count": 1,
+                "blocked_count": 0,
+            },
+        }
+
+
+class _QueuedResearchService(_ReadyResearchService):
+    def get_research_priority_queue(self) -> dict[str, object]:
+        return {
+            "items": [
+                {
+                    "priority_rank": 1,
+                    "symbol": "ETHUSDT",
+                    "score": "0.8100",
+                    "strategy_template": "trend_pullback_timing",
+                    "queue_status": "ready",
+                    "recommended_stage": "dry_run",
+                    "allowed_to_dry_run": True,
+                    "allowed_to_live": False,
+                    "next_action": "enter_dry_run",
+                    "why_selected": "ETHUSDT 当前优先进入 dry-run。",
+                },
+                {
+                    "priority_rank": 2,
+                    "symbol": "BTCUSDT",
+                    "score": "0.7200",
+                    "strategy_template": "trend_breakout_timing",
+                    "queue_status": "blocked",
+                    "recommended_stage": "research",
+                    "allowed_to_dry_run": False,
+                    "allowed_to_live": False,
+                    "next_action": "continue_research",
+                    "why_blocked": "drawdown_too_large",
+                },
+            ],
+            "summary": {
+                "active_symbol": "ETHUSDT",
+                "next_symbol": "",
+                "ready_count": 1,
+                "blocked_count": 1,
+                "detail": "ETHUSDT 当前优先进入 dry-run。",
+            },
+        }
+
+
+class _LiveReadyResearchService(_ReadyResearchService):
+    def get_research_recommendation(self) -> dict[str, object]:
+        return {
+            "symbol": "ETHUSDT",
+            "allowed_to_dry_run": True,
+            "allowed_to_live": True,
+            "forced_for_validation": False,
+            "strategy_template": "trend_pullback_timing",
+            "next_action": "go_live",
+        }
+
+    def get_research_priority_queue(self) -> dict[str, object]:
+        return {
+            "items": [
+                {
+                    "priority_rank": 1,
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_pullback_timing",
+                    "queue_status": "ready",
+                    "recommended_stage": "live",
+                    "allowed_to_dry_run": True,
+                    "allowed_to_live": True,
+                    "next_action": "go_live",
+                }
+            ],
+            "summary": {
+                "active_symbol": "ETHUSDT",
+                "next_symbol": "",
+                "ready_count": 1,
+                "blocked_count": 0,
+            },
         }
 
 

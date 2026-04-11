@@ -1276,6 +1276,91 @@ class WorkbenchConfigService:
             },
         }
 
+    def build_candidate_scope_contract(self, config: dict[str, object] | None = None) -> dict[str, object]:
+        """返回统一候选池与 live 子集契约。"""
+
+        resolved_config = config if isinstance(config, dict) else self.get_config()
+        data = dict(resolved_config.get("data") or {})
+        execution = dict(resolved_config.get("execution") or {})
+        candidate_catalog = _build_candidate_pool_preset_catalog()
+        live_catalog = _build_live_subset_preset_catalog()
+        candidate_symbols = list(
+            self._normalize_symbol_list(
+                data.get("selected_symbols"),
+                fallback=(),
+                allow_empty=True,
+            )
+        )
+        requested_live_symbols = list(
+            self._normalize_symbol_list(
+                execution.get("live_allowed_symbols"),
+                fallback=(),
+                allow_empty=True,
+            )
+        )
+        live_removed_symbols: list[str] = []
+        live_allowed_symbols = list(requested_live_symbols)
+        if candidate_symbols:
+            candidate_set = {item for item in candidate_symbols}
+            live_removed_symbols = [item for item in live_allowed_symbols if item not in candidate_set]
+            live_allowed_symbols = [item for item in live_allowed_symbols if item in candidate_set]
+        else:
+            live_allowed_symbols = []
+            live_removed_symbols = []
+        candidate_pool_preset_key = str(data.get("candidate_pool_preset_key", "top10_liquid") or "top10_liquid")
+        live_subset_preset_key = str(execution.get("live_subset_preset_key", "core_live") or "core_live")
+        candidate_pool_preset_detail = _describe_catalog_item(
+            candidate_catalog,
+            key=candidate_pool_preset_key,
+            title="候选池预设",
+        )
+        live_subset_preset_detail = _describe_catalog_item(
+            live_catalog,
+            key=live_subset_preset_key,
+            title="live 子集预设",
+        )
+        candidate_summary = " / ".join(candidate_symbols) if candidate_symbols else "当前未配置"
+        live_summary = " / ".join(live_allowed_symbols) if live_allowed_symbols else "当前未配置"
+        if not candidate_symbols:
+            status = "candidate_pool_missing"
+            headline = "当前还没有统一候选池"
+            detail = "当前这份范围契约还没有候选池，研究、评估、策略和自动化都无法稳定共用同一组标的。"
+            next_step = "先在数据工作台选好候选池，再决定 live 子集。"
+        elif live_removed_symbols:
+            removed_summary = " / ".join(live_removed_symbols)
+            status = "live_subset_out_of_scope"
+            headline = "候选池已就绪，但 live 子集已经和候选池脱节"
+            detail = f"当前 live 子集里原本放行的 {removed_summary} 已经不在统一候选池内，继续按旧 live 子集推进会让研究、评估和执行解释再次漂移。"
+            next_step = "先把不在候选池里的 live 子集收回到当前候选池内，再决定保留哪些币继续进入 live。"
+        elif not live_allowed_symbols:
+            status = "live_subset_missing"
+            headline = "候选池已就绪，但 live 子集还没放行"
+            detail = "当前这份范围契约已经固定候选池，但真实小额 live 还没有放行任何标的继续推进。"
+            next_step = "先决定哪些币允许进入 live 子集，再继续自动小额 live。"
+        else:
+            status = "ready"
+            headline = f"研究 / dry-run 先共用 {len(candidate_symbols)} 个候选标的，再把 {len(live_allowed_symbols)} 个币收进更严格的 live 子集"
+            detail = "四个工作台现在都按同一份范围契约解释：先在统一候选池里比较，再由更严格的 live 子集控制真实风险。"
+            next_step = "先看共享候选池里的排序，再判断是否继续推进到更严格的 live 子集。"
+        return {
+            "status": status,
+            "headline": headline,
+            "detail": detail,
+            "next_step": next_step,
+            "candidate_pool_preset_key": candidate_pool_preset_key,
+            "candidate_pool_preset_detail": candidate_pool_preset_detail,
+            "candidate_pool_preset_catalog": candidate_catalog,
+            "candidate_symbols": candidate_symbols,
+            "candidate_summary": candidate_summary,
+            "live_subset_preset_key": live_subset_preset_key,
+            "live_subset_preset_detail": live_subset_preset_detail,
+            "live_subset_preset_catalog": live_catalog,
+            "live_requested_symbols": requested_live_symbols,
+            "live_removed_symbols": live_removed_symbols,
+            "live_allowed_symbols": live_allowed_symbols,
+            "live_summary": live_summary,
+        }
+
     def get_research_runtime_overrides(self) -> dict[str, str]:
         """把配置转换成研究层可直接消费的运行覆盖项。"""
 

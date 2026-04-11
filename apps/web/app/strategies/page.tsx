@@ -85,13 +85,19 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   const automationCycle = asRecord(automation.lastCycle);
   const arbitration = asRecord(automation.arbitration);
   const arbitrationSuggestedAction = asRecord(arbitration.suggested_action);
+  const controlMatrix = asRecord(automation.controlMatrix);
   const controlActions = Array.isArray(automation.controlActions)
     ? automation.controlActions.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
     : [];
-  const controlActionLabels = controlActions.map((item) => readText(item.label, ""));
-  const hasResumeAction = controlActionLabels.includes("确认后恢复自动化");
+  const controlMatrixItems = Array.isArray(controlMatrix.items)
+    ? controlMatrix.items.filter((item) => item && typeof item === "object").map((item) => asRecord(item))
+    : [];
+  const effectiveControlActions = controlMatrixItems.length ? controlMatrixItems : controlActions;
+  const resumeAction = effectiveControlActions.find((item) => readText(item.action, "") === "automation_resume");
+  const hasEnabledResumeAction = Boolean(resumeAction && String(resumeAction.enabled ?? "true") !== "false");
   const recommendationExplanation = asRecord(evaluation.recommendation_explanation);
   const stageDecisionSummary = asRecord(evaluation.stage_decision_summary);
+  const alignmentDetails = asRecord(evaluation.alignment_details);
   const configuration = asRecord(workspace.configuration);
   const sharedCandidateScope = asRecord(configuration.candidate_scope);
   const executionPolicy = asRecord(automation.executionPolicy);
@@ -102,6 +108,20 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   const candidateScopeHeadline = readText(sharedCandidateScope.headline, "研究和 dry-run 先共用候选池，再由更严格的 live 子集继续放行。");
   const candidateScopeDetail = readText(sharedCandidateScope.detail, "当前还没有候选池和 live 子集的统一说明。");
   const candidateScopeNextStep = readText(sharedCandidateScope.next_step, "先确认候选池排序，再决定哪些币进入 live 子集。");
+  const evaluationPriorityQueue = Array.isArray(evaluation.priority_queue) ? evaluation.priority_queue : [];
+  const automationPriorityQueue = Array.isArray(automation.priorityQueue) ? automation.priorityQueue : [];
+  const priorityQueue = automationPriorityQueue.length ? automationPriorityQueue : evaluationPriorityQueue;
+  const priorityQueueSummary = asRecord(
+    Object.keys(asRecord(automation.priorityQueueSummary)).length ? automation.priorityQueueSummary : evaluation.priority_queue_summary,
+  );
+  const priorityFocusSymbol = readText(
+    priorityQueueSummary.active_symbol,
+    workspace.research_recommendation?.symbol || readText(evaluation.overview.recommended_symbol, "当前还没有推荐标的"),
+  );
+  const priorityNextSymbol = readText(priorityQueueSummary.next_symbol, "当前没有下一位候选");
+  const priorityHeadline = readText(priorityQueueSummary.headline, candidateScopeHeadline);
+  const priorityDetail = readText(priorityQueueSummary.detail, readText(recommendationExplanation.detail, "先继续研究，确认门控和执行差异"));
+  const priorityQueuePreview = priorityQueue.slice(0, 3);
   const arbitrationActionLabel = readText(
     arbitrationSuggestedAction.label,
     workspace.research_recommendation?.next_action || "先进入 dry-run 观察。",
@@ -193,7 +213,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                     : "当前处于手动模式"}
                 </CardTitle>
                 <CardDescription>
-                  {automation.manualTakeover && hasResumeAction
+                  {automation.manualTakeover && hasEnabledResumeAction
                     ? "这意味着当前不应该继续自动推进。下面的快捷入口会直接给你恢复、保持手动或继续停机；任务页只用来看完整时间线。"
                     : automation.manualTakeover
                     ? "这意味着当前不应该继续自动推进。下面的快捷入口会直接给你只回 dry-run、保持手动或继续停机；任务页只用来看完整时间线。"
@@ -249,26 +269,27 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
               <Card>
                 <CardHeader>
                   <p className="eyebrow">候选池摘要</p>
-                  <CardTitle>为什么现在先推进这个币</CardTitle>
-                  <CardDescription>先把共享候选池、评估门和 live 子集讲清楚，再决定这一轮先推进谁。</CardDescription>
+                  <CardTitle>这一轮优先队列已经排出来了</CardTitle>
+                  <CardDescription>这里直接承接统一候选队列，先看当前先推谁、下一位是谁、为什么被跳过。</CardDescription>
                 </CardHeader>
-                <CardContent className="grid gap-3 md:grid-cols-2">
-                  <AutomationInfo
-                    label="候选池先筛，live 子集后放"
-                    value={candidateScopeHeadline}
-                  />
-                  <AutomationInfo
-                    label="这一轮先推进谁"
-                    value={workspace.research_recommendation?.symbol || readText(evaluation.overview.recommended_symbol, "当前还没有推荐标的")}
-                  />
-                  <AutomationInfo
-                    label="为什么先推进"
-                    value={readText(recommendationExplanation.detail, "先继续研究，确认门控和执行差异")}
-                  />
-                  <AutomationInfo
-                    label="还差什么"
-                    value={candidateScopeNextStep}
-                  />
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <AutomationInfo label="当前先推进谁" value={priorityFocusSymbol} />
+                    <AutomationInfo label="下一位候选" value={priorityNextSymbol} />
+                    <AutomationInfo label="为什么先推进" value={priorityDetail} />
+                    <AutomationInfo label="当前还差什么" value={candidateScopeNextStep} />
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/70 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">队列摘要</p>
+                    <p className="mt-3 text-sm font-medium leading-6 text-foreground">{priorityHeadline}</p>
+                    <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+                      {priorityQueuePreview.length ? priorityQueuePreview.map((item, index) => (
+                        <p key={`${String(item.symbol ?? index)}-${index}`}>
+                          {index + 1}. {readText(item.symbol, "n/a")} / {readText(item.dispatch_status, readText(item.queue_status, "unknown"))} / {readText(item.dispatch_reason, readText(item.skip_reason, readText(item.why_selected, readText(item.why_blocked, "当前没有额外说明"))))}
+                        </p>
+                      )) : <p>当前还没有统一优先队列，先完成研究和评估。</p>}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -302,7 +323,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 <CardHeader>
                   <p className="eyebrow">自动化快捷入口</p>
                   <CardTitle>
-                    {automation.manualTakeover && hasResumeAction
+                    {automation.manualTakeover && hasEnabledResumeAction
                       ? "接管中先决定怎么恢复"
                       : automation.manualTakeover
                       ? "接管中先决定保留什么模式"
@@ -313,7 +334,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                       : "需要时直接停下或切回手动"}
                   </CardTitle>
                   <CardDescription>
-                    {automation.manualTakeover && hasResumeAction
+                    {automation.manualTakeover && hasEnabledResumeAction
                       ? "策略页不必再跳回任务页找按钮，这里直接给你恢复、只回 dry-run、保持手动和停机入口。"
                       : automation.manualTakeover
                       ? "策略页不必再跳回任务页找按钮，这里直接给你只回 dry-run、保持手动和停机入口。"
@@ -325,7 +346,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 md:grid-cols-2">
-                  {controlActions.map((item, index) => (
+                  {effectiveControlActions.map((item, index) => (
                     <AutomationControlCard
                       key={`${readText(item.action, "automation")}-${index}`}
                       action={readText(item.action, "automation_mode_manual")}
@@ -333,6 +354,8 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                       detail={readText(item.detail, "当前没有额外说明。")}
                       returnTo={strategyReturnTo}
                       danger={Boolean(item.danger)}
+                      disabled={String(item.enabled ?? "true") === "false"}
+                      disabledHint={readText(item.disabled_reason, "")}
                     />
                   ))}
                 </CardContent>
@@ -498,6 +521,19 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                     {"，最近持仓："}
                     {formatLatestPosition(workspace.account_state.latest_position)}
                   </p>
+                  <p>
+                    当前研究跟进：{readText(alignmentDetails.research_symbol, "当前还没有推荐币")} / {readText(alignmentDetails.research_action, "continue_research")}
+                  </p>
+                  <p>
+                    订单回填：{readText(alignmentDetails.order_backfill_state, "无结果")}，{readText(alignmentDetails.order_backfill_detail, "当前轮还没有订单回填")}
+                  </p>
+                  <p>
+                    持仓回填：{readText(alignmentDetails.position_backfill_state, "无结果")}，{readText(alignmentDetails.position_backfill_detail, "当前轮还没有持仓回填")}
+                  </p>
+                  <p>
+                    同步回填：{readText(alignmentDetails.sync_backfill_state, "无结果")}，{readText(alignmentDetails.sync_backfill_detail, "当前还没有同步结果回填")}
+                  </p>
+                  <p>差异一句话：{readText(stageDecisionSummary.execution_gap, "当前还没有研究和执行差异摘要。")}</p>
                   <div className="action-grid">
                     <Button asChild variant="outline">
                       <Link href="/balances">去余额页</Link>
@@ -535,6 +571,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                   <p>{candidateScopeHeadline}</p>
+                  <p>当前队列摘要：{priorityHeadline}</p>
                   <p>研究 / dry-run 候选池：{(candidateScopeCandidateSymbols.length ? candidateScopeCandidateSymbols : candidateSymbols.length ? candidateSymbols : workspace.whitelist).join(" / ")}</p>
                   <p>live 子集：{candidateScopeLiveSymbols.length ? candidateScopeLiveSymbols.join(" / ") : executionAllowedSymbols.length ? executionAllowedSymbols.join(" / ") : "当前未设置"}</p>
                   <p>下一步：{candidateScopeNextStep}</p>

@@ -30,8 +30,9 @@ test("main research to execution flow stays usable across core workbenches", asy
   await expect(page.locator("body")).toContainText("研究运行状态", { timeout: renderTimeout });
   await expect(page.locator("body")).toContainText("模板适配判断", { timeout: renderTimeout });
   await page.waitForURL(/\/signals(?:\?|$)/, { timeout: renderTimeout });
+  await page.waitForLoadState("domcontentloaded");
 
-  await page.goto(`${WEB_BASE_URL}/research`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/research`, navigation);
   await expect(page.locator("body")).toContainText("策略研究工作台", { timeout: renderTimeout });
   await expect(page.locator("body")).toContainText("研究准备状态");
   await expect(page.locator("body")).toContainText("研究模板");
@@ -43,15 +44,15 @@ test("main research to execution flow stays usable across core workbenches", asy
   await expect(page.locator("body")).toContainText("标签目标与止损说明");
   await expect(page.locator("body")).toContainText("模型和标签怎么影响结果");
 
-  await page.goto(`${WEB_BASE_URL}/evaluation`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/evaluation`, navigation);
   await expect(page.locator("body")).toContainText("评估与实验中心", { timeout: renderTimeout });
   await expect(page.locator("body")).toContainText("最近两轮对比");
   await expect(page.locator("body")).toContainText("配置差异拆解");
   await expect(page.locator("body")).toContainText("更适合哪套模板", { timeout: renderTimeout });
 
-  await page.goto(`${WEB_BASE_URL}/strategies`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/strategies`, navigation);
   await expect(page.locator("body")).toContainText("先看判断，再决定要不要派发", { timeout: renderTimeout });
-  await expect(page.locator("body")).toContainText("为什么现在先推进这个币");
+  await expect(page.locator("body")).toContainText("为什么先推进");
   await expect(page.locator("body")).toContainText("自动化快捷入口");
   const strategiesBody = (await page.locator("body").textContent()) ?? "";
   if (strategiesBody.includes("手动模式下决定何时重开自动化")) {
@@ -61,7 +62,7 @@ test("main research to execution flow stays usable across core workbenches", asy
   } else if (strategiesBody.includes("接管中先决定保留什么模式")) {
     await expect(page.getByRole("button", { name: "保持手动" })).toBeVisible();
     await expect(page.getByRole("button", { name: "只恢复到 dry-run" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "确认后恢复自动化" })).toBeDisabled();
   } else if (strategiesBody.includes("暂停后先决定怎么继续")) {
     await expect(page.getByRole("button", { name: "切到手动" })).toBeVisible();
     await expect(page.getByRole("button", { name: /确认后恢复自动化|恢复自动化/ })).toBeVisible();
@@ -73,23 +74,38 @@ test("main research to execution flow stays usable across core workbenches", asy
     await expect(page.getByRole("button", { name: /转人工接管|切到手动/ })).toBeVisible();
   }
 
-  await page.goto(`${WEB_BASE_URL}/tasks`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/tasks`, navigation);
   await expect(page.locator("body")).toContainText("先确认自动化模式，再决定要不要触发下一轮工作流。", { timeout: renderTimeout });
   await expect(page.locator("body")).toContainText("本轮自动化判断");
   await expect(page.locator("body")).toContainText("统一调度入口");
   await expect(page.locator("body")).toContainText("长期运行与人工接管");
 
-  await page.goto(`${WEB_BASE_URL}/balances`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/balances`, navigation);
   await expect(page.locator("body")).toContainText("真实账户余额", { timeout: renderTimeout });
 
-  await page.goto(`${WEB_BASE_URL}/orders`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/orders`, navigation);
   await expect(page.locator("body")).toContainText("同步来源", { timeout: renderTimeout });
 
-  await page.goto(`${WEB_BASE_URL}/positions`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/positions`, navigation);
   await expect(page.locator("body")).toContainText("同步来源", { timeout: renderTimeout });
 
-  await page.goto(`${WEB_BASE_URL}/market/BTCUSDT`, navigation);
+  await gotoWorkbench(page, `${WEB_BASE_URL}/market/BTCUSDT`, navigation);
   await expect(page.locator("body")).toContainText("本地主图", { timeout: renderTimeout });
 
   expect(errors).toEqual([]);
 });
+
+async function gotoWorkbench(page, url, navigation) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await page.goto(url, navigation);
+      return;
+    } catch (error) {
+      const message = String(error);
+      if (!message.includes("net::ERR_ABORTED") || attempt === 1) {
+        throw error;
+      }
+      await page.waitForLoadState("domcontentloaded");
+    }
+  }
+}
