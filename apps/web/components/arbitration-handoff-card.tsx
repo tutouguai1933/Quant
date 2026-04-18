@@ -10,6 +10,7 @@ type ArbitrationHandoffCardProps = {
   arbitration: Record<string, unknown>;
   isAuthenticated: boolean;
   surfaceLabel: string;
+  showActions?: boolean;
 };
 
 /* 渲染策略页和任务页统一的仲裁动作承接入口。 */
@@ -17,6 +18,7 @@ export function ArbitrationHandoffCard({
   arbitration,
   isAuthenticated,
   surfaceLabel,
+  showActions = true,
 }: ArbitrationHandoffCardProps) {
   const status = readText(arbitration.status, "continue_research");
   const symbol = readText(arbitration.symbol, "当前还没有推荐标的");
@@ -73,14 +75,18 @@ export function ArbitrationHandoffCard({
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button asChild variant={resolveActionVariant(status)}>
-            <Link href={targetHref}>{actionLabel}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/evaluation">去评估页看完整仲裁</Link>
-          </Button>
-        </div>
+        {showActions ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button asChild variant={resolveActionVariant(status)}>
+              <Link href={targetHref}>{actionLabel}</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/evaluation">去评估页看完整仲裁</Link>
+            </Button>
+          </div>
+        ) : (
+          <p className="text-sm leading-6 text-muted-foreground">具体动作已收口到当前页面的主动作区，这里只保留仲裁摘要。</p>
+        )}
       </CardContent>
     </Card>
   );

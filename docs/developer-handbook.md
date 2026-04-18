@@ -58,7 +58,7 @@ API：
 set -a
 source .env.quant.local
 set +a
-/home/djy/Quant/.venv/bin/python -m uvicorn services.api.app.main:app --host 127.0.0.1 --port 9011
+python -m uvicorn services.api.app.main:app --host 127.0.0.1 --port 9011
 ```
 
 Web：
@@ -92,9 +92,11 @@ HOSTNAME=127.0.0.1 PORT=9012 pnpm start
 
 ```bash
 cd /home/djy/Quant
-/home/djy/Quant/.venv/bin/python -m unittest discover -s services/api/tests -v
-/home/djy/Quant/.venv/bin/python -m unittest discover -s services/worker/tests -v
-/home/djy/Quant/.venv/bin/python -m unittest discover -s tests -v
+source /home/djy/miniforge3/etc/profile.d/conda.sh
+conda activate quant
+python -m unittest discover -s services/api/tests -v
+python -m unittest discover -s services/worker/tests -v
+python -m unittest discover -s tests -v
 ```
 
 前端构建：

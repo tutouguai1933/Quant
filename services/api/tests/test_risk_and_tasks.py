@@ -336,9 +336,8 @@ class RiskAndTaskTests(unittest.TestCase):
         ):
             response = dispatch_latest_signal(1, token=token)
 
-        self.assertIsNone(response["error"])
-        self.assertEqual(response["data"]["sync_task"]["status"], "failed")
-        self.assertIn("14136461324", response["data"]["sync_task"]["error_message"])
+        self.assertEqual(response["error"]["code"], "sync_failed")
+        self.assertIn("14136461324", response["error"]["message"])
         self.assertEqual(get_signal(1)["data"]["item"]["status"], "dispatched")
 
     def test_live_dispatch_rejects_similar_recent_order_when_expected_order_id_differs(self) -> None:
@@ -394,8 +393,8 @@ class RiskAndTaskTests(unittest.TestCase):
         ):
             response = dispatch_latest_signal(1, token=token)
 
-        self.assertEqual(response["data"]["sync_task"]["status"], "failed")
-        self.assertIn("14136461324", response["data"]["sync_task"]["error_message"])
+        self.assertEqual(response["error"]["code"], "sync_failed")
+        self.assertIn("14136461324", response["error"]["message"])
         self.assertEqual(get_signal(1)["data"]["item"]["status"], "dispatched")
 
     def test_retry_sync_task_marks_signal_synced_after_confirmation_recovers(self) -> None:
@@ -455,10 +454,13 @@ class RiskAndTaskTests(unittest.TestCase):
             strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
         ):
             response = dispatch_latest_signal(1, token=token)
-            task_id = int(response["data"]["sync_task"]["id"])
+            sync_task = next(
+                item for item in tasks_route.list_tasks(token=token)["data"]["items"] if item["task_type"] == "sync"
+            )
+            task_id = int(sync_task["id"])
             retry_response = retry_task(task_id, token=token)
 
-        self.assertEqual(response["data"]["sync_task"]["status"], "failed")
+        self.assertEqual(response["error"]["code"], "sync_failed")
         self.assertEqual(retry_response["data"]["item"]["status"], "succeeded")
         self.assertEqual(get_signal(1)["data"]["item"]["status"], "synced")
 

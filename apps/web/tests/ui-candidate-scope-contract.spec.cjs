@@ -11,33 +11,38 @@ test("research evaluation and strategies pages share one candidate scope contrac
   const renderTimeout = 60000;
 
   await loginAsAdmin(page, "/research");
-  await expect(page.locator("body")).toContainText("候选范围契约", { timeout: renderTimeout });
+  await expect(page.getByRole("button", { name: "查看配置说明" })).toBeVisible({ timeout: renderTimeout });
+  await page.getByRole("button", { name: "查看配置说明" }).click();
+  const researchConfigDrawer = page.getByRole("dialog", { name: "研究配置说明" });
+  await expect(researchConfigDrawer).toContainText("候选范围契约", { timeout: renderTimeout });
 
-  const researchHeadline = await readInfoValue(page, "统一说明");
-  const researchCandidatePool = await readInfoValue(page, "研究 / dry-run 候选池");
-  const researchLiveSubset = await readInfoValue(page, "live 子集");
+  const researchHeadline = await readInfoValue(researchConfigDrawer, "统一说明");
+  const researchCandidateBasket = await readInfoValue(researchConfigDrawer, "研究 / dry-run 候选篮子");
+  const researchExecutionBasket = await readInfoValue(researchConfigDrawer, "执行篮子");
+  await page.getByRole("button", { name: "关闭详情抽屉" }).click();
+  await expect(researchConfigDrawer).toHaveCount(0);
 
   await page.goto(`${WEB_BASE_URL}/evaluation`, navigation);
-  await expect(page.locator("body")).toContainText("统一范围契约", { timeout: renderTimeout });
-
-  const evaluationHeadline = await readInfoValue(page, "统一范围契约");
-  const evaluationCandidatePool = await readInfoValue(page, "研究候选池");
-  const evaluationLiveSubset = await readInfoValue(page, "live 子集");
-
-  expect(evaluationHeadline).toBe(researchHeadline);
-  expect(evaluationCandidatePool).toBe(researchCandidatePool);
-  expect(evaluationLiveSubset).toBe(researchLiveSubset);
+  await expect(page.getByRole("button", { name: "查看推荐详情" })).toBeVisible({ timeout: renderTimeout });
+  await page.getByRole("button", { name: "查看推荐详情" }).click();
+  const evaluationCandidateDrawer = page.getByRole("dialog", { name: "查看推荐详情" });
+  await expect(evaluationCandidateDrawer).toContainText(researchHeadline);
+  await expect(evaluationCandidateDrawer).toContainText(researchCandidateBasket);
+  await expect(evaluationCandidateDrawer).toContainText(researchExecutionBasket);
+  await page.getByRole("button", { name: "关闭详情抽屉" }).click();
+  await expect(evaluationCandidateDrawer).toHaveCount(0);
 
   await page.goto(`${WEB_BASE_URL}/strategies`, navigation);
-  await expect(page.locator("body")).toContainText(researchHeadline, { timeout: renderTimeout });
-
-  await expect(page.locator("body")).toContainText("候选池摘要", { timeout: renderTimeout });
-  await expect(page.locator("body")).toContainText(researchCandidatePool);
-  await expect(page.locator("body")).toContainText(researchLiveSubset);
+  await expect(page.locator("body")).toContainText("当前候选可推进性", { timeout: renderTimeout });
+  await page.getByRole("button", { name: "查看候选篮子" }).click();
+  const candidateDrawer = page.getByRole("dialog", { name: "候选篮子详情" });
+  await expect(candidateDrawer).toContainText(researchHeadline, { timeout: renderTimeout });
+  await expect(candidateDrawer).toContainText(researchCandidateBasket);
+  await expect(candidateDrawer).toContainText(researchExecutionBasket);
 });
 
-async function readInfoValue(page, label) {
-  const locator = page.locator(`xpath=(//p[normalize-space()="${label}"]/following-sibling::p[1])[1]`);
+async function readInfoValue(scope, label) {
+  const locator = scope.locator(`xpath=(//p[normalize-space()="${label}"]/following-sibling::p[1])[1]`);
   await expect(locator).toBeVisible();
   return ((await locator.textContent()) || "").trim();
 }

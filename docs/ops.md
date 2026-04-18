@@ -120,8 +120,10 @@ pnpm start --hostname 127.0.0.1 --port 9012
 
 ### 脚本体验
 
+演示流程由 PowerShell 脚本 `infra/scripts/demo_flow.ps1` 提供。请先进入你当前平台可用的 PowerShell 环境，并显式切到项目目录后再运行：
+
 ```powershell
-pwsh -File infra/scripts/demo_flow.ps1 -Username admin -Password 1933
+./infra/scripts/demo_flow.ps1 -Username admin -Password 1933
 ```
 
 ## 当前需要你准备的东西

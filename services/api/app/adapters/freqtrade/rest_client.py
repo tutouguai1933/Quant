@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -83,6 +84,8 @@ class FreqtradeRestConfig:
     username: str
     password: str
     timeout_seconds: float = 10.0
+    max_retries: int = 3
+    base_delay: float = 0.5
 
     def __post_init__(self) -> None:
         normalized_url = self.base_url.strip().rstrip("/")
@@ -92,6 +95,10 @@ class FreqtradeRestConfig:
             raise ValueError("base_url must start with http:// or https://")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be greater than 0")
+        if self.max_retries < 1:
+            raise ValueError("max_retries must be at least 1")
+        if self.base_delay <= 0:
+            raise ValueError("base_delay must be greater than 0")
         object.__setattr__(self, "base_url", normalized_url)
 
 
@@ -305,6 +312,7 @@ class FreqtradeRestClient:
     def _get_orders(self) -> list[dict[str, object]]:
         """读取交易历史列表。"""
 
+        runtime_mode = self._get_remote_mode(default="unknown")
         payload = self._request_json("GET", "/api/v1/trades", auth=True)
         items = _payload_items(payload, "trades")
         orders: list[dict[str, object]] = []
@@ -315,7 +323,7 @@ class FreqtradeRestClient:
                 {
                     "id": str(item.get("trade_id") or item.get("id") or compact_symbol or "order"),
                     "venueOrderId": str(item.get("order_id") or item.get("trade_id") or item.get("id") or compact_symbol or "order"),
-                    "runtimeMode": self._get_remote_mode(default="unknown"),
+                    "runtimeMode": runtime_mode,
                     "symbol": symbol or compact_symbol,
                     "side": str(item.get("side") or "long"),
                     "orderType": str(item.get("order_type") or item.get("type") or "market"),
@@ -350,7 +358,7 @@ class FreqtradeRestClient:
                     {
                         "id": order_id,
                         "venueOrderId": order_id,
-                        "runtimeMode": self._get_remote_mode(default="unknown"),
+                        "runtimeMode": runtime_mode,
                         "symbol": symbol or compact_symbol,
                         "side": normalized_side,
                         "orderType": str(nested_order.get("order_type") or nested_order.get("type") or "market"),
@@ -655,7 +663,7 @@ class FreqtradeRestClient:
         payload: dict[str, object] | None = None,
         retry_on_unauthorized: bool = True,
     ) -> dict[str, object]:
-        """执行一次 JSON 请求并处理错误。"""
+        """执行一次 JSON 请求并处理错误，带重试和指数退避。"""
 
         url = self._config.base_url + path
         headers = {"Accept": "application/json"}
@@ -668,35 +676,63 @@ class FreqtradeRestClient:
         if not auth and path == "/api/v1/token/login":
             raise FreqtradeRestError("token login must use auth=True")
 
-        token_request = request.Request(url, data=body, method=method, headers=headers)
-        try:
-            with self._opener.open(token_request, timeout=self._config.timeout_seconds) as response:
-                payload = response.read().decode("utf-8").strip()
-                if not payload:
-                    return {}
-                loaded = json.loads(payload)
-                return loaded if isinstance(loaded, dict) else {"data": loaded}
-        except error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace").strip()
-            if auth and exc.code == 401 and retry_on_unauthorized:
-                self._access_token = None
-                return self._request_json(
-                    method,
-                    path,
-                    auth=auth,
-                    payload=payload,
-                    retry_on_unauthorized=False,
-                )
-            detail = error_body or exc.reason or "unknown error"
-            raise FreqtradeRestError(f"Freqtrade REST {method} {path} 返回 {exc.code}: {detail}") from exc
-        except error.URLError as exc:
-            reason = getattr(exc, "reason", exc)
-            raise FreqtradeRestError(f"无法连接 Freqtrade REST {path}: {reason}") from exc
-        except json.JSONDecodeError as exc:
-            raise FreqtradeRestError(f"Freqtrade REST {method} {path} 返回的不是 JSON") from exc
+        last_exception: Exception | None = None
+
+        for attempt in range(self._config.max_retries):
+            token_request = request.Request(url, data=body, method=method, headers=headers)
+            try:
+                with self._opener.open(token_request, timeout=self._config.timeout_seconds) as response:
+                    payload_text = response.read().decode("utf-8").strip()
+                    if not payload_text:
+                        return {}
+                    loaded = json.loads(payload_text)
+                    return loaded if isinstance(loaded, dict) else {"data": loaded}
+            except error.HTTPError as exc:
+                error_body = exc.read().decode("utf-8", errors="replace").strip()
+                if auth and exc.code == 401 and retry_on_unauthorized:
+                    self._access_token = None
+                    return self._request_json(
+                        method,
+                        path,
+                        auth=auth,
+                        payload=payload,
+                        retry_on_unauthorized=False,
+                    )
+                if exc.code >= 500:
+                    last_exception = exc
+                    if attempt < self._config.max_retries - 1:
+                        delay = self._config.base_delay * (2 ** attempt)
+                        time.sleep(delay)
+                    continue
+                detail = error_body or exc.reason or "unknown error"
+                raise FreqtradeRestError(f"Freqtrade REST {method} {path} 返回 {exc.code}: {detail}") from exc
+            except error.URLError as exc:
+                last_exception = exc
+                if attempt < self._config.max_retries - 1:
+                    delay = self._config.base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                continue
+            except (TimeoutError, OSError) as exc:
+                last_exception = exc
+                if attempt < self._config.max_retries - 1:
+                    delay = self._config.base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                continue
+            except json.JSONDecodeError as exc:
+                raise FreqtradeRestError(f"Freqtrade REST {method} {path} 返回的不是 JSON") from exc
+
+        if isinstance(last_exception, error.HTTPError):
+            error_body = last_exception.read().decode("utf-8", errors="replace").strip()
+            detail = error_body or last_exception.reason or "unknown error"
+            raise FreqtradeRestError(f"Freqtrade REST {method} {path} 返回 {last_exception.code}: {detail}") from last_exception
+        elif isinstance(last_exception, error.URLError):
+            reason = getattr(last_exception, "reason", last_exception)
+            raise FreqtradeRestError(f"无法连接 Freqtrade REST {path}: {reason}") from last_exception
+        else:
+            raise FreqtradeRestError(f"Freqtrade REST {method} {path} 请求失败") from last_exception
 
     def _ensure_access_token(self) -> str:
-        """获取或刷新访问令牌。"""
+        """获取或刷新访问令牌，带重试和指数退避。"""
 
         if self._access_token:
             return self._access_token
@@ -708,22 +744,54 @@ class FreqtradeRestClient:
             "Content-Type": "application/json",
         }
         login_request = request.Request(login_url, data=b"{}", method="POST", headers=headers)
-        try:
-            with self._opener.open(login_request, timeout=self._config.timeout_seconds) as response:
-                payload = response.read().decode("utf-8").strip()
-                data = json.loads(payload) if payload else {}
-        except error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace").strip()
-            detail = error_body or exc.reason or "unknown error"
-            raise FreqtradeRestError(f"Freqtrade REST POST /api/v1/token/login 返回 {exc.code}: {detail}") from exc
-        except error.URLError as exc:
-            reason = getattr(exc, "reason", exc)
-            raise FreqtradeRestError(f"无法连接 Freqtrade REST /api/v1/token/login: {reason}") from exc
-        except json.JSONDecodeError as exc:
-            raise FreqtradeRestError("Freqtrade REST POST /api/v1/token/login 返回的不是 JSON") from exc
 
-        token = data.get("access_token") or data.get("token")
-        if not token:
-            raise FreqtradeRestError("Freqtrade REST 登录响应缺少 access_token")
-        self._access_token = str(token)
-        return self._access_token
+        last_exception: Exception | None = None
+
+        for attempt in range(self._config.max_retries):
+            try:
+                with self._opener.open(login_request, timeout=self._config.timeout_seconds) as response:
+                    payload = response.read().decode("utf-8").strip()
+                    data = json.loads(payload) if payload else {}
+                    token = data.get("access_token") or data.get("token")
+                    if not token:
+                        raise FreqtradeRestError("Freqtrade REST 登录响应缺少 access_token")
+                    self._access_token = str(token)
+                    return self._access_token
+            except error.HTTPError as exc:
+                if exc.code == 401:
+                    error_body = exc.read().decode("utf-8", errors="replace").strip()
+                    detail = error_body or exc.reason or "unknown error"
+                    raise FreqtradeRestError(f"Freqtrade REST POST /api/v1/token/login 返回 {exc.code}: {detail}") from exc
+                if exc.code >= 500:
+                    last_exception = exc
+                    if attempt < self._config.max_retries - 1:
+                        delay = self._config.base_delay * (2 ** attempt)
+                        time.sleep(delay)
+                    continue
+                error_body = exc.read().decode("utf-8", errors="replace").strip()
+                detail = error_body or exc.reason or "unknown error"
+                raise FreqtradeRestError(f"Freqtrade REST POST /api/v1/token/login 返回 {exc.code}: {detail}") from exc
+            except error.URLError as exc:
+                last_exception = exc
+                if attempt < self._config.max_retries - 1:
+                    delay = self._config.base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                continue
+            except (TimeoutError, OSError) as exc:
+                last_exception = exc
+                if attempt < self._config.max_retries - 1:
+                    delay = self._config.base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                continue
+            except json.JSONDecodeError as exc:
+                raise FreqtradeRestError("Freqtrade REST POST /api/v1/token/login 返回的不是 JSON") from exc
+
+        if isinstance(last_exception, error.HTTPError):
+            error_body = last_exception.read().decode("utf-8", errors="replace").strip()
+            detail = error_body or last_exception.reason or "unknown error"
+            raise FreqtradeRestError(f"Freqtrade REST POST /api/v1/token/login 返回 {last_exception.code}: {detail}") from last_exception
+        elif isinstance(last_exception, error.URLError):
+            reason = getattr(last_exception, "reason", last_exception)
+            raise FreqtradeRestError(f"无法连接 Freqtrade REST /api/v1/token/login: {reason}") from last_exception
+        else:
+            raise FreqtradeRestError("Freqtrade REST POST /api/v1/token/login 请求失败") from last_exception

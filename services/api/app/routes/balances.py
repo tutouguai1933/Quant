@@ -34,12 +34,24 @@ def list_balances(limit: int = 100) -> dict:
     if runtime_mode == "demo":
         return _success({"items": []}, {"limit": limit, "source": "api-skeleton"})
 
-    items = account_sync_service.list_balances(limit=limit)
-    return _success(
-        {"items": items},
-        {
-            "limit": limit,
-            "source": "binance-account-sync",
-            "truth_source": "binance",
-        },
-    )
+    try:
+        items = account_sync_service.list_balances(limit=limit)
+        return _success(
+            {"items": items},
+            {
+                "limit": limit,
+                "source": "binance-account-sync",
+                "truth_source": "binance",
+            },
+        )
+    except Exception as exc:
+        return _success(
+            {"items": []},
+            {
+                "limit": limit,
+                "source": "binance-account-sync",
+                "truth_source": "binance",
+                "status": "unavailable",
+                "detail": str(exc),
+            },
+        )

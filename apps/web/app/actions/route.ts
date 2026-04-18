@@ -3,7 +3,8 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { buildAuthHeaders, buildUpstreamApiUrl, fetchJson, getAdminSession } from "../../lib/api";
+import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
+import { buildAuthHeaders, buildUpstreamApiUrl, fetchJson, getAdminSession, getAutomationStatus, type AutomationStatusModel } from "../../lib/api";
 import { buildRedirectUrl } from "../../lib/redirect";
 import { normalizeAppPath, SESSION_COOKIE_NAME } from "../../lib/session";
 
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const feedback = resolveActionFeedback(action, payload, config);
+    const feedback = await resolveActionFeedback(action, payload, config, token);
     if (feedback) {
       return NextResponse.redirect(
         buildRedirectUrl(
@@ -189,13 +190,19 @@ function redirectAfterPost(request: Request, targetPath: string) {
   return NextResponse.redirect(buildRedirectUrl(request, targetPath), 303);
 }
 
-function resolveActionFeedback(
+async function resolveActionFeedback(
   action: string,
   payload: Awaited<ReturnType<typeof fetchJson>>,
   config: ActionConfig,
-): { tone: "success" | "warning"; title: string; message: string } | null {
-  if (action !== "automation_run_cycle" && action !== "automation_resume") {
+  token: string,
+): Promise<{ tone: "success" | "warning"; title: string; message: string } | null> {
+  if (!action.startsWith("automation_")) {
     return null;
+  }
+
+  const statusFeedback = token ? await buildAutomationStatusFeedback(token, config) : null;
+  if (statusFeedback) {
+    return statusFeedback;
   }
 
   const data = isPlainRecord(payload.data) ? payload.data : {};
@@ -238,8 +245,66 @@ function resolveActionFeedback(
   };
 }
 
+async function buildAutomationStatusFeedback(
+  token: string,
+  config: ActionConfig,
+): Promise<{ tone: "success" | "warning"; title: string; message: string } | null> {
+  try {
+    const response = await getAutomationStatus(token);
+    if (response.error) {
+      return null;
+    }
+    return summarizeAutomationFeedback(response.data.item, config);
+  } catch {
+    return null;
+  }
+}
+
+function summarizeAutomationFeedback(
+  automation: AutomationStatusModel,
+  config: ActionConfig,
+): { tone: "success" | "warning"; title: string; message: string } {
+  const handoff = buildAutomationHandoffSummary({
+    automation,
+    tasksHref: "/tasks",
+    fallbackTargetHref: "/tasks",
+    fallbackTargetLabel: "去任务页处理自动化",
+    fallbackHeadline: "自动化状态已更新",
+    fallbackDetail: config.successMessage,
+  });
+  const runtimeGuard = isPlainRecord(automation.runtimeGuard) ? automation.runtimeGuard : {};
+  const recoveryReview = isPlainRecord(automation.recoveryReview) ? automation.recoveryReview : {};
+  const routeTasks = isTasksTargetPath(handoff.targetHref)
+    || isTasksTargetPath(String(runtimeGuard.operator_route ?? ""));
+  const status = String(runtimeGuard.status ?? handoff.status ?? "").trim().toLowerCase();
+  const warningStatus = ["attention_required", "degraded", "waiting", "blocked"].includes(status);
+  const reasonLabel = String(recoveryReview.reason_label ?? "").trim();
+  const detail = handoff.detail || String(runtimeGuard.detail ?? "").trim() || config.successMessage;
+  const messageParts = warningStatus
+    ? [reasonLabel || handoff.headline, detail, routeTasks ? "先去任务页看当前恢复建议和人工接管状态。" : ""]
+    : [handoff.headline || "自动化状态已更新", detail];
+
+  return {
+    tone: warningStatus ? "warning" : "success",
+    title: "自动化反馈",
+    message: joinFeedbackParts(messageParts),
+  };
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isTasksTargetPath(value: string): boolean {
+  const normalized = value.trim();
+  return normalized === "/tasks" || normalized === "/login?next=%2Ftasks";
+}
+
+function joinFeedbackParts(parts: string[]): string {
+  return parts
+    .map((part) => part.trim().replace(/[。]+$/u, ""))
+    .filter((part) => part.length > 0)
+    .join("。") + "。";
 }
 
 function serializeWorkbenchValues(params: URLSearchParams): Record<string, unknown> {

@@ -3,18 +3,20 @@
 import { FlaskConical, ScanSearch, Sparkles } from "lucide-react";
 
 import { AppShell } from "../../components/app-shell";
+import { ApiErrorFallback } from "../../components/api-error-fallback";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FormSubmitButton } from "../../components/form-submit-button";
-import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
+import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { readFeedback } from "../../lib/feedback";
+import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -50,8 +52,16 @@ export default async function SignalsPage({ searchParams }: PageProps) {
     session.token ? getAutomationStatus(session.token) : Promise.resolve(null),
     getEvaluationWorkspace(),
   ]);
-  if (signalsResult.status === "fulfilled") {
-    items = signalsResult.value.data.items;
+
+  const hasApiErrors = [signalsResult, researchReportResult, runtimeResult, evaluationResult].some(
+    (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && result.value.error !== null && result.value.error !== undefined)
+  );
+
+  if (signalsResult.status === "fulfilled" && !signalsResult.value.error) {
+    const signalItems = signalsResult.value.data?.items;
+    if (Array.isArray(signalItems)) {
+      items = signalItems;
+    }
   }
   if (researchReportResult.status === "fulfilled" && !researchReportResult.value.error) {
     researchReport = researchReportResult.value.data.item;
@@ -71,13 +81,52 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   const trainingExperiment = asRecord(researchReport.experiments.training);
   const inferenceExperiment = asRecord(researchReport.experiments.inference);
   const automationCycle = asRecord(automation.lastCycle);
+  const automationArbitration = asRecord(automation.arbitration);
+  const automationSuggestedAction = asRecord(automationArbitration.suggested_action);
   const recommendationExplanation = asRecord(evaluationWorkspace.recommendation_explanation);
   const recommendationTemplateFit = asRecord(recommendationExplanation.template_fit);
   const stageDecisionSummary = asRecord(evaluationWorkspace.stage_decision_summary);
+  const tasksHref = session.isAuthenticated ? "/tasks" : "/login?next=%2Ftasks";
+  const evaluationHref = "/evaluation";
+  const automationHandoff = buildAutomationHandoffSummary({
+    automation,
+    tasksHref,
+    fallbackTargetHref: formatText(automationSuggestedAction.target_page, evaluationHref),
+    fallbackTargetLabel: formatText(automationSuggestedAction.label, "去评估页继续"),
+    fallbackHeadline: formatText(automationArbitration.headline, "当前还没有自动化承接摘要"),
+    fallbackDetail: formatText(automationArbitration.detail, "先看评估和任务页，再决定是否继续推进。"),
+  });
   const inferenceGeneratedAt = formatText(
     latestInference["generated_at"],
     formatText(inferenceExperiment["generated_at"], formatText(researchReport.overview.generated_at, "n/a")),
   );
+
+  const statusItems = [
+    {
+      label: "信号总数",
+      value: String(items.length),
+      status: (items.length > 0 ? "success" : "waiting") as "success" | "waiting",
+      detail: items[0]?.source ?? "暂无信号",
+    },
+    {
+      label: "研究状态",
+      value: formatText(researchReport.status, "未运行"),
+      status: (researchReport.status === "completed" ? "success" : "waiting") as "success" | "waiting",
+      detail: `${researchReport.overview.ready_count} 可进入 dry-run`,
+    },
+    {
+      label: "自动化",
+      value: automationHandoff.headline,
+      status: (automation.manualTakeover ? "waiting" : automation.paused ? "waiting" : "active") as "waiting" | "active",
+      detail: automationHandoff.detail,
+    },
+    {
+      label: "最新状态",
+      value: items[0]?.status ?? "waiting",
+      status: (items[0]?.status === "completed" ? "success" : "waiting") as "success" | "waiting",
+      detail: items[0] ? `来自 ${items[0].source}` : "暂无信号",
+    },
+  ];
 
   return (
     <AppShell
@@ -87,6 +136,14 @@ export default async function SignalsPage({ searchParams }: PageProps) {
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
+
+      {hasApiErrors && (
+        <ApiErrorFallback
+          title="部分数据加载失败"
+          message="后端 API 暂时不可用，当前显示降级数据"
+          detail="信号页正在使用本地 fallback 数据，请稍后刷新页面重试。"
+        />
+      )}
 
       <PageHero
         badge="研究终端"
@@ -100,13 +157,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
         }
       />
 
-      <MetricGrid
-        items={[
-          { label: "信号总数", value: String(items.length), detail: "当前页只展示标准化 signal" },
-          { label: "最新来源", value: items[0]?.source ?? "n/a", detail: "用于快速判断输出来自 Qlib、mock 还是其他生产者" },
-          { label: "最新状态", value: items[0]?.status ?? "waiting", detail: "决定是否需要继续到策略和任务页" },
-        ]}
-      />
+      <StatusBar items={statusItems} />
 
       <ResearchRuntimePanel initialStatus={runtimeStatus} />
 
@@ -119,13 +170,26 @@ export default async function SignalsPage({ searchParams }: PageProps) {
                 <p className="eyebrow">自动化入口</p>
               </div>
               <CardTitle>先确认这一轮会不会继续往下跑</CardTitle>
-              <CardDescription>研究页先告诉你自动化现在是手动、dry-run 还是小额 live，再决定是否继续提交动作。</CardDescription>
+              <CardDescription>信号页只给你自动化摘要，真正的恢复建议、人工接管和降级处理统一回任务页。</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
-              <InfoBlock label="当前模式" value={formatText(automation.mode, "manual")} />
-              <InfoBlock label="最近一轮" value={formatText(automationCycle.status, "waiting")} />
-              <InfoBlock label="推荐标的" value={formatText(automationCycle.recommended_symbol, "n/a")} />
-              <InfoBlock label="下一步动作" value={formatText(automationCycle.next_action, "continue_research")} />
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoBlock label="当前模式" value={formatText(automation.mode, "manual")} />
+                <InfoBlock label="最近一轮" value={formatText(automationCycle.status, "waiting")} />
+                <InfoBlock label="当前判断" value={automationHandoff.headline} />
+                <InfoBlock label="下一步动作" value={automationHandoff.targetLabel} />
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">{automationHandoff.detail}</p>
+              <div className="flex flex-wrap gap-3">
+                <Button asChild variant="terminal" size="sm">
+                  <a href={tasksHref}>去任务页看自动化</a>
+                </Button>
+                {automationHandoff.targetHref !== tasksHref ? (
+                  <Button asChild variant="secondary" size="sm">
+                    <a href={automationHandoff.targetHref}>{automationHandoff.targetLabel}</a>
+                  </Button>
+                ) : null}
+              </div>
             </CardContent>
           </Card>
 

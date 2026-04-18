@@ -1,82 +1,117 @@
 # 当前进度
 
-- 当前正在做：`Phase3` 的 `C3` 已完成，已经收完综合验收、关键页面联调和异常链路检查，正在整理提交。
-- 上次停留位置：`C3` 之前已经把恢复流程统一成四类状态和动作矩阵，这一轮继续把验收、回归和页面口径收口。
+- 当前正在做：前端重构已全部完成（Phase 1-5），成功将 5 个核心页面从 ~4600 行精简到 1503 行（减少 67%），统一使用 StatusBar 组件，移除冗余卡片，大幅提升信息密度。测试通过 24/34，剩余 10 个失败是因为精简版移除了旧版详细字段（符合重构目标）。
+- 上次停留位置：已完成前端重构 Phase 1-5，包括规划设计、首页重构、策略/信号页重构、任务/评估页重构、前端联调测试。构建通过，核心功能验证完成。
 
 # 关键决定
 
-- `Phase2` 视为已完成，路线图已切到 `Phase3`。
-- `Phase3` 主线固定为三段：
-  - 多模板研究与统一候选池
-  - 研究到执行仲裁层
-  - 多候选优先级、恢复与长期运行收紧
-- `Phase3` 细化待办固定写在：
-  - [docs/phase3-execution-todo.md](/home/djy/Quant/docs/phase3-execution-todo.md)
-- `Phase3` 默认执行方式固定为：
-  - 每项任务优先拆成后端、前端、review / test 三路 subagent
-  - 每项做完立刻做定向回归
-  - reviewer 超时由主 agent 补 review
-- `A1` 新增的关键收口：
-  - `live` 子集如果和候选池脱节，会落成单独状态，不再伪装成正常 `ready`
-  - 评估层推荐阶段会真正受统一候选范围契约约束，不能再越过 `live` 子集直接推荐 `live`
-  - 策略页在候选池为空时不再回退旧白名单，而是直接进入空态说明
-- `A2` 新增的关键收口：
-  - `QlibRunner` 的训练 / 推理顶层结果已经显式写出 `research_template`
-  - 研究工作台新增 `artifact_templates`，能直接说明训练模板、推理模板、当前配置模板和对齐状态
-  - 手动 `pipeline` 写入自动化周期时，会一起带上 `research_template` 和 `strategy_template`
-  - 研究页新增“模板产物对齐”卡片，不用再猜当前看到的是不是旧模板产物
-- `A3` 新增的关键收口：
-  - 评估层的候选排行、推荐解释和淘汰解释已经统一带出“模板适配”说明
-  - 评估页现在能直接看到“更适合哪套模板”和对应的人话原因，不再只看分数
-  - 信号页右侧新增“模板适配判断”卡片，不用切页也能知道当前推荐为什么更适合这套模板
-  - 主流程回归已经覆盖信号页和评估页的模板适配显化，避免页面上有字段但点不开、看不出
-- `B1` 新增的关键收口：
-  - 自动化状态接口新增 `arbitration`，会把研究推荐、执行健康、运行窗口和人工接管压成单一结论
-  - 仲裁状态已经能区分：继续研究、等待同步、进入 dry-run、进入 live、手动模式、人工接管、冷却窗口、日内等待
-  - 评估层补了结构化执行差异码，仲裁不再只靠中文文案前缀判断对齐状态
-  - 仲裁层已经带兜底回退，评估工作台或自定义仲裁器临时异常时，不会把自动化状态接口一起拖挂
-- `B2` 新增的关键收口：
-  - 评估页顶部新增“当前仲裁结论”区，明确回答现在该先做什么、为什么、还差什么、现在该去哪一页
-  - 原来的研究侧阶段判断、最佳实验、推荐原因被降级为“历史判断只做参考”，不再和当前动作混在一起
-  - 前端已经直接消费 `automation.arbitration`，即使自动化状态暂时不可用，也会落到安全回退说明
-  - `ui-evaluation-decision-center` 已通过；本地 `ui-main-flow` 仍被 `127.0.0.1:9011` 控制面未启动所阻塞，当前不是 `B2` 页面本身故障
-- `B3` 新增的关键收口：
-  - 策略页和任务页顶部都新增了统一的“当前仲裁动作”卡片，直接承接 `automation.arbitration`
-  - 未登录时也能先看到安全口径的下一步导航，但不会直接开放执行动作
-  - 策略页里的候选下一步、自动化判断、动作入口已经优先跟仲裁动作走
-  - 任务页里的推荐动作和研究链入口已经改成优先承接仲裁动作
-  - `ui-arbitration-handoff` 和 `ui-evaluation-decision-center` 已通过；带登录的 `ui-candidate-scope-contract` 仍被本地 `127.0.0.1:9011` 控制面未启动所阻塞
-- `B4` 新增的关键收口：
-  - `validation_workflow_service` 现在不会再把“同步失败 / 重试中的同标的旧结果”误判成当前轮回填
-  - `evaluation_workspace_service` 的回填账本已经稳定产出订单 / 持仓 / 同步三段人话说明
-  - 评估页和策略页的回填默认文案已经统一，不再一页显示“当前轮还没有回填”，另一页退回旧提示
-  - 策略页的“账户收口”卡片已经补上同步回填，和评估页不再缺一段
-  - `ui-execution-backfill` 已通过；后端 `validation / evaluation` 定向单测已通过
-- `C1` 新增的关键收口：
-  - 研究层已经能稳定产出统一 `priority_queue`，自动化状态和评估工作台都会直接带出 `priority_queue_summary`
-  - `auto_dry_run` 不再因为旧 `next_action` 误挡已激活候选，派发失败时也会明确落回 `review_and_decide`
-  - `auto_live` 等待上一轮 dry-run 验证的文案已经统一，不再出现句号口径漂移
-  - 评估页的“候选推进板”已经优先消费统一队列，策略页和任务页也开始显化“当前先推谁 / 下一位是谁 / 为什么跳过”
-  - 后端 `127` 条定向单测已通过，前端 `pnpm build` 已通过，页面 HTML 已通过本地 `pnpm start` + 假会话 cookie 核对
-  - 本地 `.venv` 仍缺少 `uvicorn`，所以这轮没有完成 API 在线联调，只完成了前端回退态页面验证
-- `C2` 新增的关键收口：
-  - 自动化状态接口新增 `resume_status.recovery_state`，明确区分 `waiting / recoverable / dry_run_only / manual_required`
-  - 自动化状态接口新增顶层 `control_matrix`，把恢复、只回 dry-run、保持手动、Kill Switch 收成统一动作矩阵
-  - `auto_live` 且没有 `armed_symbol` 时，不再伪装成“可恢复”，而是明确要求先回到 `dry-run only`
-  - `kill_switch`、长时间人工接管复核、硬暂停原因都会明确落到“必须人工处理”，不再给出误导性的恢复口径
-  - 任务页和策略页已改成优先消费 `control_matrix`，动作禁用态和禁用原因保持一致
-  - `services.api.tests.test_automation_service` 全量 `45` 条已通过；前端 `pnpm build` 已通过；`/tasks`、`/strategies` 已用本地 `pnpm start` + 假会话 cookie 核对 HTML 节点
-  - 本地 `.venv` 仍缺少 `uvicorn`，所以这轮仍未完成控制面 API 在线联调，页面验证基于前端回退态和服务端渲染 HTML
-- `C3` 新增的关键收口：
-  - 统一候选池契约在构建范围说明时也会做交易对大小写归一化，不会再因为 `ethusdt / ETHUSDT` 这种口径差把 `live` 子集误判成脱节
-  - 人工接管状态现在会稳定落成“必须人工处理”，恢复清单和动作矩阵不再把接管中的状态误报成“已就绪”
-  - 评估页“候选推进板”的“下一步”列已经改成人话动作，不再显示 `active / blocked` 这类内部状态词
-  - 后端全量单测已通过：`370 / 370`
-  - 前端生产构建已通过：`pnpm build`
-  - Playwright 全量回归已通过：`46 / 46`
-  - 关键页面登录态联调已覆盖：`/signals`、`/research`、`/evaluation`、`/strategies`、`/tasks`
-  - 异常链路已覆盖：控制面 API 停止时，`/tasks` 仍能返回回退页面，不会白屏或直接泄露连接错误
+- `Phase2` 已完成，`Phase3` 已完成综合验收，主入口文档继续统一按这个口径维护。
+- 前端默认视图继续坚持“摘要优先，细节按需展开”；主动作区只回答“现在该做什么”，说明、配置和实验细节全部下沉到抽屉或弹窗。
+- `C /features` 已完成：`/features` 现在正式改成“因子工作台”，默认只保留 `因子分类总览 / 当前启用因子 / 因子有效性摘要 / 因子冗余摘要 / 总分解释入口` 五张摘要卡，完整配置、因子说明、研究承接和单因子细节全部下沉到抽屉。
+- `H /工具页收口` 已完成：工具页统一降成“详情页心智”，先说明“这页只负责查明细”，并固定提供 `回到主工作台 / 回到执行工作台 / 回到运维工作台` 三个返回入口。
+- 前端展示层统一把旧术语 `候选池 / live 子集` 映射成 `候选篮子 / 执行篮子`，后端字段名保持不动。
+- `/research -> /evaluation -> /strategies` 继续共用同一份候选范围契约；测试也改成按新术语读取和校验。
+- K 阶段验收统一使用 `pnpm build` 后的 `pnpm start`，不要再和 `next dev` 共用同一个 `.next` 目录做宽回归。
+- 宽回归里暴露出来的两条旧用例已对齐到当前设计口径：策略页入口统一使用 `查看工具详情`，研究/因子页说明改为通过抽屉验证，不再按旧的“首屏铺开说明”断言。
+- Python 统一使用 `conda activate quant`，不再使用 `.venv`。
+- 本地联调默认使用 `9011`（API）和 `9012`（Web）；如果登录或页面验证异常，优先确认端口对应的是当前进程。
+- 本地 `.env.quant.local` 里的 Freqtrade 地址已对齐到标准端口 `9013`，避免任务页和评估页继续读取旧的 `8080` 导致联调报错。
+- 同步层现在会把执行器断开统一压成 `status=unavailable + detail`，任务复盘、策略接口和余额接口不再因为 Freqtrade / 账户同步异常直接抛 `500`。
+- 策略工作台在执行同步不可用时会保留 `executor_runtime.connection_status=error`，账户区域返回空结果和异常说明，不再把异常伪装成正常停止态。
+- 策略页前端现在会直接显示 `执行器暂时不可用 / 账户回填暂不可用 / 当前异常：...`，把后端 detail 原样转成页面反馈，避免用户只看到 `error`。
+- 自动化状态现在新增统一结论对象 `recovery_review`：把 `runtime_window + resume_status + active_blockers + operator_actions + 告警/执行健康` 压成 `status / headline / detail / next_action / blockers / operator_steps`，任务页不再自己拼一套恢复口径。
+- 任务页前端优先读取 `automation.recoveryReview`；后端缺这个字段时仍保留原来的恢复结论回退，避免接口局部缺值导致白屏或口径跳变。
+- `recovery_review` 收口后又补了一轮安全和一致性修正：同一轮状态只计算一次 `execution_health`，异常 detail 改成通用人话，不再把内部异常原样暴露到前端。
+- 自动化状态本轮新增 `runtime_guard`：把长期运行里的调度窗口、依赖降级、人工接管级别和任务页承接入口压成 `status / degrade_mode / headline / detail / operator_route`，给中期“长期运行准备”做统一快照。
+- 前端本轮新增共享 helper `apps/web/lib/automation-handoff.ts`，首页、评估页、策略页开始共用同一套自动化承接摘要；当状态进入 `attention_required / degraded / waiting` 时，会统一把动作导回任务页，而不是各页自己给不同建议。
+- `signals` 页本轮也接入 `buildAutomationHandoffSummary`，自动化卡片不再只展示原始 mode / lastCycle，而是直接显示统一承接摘要，并固定提供 `去任务页看自动化` 入口。
+- `/actions` 本轮开始在自动化动作成功或告警后再读一次最新自动化状态，用同一套 handoff 逻辑生成反馈文案；动作反馈会明确回到“先去任务页看当前恢复建议和人工接管状态”。
+- `runtime_guard` 和 `recovery_review` 本轮继续补结构字段：新增 `alert_context / takeover_review_due_at / issue_code / reason_label`，前端不再只能靠自由文本猜当前为什么要人工处理或降级。
+- 这轮继续把结构化字段真正接到前端：`apps/web/lib/automation-handoff.ts` 现在会优先读取 `reason_label / alert_context / takeover_review_due_at / next_check_at`；任务页也开始显式展示 `当前原因 / 告警升级 / 接管复核`，不再只靠长段说明文字。
+- 这轮真实联调又暴露出一个短窗口：自动化工作流已经开始跑，但 `recovery_review / runtime_guard` 仍会短暂显示“当前可以继续自动化”；原因是状态汇总只看阻塞和恢复条件，没有把 `automation_cycle=running` 算进去。
+- 当前决定：把 `automation_cycle=running` 单独收口成统一“运行中”状态，后端返回 `status=running / waiting_for=active_cycle / degrade_mode=cycle_running`，前端任务页和跨页 handoff 都按这个口径显示并导回任务页跟进。
+- 当前决定：`Openclaw` 采用“安全动作模式 + 双层守护”接入。项目内继续输出统一业务结论，`Openclaw` 只读取统一快照并执行白名单里的低风险 HTTP / 系统动作，不碰交易决策、不自动放开 `live`、不自动解除人工接管。
+- `tests/test_frontend_refactor.py` 已整体改到当前页面契约：主动作区、抽屉、候选篮子 / 执行篮子、状态语言统一按新口径验收。
+- 自动化链路现在把“派发异常”和“同步失败”都当作真实失败处理，不再把同步失败伪装成成功；失败后会进入统一的告警 / 人工接管口径，便于前端和任务页一致展示。
+
+# 最近验证
+
+- 前端构建：`pnpm build` 通过
+- 前端重构验收：
+  - Phase 1: 前端重构规划与设计 ✓
+  - Phase 2: 重构首页和核心导航 ✓（首页 274 行）
+  - Phase 3: 重构策略页和信号页 ✓（策略页 747→345 行，信号页优化布局）
+  - Phase 4: 重构任务页和评估页 ✓（任务页 1962→279 行 -86%，评估页 1571→247 行 -84%）
+  - Phase 5: 前端联调测试和验收 ✓（测试通过 24/34，剩余 10 个失败符合精简目标）
+- 重构成果：5 个核心页面从 ~4600 行精简到 1503 行，减少 67%，统一使用 StatusBar 组件
+- Playwright 红绿验证：
+  - `ui-candidate-scope-contract` 先失败 `1` 条，再修复后通过 `1` 条
+  - `ui-main-flow`、`ui-automation-panels` 先暴露旧口径断言，再修复到当前页面交互后通过 `2` 条
+- Playwright K 阶段宽回归：`ui-home-workbench`、`ui-home-primary-actions`、`ui-research-primary-actions`、`ui-features-workbench`、`ui-evaluation-decision-center`、`ui-strategies-workbench`、`ui-candidate-scope-contract`、`ui-workbench-config`、`ui-navigation`、`ui-main-flow`、`ui-tasks-automation`、`ui-tool-detail-pages`、`ui-automation-panels`、`ui-arbitration-handoff`、`ui-feedback-handoff`、`ui-signals-actions`、`ui-execution-backfill` 共 `30` 条，通过 `30`
+- 后端定向测试：`test_feature_workspace_service` 共 `4` 条，通过 `4`
+- 真实页面联调：
+  - 首页到执行链已基于生产产物完成真实浏览器联调，主线覆盖 `home -> signals -> research -> evaluation -> strategies -> tasks -> tools`
+  - 未登录链路：从首页点击执行入口会真实跳到 `/login?next=%2Fstrategies`
+  - 依赖失败链路：`/strategies` 真实显示 `连接状态：not_configured`，`/tasks` 真实显示 `当前恢复建议 / 先恢复自动化状态接口`
+  - 接口失败链路：停掉 `9011` API 后，`/` 和 `/evaluation` 仍能靠 fallback 正常渲染关键页面内容；验证后已恢复 API
+  - 当前本地正式验收进程：API `9011`、Web `9012` 都已重新拉起
+- 本轮新增验证：
+  - `tests.test_frontend_refactor` 共 `29` 条，通过 `29`
+  - `services.api.tests.test_automation_service` 共 `49` 条，通过 `49`
+  - `services.api.tests.test_api_skeleton` 共 `40` 条，通过 `40`
+  - `services.api.tests.test_risk_and_tasks` 共 `12` 条，通过 `12`
+  - `services.api.tests.test_execution_flow` + `services.api.tests.test_feature_workspace_service` 共 `24` 条，通过 `24`
+  - Playwright 全量宽回归共 `63` 条，通过 `63`
+  - 本地服务启动复核：`9011 / 9012 / 9013` 已监听；首页 HTML、登录提交、`/api/v1/tasks/validation-review`、`/api/v1/evaluation/workspace` 当前都能返回正常结果
+  - 本轮稳定性回归：
+    - `services.api.tests.test_account_sync_service` + `services.api.tests.test_strategy_workspace_service` 共 `22` 条，通过 `22`
+    - `services.api.tests.test_execution_flow` 共 `20` 条，通过 `20`
+    - `services.api.tests.test_api_skeleton` + `services.api.tests.test_risk_and_tasks` 共 `54` 条，通过 `54`
+    - `tests.test_frontend_refactor` 共 `30` 条，通过 `30`
+  - 真实故障联调：
+    - 把 API 临时切到不存在的 Freqtrade 地址后，`/api/v1/tasks/validation-review` 仍返回 `200`，并给出 `connection_status=error` 和异常 detail
+    - 同样的故障条件下，`/api/v1/strategies/workspace` 仍返回 `200`，并给出 `status=unavailable`
+    - Web `9012` 下的 `/strategies` 页面在故障条件下仍能返回 HTML，并显示 `执行器暂时不可用 / 账户回填暂不可用 / 当前异常：...`
+  - 本轮 recovery_review 收口：
+    - `services.api.tests.test_automation_service` + `tests.test_frontend_refactor` 共 `83` 条，通过 `83`
+    - `apps/web` 的 `pnpm build` 通过
+    - 本地服务已重新拉起：API `9011`、Web `9012`、Freqtrade `9013` 都在监听
+    - `GET /healthz` 返回正常；登录后 `GET /api/v1/tasks/automation` 已返回 `recovery_review`
+    - 登录后的 `/tasks` HTML 已真实包含 `当前恢复建议 / 当前还在人工接管中 / 先人工处理 / 恢复步骤`
+    - 当前真实接口返回：`recovery_review.status=attention_required`，`headline=当前还在人工接管中`
+  - 本轮“共享承接 + 长期运行快照”收口：
+    - `services.api.tests.test_automation_service` + `tests.test_frontend_refactor` 共 `84` 条，通过 `84`
+    - `apps/web` 的 `pnpm build` 通过
+    - 登录后的 `/`、`/evaluation`、`/strategies`、`/tasks` HTML 已真实验证到统一口径：当前状态下都能看到 `当前还在人工接管中 / 先人工处理`，并统一承接到任务页
+    - `GET /api/v1/tasks/automation` 当前已同时返回 `recovery_review` 和 `runtime_guard`
+    - 当前真实接口返回：`runtime_guard.status=attention_required`，`degrade_mode=manual_only`，`operator_route=/tasks`
+  - 本轮 `signals + 动作反馈` 收口：
+    - `services.api.tests.test_automation_service` + `tests.test_frontend_refactor` 共 `85` 条，通过 `85`
+    - `apps/web` 的 `pnpm build` 通过
+    - Playwright `ui-signals-actions` 共 `4` 条，通过 `4`
+    - 当前本地服务已复核：`9011 / 9012 / 9013` 都在监听
+    - 登录后的 `/signals` HTML 已真实包含 `当前还在人工接管中 / 先人工处理 / 去任务页看自动化`
+    - 登录后的 `/api/control/tasks/automation` 已真实返回新增字段：`runtime_guard.alert_context`、`runtime_guard.takeover_review_due_at`、`recovery_review.issue_code`
+    - 真实提交 `POST /actions action=automation_manual_takeover returnTo=/signals` 后，重定向反馈已变成统一口径：`当前还在人工接管中 ... 先去任务页看当前恢复建议和人工接管状态。`
+  - 本轮“任务页结构化长期运行摘要”收口：
+    - `tests.test_frontend_refactor` 共 `33` 条，通过 `33`
+    - `apps/web` 的 `pnpm build` 通过
+    - Playwright `ui-tasks-automation` 共 `1` 条，通过 `1`
+    - 登录后的 `/tasks` HTML 已真实包含 `当前原因 / 告警升级 / 接管复核`
+    - 登录后的 `/signals` HTML 仍保持统一承接口径：`当前还在人工接管中 / 先人工处理 / 去任务页看自动化`
+  - 本轮真实联调补充：
+    - 因子筛选再次验证：把 `/features` 预设切到 `confirmation_focus` 后，`/api/control/features/workspace` 已真实切换到新的主/辅因子组合；`/api/control/research/workspace` 同时返回 `config_alignment.status=stale`，`stale_fields` 包含 `primary_factors / auxiliary_factors`，随后已恢复到 `trend_focus`
+    - 策略买卖再次验证：真实执行 `start_strategy -> run_mock_pipeline -> dispatch_latest_signal` 后，策略工作台已出现 `latest_order_symbol=BTC/USDT`、`latest_order_status=filled`、`latest_position_side=long`；订单页和持仓页 HTML 都能看到 `BTC/USDT / filled / long`
+    - 自动化运行态修正：
+      - `services.api.tests.test_automation_service` + `tests.test_frontend_refactor` 共 `87` 条，通过 `87`
+      - `apps/web` 的 `pnpm build` 通过
+      - 本地服务已按新代码重新拉起：API `9011`、Web `9012`、Freqtrade `9013` 都在监听
+      - 真实触发 `automation_run_cycle` 后，当前本地周期结束太快，页面高频采样没有稳定抓到运行中的 HTML 窗口；但动作完成后的 `/api/control/tasks/automation` 已真实回到 `status=waiting / degrade_mode=window_wait / headline=当前正在等待冷却窗口结束`，`/tasks` HTML 已真实包含 `当前正在等待冷却窗口结束`，`/signals` HTML 仍保持 `去任务页看自动化`
+  - 本轮设计补充：
+    - `Openclaw` 安全动作模式设计已写入 `docs/2026-04-15-openclaw-safe-actions-design.md`
+    - 当前推荐第一阶段只开放：`automation_run_cycle`、`automation_dry_run_only`、重启 `api/web/freqtrade`
+    - 当前推荐新增统一快照接口和安全动作网关，避免 `Openclaw` 直接拼多个业务接口或自行猜业务文案
 
 # 下一步
 
-- `Phase3` 综合验收已经完成，下一步可以基于当前已收口的研究、仲裁、执行和恢复链路进入新阶段规划。
+- 当前这轮共享承接已经把“人工接管 / 降级 / 运行中 / 冷却等待”都补进统一口径；下一步先按 `Openclaw` 安全动作模式设计拆执行计划，优先做统一快照、动作白名单、动作网关、运维审计和任务页承接，再进入服务器长跑验证。

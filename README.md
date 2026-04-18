@@ -11,8 +11,10 @@
   主链已经打通：研究、回测、评估、执行、自动化都能跑。
 - `phase2` 已完成  
   工作台已经从“只能看”补到了“可以配置一部分”，研究解释、实验对比和长期运行基础能力已经接通。
-- `phase3` 进行中  
-  当前重点是把“研究 -> 执行 -> 恢复”之间的仲裁、动作承接和长期运行收得更稳。
+- `phase3` 已完成综合验收
+  研究到执行仲裁、异常回退和动作承接已经收过一轮综合验收。
+- 前端信息架构重构的 `A`、`B`、`C`、`D`、`E`、`F`、`G`、`H` 已完成
+  默认入口已经先改成“摘要优先、细节按需展开”，工具页也已经统一降成“详情页心智”，当前下一步进入 `I /视觉和交互统一`。
 
 ## 这套系统现在能做什么
 
@@ -27,14 +29,11 @@
 - 看研究 / 回测 / 执行的差异
 - 看自动化状态、告警、人工接管和恢复建议
 
-### 前端现在有 6 个工作台
+### 前端当前入口结构
 
-- `/data` 数据工作台
-- `/features` 特征工作台
-- `/research` 策略研究工作台
-- `/backtest` 回测工作台
-- `/evaluation` 评估与实验中心
-- `/strategies` 和 `/tasks` 承担执行与自动化工作台
+- 主工作区：`/`、`/features`、`/research`、`/evaluation`、`/strategies`、`/tasks`
+- 工具详情页：`/market`、`/balances`、`/positions`、`/orders`、`/risk`
+- 补充入口：`/data`、`/backtest`、`/signals`
 
 ### 当前最重要的新能力
 
@@ -42,10 +41,23 @@
 - `live` 使用更严格的小子集，不再和研究推荐断链
 - 研究训练、推理、流水线已经有后台进度、阶段、预计时长和结果去向
 - 自动化状态接口现在会直接给出一份统一仲裁结论，不用再分别猜研究、执行和运行窗口的下一步
+- 前端侧栏已经先拆成“主工作区 / 工具入口 / 补充入口”，让主线页面先被看到
+- 首页首屏已经收成一个“首页主动作区”，研究、执行、异常和工具详情入口都从抽屉展开
+- 首页已经进一步升级成“主工作台”，默认只保留 `当前推荐 / 当前研究状态 / 当前执行状态 / 当前风险与告警 / 当前下一步动作 / 最近结果回看` 6 张卡
+- 任务页首屏已经收成一个主动作区，模式切换、调度、告警和跨页跳转都从这里展开
+- 策略页和评估页也已经收成单一主动作区，首屏默认只给摘要和当前下一步
+- `/market`、`/balances`、`/orders`、`/positions`、`/risk` 现在都会先说明“这页只负责查明细”，并固定提供回到主工作台、执行页和运维页的入口
+- 因子页已经正式改成“因子工作台”，默认只保留 `因子分类总览 / 当前启用因子 / 因子有效性摘要 / 因子冗余摘要 / 总分解释入口`
+- 因子页的完整配置、因子说明、研究承接和单因子细节已经全部下沉到抽屉
+- 研究页默认只保留 `研究主动作区 + 研究运行状态 + 当前状态 / 当前配置摘要 / 当前产物` 三张摘要卡
+- 研究页的完整配置、模板 / 模型 / 标签说明和实验细节已经分别下沉到抽屉或弹窗
 - 评估页已经能直接说明：
   - 为什么推荐
   - 为什么淘汰
   - 研究、回测、执行差在哪里
+- 评估页默认只保留 5 张判断摘要卡，门控细节、评估配置、实验对比和研究执行差异都改成按需展开
+- 任务页默认只保留 5 张运维摘要卡，告警历史、恢复清单、失败规则、长期运行参数和调度顺序都改成按需展开
+- 执行页默认只保留 4 张执行摘要卡，候选池、研究执行差异、账户回填、执行配置和最近执行结果都改成按需展开
 
 ## 系统导览与接手顺序
 
@@ -78,8 +90,9 @@
 
 ### 人工研究到执行
 
-1. 进入 `/signals` 或 `/research`
-2. 运行 `Qlib` 信号流水线
+1. 先看 `/` 总览
+   这里现在先看首页主动作区和 6 张主工作台卡，先决定研究、执行、异常还是继续下钻
+2. 进入 `/research` 或 `/signals`
 3. 查看 `/evaluation`
 4. 进入 `/strategies`
 5. 先做 `dry-run`
@@ -120,19 +133,13 @@ conda activate quant
 cd /home/djy/Quant
 ```
 
-如果当前还在临时 worktree 里联调，就把目录换成对应的 worktree 路径，例如：
-
-```bash
-cd /home/djy/Quant/.worktrees/hardening-phase1
-```
-
 API：
 
 ```bash
 set -a
 source .env.quant.local
 set +a
-/home/djy/Quant/.venv/bin/python -m uvicorn services.api.app.main:app --host 127.0.0.1 --port 9011
+python -m uvicorn services.api.app.main:app --host 127.0.0.1 --port 9011
 ```
 
 Web：
@@ -179,9 +186,11 @@ HOSTNAME=127.0.0.1 PORT=9012 pnpm start
 
 ```bash
 cd /home/djy/Quant
-/home/djy/Quant/.venv/bin/python -m unittest discover -s services/api/tests -v
-/home/djy/Quant/.venv/bin/python -m unittest discover -s services/worker/tests -v
-/home/djy/Quant/.venv/bin/python -m unittest discover -s tests -v
+source /home/djy/miniforge3/etc/profile.d/conda.sh
+conda activate quant
+python -m unittest discover -s services/api/tests -v
+python -m unittest discover -s services/worker/tests -v
+python -m unittest discover -s tests -v
 ```
 
 前端构建：

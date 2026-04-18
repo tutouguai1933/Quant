@@ -73,7 +73,12 @@ class ExecutionService:
 
     @staticmethod
     def _resolve_quantity(target_weight: str) -> Decimal:
-        weight = Decimal(target_weight).copy_abs()
+        try:
+            weight = Decimal(str(target_weight)).copy_abs()
+        except InvalidOperation as exc:
+            raise ValueError("target_weight must be decimal-compatible") from exc
+        if not weight.is_finite():
+            raise ValueError("target_weight must be finite")
         base_quantity = Decimal("0.0400000000")
         quantity = max(Decimal("0.0010000000"), weight * base_quantity)
         return quantity.quantize(Decimal("0.0000000001"))

@@ -14,6 +14,7 @@ type WorkbenchConfigCardProps = {
   children: ReactNode;
   disabled?: boolean;
   disabledReason?: string;
+  disabledLabel?: string;
 };
 
 type ConfigFieldProps = {
@@ -37,6 +38,7 @@ export function WorkbenchConfigCard({
   children,
   disabled = false,
   disabledReason = "工作台暂时不可用，先恢复研究接口再保存配置。",
+  disabledLabel = "当前不可保存",
 }: WorkbenchConfigCardProps) {
   return (
     <Card className="bg-card/90">
@@ -56,7 +58,7 @@ export function WorkbenchConfigCard({
           <FormSubmitButton
             type="submit"
             size="sm"
-            idleLabel="保存当前配置"
+            idleLabel={disabled ? disabledLabel : "保存当前配置"}
             pendingLabel="保存中…"
             pendingHint="配置已提交，当前工作台和后续研究链会按新配置刷新。"
             disabled={disabled}

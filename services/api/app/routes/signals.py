@@ -168,7 +168,14 @@ def get_signal(signal_id: int) -> dict:
 
 @router.post("/ingest")
 def ingest_signal(payload: dict) -> dict:
-    item = signal_service.ingest_signal(payload)
+    try:
+        item = signal_service.ingest_signal(payload)
+    except (KeyError, TypeError, ValueError) as exc:
+        return {
+            "data": None,
+            "error": {"code": "invalid_request", "message": str(exc)},
+            "meta": {"source": "control-plane-api", "action": "ingest"},
+        }
     return _success({"item": item}, {"source": "control-plane-api", "action": "ingest"})
 
 

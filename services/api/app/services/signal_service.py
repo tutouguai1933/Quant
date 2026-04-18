@@ -377,7 +377,10 @@ class SignalService:
 
     @staticmethod
     def _parse_timestamp(value: str) -> datetime:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("generated_at must be valid ISO 8601 timestamp") from exc
         if parsed.tzinfo is None or parsed.utcoffset() is None:
             raise ValueError("generated_at must be timezone-aware")
         return parsed

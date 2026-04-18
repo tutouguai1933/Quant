@@ -5,6 +5,7 @@ import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
+import { ToolDetailHub } from "../../components/tool-detail-hub";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getOrdersPageModel, listOrders } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -26,14 +27,22 @@ export default async function OrdersPage() {
   return (
     <AppShell
       title="订单"
-      subtitle="订单页只回答一个问题：执行器到底回了什么。"
+      subtitle="订单页现在只负责核对执行回报，不再承担主流程判断。"
       currentPath="/orders"
       isAuthenticated={session.isAuthenticated}
     >
       <PageHero
-        badge="订单"
-        title="订单反馈应该一眼能看懂"
-        description="这里不再只是列出一串文本，而是先给出关键数量，再展开到表格，让你快速判断执行是否真的落地。"
+        badge="订单详情"
+        title="订单详情页"
+        description="先在执行页或任务页判断要不要查结果，再回到这里确认执行器到底回了什么。"
+      />
+
+      <ToolDetailHub
+        summary="订单页只负责回答“这次执行到底回了什么”，主链判断继续留在首页、执行页和任务页。"
+        detail="这里保留关键数量、订单状态和回报明细，帮助你确认执行是否真正落地，但不再把订单页当成下一步动作的起点。"
+        mainHint="首页已经说明要不要继续执行；要核对订单回报时，再回订单页看明细。"
+        strategiesHint="执行按钮和推进判断留在策略页，这里只用来确认订单状态。"
+        tasksHint="任务页提示失败或需要人工复核时，再回订单页对照最近回报。"
       />
 
       <MetricGrid

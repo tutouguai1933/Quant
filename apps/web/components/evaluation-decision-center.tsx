@@ -1,9 +1,14 @@
 /* 这个文件负责渲染评估页顶部的当前仲裁决策中心。 */
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 
+import { DetailDialog } from "./detail-dialog";
+import { DetailDrawer } from "./detail-drawer";
+import { SectionShell } from "./section-shell";
+import { SummaryCard } from "./summary-card";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { StatusBadge } from "./status-badge";
 
 type DecisionCenterProps = {
@@ -12,6 +17,7 @@ type DecisionCenterProps = {
   stageDecisionSummary: Record<string, unknown>;
   bestExperiment: Record<string, unknown>;
   recommendationExplanation: Record<string, unknown>;
+  showPrimaryAction?: boolean;
 };
 
 /* 渲染评估页顶部的当前仲裁结论和历史证据分区。 */
@@ -21,6 +27,7 @@ export function EvaluationDecisionCenter({
   stageDecisionSummary,
   bestExperiment,
   recommendationExplanation,
+  showPrimaryAction = true,
 }: DecisionCenterProps) {
   const status = readText(arbitration.status, "continue_research");
   const symbol = readText(arbitration.symbol, "当前还没有推荐标的");
@@ -34,80 +41,122 @@ export function EvaluationDecisionCenter({
   const targetPage = readText(suggestedAction.target_page, "/research");
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-      <Card className="border-emerald-500/25 bg-[color:var(--panel-strong)]/90">
-        <CardHeader>
-          <p className="eyebrow">当前仲裁结论</p>
-          <CardTitle>{readText(arbitration.headline, "当前还没有仲裁结论")}</CardTitle>
-          <CardDescription>
-            这一块才回答现在该先做什么，不再把研究证据、执行差异和历史实验混成同一层结论。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex flex-wrap items-center gap-3">
+    <SectionShell
+      eyebrow="三层结构"
+      title="先看当前判断，需要时再展开证据细节"
+      description="顶部先只保留结论和一句解释，门控细节进右侧抽屉，实验与历史证据进集中弹窗。"
+      contentClassName="xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]"
+    >
+      <SummaryCard
+        eyebrow="当前仲裁结论"
+        title={readText(arbitration.headline, "当前还没有仲裁结论")}
+        summary="这一块才回答现在该先做什么，不再把研究证据、执行差异和历史实验混成同一层结论。"
+        detail={readText(arbitration.detail, "当前还没有可用仲裁说明。")}
+        status={
+          <>
             <StatusBadge value={status} />
             <StatusBadge value={recommendedStage} />
             <StatusBadge value={readText(inputs.mode, "manual")} />
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <DecisionInfoBlock label="现在先推进哪一层" value={formatStageLabel(recommendedStage)} />
-            <DecisionInfoBlock label="现在该去哪一页" value={formatTargetPage(targetPage)} />
-            <DecisionInfoBlock label="当前建议标的" value={symbol} />
-            <DecisionInfoBlock label="当前下一步动作" value={formatActionLabel(readText(suggestedAction.action, "continue_research"))} />
-          </div>
-
-          <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
-            <p className="eyebrow">当前为什么这么判断</p>
-            <p className="mt-2 text-sm leading-6 text-foreground">
-              {readText(arbitration.detail, "当前还没有可用仲裁说明。")}
-            </p>
-            <div className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
-              {reasonItems.length ? reasonItems.map((item, index) => <p key={`reason-${index}`}>{item}</p>) : <p>当前还没有额外判断依据。</p>}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
-            <p className="eyebrow">还差什么</p>
-            <div className="mt-3 space-y-3 text-sm leading-6 text-muted-foreground">
-              {blockingItems.length ? blockingItems.map((item, index) => (
-                <div key={`blocking-${index}`} className="rounded-2xl border border-border/60 bg-background/40 p-3">
-                  <p className="font-medium text-foreground">{readText(item.label, "当前阻塞")}</p>
-                  <p className="mt-1">{readText(item.detail, "当前还没有阻塞说明。")}</p>
+          </>
+        }
+        actions={
+          <>
+            {showPrimaryAction ? (
+              <Button asChild variant={resolveActionVariant(status)} size="sm">
+                <Link href={targetPage}>{readText(suggestedAction.label, "去下一页继续处理")}</Link>
+              </Button>
+            ) : null}
+            <DetailDrawer
+              triggerLabel="查看门控详情"
+              title="门控详情"
+              description="这里展开当前为什么这样判断、还差什么，以及现在这一层到底要去哪。"
+              closeLabel="关闭门控详情"
+              footer="当前动作只跟摘要卡走；这里的细节只负责解释为什么。"
+            >
+              <div className="space-y-5">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DecisionInfoBlock label="现在先推进哪一层" value={formatStageLabel(recommendedStage)} />
+                  <DecisionInfoBlock label="现在该去哪一页" value={formatTargetPage(targetPage)} />
+                  <DecisionInfoBlock label="当前建议标的" value={symbol} />
+                  <DecisionInfoBlock label="当前下一步动作" value={formatActionLabel(readText(suggestedAction.action, "continue_research"))} />
                 </div>
-              )) : <p>当前没有明显阻塞，可以按这块给出的下一步继续推进。</p>}
+
+                <OverlaySection title="当前为什么这么判断">
+                  <p className="text-sm leading-6 text-foreground">{readText(arbitration.detail, "当前还没有可用仲裁说明。")}</p>
+                  <div className="space-y-2 text-sm leading-6 text-muted-foreground">
+                    {reasonItems.length ? reasonItems.map((item, index) => <p key={`reason-${index}`}>{item}</p>) : <p>当前还没有额外判断依据。</p>}
+                  </div>
+                </OverlaySection>
+
+                <OverlaySection title="还差什么">
+                  <div className="space-y-3 text-sm leading-6 text-muted-foreground">
+                    {blockingItems.length ? blockingItems.map((item, index) => (
+                      <div key={`blocking-${index}`} className="rounded-2xl border border-border/60 bg-background/40 p-3">
+                        <p className="font-medium text-foreground">{readText(item.label, "当前阻塞")}</p>
+                        <p className="mt-1">{readText(item.detail, "当前还没有阻塞说明。")}</p>
+                      </div>
+                    )) : <p>当前没有明显阻塞，可以按这块给出的下一步继续推进。</p>}
+                  </div>
+                </OverlaySection>
+              </div>
+            </DetailDrawer>
+          </>
+        }
+        footer="当前动作只跟这一块走；下面的实验、对比和时间线只负责解释为什么。"
+        className="border-emerald-500/25 bg-[color:var(--panel-strong)]/90"
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          <DecisionInfoBlock label="现在先推进哪一层" value={formatStageLabel(recommendedStage)} />
+          <DecisionInfoBlock label="现在该去哪一页" value={formatTargetPage(targetPage)} />
+          <DecisionInfoBlock label="当前建议标的" value={symbol} />
+          <DecisionInfoBlock label="当前下一步动作" value={formatActionLabel(readText(suggestedAction.action, "continue_research"))} />
+        </div>
+      </SummaryCard>
+
+      <SummaryCard
+        eyebrow="历史判断只做参考"
+        title={readText(decisionBoard.headline, "当前还没有历史阶段判断")}
+        summary="这里保留研究侧阶段判断、最佳实验和推荐证据，帮你理解当前结论为什么成立，但它们不等于现在要执行的动作。"
+        detail={readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, "当前还没有推荐原因"))}
+        status={<Badge variant="outline">历史证据层</Badge>}
+        actions={
+          <DetailDialog
+            triggerLabel="打开实验对比弹窗"
+            title="实验对比弹窗"
+            description="这里集中展示研究侧判断、最佳实验和推荐证据，避免它们和当前动作争抢同一层注意力。"
+            closeLabel="关闭实验对比弹窗"
+            footer="实验和历史证据只负责解释当前结论，不直接代替当前动作。"
+          >
+            <div className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-2">
+                <DecisionInfoBlock label="研究侧阶段判断" value={readText(stageDecisionSummary.headline, "当前还没有阶段判断")} />
+                <DecisionInfoBlock label="研究侧当前下一步" value={formatActionLabel(readText(stageDecisionSummary.next_step, "continue_research"))} />
+                <DecisionInfoBlock label="研究侧最佳实验" value={readText(bestExperiment.symbol, "当前还没有最佳实验")} />
+                <DecisionInfoBlock
+                  label="研究侧推荐原因"
+                  value={readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, "当前还没有推荐原因"))}
+                />
+                <DecisionInfoBlock label="研究与执行差异" value={readText(stageDecisionSummary.execution_gap, "当前还没有差异摘要")} />
+                <DecisionInfoBlock label="当前主要阻塞" value={readText(stageDecisionSummary.why_blocked, "当前没有明显阻塞")} />
+              </div>
+
+              <OverlaySection title="为什么历史判断只做参考">
+                <p className="text-sm leading-6 text-muted-foreground">
+                  当前要不要继续推进，仍然以上面的仲裁摘要卡为准；这里保留的是研究侧证据和实验结论，方便回看为什么会形成当前建议。
+                </p>
+              </OverlaySection>
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button asChild variant={resolveActionVariant(status)}>
-              <Link href={targetPage}>{readText(suggestedAction.label, "去下一页继续处理")}</Link>
-            </Button>
-            <p className="text-sm leading-6 text-muted-foreground">
-              当前动作只跟这一块走；下面的实验、对比和时间线只负责解释为什么。
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-card/90">
-        <CardHeader>
-          <p className="eyebrow">历史判断只做参考</p>
-          <CardTitle>{readText(decisionBoard.headline, "当前还没有历史阶段判断")}</CardTitle>
-          <CardDescription>
-            这里保留研究侧阶段判断、最佳实验和推荐证据，帮你理解当前结论为什么成立，但它们不等于现在要执行的动作。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3">
+          </DetailDialog>
+        }
+        footer="历史证据只负责解释当前结论，不单独下动作。"
+      >
+        <div className="grid gap-3">
           <DecisionInfoBlock label="研究侧阶段判断" value={readText(stageDecisionSummary.headline, "当前还没有阶段判断")} />
           <DecisionInfoBlock label="研究侧当前下一步" value={formatActionLabel(readText(stageDecisionSummary.next_step, "continue_research"))} />
           <DecisionInfoBlock label="研究侧最佳实验" value={readText(bestExperiment.symbol, "当前还没有最佳实验")} />
-          <DecisionInfoBlock label="研究侧推荐原因" value={readText(stageDecisionSummary.why_recommended, readText(recommendationExplanation.detail, "当前还没有推荐原因"))} />
-          <DecisionInfoBlock label="研究与执行差异" value={readText(stageDecisionSummary.execution_gap, "当前还没有差异摘要")} />
-          <DecisionInfoBlock label="当前主要阻塞" value={readText(stageDecisionSummary.why_blocked, "当前没有明显阻塞")} />
-        </CardContent>
-      </Card>
-    </section>
+        </div>
+      </SummaryCard>
+    </SectionShell>
   );
 }
 
@@ -118,6 +167,16 @@ function DecisionInfoBlock({ label, value }: { label: string; value: string }) {
       <p className="eyebrow">{label}</p>
       <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value}</p>
     </div>
+  );
+}
+
+/* 渲染抽屉和弹窗里的细节分组。 */
+function OverlaySection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+      <p className="eyebrow">{title}</p>
+      <div className="mt-3 space-y-3">{children}</div>
+    </section>
   );
 }
 

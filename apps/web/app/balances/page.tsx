@@ -4,6 +4,7 @@ import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
+import { ToolDetailHub } from "../../components/tool-detail-hub";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getBalancesPageModel, listBalances } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -30,14 +31,22 @@ export default async function BalancesPage() {
   return (
     <AppShell
       title="余额"
-      subtitle="余额页先回答账户里现在有什么，再区分哪些是真实可用，哪些还处于冻结中。"
+      subtitle="余额页现在只负责核对账户资产明细，不再承担主流程判断。"
       currentPath="/balances"
       isAuthenticated={session.isAuthenticated}
     >
       <PageHero
-        badge="余额"
-        title="真实账户余额应该单独看清楚"
-        description="这里优先展示真实账户余额，不和 dry-run 的订单与持仓混在一起，避免把资产视图和执行视图看混。页面还会直接标出哪些是可交易余额，哪些只是交易所零头。"
+        badge="余额详情"
+        title="余额详情页"
+        description="先在主工作台或执行页决定要不要查账户，再回到这里看真实余额、可交易资产和交易所零头。"
+      />
+
+      <ToolDetailHub
+        summary="当主工作台或执行页提示要核对账户时，再回余额页看真实资产分布。"
+        detail="余额页只保留账户资产、可卖数量和零头判断，帮助你确认执行结果有没有真正回到账户，不再自己承担流程推进。"
+        mainHint="首页先告诉你该不该去看账户；需要确认资产时，再回余额页看真实余额。"
+        strategiesHint="执行完成后先在策略页看判断，再回余额页核对资金有没有回补。"
+        tasksHint="任务页如果提示同步或回填异常，可以回余额页确认问题是不是只停在资产层。"
       />
 
       <section className="panel">

@@ -52,10 +52,11 @@ class StrategyWorkspaceService:
         whitelist = [str(item) for item in list(candidate_scope.get("candidate_symbols") or []) if str(item).strip()]
         catalog = self._catalog_service.list_strategies()
         recent_signals = self._signal_store.list_signals(limit=signal_limit)
-        account_state = self._build_account_state(order_limit=order_limit)
-        recent_orders = list(account_state["orders"]) if account_state["source"] == "binance-account-sync" else self._execution_sync.list_orders(limit=order_limit)
+        runtime_snapshot = self._read_execution_runtime()
+        account_state = self._build_account_state(order_limit=order_limit, runtime_snapshot=runtime_snapshot)
+        recent_orders = list(account_state["orders"])
         latest_research = self._research_reader.get_latest_result()
-        strategy_cards = self._build_strategy_cards(catalog, whitelist, latest_research) if whitelist else []
+        strategy_cards = self._build_strategy_cards(catalog, whitelist, latest_research, runtime_snapshot=runtime_snapshot) if whitelist else []
 
         return {
             "overview": {
@@ -65,7 +66,7 @@ class StrategyWorkspaceService:
                 "order_count": len(recent_orders),
                 "running_count": sum(1 for item in strategy_cards if item["runtime_status"] == "running"),
             },
-            "executor_runtime": self._execution_sync.get_runtime_snapshot(),
+            "executor_runtime": runtime_snapshot,
             "research": self._build_research_overview(latest_research),
             "research_recommendation": self._build_research_recommendation(),
             "whitelist": whitelist,
@@ -76,21 +77,40 @@ class StrategyWorkspaceService:
             "configuration": self._build_configuration_summary(config=config, candidate_scope=candidate_scope),
         }
 
-    def _build_account_state(self, order_limit: int = 5) -> dict[str, object]:
+    def _build_account_state(self, order_limit: int = 5, runtime_snapshot: dict[str, object] | None = None) -> dict[str, object]:
         """把账户真实状态整理成策略中心可以直接展示的摘要。"""
 
+        runtime_snapshot = dict(runtime_snapshot or self._read_execution_runtime())
         runtime_mode = Settings.from_env().runtime_mode
+        execution_source = "freqtrade-rest-sync" if str(runtime_snapshot.get("backend", "")) == "rest" else "freqtrade-sync"
         if runtime_mode == "live":
-            balances = self._call_account_sync("list_balances", limit=order_limit)
-            orders = self._call_account_sync("list_orders", limit=order_limit)
-            positions = self._call_account_sync("list_positions", limit=order_limit)
+            balances, balance_detail = self._call_account_sync("list_balances", limit=order_limit)
+            orders, order_detail = self._call_account_sync("list_orders", limit=order_limit)
+            positions, position_detail = self._call_account_sync("list_positions", limit=order_limit)
+            detail = balance_detail or order_detail or position_detail
+            status = "unavailable" if detail else "ready"
             source = "binance-account-sync"
             truth_source = "binance"
         else:
+            if str(runtime_snapshot.get("status", "")) == "unavailable":
+                return self._build_unavailable_account_state(
+                    source=execution_source,
+                    truth_source="freqtrade",
+                    detail=str(runtime_snapshot.get("detail", "")),
+                )
             balances = []
-            orders = self._execution_sync.list_orders(limit=order_limit)
-            positions = self._execution_sync.list_positions(limit=order_limit)
-            source = "freqtrade-sync"
+            try:
+                orders = self._execution_sync.list_orders(limit=order_limit)
+                positions = self._execution_sync.list_positions(limit=order_limit)
+            except Exception as exc:
+                return self._build_unavailable_account_state(
+                    source=execution_source,
+                    truth_source="freqtrade",
+                    detail=str(exc),
+                )
+            status = "ready"
+            detail = ""
+            source = execution_source
             truth_source = "freqtrade"
 
         latest_balance = balances[0] if balances else None
@@ -107,6 +127,8 @@ class StrategyWorkspaceService:
         }
 
         return {
+            "status": status,
+            "detail": detail,
             "source": source,
             "truth_source": truth_source,
             "summary": summary,
@@ -118,28 +140,77 @@ class StrategyWorkspaceService:
             "latest_position": latest_position,
         }
 
-    def _call_account_sync(self, method_name: str, **kwargs) -> list[dict[str, object]]:
+    @staticmethod
+    def _build_unavailable_account_state(*, source: str, truth_source: str, detail: str) -> dict[str, object]:
+        """在账户或执行同步不可用时返回固定摘要。"""
+
+        return {
+            "status": "unavailable",
+            "detail": detail,
+            "source": source,
+            "truth_source": truth_source,
+            "summary": {
+                "balance_count": 0,
+                "tradable_balance_count": 0,
+                "dust_count": 0,
+                "order_count": 0,
+                "position_count": 0,
+                "pending_exit_count": 0,
+                "open_position_count": 0,
+            },
+            "balances": [],
+            "orders": [],
+            "positions": [],
+            "latest_balance": None,
+            "latest_order": None,
+            "latest_position": None,
+        }
+
+    def _call_account_sync(self, method_name: str, **kwargs) -> tuple[list[dict[str, object]], str]:
         """安全调用账户同步对象，避免页面因为接口缺失直接报错。"""
 
         method = getattr(self._account_sync, method_name, None)
         if method is None:
-            return []
-        items = method(**kwargs)
+            return [], ""
+        try:
+            items = method(**kwargs)
+        except Exception as exc:
+            return [], str(exc)
         if items is None:
-            return []
-        return list(items)
+            return [], ""
+        return list(items), ""
+
+    def _read_execution_runtime(self) -> dict[str, object]:
+        """优先读取执行器运行状态，异常时保持固定结构。"""
+
+        try:
+            runtime_snapshot = dict(self._execution_sync.get_runtime_snapshot())
+        except Exception as exc:
+            runtime_snapshot = {
+                "executor": "freqtrade",
+                "backend": "memory",
+                "mode": Settings.from_env().runtime_mode,
+                "connection_status": "error",
+                "status": "unavailable",
+                "detail": str(exc),
+            }
+        runtime_snapshot.setdefault("status", "ready")
+        runtime_snapshot.setdefault("detail", "")
+        return runtime_snapshot
 
     def _build_strategy_cards(
         self,
         catalog: list[dict[str, object]],
         whitelist: list[str],
         latest_research: dict[str, object],
+        runtime_snapshot: dict[str, object] | None = None,
     ) -> list[dict[str, object]]:
         """把策略目录变成页面卡片所需结构。"""
 
+        runtime_snapshot = dict(runtime_snapshot or {})
         cards: list[dict[str, object]] = []
         for index, strategy in enumerate(catalog, start=1):
-            runtime_item = self._execution_sync.get_strategy(index) or {}
+            runtime_item = self._get_strategy_runtime(index=index, strategy=strategy, runtime_snapshot=runtime_snapshot)
             default_params = dict(strategy.get("default_params") or {})
             symbols = list(whitelist)
             primary_symbol = symbols[0] if symbols else ""
@@ -172,6 +243,33 @@ class StrategyWorkspaceService:
                 research_summary=research_summary,
             )
         return cards
+
+    def _get_strategy_runtime(
+        self,
+        *,
+        index: int,
+        strategy: dict[str, object],
+        runtime_snapshot: dict[str, object],
+    ) -> dict[str, object]:
+        """安全读取单个策略运行状态。"""
+
+        try:
+            runtime_item = self._execution_sync.get_strategy(index) or {}
+        except Exception as exc:
+            return {
+                "status": "unavailable",
+                "name": str(strategy.get("display_name", "")),
+                "detail": str(exc),
+            }
+        if runtime_item:
+            return runtime_item
+        if str(runtime_snapshot.get("status", "")) == "unavailable":
+            return {
+                "status": "unavailable",
+                "name": str(strategy.get("display_name", "")),
+                "detail": str(runtime_snapshot.get("detail", "")),
+            }
+        return {}
 
     def _get_latest_signal(self, strategy_id: int) -> dict[str, object] | None:
         """返回指定策略最近一条已持久化信号。"""

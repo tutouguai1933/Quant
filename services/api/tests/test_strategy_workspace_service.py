@@ -197,6 +197,49 @@ class StrategyWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("候选池预设", workspace["configuration"]["candidate_pool_preset"])
         self.assertEqual(workspace["configuration"]["candidate_scope"]["candidate_symbols"], ["ETHUSDT", "XRPUSDT", "DOGEUSDT"])
 
+    def test_workspace_stays_available_when_execution_sync_is_unavailable(self) -> None:
+        class _UnavailableExecutionSync:
+            def get_runtime_snapshot(self) -> dict[str, object]:
+                return {
+                    "executor": "freqtrade",
+                    "backend": "rest",
+                    "mode": "dry-run",
+                    "connection_status": "error",
+                }
+
+            def get_strategy(self, strategy_id: int) -> dict[str, object] | None:
+                raise RuntimeError("freqtrade unavailable")
+
+            def list_orders(self, limit: int = 100) -> list[dict[str, object]]:
+                raise RuntimeError("freqtrade unavailable")
+
+            def list_positions(self, limit: int = 100) -> list[dict[str, object]]:
+                raise RuntimeError("freqtrade unavailable")
+
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}, clear=False), patch(
+            "services.api.app.services.strategy_workspace_service.workbench_config_service.get_config",
+            return_value={"data": {"selected_symbols": ["BTCUSDT", "ETHUSDT"]}},
+        ):
+            service = StrategyWorkspaceService(
+                catalog_service=_FakeCatalogService(),
+                signal_store=_FakeSignalStore(),
+                execution_sync=_UnavailableExecutionSync(),
+                market_reader=_FakeMarketReader(),
+                research_reader=_FakeResearchService(),
+                account_sync=_FakeAccountSyncService(),
+            )
+
+            workspace = service.get_workspace()
+
+        self.assertEqual(workspace["executor_runtime"]["backend"], "rest")
+        self.assertEqual(workspace["executor_runtime"]["connection_status"], "error")
+        self.assertEqual(workspace["account_state"]["source"], "freqtrade-rest-sync")
+        self.assertEqual(workspace["account_state"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", workspace["account_state"]["detail"])
+        self.assertEqual(workspace["account_state"]["summary"]["order_count"], 0)
+        self.assertEqual(workspace["recent_orders"], [])
+        self.assertEqual(workspace["strategies"][0]["runtime_status"], "unavailable")
+
 
 class _FakeCatalogService:
     def get_whitelist(self) -> list[str]:

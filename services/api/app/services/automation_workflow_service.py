@@ -19,6 +19,7 @@ from services.api.app.services.research_execution_arbitration_service import res
 from services.api.app.services.validation_workflow_service import validation_workflow_service
 from services.api.app.services.workbench_config_service import workbench_config_service
 from services.api.app.tasks.scheduler import task_scheduler
+from services.api.app.services.cycle_lock import CycleLock
 
 
 class AutomationWorkflowService:
@@ -44,6 +45,7 @@ class AutomationWorkflowService:
         self._reviewer = reviewer or validation_workflow_service
         self._syncer = syncer or sync_service
         self._arbiter = arbiter or research_execution_arbitration_service
+        self._cycle_lock = CycleLock()
 
     def get_status(self) -> dict[str, object]:
         """返回自动化状态和健康摘要。"""
@@ -60,7 +62,16 @@ class AutomationWorkflowService:
         operations = self._get_operations_config()
         automation_config = dict(automation_status.get("automation_config") or self._get_automation_config())
         review_limit = int(operations.get("review_limit", 10) or 10)
-        report = self._reviewer.build_report(limit=review_limit)
+        try:
+            report = self._reviewer.build_report(limit=review_limit)
+        except Exception:
+            report = {
+                "overview": {
+                    "workflow_status": "unavailable",
+                    "next_action": "review_backend",
+                    "detail": "统一复盘暂时不可用，请先检查复盘服务。",
+                }
+            }
         health = self._automation.build_health_summary(task_health=task_health)
         runtime_window = self._build_runtime_window(state=state, operations=operations, automation_config=automation_config)
         resume_status = self._build_resume_status(
@@ -78,26 +89,56 @@ class AutomationWorkflowService:
             mode=str(state.get("mode", "manual") or "manual"),
             armed_symbol=str(state.get("armed_symbol", "") or ""),
         )
+        try:
+            execution_health = self._syncer.get_execution_health_summary(
+                task_health=task_health,
+                automation_state=state,
+            )
+        except Exception:
+            execution_health = {
+                "status": "unavailable",
+                "connection_status": "disconnected",
+                "detail": "执行同步暂时不可用，请先检查执行器和账户同步。",
+            }
+        runtime_guard = self._build_runtime_guard(
+            state=state,
+            task_health=task_health,
+            runtime_window=runtime_window,
+            resume_status=resume_status,
+            execution_health=execution_health,
+        )
+        active_blockers = list(health.get("active_blockers") or [])
+        operator_actions = list(health.get("operator_actions") or [])
+        latest_alert = alerts[-1] if alerts else None
+        recovery_review = self._build_recovery_review(
+            state=state,
+            task_health=task_health,
+            runtime_window=runtime_window,
+            resume_status=resume_status,
+            execution_health=execution_health,
+            active_blockers=active_blockers,
+            operator_actions=operator_actions,
+            latest_alert=latest_alert,
+        )
         status_payload = {
             "state": state,
             "health": health,
             "operations": operations,
             "automation_config": automation_config,
             "execution_policy": dict(automation_status.get("execution_policy") or {}),
-            "active_blockers": list(health.get("active_blockers") or []),
-            "operator_actions": list(health.get("operator_actions") or []),
+            "active_blockers": active_blockers,
+            "operator_actions": operator_actions,
             "control_actions": control_actions,
             "control_matrix": control_matrix,
             "takeover_summary": dict(health.get("takeover_summary") or {}),
             "alert_summary": dict(health.get("alert_summary") or {}),
             "review_overview": dict(report.get("overview") or {}),
-            "execution_health": self._syncer.get_execution_health_summary(
-                task_health=task_health,
-                automation_state=state,
-            ),
+            "execution_health": execution_health,
             "daily_summary": dict(automation_status.get("daily_summary") or {}),
             "runtime_window": runtime_window,
+            "runtime_guard": runtime_guard,
             "resume_status": resume_status,
+            "recovery_review": recovery_review,
             "priority_queue": list(priority_queue_payload.get("items") or []),
             "priority_queue_summary": dict(priority_queue_payload.get("summary") or {}),
             "scheduler_plan": self._build_scheduler_plan(review_limit=review_limit),
@@ -115,6 +156,28 @@ class AutomationWorkflowService:
 
     def run_cycle(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:
         """执行一轮自动化工作流。"""
+
+        # 尝试获取互斥锁，如果已被占用则立即返回
+        if not self._cycle_lock.acquire(blocking=False):
+            state = self._automation.get_state()
+            mode = str(state.get("mode", "manual"))
+            armed_symbol = str(state.get("armed_symbol", "")).strip().upper()
+            return {
+                "status": "running",
+                "mode": mode,
+                "recommended_symbol": "",
+                "next_action": "wait_current_cycle",
+                "message": "自动化工作流正在执行中，请等待当前周期完成。",
+                "armed_symbol": armed_symbol,
+            }
+
+        try:
+            return self._run_cycle_impl(source=source, review_limit=review_limit)
+        finally:
+            self._cycle_lock.release()
+
+    def _run_cycle_impl(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:
+        """执行一轮自动化工作流的实际实现。"""
 
         operations = self._get_operations_config()
         review_limit = int(operations.get("review_limit", review_limit) or review_limit)
@@ -531,6 +594,108 @@ class AutomationWorkflowService:
         }
 
     @classmethod
+    def _build_runtime_guard(
+        cls,
+        *,
+        state: dict[str, object],
+        task_health: dict[str, object],
+        runtime_window: dict[str, object],
+        resume_status: dict[str, object],
+        execution_health: dict[str, object],
+    ) -> dict[str, object]:
+        """构建运行时守卫状态，包括降级模式判断。"""
+
+        ready_for_cycle = bool(runtime_window.get("ready_for_cycle", False))
+        blocked_reason = str(runtime_window.get("blocked_reason", ""))
+        paused = bool(state.get("paused", False))
+        manual_takeover = bool(state.get("manual_takeover", False))
+        mode = str(state.get("mode", "manual"))
+        paused_reason = str(state.get("paused_reason", ""))
+
+        executor_status = str(execution_health.get("executor_status", "unknown"))
+        sync_status = str(execution_health.get("sync_status", "unknown"))
+        connection_status = str(execution_health.get("connection_status", "unknown"))
+
+        # 检查是否有正在运行的自动化周期
+        latest_status_by_type = dict(task_health.get("latest_status_by_type") or {})
+        automation_cycle_running = str(latest_status_by_type.get("automation_cycle", "")) == "running"
+
+        # 判断降级模式和状态
+        degrade_mode = "none"
+        status = "ready"
+        operator_route = "/tasks"
+
+        # 如果执行器或同步异常，进入 task_hub_only 模式
+        if connection_status == "disconnected" or executor_status in {"error", "disconnected"} or sync_status in {"error", "stale"}:
+            degrade_mode = "task_hub_only"
+            status = "degraded"
+        # 如果正在运行周期，进入 cycle_running 模式
+        elif automation_cycle_running:
+            degrade_mode = "cycle_running"
+            status = "running"
+        # 如果人工接管或暂停，进入 manual_only 模式
+        elif manual_takeover or (paused and blocked_reason in {"manual_takeover_active", "paused_waiting_review"}):
+            degrade_mode = "manual_only"
+            status = "attention_required"
+        # 如果手动模式，进入 manual_only
+        elif mode == "manual":
+            degrade_mode = "manual_only"
+            status = "ready"
+        # 如果在等待窗口（冷却或日限），进入 window_wait 模式
+        elif blocked_reason in {"cooldown_active", "daily_limit_reached"}:
+            degrade_mode = "window_wait"
+            status = "waiting"
+        # 否则进入 full 模式
+        else:
+            degrade_mode = "full"
+            status = "ready"
+
+        # 构建告警上下文
+        alert_context = {}
+
+        # 如果正在运行周期，设置 info 级别告警
+        if automation_cycle_running:
+            alert_context = {
+                "level": "info",
+                "code": "automation_cycle_running",
+                "message": "自动化工作流正在执行中",
+            }
+        # 如果连接断开，设置 error 级别告警
+        elif connection_status == "disconnected":
+            alert_context = {
+                "level": "error",
+                "code": "dependency_unavailable",
+                "message": "执行器或同步服务连接断开",
+            }
+        # 如果人工接管，设置 warning 级别告警
+        elif manual_takeover:
+            alert_context = {
+                "level": "warning",
+                "code": "manual_takeover_enabled",
+                "message": "当前处于人工接管模式",
+            }
+        # 否则从状态中读取最新告警
+        else:
+            alerts = list(state.get("alerts") or [])
+            if alerts:
+                latest_alert = alerts[-1] if isinstance(alerts[-1], dict) else {}
+                alert_context = {
+                    "level": str(latest_alert.get("level", "")),
+                    "code": str(latest_alert.get("code", "")),
+                    "message": str(latest_alert.get("message", "")),
+                }
+
+        return {
+            "ready_for_cycle": ready_for_cycle,
+            "blocked_reason": blocked_reason,
+            "degrade_mode": degrade_mode,
+            "status": status,
+            "operator_route": operator_route,
+            "takeover_review_due_at": str(runtime_window.get("takeover_review_due_at", "")),
+            "alert_context": alert_context,
+        }
+
+    @classmethod
     def _build_runtime_window(
         cls,
         *,
@@ -846,6 +1011,184 @@ class AutomationWorkflowService:
             "primary_action_label": primary_action_label,
             "primary_action_detail": primary_action_detail,
         }
+
+    @classmethod
+    def _build_recovery_review(
+        cls,
+        *,
+        state: dict[str, object],
+        task_health: dict[str, object],
+        runtime_window: dict[str, object],
+        resume_status: dict[str, object],
+        execution_health: dict[str, object],
+        active_blockers: list[dict[str, object]],
+        operator_actions: list[dict[str, object]],
+        latest_alert: dict[str, object] | None,
+    ) -> dict[str, object]:
+        """构建恢复复核摘要，整合运行时守卫、恢复状态和执行健康。"""
+
+        runtime_guard_status = str(runtime_window.get("blocked_reason", ""))
+        recovery_state = str(resume_status.get("recovery_state", "waiting"))
+        connection_status = str(execution_health.get("connection_status", "unknown"))
+        execution_status = str(execution_health.get("status", "unknown"))
+        mode = str(state.get("mode", "manual"))
+        manual_takeover = bool(state.get("manual_takeover"))
+        paused = bool(state.get("paused"))
+        ready_for_cycle = bool(runtime_window.get("ready_for_cycle", False))
+
+        # 检查是否有正在运行的自动化周期
+        latest_status_by_type = dict(task_health.get("latest_status_by_type") or {})
+        automation_cycle_running = str(latest_status_by_type.get("automation_cycle", "")) == "running"
+
+        # 确定状态
+        if automation_cycle_running:
+            status = "running"
+        elif connection_status == "disconnected" or execution_status == "unavailable":
+            status = "attention_required"
+        elif manual_takeover and active_blockers:
+            status = "attention_required"
+        elif recovery_state == "recoverable":
+            status = "ready"
+        elif recovery_state == "manual_required":
+            status = "attention_required"
+        elif recovery_state == "dry_run_only":
+            status = "ready"
+        elif mode == "manual":
+            status = "blocked"
+        elif runtime_guard_status in {"cooldown_active", "daily_limit_reached"}:
+            status = "waiting"
+        elif ready_for_cycle:
+            status = "ready"
+        else:
+            status = "waiting"
+
+        # 确定 issue_code
+        issue_code = ""
+        if connection_status == "disconnected" or execution_status == "unavailable":
+            issue_code = "execution_unavailable"
+        elif manual_takeover:
+            issue_code = "manual_takeover"
+        elif runtime_guard_status == "paused_waiting_review":
+            issue_code = "paused_review"
+        elif runtime_guard_status == "cooldown_active":
+            issue_code = "cooldown_active"
+        elif runtime_guard_status == "daily_limit_reached":
+            issue_code = "daily_limit_reached"
+        elif mode == "manual":
+            issue_code = "manual_mode"
+
+        # 获取 detail
+        story = dict(runtime_window.get("story") or {})
+        detail = ""
+        if automation_cycle_running:
+            detail = "系统正在执行自动化工作流，请等待当前周期完成。"
+        elif connection_status == "disconnected" or execution_status == "unavailable":
+            detail = str(execution_health.get("detail", "执行同步暂时不可用，请先检查执行器和账户同步。"))
+        elif runtime_guard_status == "daily_limit_reached":
+            # 对于日限的情况，使用固定文本
+            detail = "需等到下一日窗口后继续。"
+        elif runtime_guard_status == "cooldown_active":
+            # 对于冷却的情况，使用 note（包含冷却时间）
+            detail = str(runtime_window.get("note", ""))
+        else:
+            detail = str(runtime_window.get("note", "") or story.get("next_step", ""))
+
+        # 获取 waiting_for
+        waiting_for = str(resume_status.get("waiting_for", "none"))
+        if automation_cycle_running:
+            waiting_for = "active_cycle"
+
+        # 获取 next_action 和 next_action_label
+        if automation_cycle_running:
+            next_action = "observe_current_run"
+            next_action_label = "观察当前运行"
+        else:
+            next_action = str(resume_status.get("primary_action", "") or runtime_window.get("next_action", ""))
+            next_action_label = str(resume_status.get("primary_action_label", ""))
+
+            # 如果 label 为空，使用默认映射
+            if not next_action_label and next_action:
+                action_label_map = {
+                    "automation_resume": "确认后恢复自动化",
+                    "automation_dry_run_only": "只恢复到 dry-run",
+                    "automation_mode_manual": "保持手动",
+                    "automation_run_cycle": "运行自动化工作流",
+                    "wait_cooldown": "等待冷却窗口",
+                    "wait_next_window": "等待下一日窗口",
+                    "manual_review": "人工复核",
+                    "resume_after_review": "复核后恢复",
+                    "review_takeover": "复核接管状态",
+                    "manual_takeover": "人工接管",
+                    "run_next_cycle": "运行下一轮",
+                    "observe_current_run": "观察当前运行",
+                }
+                next_action_label = action_label_map.get(next_action, next_action)
+
+        # 获取 headline - 根据 recovery_state 调整
+        if automation_cycle_running:
+            headline = "系统正在执行自动化工作流"
+        elif recovery_state == "recoverable" and runtime_guard_status == "paused_waiting_review":
+            headline = "当前可以恢复自动化"
+        else:
+            headline = str(story.get("headline", ""))
+
+        # 获取 blockers
+        resume_blockers = list(resume_status.get("resume_blockers") or [])
+        blockers = cls._normalize_recovery_blockers(
+            resume_blockers=resume_blockers,
+            active_blockers=active_blockers,
+        )
+
+        # 获取 earliest_resume_at
+        earliest_resume_at = str(resume_status.get("earliest_continue_at", ""))
+
+        return {
+            "status": status,
+            "issue_code": issue_code,
+            "detail": detail,
+            "waiting_for": waiting_for,
+            "next_action": next_action,
+            "next_action_label": next_action_label,
+            "headline": headline,
+            "blockers": blockers,
+            "earliest_resume_at": earliest_resume_at,
+        }
+
+    @staticmethod
+    def _normalize_recovery_blockers(
+        *,
+        resume_blockers: list[dict[str, object]],
+        active_blockers: list[dict[str, object]],
+    ) -> list[dict[str, str]]:
+        """合并恢复阻塞和活跃阻塞，去重并保留必要字段。"""
+
+        seen: set[str] = set()
+        result: list[dict[str, str]] = []
+
+        # 先添加 resume_blockers
+        for item in resume_blockers:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label", ""))
+            detail = str(item.get("detail", ""))
+            if label and label not in seen:
+                seen.add(label)
+                result.append({"label": label, "detail": detail})
+
+        # 再添加 active_blockers（只添加没有 code 字段的，或者 code 为空的）
+        for item in active_blockers:
+            if not isinstance(item, dict):
+                continue
+            # 如果有 code 字段且不为空，跳过
+            if item.get("code"):
+                continue
+            label = str(item.get("label", ""))
+            detail = str(item.get("detail", ""))
+            if label and label not in seen:
+                seen.add(label)
+                result.append({"label": label, "detail": detail})
+
+        return result
 
     @classmethod
     def _build_control_matrix(

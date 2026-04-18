@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -18,25 +19,45 @@ class BinanceMarketClient:
         base_url: str | None = None,
         timeout_seconds: float | None = None,
         opener=None,
+        max_retries: int = 2,
+        base_delay: float = 0.3,
     ) -> None:
         settings = Settings.from_env()
         self.base_url = (base_url or settings.binance_market_base_url).rstrip("/")
         self.timeout_seconds = timeout_seconds or settings.binance_timeout_seconds
         self._opener = opener or urlopen
+        self.max_retries = max_retries
+        self.base_delay = base_delay
 
     def _safe_public_get(self, url: str, default):
-        """读取公共接口，异常时回退到空结果。"""
+        """读取公共接口，带重试和指数退避，异常时回退到空结果。"""
 
-        try:
-            with self._opener(url, timeout=self.timeout_seconds) as response:
-                return json.load(response)
-        except (HTTPError, URLError, TimeoutError, OSError):
-            return default
+        last_exception: Exception | None = None
 
-    def get_tickers(self) -> list[dict[str, object]]:
+        for attempt in range(self.max_retries):
+            try:
+                with self._opener(url, timeout=self.timeout_seconds) as response:
+                    return json.load(response)
+            except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+                last_exception = exc
+                if attempt < self.max_retries - 1:
+                    delay = self.base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                continue
+            except Exception:
+                # 捕获所有其他异常，避免阻塞
+                break
+
+        return default
+
+    def get_tickers(self, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
         """读取 24 小时行情汇总。"""
 
-        url = f"{self.base_url}/api/v3/ticker/24hr"
+        if symbols:
+            query = urlencode({"symbols": json.dumps([s.strip().upper() for s in symbols if s.strip()])})
+            url = f"{self.base_url}/api/v3/ticker/24hr?{query}"
+        else:
+            url = f"{self.base_url}/api/v3/ticker/24hr"
         return self._safe_public_get(url, [])
 
     def get_klines(self, symbol: str, interval: str = "4h", limit: int = 200) -> list[list[object]]:

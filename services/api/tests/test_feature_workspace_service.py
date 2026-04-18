@@ -64,6 +64,29 @@ class FeatureWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["overview"]["factor_count"], 1)
         self.assertEqual(item["factors"][0]["name"], "ema20_gap_pct")
 
+    def test_workspace_provides_summary_fields(self) -> None:
+        service = FeatureWorkspaceService(research_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+        effectiveness = item.get("effectiveness_summary") or {}
+        redundancy = item.get("redundancy_summary") or {}
+        score_story = item.get("score_story") or {}
+
+        self.assertTrue(effectiveness.get("headline"))
+        self.assertTrue(effectiveness.get("top_category"))
+        self.assertTrue(effectiveness.get("ic_story"))
+        self.assertIn("category_rows", effectiveness)
+
+        self.assertTrue(redundancy.get("headline"))
+        overlap_groups = redundancy.get("overlap_groups") or []
+        self.assertGreaterEqual(len(overlap_groups), 3)
+        self.assertIn("量能", overlap_groups[-1].get("label", ""))
+
+        contributors = score_story.get("contributors") or []
+        self.assertEqual(len(contributors), 5)
+        self.assertTrue(contributors[0].get("weight"))
+        self.assertTrue(score_story.get("candidate_explanation"))
+
 
 class _FakeResearchService:
     def get_factory_report(self) -> dict[str, object]:

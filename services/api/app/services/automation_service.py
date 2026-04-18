@@ -1333,15 +1333,16 @@ class AutomationService:
         config = workbench_config_service.get_config()
         operations = dict(config.get("operations") or {})
         preset_key = str(operations.get("operations_preset_key", "balanced_guard"))
+        catalog = _build_operations_preset_catalog()
         return {
             "operations_preset_key": preset_key,
             "operations_preset_detail": _describe_catalog_item(
-                _build_operations_preset_catalog(),
+                catalog,
                 key=preset_key,
                 title="长期运行预设",
             ),
-            "available_operations_presets": [str(item.get("key", "")) for item in _build_operations_preset_catalog() if str(item.get("key", "")).strip()],
-            "operations_preset_catalog": _build_operations_preset_catalog(),
+            "available_operations_presets": [str(item.get("key", "")) for item in catalog if str(item.get("key", "")).strip()],
+            "operations_preset_catalog": catalog,
             "pause_after_consecutive_failures": int(operations.get("pause_after_consecutive_failures", 2) or 2),
             "stale_sync_failure_threshold": int(operations.get("stale_sync_failure_threshold", 1) or 1),
             "auto_pause_on_error": bool(operations.get("auto_pause_on_error", True)),
@@ -1371,15 +1372,16 @@ class AutomationService:
         config = workbench_config_service.get_config()
         automation = dict(config.get("automation") or {})
         preset_key = str(automation.get("automation_preset_key", "balanced_runtime"))
+        catalog = _build_automation_preset_catalog()
         return {
             "automation_preset_key": preset_key,
             "automation_preset_detail": _describe_catalog_item(
-                _build_automation_preset_catalog(),
+                catalog,
                 key=preset_key,
                 title="自动化运行预设",
             ),
-            "available_automation_presets": [str(item.get("key", "")) for item in _build_automation_preset_catalog() if str(item.get("key", "")).strip()],
-            "automation_preset_catalog": _build_automation_preset_catalog(),
+            "available_automation_presets": [str(item.get("key", "")) for item in catalog if str(item.get("key", "")).strip()],
+            "automation_preset_catalog": catalog,
             "long_run_seconds": int(automation.get("long_run_seconds", 300) or 300),
             "alert_cleanup_minutes": int(automation.get("alert_cleanup_minutes", 15) or 15),
         }

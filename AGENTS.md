@@ -5,10 +5,20 @@
 明确的子任务可以自主完成，不需要每步确认。遇到真正需要决策的分叉点再停下来问我。不要在任务完成后主动提出优化建议或替代方案。如果有重要问题需要注意，最多一句话注明，不展开。
 
 ## 文件处理
-所有文件读写使用 UTF-8 编码，修改文件时不要改变原有编码。在 PowerShell 中读取含中文的文件时，先执行 `chcp 65001` 并设置 UTF-8 输出，读取时用 `Get-Content -Encoding UTF8`。不要用 sed/awk 处理含中文的文件，改用 Python 或 Node.js。代码注释使用中文。
+所有文件读写使用 UTF-8 编码，修改文件时不要改变原有编码。优先在 WSL 或 bash 终端中操作中文文件，确保终端语言环境为 UTF-8（例如 `export LANG=C.UTF-8`），直接用 `cat`/`rg`/`Get-Content -Encoding UTF8`（PowerShell 读取场景）等工具浏览内容。不建议用 sed/awk 处理含中文的文件，改用 Python 或 Node.js。如果必须在 Windows PowerShell 中操作，请先执行 `chcp 65001` 并设置输出为 UTF-8，再用 `Get-Content -Encoding UTF8` 阅读。代码注释使用中文。
 
 ## Python 环境
-在项目中运行 Python 时，优先使用项目本地的虚拟环境。Windows 用 `.venv/Scripts/python.exe`，Unix 用 `.venv/bin/python`，不要直接用 `python` 命令。如果 `.venv` 不存在，先用 `python -m venv .venv` 创建再运行。
+这条规则优先级很高：在这个项目里运行 Python，统一使用 Conda 环境 `quant`，不要再使用 `.venv`。  
+默认步骤：
+
+```bash
+source /home/djy/miniforge3/etc/profile.d/conda.sh
+conda activate quant
+```
+
+- Windows 同样优先进入 `quant` 环境后再运行 Python 命令
+- 不再创建、依赖或建议使用 `.venv`
+- 需要执行测试、脚本、服务启动命令时，默认都基于 `conda activate quant`
 
 ## 项目开始前
 每次开始一个新项目或新会话时：

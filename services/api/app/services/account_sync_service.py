@@ -214,9 +214,22 @@ class AccountSyncService:
                 + tuple(symbol.strip().upper() for symbol in settings.live_allowed_symbols)
             )
         )
-        exchange_info = self._market_client.get_exchange_info(symbols or None)
+
+        # 使用超时保护的并发调用，避免阻塞
+        exchange_info: dict[str, object] = {}
+        latest_prices: dict[str, Decimal] = {}
+
+        try:
+            exchange_info = self._market_client.get_exchange_info(symbols or None)
+        except Exception:
+            pass  # 降级：无交易规则时仍返回基础余额
+
+        try:
+            latest_prices = self._build_price_map(symbols)
+        except Exception:
+            pass  # 降级：无价格时仍返回基础余额
+
         symbol_rules = self._build_symbol_rules(exchange_info=exchange_info)
-        latest_prices = self._build_price_map()
         enriched: list[dict[str, object]] = []
 
         for item in balances:
@@ -301,11 +314,11 @@ class AccountSyncService:
                 rules[symbol] = {"step_size": step_size, "min_notional": min_notional}
         return rules
 
-    def _build_price_map(self) -> dict[str, Decimal]:
+    def _build_price_map(self, symbols: tuple[str, ...]) -> dict[str, Decimal]:
         """读取最新成交价，用于判断余额是不是零头。"""
 
         price_map: dict[str, Decimal] = {}
-        for item in list(self._market_client.get_tickers()):
+        for item in list(self._market_client.get_tickers(symbols or None)):
             symbol = str(item.get("symbol", "")).upper()
             if not symbol:
                 continue

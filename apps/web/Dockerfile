@@ -5,6 +5,8 @@ FROM node:20-bookworm-slim
 ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 RUN corepack enable
 
 WORKDIR /app/apps/web

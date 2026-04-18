@@ -1,17 +1,22 @@
-/* 这个文件负责渲染策略研究工作台，让研究模板、标签和实验参数直接可见。 */
+/* 这个文件负责渲染策略研究工作台，把默认首屏收成当前状态、当前配置摘要和当前产物三张摘要卡。 */
+"use client";
+
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import type { ReactNode } from "react";
 
 import { AppShell } from "../../components/app-shell";
+import { ApiErrorFallback } from "../../components/api-error-fallback";
+import { LoadingBanner } from "../../components/loading-banner";
 import { DataTable } from "../../components/data-table";
-import { MetricGrid } from "../../components/metric-grid";
+import { FeedbackBanner } from "../../components/feedback-banner";
 import { PageHero } from "../../components/page-hero";
+import { type ResearchFocusCard, ResearchFocusGrid } from "../../components/research-focus-grid";
+import { ResearchPrimaryActionSection } from "../../components/research-primary-action-section";
 import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
 import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
-import { FormSubmitButton } from "../../components/form-submit-button";
-import { Badge } from "../../components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearchWorkspace, getResearchWorkspaceFallback } from "../../lib/api";
-import { getControlSessionState } from "../../lib/session";
-import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
+import { readFeedback } from "../../lib/feedback";
 
 const MODEL_LABELS: Record<string, string> = {
   heuristic_v1: "heuristic_v1 / 基础启发式",
@@ -34,95 +39,73 @@ const LABEL_TRIGGER_BASIS_LABELS: Record<string, string> = {
 
 const DEFAULT_RESEARCH_PRESETS = ["baseline_balanced", "trend_following", "conservative_validation", "momentum_breakout", "stability_first"];
 
-export default async function ResearchPage() {
-  const session = await getControlSessionState();
-  const [workspaceResponse, runtimeResponse] = await Promise.allSettled([getResearchWorkspace(), getResearchRuntimeStatus()]);
-  const workspace =
-    workspaceResponse.status === "fulfilled" && !workspaceResponse.value.error
-      ? workspaceResponse.value.data.item
-      : getResearchWorkspaceFallback();
-  const runtimeStatus =
-    runtimeResponse.status === "fulfilled" && !runtimeResponse.value.error
-      ? runtimeResponse.value.data.item
-      : getResearchRuntimeStatusFallback();
+export default function ResearchPage() {
+  const searchParams = useSearchParams();
+  const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
+  const feedback = readFeedback(params);
+
+  const [session, setSession] = useState<{ token: string | null; isAuthenticated: boolean }>({
+    token: null,
+    isAuthenticated: false,
+  });
+  const [workspace, setWorkspace] = useState(getResearchWorkspaceFallback());
+  const [runtimeStatus, setRuntimeStatus] = useState(getResearchRuntimeStatusFallback());
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasApiErrors, setHasApiErrors] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/control/session")
+      .then((res) => res.json())
+      .then((data) => {
+        setSession({
+          token: data.token || null,
+          isAuthenticated: Boolean(data.isAuthenticated),
+        });
+      })
+      .catch(() => {
+        // Keep default session state
+      });
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    Promise.allSettled([
+      getResearchWorkspace(controller.signal),
+      getResearchRuntimeStatus(controller.signal),
+    ])
+      .then(([workspaceResponse, runtimeResponse]) => {
+        clearTimeout(timeoutId);
+
+        const errors = [workspaceResponse, runtimeResponse].some(
+          (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && result.value.error !== null && result.value.error !== undefined)
+        );
+
+        if (workspaceResponse.status === "fulfilled" && !workspaceResponse.value.error) {
+          setWorkspace(workspaceResponse.value.data.item);
+        }
+        if (runtimeResponse.status === "fulfilled" && !runtimeResponse.value.error) {
+          setRuntimeStatus(runtimeResponse.value.data.item);
+        }
+
+        setHasApiErrors(errors);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        clearTimeout(timeoutId);
+        setHasApiErrors(true);
+        setIsLoading(false);
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, []);
   const configAlignment = asRecord(workspace.config_alignment);
   const controls = asRecord(workspace.controls);
-  const configEditable = workspace.status !== "unavailable";
-  const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
-  const hasResearchResults = workspace.status !== "unavailable";
-  const readinessTrainLabel = hasResearchResults
-    ? (workspace.readiness.train_ready ? "可以" : "还不行")
-    : (workspace.readiness.train_ready ? "可以启动首轮训练" : "还不行");
-  const readinessInferLabel = hasResearchResults
-    ? (workspace.readiness.infer_ready ? "可以" : "还不行")
-    : "还不行";
-  const readinessBlockers = workspace.readiness.blocking_reasons.length
-    ? workspace.readiness.blocking_reasons.join(" / ")
-    : hasResearchResults
-      ? "当前没有研究配置阻塞"
-      : "当前没有配置阻塞，但研究结果还没生成。";
-  const readinessInferReason = hasResearchResults
-    ? (workspace.readiness.infer_reason || "当前没有推理说明")
-    : "当前还没有训练和推理结果，先启动首轮研究训练。";
-  const readinessNextStep = hasResearchResults
-    ? (workspace.readiness.next_step || "继续观察当前研究状态")
-    : "先保存右侧配置，再运行研究训练，首轮结果会自动进入评估中心。";
-  const researchStatus = String(configAlignment.status ?? (workspace.status || "unavailable"));
-  const researchNote =
-    String(configAlignment.note ?? "") || readinessNextStep || "当前还没有可用对齐说明。";
-  const researchStaleFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
-  const resolvedLabelMode = LABEL_MODE_LABELS[workspace.labeling.label_mode] || workspace.labeling.label_mode || "未设置";
-  const resolvedLabelTriggerBasis =
-    LABEL_TRIGGER_BASIS_LABELS[String(controls.label_trigger_basis ?? "close")] || String(controls.label_trigger_basis ?? "close");
-  const selectedModelKey = String(controls.model_key ?? workspace.model.model_version ?? "heuristic_v1");
-  const labelTargetPctValue = displayValue(workspace.controls.label_target_pct, "未设置");
-  const labelStopPctValue = displayValue(workspace.controls.label_stop_pct, "未设置");
-  const modelCatalog = Array.isArray(controls.model_catalog)
-    ? controls.model_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const researchPresetCatalog = Array.isArray(controls.research_preset_catalog)
-    ? controls.research_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const researchTemplateCatalog = Array.isArray(controls.research_template_catalog)
-    ? controls.research_template_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const labelPresetCatalog = Array.isArray(controls.label_preset_catalog)
-    ? controls.label_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const availableLabelPresets = Array.isArray(controls.available_label_presets)
-    ? controls.available_label_presets.map(String)
-    : ["balanced_window", "breakout_path", "closing_confirmation", "majority_filter", "pullback_reclaim", "volatility_breakout"];
-  const labelModeCatalog = Array.isArray(controls.label_mode_catalog)
-    ? controls.label_mode_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const labelTriggerCatalog = Array.isArray(controls.label_trigger_catalog)
-    ? controls.label_trigger_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const holdingWindowCatalog = Array.isArray(controls.holding_window_catalog)
-    ? controls.holding_window_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const splitPreviewRows = buildSplitPreviewRows({
-    sampleWindow: workspace.sample_window,
-    trainRatio: String(controls.train_split_ratio ?? "0.6"),
-    validationRatio: String(controls.validation_split_ratio ?? "0.2"),
-    testRatio: String(controls.test_split_ratio ?? "0.2"),
-  });
-  const weightSummaries = [
-    { label: "趋势权重", value: workspace.controls.trend_weight },
-    { label: "动量权重", value: workspace.controls.momentum_weight },
-    { label: "量能权重", value: workspace.controls.volume_weight },
-    { label: "震荡权重", value: workspace.controls.oscillator_weight },
-    { label: "波动权重", value: workspace.controls.volatility_weight },
-    { label: "严格惩罚权重", value: workspace.controls.strict_penalty_weight },
-    { label: "信心阈值", value: workspace.controls.signal_confidence_floor },
-  ];
-  const selectedLabelPresetKey = String(controls.label_preset_key ?? "balanced_window");
   const selectionStory = asRecord(workspace.selection_story);
-  const candidateScope = workspace.candidate_scope;
-  const candidateScopeHeadline = displayValue(candidateScope.headline, "当前还没有候选范围说明");
-  const candidateScopeDetail = displayValue(candidateScope.detail, "当前还没有候选池和 live 子集的统一说明");
-  const candidateScopeNextStep = displayValue(candidateScope.next_step, "先确认候选池，再决定 live 子集");
-  const artifactTemplates = workspace.artifact_templates;
   const selectedResearchPreset = asRecord(selectionStory.research_preset);
   const selectedResearchTemplate = asRecord(selectionStory.research_template);
   const selectedModelStory = asRecord(selectionStory.model);
@@ -131,309 +114,458 @@ export default async function ResearchPage() {
   const selectedLabelTrigger = asRecord(selectionStory.label_trigger_basis);
   const selectedHoldingWindow = asRecord(selectionStory.holding_window);
 
-  return (
-    <AppShell
-      title="策略研究工作台"
-      subtitle="把当前正在研究的模板、标签定义、训练窗口和实验参数直接摊开，不再只看最后结论。"
-      currentPath="/research"
-      isAuthenticated={session.isAuthenticated}
-    >
-      <PageHero
-        badge="策略研究工作台"
-        title="先搞清楚当前研究到底在研究什么，再决定要不要继续训练、推理和进入执行。"
-        description="这里直接回答三件事：当前研究模板是什么，标签定义怎么来的，训练/验证/回测窗口和模型参数又是什么。"
+  const configEditable = session.isAuthenticated && workspace.status !== "unavailable";
+  const unavailableConfigReason = !session.isAuthenticated ? "请先登录后再保存配置。" : "工作台暂时不可用，先恢复研究接口再保存配置。";
+  const disabledSaveLabel = !session.isAuthenticated ? "登录后可保存配置" : "当前不可保存";
+  const hasResearchResults = workspace.status !== "unavailable";
+
+  const researchPresetKey = readPlainText(controls.research_preset_key, "baseline_balanced");
+  const researchTemplateKey = readPlainText(controls.research_template, "single_asset_timing");
+  const selectedModelKey = readPlainText(controls.model_key, workspace.model.model_version || "heuristic_v1");
+  const selectedLabelPresetKey = readPlainText(controls.label_preset_key, "balanced_window");
+  const labelModeKey = readPlainText(controls.label_mode, workspace.labeling.label_mode || "earliest_hit");
+  const labelTriggerBasisKey = readPlainText(controls.label_trigger_basis, "close");
+  const holdingWindowLabel = readPlainText(controls.holding_window_label, workspace.overview.holding_window || "1-3d");
+  const trainSplitRatio = readPlainText(controls.train_split_ratio, "0.6");
+  const validationSplitRatio = readPlainText(controls.validation_split_ratio, "0.2");
+  const testSplitRatio = readPlainText(controls.test_split_ratio, "0.2");
+  const signalConfidenceFloor = readPlainText(controls.signal_confidence_floor, "0.55");
+  const strictPenaltyWeight = readPlainText(controls.strict_penalty_weight, "1");
+  const trendWeight = readPlainText(controls.trend_weight, "1.3");
+  const momentumWeight = readPlainText(controls.momentum_weight, "1");
+  const volumeWeight = readPlainText(controls.volume_weight, "1.1");
+  const oscillatorWeight = readPlainText(controls.oscillator_weight, "0.7");
+  const volatilityWeight = readPlainText(controls.volatility_weight, "0.9");
+  const labelTargetPctValue = readPlainText(controls.label_target_pct, "未设置");
+  const labelStopPctValue = readPlainText(controls.label_stop_pct, "未设置");
+  const forceValidationTopCandidate = controls.force_validation_top_candidate === true || String(controls.force_validation_top_candidate ?? "") === "true";
+  const minHoldingDaysValue = String(Number(controls.min_holding_days ?? workspace.controls.min_holding_days ?? 1) || 1);
+  const maxHoldingDaysValue = String(Number(controls.max_holding_days ?? workspace.controls.max_holding_days ?? 3) || 3);
+
+  const blockingReasons = toStringArray(workspace.readiness.blocking_reasons);
+  const readinessTrainLabel = hasResearchResults
+    ? (workspace.readiness.train_ready ? "可以" : "还不行")
+    : (workspace.readiness.train_ready ? "可以启动首轮训练" : "还不行");
+  const readinessInferLabel = hasResearchResults
+    ? (workspace.readiness.infer_ready ? "可以" : "还不行")
+    : "还不行";
+  const readinessBlockers = blockingReasons.length
+    ? blockingReasons.join(" / ")
+    : hasResearchResults
+      ? "当前没有研究配置阻塞"
+      : "当前没有配置阻塞，但研究结果还没生成。";
+  const readinessInferReason = hasResearchResults
+    ? (readPlainText(workspace.readiness.infer_reason, "当前没有推理说明"))
+    : "当前还没有训练和推理结果，先启动首轮研究训练。";
+  const readinessNextStep = hasResearchResults
+    ? (readPlainText(workspace.readiness.next_step, "继续观察当前研究状态"))
+    : "先保存配置，再运行研究训练，首轮结果会自动进入评估中心。";
+
+  const researchStatus = readPlainText(configAlignment.status, workspace.status || "unavailable");
+  const researchNote = readPlainText(configAlignment.note, readinessNextStep) || readinessNextStep || "当前还没有可用对齐说明。";
+  const researchStaleFields = toStringArray(configAlignment.stale_fields);
+  const researchStaleFieldsSummary = researchStaleFields.length ? researchStaleFields.join(" / ") : "当前没有发现漂移字段";
+
+  const resolvedLabelMode = LABEL_MODE_LABELS[labelModeKey] || labelModeKey || "未设置";
+  const resolvedLabelTriggerBasis = LABEL_TRIGGER_BASIS_LABELS[labelTriggerBasisKey] || labelTriggerBasisKey;
+
+  const modelCatalog = toRecordArray(controls.model_catalog);
+  const researchPresetCatalog = toRecordArray(controls.research_preset_catalog);
+  const researchTemplateCatalog = toRecordArray(controls.research_template_catalog);
+  const labelPresetCatalog = toRecordArray(controls.label_preset_catalog);
+  const labelModeCatalog = toRecordArray(controls.label_mode_catalog);
+  const labelTriggerCatalog = toRecordArray(controls.label_trigger_catalog);
+  const holdingWindowCatalog = toRecordArray(controls.holding_window_catalog);
+
+  const availableResearchPresets = toStringArray(workspace.controls.available_research_presets, DEFAULT_RESEARCH_PRESETS);
+  const availableResearchTemplates = toStringArray(workspace.controls.available_research_templates);
+  const availableModels = toStringArray(workspace.controls.available_models);
+  const availableLabelPresets = toStringArray(controls.available_label_presets, [
+    "balanced_window",
+    "breakout_path",
+    "closing_confirmation",
+    "majority_filter",
+    "pullback_reclaim",
+    "volatility_breakout",
+  ]);
+  const availableLabelModes = toStringArray(workspace.controls.available_label_modes);
+  const availableLabelTriggerBases = toStringArray(workspace.controls.available_label_trigger_bases, ["close", "high_low"]);
+  const availableHoldingWindows = toStringArray(workspace.controls.available_holding_windows);
+
+  const splitPreviewRows = buildSplitPreviewRows({
+    sampleWindow: workspace.sample_window,
+    trainRatio: trainSplitRatio,
+    validationRatio: validationSplitRatio,
+    testRatio: testSplitRatio,
+  });
+  const weightSummaries = [
+    { label: "趋势权重", value: trendWeight },
+    { label: "动量权重", value: momentumWeight },
+    { label: "量能权重", value: volumeWeight },
+    { label: "震荡权重", value: oscillatorWeight },
+    { label: "波动权重", value: volatilityWeight },
+    { label: "严格惩罚权重", value: strictPenaltyWeight },
+    { label: "信心阈值", value: signalConfidenceFloor },
+  ];
+
+  const candidateScope = workspace.candidate_scope;
+  const candidateScopeHeadline = readPlainText(candidateScope.headline, "当前还没有候选范围说明");
+  const candidateScopeDetail = readPlainText(candidateScope.detail, "当前还没有候选篮子和执行篮子的统一说明");
+  const candidateScopeNextStep = readPlainText(candidateScope.next_step, "先确认候选篮子，再决定执行篮子");
+  const candidateSymbols = toStringArray(candidateScope.candidate_symbols);
+  const liveAllowedSymbols = toStringArray(candidateScope.live_allowed_symbols);
+  const strategyTemplates = toStringArray(workspace.strategy_templates);
+  const labelColumns = toStringArray(workspace.labeling.label_columns);
+  const selectorSymbols = toStringArray(workspace.selectors.symbols);
+  const selectorTimeframes = toStringArray(workspace.selectors.timeframes);
+  const parameterRows = Object.entries(workspace.parameters ?? {}).map(([name, value]) => ({
+    id: name,
+    cells: [name, readPlainText(value, "n/a")],
+  }));
+
+  const artifactTemplates = workspace.artifact_templates;
+  const configHeadline = [
+    readPlainText(selectedResearchPreset.label, researchPresetKey),
+    readPlainText(selectedResearchTemplate.label, researchTemplateKey),
+    readPlainText(selectedModelStory.label, MODEL_LABELS[selectedModelKey] || selectedModelKey),
+  ].join(" / ");
+  const configDetail = [
+    `标签：${readPlainText(selectedLabelPreset.label, selectedLabelPresetKey)}`,
+    `持有窗口：${readPlainText(selectedHoldingWindow.label, holdingWindowLabel)}`,
+    `切分：${trainSplitRatio} / ${validationSplitRatio} / ${testSplitRatio}`,
+  ].join(" / ");
+  const artifactHeadline = readPlainText(artifactTemplates.alignment_status, "missing");
+  const artifactDetail = readPlainText(artifactTemplates.note, "当前还没有模板对齐说明");
+  const primaryActionLabel = readPlainText(workspace.overview.recommended_action, "先运行研究训练");
+  const primaryActionDetail = readinessNextStep || "先看研究运行状态，再决定是否继续训练或推理。";
+
+  const evaluationHref = session.isAuthenticated ? "/evaluation" : "/login?next=%2Fevaluation";
+  const strategiesHref = session.isAuthenticated ? "/strategies" : "/login?next=%2Fstrategies";
+  const tasksHref = session.isAuthenticated ? "/tasks" : "/login?next=%2Ftasks";
+
+  const statusDetailContent = (
+    <div className="space-y-5">
+      <DetailSection title="研究准备状态" description="先确认现在能不能继续训练、推理，以及下一步该做什么。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="可训练" value={readinessTrainLabel} />
+          <InfoBlock label="可推理" value={readinessInferLabel} />
+          <InfoBlock label="当前阻塞" value={readinessBlockers} />
+          <InfoBlock label="推理说明" value={readinessInferReason} />
+          <InfoBlock label="下一步" value={readinessNextStep} />
+        </div>
+      </DetailSection>
+
+      <DetailSection title="当前结果与配置对齐" description="这里确认页面上的配置和当前研究结果是不是同一轮产物。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="对齐状态" value={researchStatus} />
+          <InfoBlock label="当前说明" value={researchNote} />
+          <InfoBlock label="变更字段" value={researchStaleFieldsSummary} />
+        </div>
+      </DetailSection>
+    </div>
+  );
+
+  const configContent = (
+    <div className="space-y-5">
+      <DetailSection title="当前配置摘要" description="先确认这轮研究当前采用的是哪套预设、模板、模型和切分比例。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="当前组合" value={configHeadline} />
+          <InfoBlock label="组合说明" value={configDetail} />
+          <InfoBlock label="当前状态" value={researchStatus} />
+          <InfoBlock label="当前下一步" value={readinessNextStep} />
+          <InfoBlock label="训练是否可启动" value={readinessTrainLabel} />
+          <InfoBlock label="推理是否可启动" value={readinessInferLabel} />
+        </div>
+      </DetailSection>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <WorkbenchConfigCard
+          title="研究预设"
+          description="先套用一整套研究配置，再继续微调模型、标签和权重。"
+          scope="research"
+          returnTo="/research"
+          disabled={!configEditable}
+          disabledReason={unavailableConfigReason}
+          disabledLabel={disabledSaveLabel}
+        >
+          <ConfigField label="一键套用" hint="预设会一起改研究模板、模型、标签方式、持有窗口和主要权重。">
+            <ConfigSelect
+              name="research_preset_key"
+              defaultValue={researchPresetKey}
+              options={availableResearchPresets.map((item) => ({ value: item, label: item }))}
+            />
+          </ConfigField>
+          <DataTable
+            columns={["研究预设", "适用场景", "说明"]}
+            rows={researchPresetCatalog.map((item, index) => ({
+              id: `${readPlainText(item.key, String(index))}`,
+              cells: [
+                readPlainText(item.key, "n/a"),
+                readPlainText(item.fit, "当前没有适用场景说明"),
+                readPlainText(item.detail, "当前没有预设说明"),
+              ],
+            }))}
+            emptyTitle="当前还没有研究预设"
+            emptyDetail="先恢复研究工作台，系统才会给出一键研究预设。"
+          />
+        </WorkbenchConfigCard>
+
+        <WorkbenchConfigCard
+          title="研究参数配置"
+          description="这里改的是训练、推理和标签定义本身，保存后下一轮研究会按这里的参数运行。"
+          scope="research"
+          returnTo="/research"
+          disabled={!configEditable}
+          disabledReason={unavailableConfigReason}
+          disabledLabel={disabledSaveLabel}
+        >
+          <ConfigField label="研究模板" hint="先在更宽松和更严格的单币择时模板之间切换。">
+            <ConfigSelect
+              name="research_template"
+              defaultValue={researchTemplateKey}
+              options={availableResearchTemplates.map((item) => ({ value: item, label: item }))}
+            />
+          </ConfigField>
+          <ConfigField label="模型" hint="现在支持基础启发式和更偏趋势权重的版本。">
+            <ConfigSelect
+              name="model_key"
+              defaultValue={selectedModelKey}
+              options={availableModels.map((item) => ({
+                value: item,
+                label: MODEL_LABELS[item] || item,
+              }))}
+            />
+          </ConfigField>
+          <ConfigField label="标签方式" hint="用未来窗口里的目标收益和止损阈值定义 buy / sell / watch。">
+            <ConfigSelect
+              name="label_preset_key"
+              defaultValue={selectedLabelPresetKey}
+              options={availableLabelPresets.map((item) => ({ value: item, label: item }))}
+            />
+            <div className="grid gap-3">
+              <ConfigSelect
+                name="label_mode"
+                defaultValue={labelModeKey}
+                options={availableLabelModes.map((item) => ({
+                  value: item,
+                  label: LABEL_MODE_LABELS[item] || item,
+                }))}
+              />
+              <ConfigSelect
+                name="label_trigger_basis"
+                defaultValue={labelTriggerBasisKey}
+                options={availableLabelTriggerBases.map((item) => ({
+                  value: item,
+                  label: LABEL_TRIGGER_BASIS_LABELS[item] || item,
+                }))}
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <ConfigInput name="label_target_pct" defaultValue={labelTargetPctValue} placeholder="目标收益 %" />
+              <ConfigInput name="label_stop_pct" defaultValue={labelStopPctValue} placeholder="止损阈值 %" />
+            </div>
+          </ConfigField>
+          <ConfigField label="验证放行方式" hint="可以保持统一门控，也可以临时强制把当前最优候选送去验证。">
+            <ConfigSelect
+              name="force_validation_top_candidate"
+              defaultValue={forceValidationTopCandidate ? "true" : "false"}
+              options={[
+                { value: "false", label: "按统一门控自然筛选" },
+                { value: "true", label: "强制验证当前最优候选" },
+              ]}
+            />
+          </ConfigField>
+          <ConfigField label="持有窗口" hint="这会决定标签在未来几天里寻找最早命中结果。">
+            <ConfigSelect
+              name="holding_window_label"
+              defaultValue={holdingWindowLabel}
+              options={availableHoldingWindows.map((item) => ({ value: item, label: item }))}
+            />
+            <div className="grid gap-3 md:grid-cols-2">
+              <ConfigInput name="min_holding_days" type="number" min={1} max={7} defaultValue={minHoldingDaysValue} />
+              <ConfigInput name="max_holding_days" type="number" min={1} max={7} defaultValue={maxHoldingDaysValue} />
+            </div>
+          </ConfigField>
+          <ConfigField label="训练/验证/测试切分比例" hint="保存后下一轮研究会按这个比例切训练集、验证集和测试集。">
+            <div className="grid gap-3 md:grid-cols-3">
+              <ConfigInput name="train_split_ratio" defaultValue={trainSplitRatio} placeholder="训练比例" />
+              <ConfigInput name="validation_split_ratio" defaultValue={validationSplitRatio} placeholder="验证比例" />
+              <ConfigInput name="test_split_ratio" defaultValue={testSplitRatio} placeholder="测试比例" />
+            </div>
+          </ConfigField>
+          <ConfigField label="研究分数与因子权重" hint="这里决定分数门槛和各类因子的权重分配，下一轮研究会按这里重新打分。">
+            <div className="grid gap-3 md:grid-cols-2">
+              <ConfigInput name="signal_confidence_floor" defaultValue={signalConfidenceFloor} placeholder="最低置信度" />
+              <ConfigInput name="strict_penalty_weight" defaultValue={strictPenaltyWeight} placeholder="严格模板惩罚权重" />
+              <ConfigInput name="trend_weight" defaultValue={trendWeight} placeholder="趋势权重" />
+              <ConfigInput name="momentum_weight" defaultValue={momentumWeight} placeholder="动量权重" />
+              <ConfigInput name="volume_weight" defaultValue={volumeWeight} placeholder="量能权重" />
+              <ConfigInput name="oscillator_weight" defaultValue={oscillatorWeight} placeholder="震荡权重" />
+              <ConfigInput name="volatility_weight" defaultValue={volatilityWeight} placeholder="波动权重" />
+            </div>
+          </ConfigField>
+        </WorkbenchConfigCard>
+      </div>
+    </div>
+  );
+
+  const configGuideContent = (
+    <div className="space-y-5">
+      <DetailSection title="当前研究选择" description="把这轮研究真正采用的预设、模板、模型和标签组合讲清楚。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="当前组合" value={readPlainText(selectionStory.headline, "当前还没有研究组合摘要")} />
+          <InfoBlock label="当前组合说明" value={readPlainText(selectionStory.detail, "当前还没有组合说明")} />
+          <InfoBlock
+            label="研究预设"
+            value={`${readPlainText(selectedResearchPreset.label, researchPresetKey)} / ${readPlainText(selectedResearchPreset.fit, "当前没有适用场景说明")}`}
+          />
+          <InfoBlock
+            label="研究模板"
+            value={`${readPlainText(selectedResearchTemplate.label, researchTemplateKey)} / ${readPlainText(selectedResearchTemplate.fit, "当前没有适用场景说明")}`}
+          />
+          <InfoBlock
+            label="模型选择"
+            value={`${readPlainText(selectedModelStory.label, MODEL_LABELS[selectedModelKey] || selectedModelKey)} / ${readPlainText(selectedModelStory.fit, "当前没有适用场景说明")}`}
+          />
+          <InfoBlock
+            label="标签预设"
+            value={`${readPlainText(selectedLabelPreset.label, selectedLabelPresetKey)} / ${readPlainText(selectedLabelPreset.fit, "当前没有适用场景说明")}`}
+          />
+          <InfoBlock
+            label="标签方式"
+            value={`${readPlainText(selectedLabelMode.label, resolvedLabelMode)} / ${readPlainText(selectedLabelMode.fit, "当前没有适用场景说明")}`}
+          />
+          <InfoBlock
+            label="触发基础"
+            value={`${readPlainText(selectedLabelTrigger.label, resolvedLabelTriggerBasis)} / ${readPlainText(selectedLabelTrigger.fit, "当前没有适用场景说明")}`}
+          />
+          <InfoBlock
+            label="持有窗口"
+            value={`${readPlainText(selectedHoldingWindow.label, holdingWindowLabel)} / ${readPlainText(selectedHoldingWindow.fit, "当前没有适用场景说明")}`}
+          />
+          <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
+        </div>
+      </DetailSection>
+
+      <DetailSection title="候选范围契约" description="研究、评估、策略和自动化现在共用同一份候选篮子与执行篮子说明。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="统一说明" value={candidateScopeHeadline} />
+          <InfoBlock label="为什么这样分层" value={candidateScopeDetail} />
+          <InfoBlock label="研究 / dry-run 候选篮子" value={candidateSymbols.length ? candidateSymbols.join(" / ") : "当前未配置"} />
+          <InfoBlock label="候选篮子预设" value={readPlainText(candidateScope.candidate_pool_preset_detail, "当前没有候选篮子预设说明")} />
+          <InfoBlock label="执行篮子" value={liveAllowedSymbols.length ? liveAllowedSymbols.join(" / ") : "当前未配置"} />
+          <InfoBlock label="下一步" value={candidateScopeNextStep} />
+        </div>
+      </DetailSection>
+
+      <DetailSection title="标签与模型说明" description="这里解释模型、标签方式、触发基础和持有窗口会怎样影响结果。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="当前模型" value={MODEL_LABELS[selectedModelKey] || selectedModelKey} />
+          <InfoBlock label="当前标签预设" value={selectedLabelPresetKey} />
+          <InfoBlock label="标签方式说明" value={describeLabelMode(labelModeKey)} />
+          <InfoBlock label="触发基础说明" value={describeLabelTriggerBasis(labelTriggerBasisKey)} />
+          <InfoBlock label="持有窗口说明" value={describeHoldingWindow(holdingWindowLabel)} />
+          <InfoBlock label="模型说明" value={describeModel(selectedModelKey)} />
+          <InfoBlock label="数据范围" value={readPlainText(workspace.execution_preview.data_scope, "当前没有数据范围摘要")} />
+          <InfoBlock label="因子组合" value={readPlainText(workspace.execution_preview.factor_mix, "当前没有因子组合摘要")} />
+          <InfoBlock label="标签定义" value={readPlainText(workspace.execution_preview.label_scope, "当前没有标签定义摘要")} />
+          <InfoBlock label="dry-run 门槛" value={readPlainText(workspace.execution_preview.dry_run_gate, "当前没有 dry-run 门槛摘要")} />
+          <InfoBlock label="live 门槛" value={readPlainText(workspace.execution_preview.live_gate, "当前没有 live 门槛摘要")} />
+          <InfoBlock label="验证放行方式" value={readPlainText(workspace.execution_preview.validation_policy, "当前没有验证放行说明")} />
+        </div>
+      </DetailSection>
+
+      <DataTable
+        columns={["研究模板说明", "更适合什么", "当前是否选中", "说明"]}
+        rows={buildCatalogRows(researchTemplateCatalog, researchTemplateKey, "当前模板", "当前没有适用场景说明", "当前没有模板说明")}
+        emptyTitle="当前还没有研究模板目录"
+        emptyDetail="先恢复研究工作台，系统才会给出研究模板说明目录。"
       />
 
-      <MetricGrid
-        items={[
-          { label: "持有周期", value: workspace.overview.holding_window || "未写入", detail: "当前标签定义使用的持有窗口" },
-          { label: "候选数量", value: String(workspace.overview.candidate_count), detail: workspace.overview.recommended_symbol || "当前没有推荐标的" },
-          { label: "当前模型", value: workspace.model.model_version || "未生成", detail: workspace.model.backend },
-          { label: "下一步", value: workspace.overview.recommended_action || "先运行研究训练", detail: "研究结果会决定接下来是继续研究还是进入验证" },
-        ]}
+      <DataTable
+        columns={["模型目录", "更适合什么", "当前是否选中", "说明"]}
+        rows={buildCatalogRows(modelCatalog, selectedModelKey, "当前模型", "当前没有适用场景说明", "当前没有模型说明")}
+        emptyTitle="当前还没有模型目录"
+        emptyDetail="先恢复研究工作台，系统才会给出模型目录。"
       />
 
-      <WorkbenchConfigStatusCard
-        scope="研究"
-        status={researchStatus}
-        note={researchNote}
-        staleFields={researchStaleFields}
-        editable={configEditable}
+      <DataTable
+        columns={["标签预设", "更适合什么", "当前是否选中", "说明"]}
+        rows={buildCatalogRows(labelPresetCatalog, selectedLabelPresetKey, "当前标签预设", "当前没有适用场景说明", "当前没有标签预设说明")}
+        emptyTitle="当前还没有标签预设目录"
+        emptyDetail="先恢复研究工作台，系统才会给出标签预设目录。"
       />
 
-      <ResearchRuntimePanel initialStatus={runtimeStatus} />
+      <DataTable
+        columns={["标签方式说明", "更适合什么", "当前是否选中", "说明"]}
+        rows={buildCatalogRows(labelModeCatalog, labelModeKey, "当前标签方式", "当前没有适用场景说明", "当前没有标签说明")}
+        emptyTitle="当前还没有标签方式目录"
+        emptyDetail="先恢复研究工作台，系统才会给出标签方式目录。"
+      />
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
-        <div className="space-y-5">
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>研究准备状态</CardTitle>
-              <CardDescription>这里直接说明现在能不能继续训练、能不能继续推理，以及下一步该做什么。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="可训练" value={readinessTrainLabel} />
-              <InfoBlock label="可推理" value={readinessInferLabel} />
-              <InfoBlock label="当前阻塞" value={readinessBlockers} />
-              <InfoBlock label="推理说明" value={readinessInferReason} />
-              <InfoBlock label="下一步" value={readinessNextStep} />
-            </CardContent>
-          </Card>
+      <DataTable
+        columns={["触发基础说明", "更适合什么", "当前是否选中", "说明"]}
+        rows={buildCatalogRows(labelTriggerCatalog, labelTriggerBasisKey, "当前触发基础", "当前没有适用场景说明", "当前没有触发说明")}
+        emptyTitle="当前还没有触发基础目录"
+        emptyDetail="先恢复研究工作台，系统才会给出触发基础目录。"
+      />
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>研究模板</CardTitle>
-              <CardDescription>这些就是当前研究链里实际会产出的策略模板。</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              {workspace.strategy_templates.length ? workspace.strategy_templates.map((item) => (
-                <Badge key={item}>{item}</Badge>
-              )) : <p className="text-sm leading-6 text-muted-foreground">当前还没有研究模板，请先运行研究训练和推理。</p>}
-            </CardContent>
-          </Card>
+      <DataTable
+        columns={["持有窗口说明", "更适合什么", "当前是否选中", "说明"]}
+        rows={buildCatalogRows(holdingWindowCatalog, holdingWindowLabel, "当前持有窗口", "当前没有适用场景说明", "当前没有持有窗口说明")}
+        emptyTitle="当前还没有持有窗口目录"
+        emptyDetail="先恢复研究工作台，系统才会给出持有窗口目录。"
+      />
+    </div>
+  );
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>当前研究选择</CardTitle>
-              <CardDescription>把这轮研究真正采用的预设、模板、模型和标签组合压成一屏，避免只看到字段名却不知道含义。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="当前组合" value={displayValue(selectionStory.headline, "当前还没有研究组合摘要")} />
-              <InfoBlock label="当前组合说明" value={displayValue(selectionStory.detail, "当前还没有组合说明")} />
-              <InfoBlock
-                label="研究预设"
-                value={`${displayValue(selectedResearchPreset.label, String(controls.research_preset_key ?? "baseline_balanced"))} / ${displayValue(selectedResearchPreset.fit, "当前没有适用场景说明")}`}
-              />
-              <InfoBlock
-                label="研究模板"
-                value={`${displayValue(selectedResearchTemplate.label, String(controls.research_template ?? "single_asset_timing"))} / ${displayValue(selectedResearchTemplate.fit, "当前没有适用场景说明")}`}
-              />
-              <InfoBlock
-                label="模型选择"
-                value={`${displayValue(selectedModelStory.label, MODEL_LABELS[selectedModelKey] || selectedModelKey)} / ${displayValue(selectedModelStory.fit, "当前没有适用场景说明")}`}
-              />
-              <InfoBlock
-                label="标签预设"
-                value={`${displayValue(selectedLabelPreset.label, selectedLabelPresetKey)} / ${displayValue(selectedLabelPreset.fit, "当前没有适用场景说明")}`}
-              />
-              <InfoBlock
-                label="标签方式"
-                value={`${displayValue(selectedLabelMode.label, resolvedLabelMode)} / ${displayValue(selectedLabelMode.fit, "当前没有适用场景说明")}`}
-              />
-              <InfoBlock
-                label="触发基础"
-                value={`${displayValue(selectedLabelTrigger.label, resolvedLabelTriggerBasis)} / ${displayValue(selectedLabelTrigger.fit, "当前没有适用场景说明")}`}
-              />
-              <InfoBlock
-                label="持有窗口"
-                value={`${displayValue(selectedHoldingWindow.label, String(controls.holding_window_label ?? "1-3d"))} / ${displayValue(selectedHoldingWindow.fit, "当前没有适用场景说明")}`}
-              />
-              <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
-            </CardContent>
-          </Card>
+  const artifactDetailContent = (
+    <div className="space-y-5">
+      <DetailSection title="模板产物对齐" description="这里确认当前配置模板、最近训练模板和最近推理模板是不是同一条主线。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="当前配置模板" value={`${readPlainText(artifactTemplates.current.label, "未选择")} / ${readPlainText(artifactTemplates.current.fit, "当前没有模板说明")}`} />
+          <InfoBlock label="最近训练模板" value={`${readPlainText(artifactTemplates.training.label, "未生成")} / ${readPlainText(artifactTemplates.training.fit, "当前还没有训练产物")}`} />
+          <InfoBlock label="最近推理模板" value={`${readPlainText(artifactTemplates.inference.label, "未生成")} / ${readPlainText(artifactTemplates.inference.fit, "当前还没有推理产物")}`} />
+          <InfoBlock label="模板对齐状态" value={artifactHeadline} />
+          <InfoBlock label="模板对齐说明" value={artifactDetail} />
+        </div>
+      </DetailSection>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>模板产物对齐</CardTitle>
-              <CardDescription>直接对照当前配置模板、最近训练模板和最近推理模板，避免切了模板却还在看旧结果。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="当前配置模板" value={`${displayValue(artifactTemplates.current.label, "未选择")} / ${displayValue(artifactTemplates.current.fit, "当前没有模板说明")}`} />
-              <InfoBlock label="最近训练模板" value={`${displayValue(artifactTemplates.training.label, "未生成")} / ${displayValue(artifactTemplates.training.fit, "当前还没有训练产物")}`} />
-              <InfoBlock label="最近推理模板" value={`${displayValue(artifactTemplates.inference.label, "未生成")} / ${displayValue(artifactTemplates.inference.fit, "当前还没有推理产物")}`} />
-              <InfoBlock label="模板对齐状态" value={displayValue(artifactTemplates.alignment_status, "missing")} />
-              <InfoBlock label="模板对齐说明" value={displayValue(artifactTemplates.note, "当前还没有模板对齐说明")} />
-            </CardContent>
-          </Card>
+      <DetailSection title="当前研究模板与标签定义" description="这里保留当前产物实际使用的模板清单和标签口径。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="研究模板" value={strategyTemplates.length ? strategyTemplates.join(" / ") : "当前还没有研究模板，请先运行研究训练和推理。"} />
+          <InfoBlock label="标签列" value={labelColumns.length ? labelColumns.join(" / ") : "未生成"} />
+          <InfoBlock label="标签模式" value={resolvedLabelMode} />
+          <InfoBlock label="标签触发基础" value={resolvedLabelTriggerBasis} />
+          <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
+          <InfoBlock label="定义" value={readPlainText(workspace.labeling.definition, "当前没有标签定义")} />
+        </div>
+      </DetailSection>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>候选范围契约</CardTitle>
-              <CardDescription>研究、评估、策略和自动化现在共用同一份候选池与 live 子集说明，不再各自解释。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="统一说明" value={candidateScopeHeadline} />
-              <InfoBlock label="为什么这样分层" value={candidateScopeDetail} />
-              <InfoBlock label="研究 / dry-run 候选池" value={candidateScope.candidate_symbols.length ? candidateScope.candidate_symbols.join(" / ") : "当前未配置"} />
-              <InfoBlock label="候选池预设" value={displayValue(candidateScope.candidate_pool_preset_detail, "当前没有候选池预设说明")} />
-              <InfoBlock label="live 子集" value={candidateScope.live_allowed_symbols.length ? candidateScope.live_allowed_symbols.join(" / ") : "当前未配置"} />
-              <InfoBlock label="下一步" value={candidateScopeNextStep} />
-            </CardContent>
-          </Card>
+      <DetailSection title="研究后端与标的" description="这里说明当前产物依赖的模型版本、研究后端和研究标的。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="模型版本" value={readPlainText(workspace.model.model_version, "未生成")} />
+          <InfoBlock label="研究后端" value={readPlainText(workspace.model.backend, "qlib-fallback")} />
+          <InfoBlock label="研究标的" value={selectorSymbols.length ? selectorSymbols.join(" / ") : "未写入"} />
+          <InfoBlock label="训练周期" value={selectorTimeframes.length ? selectorTimeframes.join(" / ") : "未写入"} />
+        </div>
+      </DetailSection>
+    </div>
+  );
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>标签定义</CardTitle>
-              <CardDescription>先把 buy / sell / watch 是怎么来的讲清楚。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="标签列" value={workspace.labeling.label_columns.join(" / ") || "未生成"} />
-              <InfoBlock label="标签模式" value={resolvedLabelMode} />
-              <InfoBlock label="标签触发基础" value={resolvedLabelTriggerBasis} />
-              <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
-              <InfoBlock label="定义" value={workspace.labeling.definition || "当前没有标签定义"} />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>标签配方与模型口径</CardTitle>
-              <CardDescription>把当前模型、标签触发、持有窗口和切分比例压成一组最短说明，避免保存完还要来回翻几张表。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="当前模型" value={MODEL_LABELS[selectedModelKey] || selectedModelKey} />
-              <InfoBlock label="当前标签预设" value={selectedLabelPresetKey} />
-              <InfoBlock label="标签触发基础" value={resolvedLabelTriggerBasis} />
-              <InfoBlock label="持有窗口" value={String(controls.holding_window_label ?? workspace.overview.holding_window ?? "1-3d")} />
-              <InfoBlock label="目标 / 止损" value={`${labelTargetPctValue} / ${labelStopPctValue}`} />
-              <InfoBlock
-                label="训练 / 验证 / 测试"
-                value={`${String(controls.train_split_ratio ?? "0.6")} / ${String(controls.validation_split_ratio ?? "0.2")} / ${String(controls.test_split_ratio ?? "0.2")}`}
-              />
-            </CardContent>
-          </Card>
-
-          <DataTable
-            columns={["研究模板说明", "更适合什么", "当前是否选中", "说明"]}
-            rows={researchTemplateCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === String(controls.research_template ?? "single_asset_timing") ? "当前模板" : "可切换",
-                String(item.detail ?? "当前没有模板说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有研究模板目录"
-            emptyDetail="先恢复研究工作台，系统才会给出研究模板说明目录。"
-          />
-
-          <DataTable
-            columns={["模型目录", "更适合什么", "当前是否选中", "说明"]}
-            rows={modelCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === selectedModelKey ? "当前模型" : "可切换",
-                String(item.detail ?? "当前没有模型说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有模型目录"
-            emptyDetail="先恢复研究工作台，系统才会给出模型目录。"
-          />
-
-          <DataTable
-            columns={["标签预设", "更适合什么", "当前是否选中", "说明"]}
-            rows={labelPresetCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === selectedLabelPresetKey ? "当前标签预设" : "可切换",
-                String(item.detail ?? "当前没有标签预设说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有标签预设目录"
-            emptyDetail="先恢复研究工作台，系统才会给出标签预设目录。"
-          />
-
-          <DataTable
-            columns={["标签方式说明", "更适合什么", "当前是否选中", "说明"]}
-            rows={labelModeCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === String(controls.label_mode ?? "") ? "当前标签方式" : "可切换",
-                String(item.detail ?? "当前没有标签说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有标签方式目录"
-            emptyDetail="先恢复研究工作台，系统才会给出标签方式目录。"
-          />
-
-          <DataTable
-            columns={["触发基础说明", "更适合什么", "当前是否选中", "说明"]}
-            rows={labelTriggerCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === String(controls.label_trigger_basis ?? "close") ? "当前触发基础" : "可切换",
-                String(item.detail ?? "当前没有触发说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有触发基础目录"
-            emptyDetail="先恢复研究工作台，系统才会给出触发基础目录。"
-          />
-
-          <DataTable
-            columns={["持有窗口说明", "更适合什么", "当前是否选中", "说明"]}
-            rows={holdingWindowCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === String(controls.holding_window_label ?? "1-3d") ? "当前持有窗口" : "可切换",
-                String(item.detail ?? "当前没有持有窗口说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有持有窗口目录"
-            emptyDetail="先恢复研究工作台，系统才会给出持有窗口目录。"
-          />
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>研究分数与权重</CardTitle>
-              <CardDescription>把趋势、动量、量能和严格模板的权重直接看出来，不用再猜当前研究偏向。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              {weightSummaries.map((row) => (
-                <InfoBlock key={row.label} label={row.label} value={displayValue(row.value)} />
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>当前结果与配置对齐</CardTitle>
-              <CardDescription>先确认页面上的配置和当前研究结果是不是同一轮产物。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
-              <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
-              <InfoBlock label="变更字段" value={Array.isArray(configAlignment.stale_fields) && configAlignment.stale_fields.length ? configAlignment.stale_fields.map(String).join(" / ") : "当前没有发现漂移字段"} />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>当前配置快照</CardTitle>
-              <CardDescription>把数据、特征、研究、门槛和长期运行配置压成一屏，先确认这一轮到底按什么口径在跑。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="数据快照" value={workspace.execution_preview.data_scope || "当前没有数据范围摘要"} />
-              <InfoBlock label="特征快照" value={workspace.execution_preview.factor_mix || "当前没有因子组合摘要"} />
-              <InfoBlock label="研究快照" value={workspace.execution_preview.label_scope || "当前没有研究范围摘要"} />
-              <InfoBlock label="候选范围快照" value={candidateScopeHeadline} />
-              <InfoBlock
-                label="门槛快照"
-                value={`${workspace.execution_preview.dry_run_gate || "当前没有 dry-run 门槛摘要"} / ${workspace.execution_preview.live_gate || "当前没有 live 门槛摘要"}`}
-              />
-              <InfoBlock label="长期运行快照" value="研究动作会先在后台运行，再由任务页继续承接自动化、告警和人工接管状态。" />
-            </CardContent>
-          </Card>
-
+  const experimentContent = (
+    <div className="space-y-5">
+      <DetailSection title="训练切分说明" description="研究页只保留当前实验窗口和切分摘要，完整实验中心继续由评估页承接。">
+        <div className="space-y-4">
           <DataTable
             columns={["窗口", "样本摘要"]}
             rows={Object.entries(workspace.sample_window).map(([name, payload]) => ({
               id: name,
-              cells: [name, formatWindow(payload)],
+              cells: [name, formatWindow(payloadRecord(payload))],
             }))}
             emptyTitle="还没有训练窗口"
             emptyDetail="先运行研究训练，窗口摘要才会在这里出现。"
           />
-
           <DataTable
             columns={["训练切分说明", "当前配置", "按当前样本大致会怎样切"]}
             rows={splitPreviewRows}
@@ -441,296 +573,188 @@ export default async function ResearchPage() {
             emptyDetail="先生成一轮训练窗口，系统才会把训练/验证/测试切分预览出来。"
           />
         </div>
+      </DetailSection>
 
-        <div className="space-y-5">
-          <WorkbenchConfigCard
-            title="研究预设"
-            description="先套用一整套研究配置，再继续微调模型、标签和权重。"
-            scope="research"
-            returnTo="/research"
-            disabled={!configEditable}
-            disabledReason={unavailableConfigReason}
-          >
-            <ConfigField label="一键套用" hint="预设会一起改研究模板、模型、标签方式、持有窗口和主要权重。">
-              <ConfigSelect
-                name="research_preset_key"
-                defaultValue={String(controls.research_preset_key ?? "baseline_balanced")}
-                options={((workspace.controls.available_research_presets?.length
-                  ? workspace.controls.available_research_presets
-                  : DEFAULT_RESEARCH_PRESETS) || []).map((item) => ({
-                  value: item,
-                  label: item,
-                }))}
-              />
-            </ConfigField>
-            <DataTable
-              columns={["研究预设", "适用场景", "说明"]}
-              rows={researchPresetCatalog.map((item, index) => ({
-                id: `${item.key ?? index}`,
-                cells: [
-                  String(item.key ?? "n/a"),
-                  String(item.fit ?? "当前没有适用场景说明"),
-                  String(item.detail ?? "当前没有预设说明"),
-                ],
-              }))}
-              emptyTitle="当前还没有研究预设"
-              emptyDetail="先恢复研究工作台，系统才会给出一键研究预设。"
-            />
-          </WorkbenchConfigCard>
-
-          <WorkbenchConfigCard
-            title="研究参数配置"
-            description="这里改的是训练、推理和标签定义本身，保存后下一轮研究会按这里的参数运行。"
-            scope="research"
-            returnTo="/research"
-            disabled={!configEditable}
-            disabledReason={unavailableConfigReason}
-          >
-            <ConfigField label="研究模板" hint="先在更宽松和更严格的单币择时模板之间切换。">
-              <ConfigSelect
-                name="research_template"
-                defaultValue={workspace.controls.research_template}
-                options={workspace.controls.available_research_templates.map((item) => ({ value: item, label: item }))}
-              />
-            </ConfigField>
-            <ConfigField label="模型" hint="现在支持基础启发式和更偏趋势权重的版本。">
-              <ConfigSelect
-                name="model_key"
-                defaultValue={workspace.controls.model_key}
-                options={workspace.controls.available_models.map((item) => ({
-                  value: item,
-                  label: MODEL_LABELS[item] || item,
-                }))}
-              />
-            </ConfigField>
-            <ConfigField label="标签方式" hint="用未来窗口里的目标收益和止损阈值定义 buy / sell / watch。">
-              <ConfigSelect
-                name="label_preset_key"
-                defaultValue={selectedLabelPresetKey}
-                options={availableLabelPresets.map((item) => ({
-                  value: item,
-                  label: item,
-                }))}
-              />
-              <div className="grid gap-3">
-                <ConfigSelect
-                  name="label_mode"
-                  defaultValue={workspace.controls.label_mode}
-                  options={workspace.controls.available_label_modes.map((item) => ({
-                    value: item,
-                    label: LABEL_MODE_LABELS[item] || item,
-                  }))}
-                />
-                <ConfigSelect
-                  name="label_trigger_basis"
-                  defaultValue={String(controls.label_trigger_basis ?? "close")}
-                  options={(workspace.controls.available_label_trigger_bases || ["close", "high_low"]).map((item) => ({
-                    value: item,
-                    label: LABEL_TRIGGER_BASIS_LABELS[item] || item,
-                  }))}
-                />
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <ConfigInput name="label_target_pct" defaultValue={workspace.controls.label_target_pct} placeholder="目标收益 %" />
-                <ConfigInput name="label_stop_pct" defaultValue={workspace.controls.label_stop_pct} placeholder="止损阈值 %" />
-              </div>
-            </ConfigField>
-            <ConfigField label="验证放行方式" hint="可以保持统一门控，也可以临时强制把当前最优候选送去验证。">
-              <ConfigSelect
-                name="force_validation_top_candidate"
-                defaultValue={workspace.controls.force_validation_top_candidate ? "true" : "false"}
-                options={[
-                  { value: "false", label: "按统一门控自然筛选" },
-                  { value: "true", label: "强制验证当前最优候选" },
-                ]}
-              />
-            </ConfigField>
-            <ConfigField label="持有窗口" hint="这会决定标签在未来几天里寻找最早命中结果。">
-              <ConfigSelect
-                name="holding_window_label"
-                defaultValue={String(controls.holding_window_label ?? "1-3d")}
-                options={workspace.controls.available_holding_windows.map((item) => ({ value: item, label: item }))}
-              />
-              <div className="grid gap-3 md:grid-cols-2">
-                <ConfigInput name="min_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.min_holding_days)} />
-                <ConfigInput name="max_holding_days" type="number" min={1} max={7} defaultValue={String(workspace.controls.max_holding_days)} />
-              </div>
-            </ConfigField>
-            <ConfigField label="训练/验证/测试切分比例" hint="保存后下一轮研究会按这个比例切训练集、验证集和测试集。">
-              <div className="grid gap-3 md:grid-cols-3">
-                <ConfigInput name="train_split_ratio" defaultValue={String(controls.train_split_ratio ?? "0.6")} placeholder="训练比例" />
-                <ConfigInput name="validation_split_ratio" defaultValue={String(controls.validation_split_ratio ?? "0.2")} placeholder="验证比例" />
-                <ConfigInput name="test_split_ratio" defaultValue={String(controls.test_split_ratio ?? "0.2")} placeholder="测试比例" />
-              </div>
-            </ConfigField>
-            <ConfigField label="研究分数与因子权重" hint="这里决定分数门槛和各类因子的权重分配，下一轮研究会按这里重新打分。">
-              <div className="grid gap-3 md:grid-cols-2">
-                <ConfigInput name="signal_confidence_floor" defaultValue={String(controls.signal_confidence_floor ?? "0.55")} placeholder="最低置信度" />
-                <ConfigInput name="strict_penalty_weight" defaultValue={String(controls.strict_penalty_weight ?? "1")} placeholder="严格模板惩罚权重" />
-                <ConfigInput name="trend_weight" defaultValue={String(controls.trend_weight ?? "1.3")} placeholder="趋势权重" />
-                <ConfigInput name="momentum_weight" defaultValue={String(controls.momentum_weight ?? "1")} placeholder="动量权重" />
-                <ConfigInput name="volume_weight" defaultValue={String(controls.volume_weight ?? "1.1")} placeholder="量能权重" />
-                <ConfigInput name="oscillator_weight" defaultValue={String(controls.oscillator_weight ?? "0.7")} placeholder="震荡权重" />
-                <ConfigInput name="volatility_weight" defaultValue={String(controls.volatility_weight ?? "0.9")} placeholder="波动权重" />
-              </div>
-            </ConfigField>
-          </WorkbenchConfigCard>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>当前配置会怎么影响下一步</CardTitle>
-              <CardDescription>你现在改的数据、因子、标签和门槛，最终会直接影响能不能进入 dry-run 和小额 live。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="数据范围" value={workspace.execution_preview.data_scope || "当前没有数据范围摘要"} />
-              <InfoBlock label="因子组合" value={workspace.execution_preview.factor_mix || "当前没有因子组合摘要"} />
-              <InfoBlock label="标签定义" value={workspace.execution_preview.label_scope || "当前没有标签定义摘要"} />
-              <InfoBlock label="dry-run 门槛" value={workspace.execution_preview.dry_run_gate || "当前没有 dry-run 门槛摘要"} />
-              <InfoBlock label="live 门槛" value={workspace.execution_preview.live_gate || "当前没有 live 门槛摘要"} />
-              <InfoBlock label="验证放行方式" value={workspace.execution_preview.validation_policy || "当前没有验证放行说明"} />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>当前模型</CardTitle>
-              <CardDescription>这里展示当前实验依赖的模型版本和研究后端。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="模型版本" value={workspace.model.model_version || "未生成"} />
-              <InfoBlock label="研究后端" value={workspace.model.backend} />
-              <InfoBlock label="研究标的" value={workspace.selectors.symbols.join(" / ") || "未写入"} />
-              <InfoBlock label="训练周期" value={workspace.selectors.timeframes.join(" / ") || "未写入"} />
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>模型和标签怎么影响结果</CardTitle>
-              <CardDescription>先看模型适合什么场景，再看标签方式会把哪种走势优先判成 buy / sell / watch。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="当前模型说明" value={describeModel(selectedModelKey)} />
-              <InfoBlock label="标签方式说明" value={describeLabelMode(String(controls.label_mode ?? workspace.labeling.label_mode ?? ""))} />
-              <InfoBlock label="触发基础说明" value={describeLabelTriggerBasis(String(controls.label_trigger_basis ?? "close"))} />
-              <InfoBlock label="持有窗口说明" value={describeHoldingWindow(String(controls.holding_window_label ?? workspace.overview.holding_window ?? "1-3d"))} />
-            </CardContent>
-          </Card>
-
-          <DataTable
-            columns={["模型说明", "适合什么场景", "当前是否选中", "说明"]}
-            rows={modelCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "n/a"),
-                String(item.key ?? "") === selectedModelKey ? "当前模型" : "可切换",
-                String(item.detail ?? "当前没有额外说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有模型目录"
-            emptyDetail="先恢复工作台配置选项，模型说明才会在这里出现。"
-          />
-
-          <DataTable
-            columns={["标签方式说明", "更适合什么", "当前是否选中", "说明"]}
-            rows={labelModeCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "n/a"),
-                String(item.key ?? "") === String(controls.label_mode ?? workspace.labeling.label_mode ?? "") ? "当前方式" : "可切换",
-                String(item.detail ?? "当前没有额外说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有标签方式目录"
-            emptyDetail="先恢复工作台配置选项，标签方式说明才会在这里出现。"
-          />
-
-          <DataTable
-            columns={["触发基础说明", "更适合什么", "当前是否选中", "说明"]}
-            rows={labelTriggerCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "n/a"),
-                String(item.key ?? "") === String(controls.label_trigger_basis ?? "close") ? "当前方式" : "可切换",
-                String(item.detail ?? "当前没有额外说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有触发基础目录"
-            emptyDetail="先恢复工作台配置选项，触发基础说明才会在这里出现。"
-          />
-
-          <DataTable
-            columns={["持有窗口说明", "更适合什么", "当前是否选中", "说明"]}
-            rows={holdingWindowCatalog.map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "n/a"),
-                String(item.key ?? "") === String(controls.holding_window_label ?? workspace.overview.holding_window ?? "1-3d") ? "当前窗口" : "可切换",
-                String(item.detail ?? "当前没有额外说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有持有窗口目录"
-            emptyDetail="先恢复工作台配置选项，持有窗口说明才会在这里出现。"
-          />
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>标签目标与止损说明</CardTitle>
-              <CardDescription>把未来命中规则、目标收益和止损口径直接讲清楚，避免只盯着字段名猜含义。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoBlock label="未来命中规则" value={workspace.label_rule_summary?.headline || "当前还没有标签规则摘要"} />
-              <InfoBlock label="标签解释" value={workspace.label_rule_summary?.detail || "当前还没有标签解释"} />
-              <InfoBlock label="下一步怎么调" value={workspace.label_rule_summary?.next_step || "先确认这一轮标签口径是否和你的目标一致。"} />
-            </CardContent>
-          </Card>
-
-          <DataTable
-            columns={["参数名", "参数值"]}
-            rows={Object.entries(workspace.parameters).map(([name, value]) => ({
-              id: name,
-              cells: [name, value],
-            }))}
-            emptyTitle="还没有实验参数"
-            emptyDetail="当前训练上下文还没有写出实验参数。"
-          />
-
-          <ActionCard action="run_research_training" label="研究训练" />
-          <ActionCard action="run_research_inference" label="研究推理" />
+      <DetailSection title="研究分数与权重" description="这里集中看本轮研究当前偏向哪类因子和分数门槛。">
+        <div className="grid gap-3 md:grid-cols-2">
+          {weightSummaries.map((row) => (
+            <InfoBlock key={row.label} label={row.label} value={row.value} />
+          ))}
         </div>
-      </section>
+      </DetailSection>
+
+      <DetailSection title="标签目标与止损说明" description="这里集中说明未来命中规则、目标收益和止损口径。">
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoBlock label="未来命中规则" value={readPlainText(workspace.label_rule_summary?.headline, "当前还没有标签规则摘要")} />
+          <InfoBlock label="标签解释" value={readPlainText(workspace.label_rule_summary?.detail, "当前还没有标签解释")} />
+          <InfoBlock label="下一步怎么调" value={readPlainText(workspace.label_rule_summary?.next_step, "先确认这一轮标签口径是否和你的目标一致。")} />
+        </div>
+      </DetailSection>
+
+      <DetailSection title="实验参数" description="这里只保留当前实验参数快照，需要做更完整的对比时再去评估页。">
+        <DataTable
+          columns={["参数名", "参数值"]}
+          rows={parameterRows}
+          emptyTitle="还没有实验参数"
+          emptyDetail="当前训练上下文还没有写出实验参数。"
+        />
+      </DetailSection>
+    </div>
+  );
+
+  const focusCards: ResearchFocusCard[] = [
+    {
+      id: "status",
+      eyebrow: "当前状态",
+      title: "当前状态",
+      summary: "先回答现在能不能继续训练或推理，避免还没准备好就继续往下推。",
+      detail: researchNote,
+      digests: [
+        { label: "当前状态", value: researchStatus, detail: researchNote },
+        { label: "训练 / 推理", value: `${readinessTrainLabel} / ${readinessInferLabel}`, detail: readinessInferReason },
+        { label: "当前阻塞", value: readinessBlockers, detail: readinessNextStep },
+      ],
+      actions: [
+        {
+          key: "status-detail",
+          label: "查看状态详情",
+          title: "研究状态详情",
+          description: "把训练准备度、推理准备度和配置对齐情况收进这里，默认不再单独铺满一页。",
+          content: statusDetailContent,
+          footer: "触发训练或推理后，研究运行状态会立刻在页面核心区刷新。",
+          mode: "drawer",
+        },
+      ],
+    },
+    {
+      id: "config",
+      eyebrow: "当前配置",
+      title: "当前配置摘要",
+      summary: "先确认这轮研究真正采用的配置，再决定是否需要改预设、模型、标签或切分。",
+      detail: configDetail,
+      digests: [
+        { label: "当前组合", value: configHeadline, detail: configDetail },
+        { label: "标签 / 持有", value: `${readPlainText(selectedLabelPreset.label, selectedLabelPresetKey)} / ${readPlainText(selectedHoldingWindow.label, holdingWindowLabel)}`, detail: `${resolvedLabelMode} / ${resolvedLabelTriggerBasis}` },
+        { label: "训练切分", value: `${trainSplitRatio} / ${validationSplitRatio} / ${testSplitRatio}`, detail: readPlainText(workspace.execution_preview.validation_policy, "当前没有验证放行说明") },
+      ],
+      actions: [
+        {
+          key: "config-panel",
+          label: "查看完整配置",
+          title: "研究配置详情",
+          description: "完整配置表单统一收进这里，默认页不再被大块表单占满。",
+          content: configContent,
+          footer: "保存配置后，当前研究页和后续评估、执行承接都会按新口径刷新。",
+          mode: "drawer",
+        },
+        {
+          key: "config-guide",
+          label: "查看配置说明",
+          title: "研究配置说明",
+          description: "模板、模型、标签和候选范围说明统一下沉到这里，需要时再展开。",
+          content: configGuideContent,
+          footer: "研究页只保留当前组合和摘要；更完整的说明目录都从这里进入。",
+          mode: "drawer",
+        },
+      ],
+    },
+    {
+      id: "artifact",
+      eyebrow: "当前产物",
+      title: "当前产物",
+      summary: "先确认当前模板对齐和产物承接，再决定是否进入评估、执行或继续研究。",
+      detail: artifactDetail,
+      digests: [
+        { label: "模板对齐", value: artifactHeadline, detail: artifactDetail },
+        {
+          label: "研究模板",
+          value: strategyTemplates.length ? strategyTemplates.join(" / ") : "当前还没有研究模板",
+          detail: candidateScopeHeadline,
+        },
+        {
+          label: "研究后端",
+          value: readPlainText(workspace.model.backend, "qlib-fallback"),
+          detail: readPlainText(workspace.model.model_version, "当前还没有模型版本"),
+        },
+      ],
+      actions: [
+        {
+          key: "artifact-detail",
+          label: "查看产物详情",
+          title: "研究产物详情",
+          description: "把模板对齐、标签定义和研究后端说明收进这里，默认页只保留摘要。",
+          content: artifactDetailContent,
+          footer: "如果要继续看完整研究报告和候选排序，优先回信号页和评估页。",
+          mode: "drawer",
+        },
+        {
+          key: "experiments",
+          label: "打开实验弹窗",
+          title: "研究实验详情",
+          description: "训练窗口、切分预览、权重和实验参数都集中放进这一层，研究页不再承担完整实验中心职责。",
+          content: experimentContent,
+          footer: "需要更完整的实验对比和推进判断时，继续去评估与实验中心。",
+          mode: "dialog",
+        },
+      ],
+    },
+  ];
+
+  return (
+    <AppShell
+      title="策略研究工作台"
+      subtitle="先看当前状态、当前配置摘要和当前产物，细节按需展开。"
+      currentPath="/research"
+      isAuthenticated={session.isAuthenticated}
+    >
+      <FeedbackBanner feedback={feedback} />
+
+      {isLoading && <LoadingBanner />}
+
+      {!isLoading && hasApiErrors && (
+        <ApiErrorFallback
+          title="部分数据加载失败"
+          message="后端 API 暂时不可用，当前显示降级数据"
+          detail="研究页正在使用本地 fallback 数据，请稍后刷新页面重试。"
+        />
+      )}
+
+      <PageHero
+        badge="策略研究工作台"
+        title="先看这轮研究现在在做什么，再决定是否继续训练、推理或改配置。"
+        description="研究页默认只回答三件事：现在状态如何、当前配置是什么、当前产物承接到哪里。其余说明和实验细节都按需展开。"
+      />
+
+      <ResearchPrimaryActionSection
+        primaryActionLabel={primaryActionLabel}
+        primaryActionDetail={primaryActionDetail}
+        researchStatus={researchStatus}
+        researchStatusDetail={researchNote}
+        trainReadinessLabel={readinessTrainLabel}
+        inferReadinessLabel={readinessInferLabel}
+        configHeadline={configHeadline}
+        configDetail={configDetail}
+        artifactHeadline={artifactHeadline}
+        artifactDetail={artifactDetail}
+        modelExplanation={describeModel(selectedModelKey)}
+        labelModeExplanation={describeLabelMode(labelModeKey)}
+        triggerBasisExplanation={describeLabelTriggerBasis(labelTriggerBasisKey)}
+        holdingWindowExplanation={describeHoldingWindow(holdingWindowLabel)}
+        signalsHref="/signals"
+        evaluationHref={evaluationHref}
+        backtestHref="/backtest"
+        strategiesHref={strategiesHref}
+        tasksHref={tasksHref}
+      />
+
+      <ResearchRuntimePanel initialStatus={runtimeStatus} />
+
+      <ResearchFocusGrid cards={focusCards} />
     </AppShell>
   );
 }
 
-function ActionCard({ action, label }: { action: string; label: string }) {
-  return (
-    <Card className="bg-card/90">
-      <CardContent className="p-4">
-        <form action="/actions" method="post" className="space-y-4">
-          <input type="hidden" name="action" value={action} />
-          <input type="hidden" name="returnTo" value="/research" />
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-foreground">{label}</p>
-            <p className="text-sm leading-6 text-muted-foreground">通过控制平面提交研究动作，页面返回后会自动刷新当前研究工作台。</p>
-          </div>
-          <FormSubmitButton
-            type="submit"
-            size="sm"
-            idleLabel={label}
-            pendingLabel={`${label}运行中…`}
-            pendingHint="研究动作已发出，页面返回后会更新最新上下文。"
-          />
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
+/* 渲染统一的信息块。 */
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
@@ -740,14 +764,103 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
+/* 渲染抽屉和弹窗里的细节分组。 */
+function DetailSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+      <div className="space-y-2">
+        <p className="eyebrow">{title}</p>
+        <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+      </div>
+      <div className="mt-4 space-y-4">{children}</div>
+    </section>
+  );
+}
+
+/* 读取可直接展示的文本，避免把对象直接渲染成 [object Object]。 */
+function readPlainText(value: unknown, fallback = "n/a"): string {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return displayValue(String(value), fallback);
+  }
+  if (Array.isArray(value)) {
+    const items: string[] = value.map((item) => readPlainText(item, "")).filter(Boolean);
+    return items.length ? items.join(" / ") : fallback;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return (
+      readPlainText(record.label, "") ||
+      readPlainText(record.headline, "") ||
+      readPlainText(record.title, "") ||
+      readPlainText(record.detail, "") ||
+      readPlainText(record.note, "") ||
+      fallback
+    );
+  }
+  return fallback;
+}
+
+/* 格式化普通文本值。 */
 function displayValue(value: unknown, fallback = "n/a") {
   if (value === null || value === undefined) {
     return fallback;
   }
   const normalized = String(value).trim();
-  return normalized.length ? normalized : fallback;
+  return normalized.length ? normalizeBasketTerms(normalized) : fallback;
 }
 
+/* 统一前端候选范围术语，不改后端字段名。 */
+function normalizeBasketTerms(value: string): string {
+  return value.replaceAll("候选池", "候选篮子").replaceAll("live 子集", "执行篮子");
+}
+
+/* 读取统一字符串数组。 */
+function toStringArray(value: unknown, fallback: string[] = []) {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+  return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+/* 读取统一目录数组。 */
+function toRecordArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)));
+}
+
+/* 把目录数据转成表格行。 */
+function buildCatalogRows(
+  items: Record<string, unknown>[],
+  currentKey: string,
+  currentLabel: string,
+  fitFallback: string,
+  detailFallback: string,
+) {
+  return items.map((item, index) => ({
+    id: `${readPlainText(item.key, String(index))}`,
+    cells: [
+      readPlainText(item.label ?? item.key, "n/a"),
+      readPlainText(item.fit, fitFallback),
+      readPlainText(item.key, "") === currentKey ? currentLabel : "可切换",
+      readPlainText(item.detail, detailFallback),
+    ],
+  }));
+}
+
+/* 格式化样本窗口摘要。 */
 function formatWindow(payload: Record<string, unknown>) {
   const parts: string[] = [];
   if (payload.start !== undefined) {
@@ -762,6 +875,7 @@ function formatWindow(payload: Record<string, unknown>) {
   return parts.join(" / ") || "当前没有窗口信息";
 }
 
+/* 生成训练/验证/测试切分预览。 */
 function buildSplitPreviewRows({
   sampleWindow,
   trainRatio,
@@ -773,7 +887,7 @@ function buildSplitPreviewRows({
   validationRatio: string;
   testRatio: string;
 }) {
-  const rows = ["training", "validation", "test"].map((name) => {
+  return ["training", "validation", "test"].map((name) => {
     const window = payloadRecord(sampleWindow[name]);
     const count = Number(window.count ?? 0);
     const ratio =
@@ -782,8 +896,7 @@ function buildSplitPreviewRows({
         : name === "validation"
           ? validationRatio
           : testRatio;
-    const label =
-      name === "training" ? "训练窗口" : name === "validation" ? "验证窗口" : "测试窗口";
+    const label = name === "training" ? "训练窗口" : name === "validation" ? "验证窗口" : "测试窗口";
     return {
       id: name,
       cells: [
@@ -793,9 +906,9 @@ function buildSplitPreviewRows({
       ],
     };
   });
-  return rows;
 }
 
+/* 把未知值安全转成对象。 */
 function payloadRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -803,6 +916,12 @@ function payloadRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+/* 把未知值安全转成对象。 */
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/* 解释当前模型。 */
 function describeModel(modelKey: string) {
   switch (modelKey) {
     case "momentum_drive_v4":
@@ -819,6 +938,7 @@ function describeModel(modelKey: string) {
   }
 }
 
+/* 解释标签方式。 */
 function describeLabelMode(labelMode: string) {
   switch (labelMode) {
     case "close_only":
@@ -831,6 +951,7 @@ function describeLabelMode(labelMode: string) {
   }
 }
 
+/* 解释标签触发基础。 */
 function describeLabelTriggerBasis(triggerBasis: string) {
   switch (triggerBasis) {
     case "high_low":
@@ -841,6 +962,7 @@ function describeLabelTriggerBasis(triggerBasis: string) {
   }
 }
 
+/* 解释持有窗口。 */
 function describeHoldingWindow(holdingWindow: string) {
   switch (holdingWindow) {
     case "1-2d":
@@ -855,8 +977,4 @@ function describeHoldingWindow(holdingWindow: string) {
     default:
       return "当前默认窗口，兼顾快速命中和持有稳定性，也是这套单币择时研究的主目标。";
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

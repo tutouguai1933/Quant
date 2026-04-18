@@ -124,6 +124,20 @@ class ExecutionFlowTests(unittest.TestCase):
         self.assertEqual(paused["status"], "paused")
         self.assertEqual(stopped["status"], "stopped")
 
+    def test_build_execution_action_rejects_invalid_target_weight(self) -> None:
+        with patch.object(
+            execution_service_module.signal_service,
+            "get_signal",
+            return_value={
+                "signal_id": 1,
+                "symbol": "BTCUSDT",
+                "side": "long",
+                "target_weight": "bad-weight",
+            },
+        ):
+            with self.assertRaisesRegex(ValueError, "target_weight"):
+                self.execution_service.build_execution_action(1)
+
     def test_sync_service_uses_adapter_truth_source(self) -> None:
         snapshot = self.sync_service.sync_execution_state()
 

@@ -61,23 +61,44 @@ def _unsupported_scope(strategy_id: int) -> dict:
     }
 
 
+def _runtime_meta(*, limit: int | None = None, strategy_id: int | None = None, detail: str = "") -> dict[str, object]:
+    """统一整理执行器来源和降级状态。"""
+
+    try:
+        runtime_snapshot = dict(sync_service.get_runtime_snapshot())
+    except Exception as exc:
+        runtime_snapshot = {
+            "backend": "memory",
+            "connection_status": "error",
+            "detail": str(exc),
+        }
+    source = "freqtrade-rest-sync" if runtime_snapshot.get("backend") == "rest" else "freqtrade-sync"
+    meta: dict[str, object] = {
+        "source": source,
+        "truth_source": "freqtrade",
+    }
+    if limit is not None:
+        meta["limit"] = limit
+    if strategy_id is not None:
+        meta["strategy_id"] = strategy_id
+    unavailable_detail = detail or str(runtime_snapshot.get("detail", "") or "")
+    if unavailable_detail:
+        meta["status"] = "unavailable"
+        meta["detail"] = unavailable_detail
+    return meta
+
+
 @router.get("")
 def list_strategies(limit: int = 50, token: str = "", authorization: str = Header("")) -> dict:
     try:
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:
         return _unauthorized()
-    items = sync_service.list_strategies(limit=limit)
-    runtime_snapshot = sync_service.get_runtime_snapshot()
-    source = "freqtrade-rest-sync" if runtime_snapshot.get("backend") == "rest" else "freqtrade-sync"
-    return _success(
-        {"items": items},
-        {
-            "limit": limit,
-            "source": source,
-            "truth_source": "freqtrade",
-        },
-    )
+    try:
+        items = sync_service.list_strategies(limit=limit)
+        return _success({"items": items}, _runtime_meta(limit=limit))
+    except Exception as exc:
+        return _success({"items": []}, _runtime_meta(limit=limit, detail=str(exc)))
 
 
 @router.get("/catalog")
@@ -119,17 +140,11 @@ def get_strategy(strategy_id: int, token: str = "", authorization: str = Header(
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:
         return _unauthorized()
-    item = sync_service.get_strategy(strategy_id)
-    runtime_snapshot = sync_service.get_runtime_snapshot()
-    source = "freqtrade-rest-sync" if runtime_snapshot.get("backend") == "rest" else "freqtrade-sync"
-    return _success(
-        {"item": item},
-        {
-            "strategy_id": strategy_id,
-            "source": source,
-            "truth_source": "freqtrade",
-        },
-    )
+    try:
+        item = sync_service.get_strategy(strategy_id)
+        return _success({"item": item}, _runtime_meta(strategy_id=strategy_id))
+    except Exception as exc:
+        return _success({"item": None}, _runtime_meta(strategy_id=strategy_id, detail=str(exc)))
 
 
 @router.post("/{strategy_id}/start")

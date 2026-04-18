@@ -34,11 +34,29 @@ class FrontendRefactorTests(unittest.TestCase):
             self.assertTrue(file_path.exists(), f"missing file: {file_path}")
 
     def test_homepage_becomes_guided_dashboard(self) -> None:
-        content = (WEB_APP / "page.tsx").read_text(encoding="utf-8")
-        self.assertIn("驾驶舱", content)
-        self.assertIn("推荐下一步", content)
-        self.assertIn("成功链路", content)
-        self.assertIn("异常链路", content)
+        page_content = (WEB_APP / "page.tsx").read_text(encoding="utf-8")
+        primary_action_content = (WEB_COMPONENTS / "home-primary-action-section.tsx").read_text(encoding="utf-8")
+        self.assertIn("驾驶舱", page_content)
+        self.assertIn("首页主动作区", primary_action_content)
+        self.assertIn("推荐下一步", primary_action_content)
+        self.assertIn("成功链路", page_content + primary_action_content)
+        self.assertIn("异常链路", page_content + primary_action_content)
+
+    def test_homepage_workbench_cards_use_stable_ids(self) -> None:
+        content = (WEB_COMPONENTS / "home-workbench-grid.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("id: string;", content)
+        self.assertIn("<Card key={card.id}", content)
+        self.assertNotIn("<Card key={card.title}", content)
+
+    def test_homepage_timeout_uses_abort_signal(self) -> None:
+        page_content = (WEB_APP / "page.tsx").read_text(encoding="utf-8")
+        api_content = (REPO_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(encoding="utf-8")
+
+        self.assertIn("AbortController", page_content)
+        self.assertIn("loader: (signal: AbortSignal)", page_content)
+        self.assertIn("signal?: AbortSignal", api_content)
+        self.assertIn("signal,", api_content)
 
     def test_login_page_has_real_submission_flow(self) -> None:
         content = (WEB_APP / "login" / "page.tsx").read_text(encoding="utf-8")
@@ -97,9 +115,11 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_protected_pages_have_action_forms_and_feedback(self) -> None:
         expectations = {
-            WEB_APP / "strategies" / "page.tsx": ["action=\"/actions\"", "策略中心", "双栏布局", "左边看判断", "右边看执行", "当前推荐执行候选", "研究候选", "自动化判断", "自动化推荐", "下一步动作", "执行器状态", "当前配置摘要", "研究范围", "研究 / dry-run 候选池", "live 子集", "验证策略", "自动化策略", "执行安全门配置", "live_allowed_symbols", "账户收口", "执行动作", "候选池摘要", "最近执行结果", "research_cockpit", "推荐策略", "整台 Freqtrade 执行器", "研究分数", "研究解释", "模型版本", "是否允许进入 dry-run", "为什么现在先推进这个币", "候选池先筛，live 子集后放", "运行中…"],
-            WEB_APP / "tasks" / "page.tsx": ["action=\"/actions\"", "自动化控制台", "自动化模式", "统一调度入口", "统一复盘", "健康摘要", "最近告警", "今日摘要", "调度顺序", "失败规则", "dry-run only", "Kill Switch", "当前阻塞", "接管建议", "恢复步骤", "告警摘要", "风险等级摘要", "恢复清单", "执行安全门", "研究 / dry-run 候选池", "live 子集", "当前放行口径", "自动化冷却时间", "每日最大轮次", "自动化运行参数", "长时间接管阈值", "活跃告警窗口", "最近告警历史", "活跃告警", "comparison_run_limit", "现在先处理什么", "调度什么时候继续", "人工接管后怎么恢复", "运行中…"],
-            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "自动化入口", "当前模式", "下一步动作", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要", "筛选通过率", "当前最佳候选", "运行中…"],
+            WEB_APP / "strategies" / "page.tsx": ["策略中心", "先看判断，再决定要不要派发", "左侧先看推荐执行、研究候选和下一步动作，右侧只看执行器状态、账户收口和执行动作。", "当前执行器状态", "当前候选可推进性", "当前执行模式", "当前账户收口摘要", "候选篮子与执行篮子是两层口径", "研究 / dry-run 候选篮子", "执行篮子", "研究结果 vs 执行结果", "为什么先推进", "最近执行结果"],
+            WEB_COMPONENTS / "strategies-primary-action-section.tsx": ["action=\"/actions\"", "策略主动作区", "处理自动化动作", "查看执行器动作", "查看研究链跳转", "查看工具详情", "运行中…"],
+            WEB_APP / "tasks" / "page.tsx": ["自动化控制台", "先确认自动化模式，再决定要不要触发下一轮工作流。", "当前自动化模式", "当前头号告警", "当前人工接管状态", "当前恢复建议", "最近工作流摘要", "长期运行与人工接管", "当前阻塞", "恢复步骤", "告警摘要", "风险等级摘要", "失败规则矩阵", "自动化运行参数", "长时间接管阈值", "活跃告警窗口", "现在先处理什么", "调度什么时候继续", "人工接管后怎么恢复", "当前原因", "告警升级", "接管复核"],
+            WEB_COMPONENTS / "tasks-primary-action-section.tsx": ["action=\"/actions\"", "任务主动作区", "切换自动化模式", "执行调度动作", "处理告警动作", "查看详情页跳转", "Kill Switch", "自动 dry-run", "运行自动化工作流运行中…"],
+            WEB_APP / "signals" / "page.tsx": ["action=\"/actions\"", "运行 Qlib 信号流水线", "运行演示信号流水线", "自动化入口", "当前模式", "下一步动作", "去任务页看自动化", "最新信号", "研究训练", "研究推理", "最近研究结果", "候选排行榜", "可进入 dry-run", "下一步动作", "统一研究报告", "最近实验摘要", "筛选通过率", "当前最佳候选", "运行中…"],
         }
         for file_path, patterns in expectations.items():
             content = file_path.read_text(encoding="utf-8")
@@ -107,7 +127,6 @@ class FrontendRefactorTests(unittest.TestCase):
                 self.assertIn(pattern, content)
         tasks_content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")
         automation_cycle_card_content = (WEB_COMPONENTS / "automation-last-cycle-card.tsx").read_text(encoding="utf-8")
-        self.assertIn('action="automation_manual_takeover"', tasks_content)
         self.assertIn("AutomationLastCycleCard", tasks_content)
         for pattern in ["本轮自动化判断", "推荐策略实例", "派发结果", "失败原因"]:
             self.assertIn(pattern, automation_cycle_card_content)
@@ -168,32 +187,47 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("交易所零头", positions_content)
 
     def test_strategies_page_focuses_on_execution_not_chart_explanation(self) -> None:
-        content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
+        page_content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
+        action_content = (WEB_COMPONENTS / "strategies-primary-action-section.tsx").read_text(encoding="utf-8")
 
-        self.assertIn("双栏布局", content)
-        self.assertIn("左边看判断", content)
-        self.assertIn("右边看执行", content)
-        self.assertIn("执行器状态", content)
-        self.assertIn("当前配置摘要", content)
-        self.assertIn("研究范围", content)
-        self.assertIn("验证策略", content)
-        self.assertIn("自动化策略", content)
-        self.assertIn("执行安全门配置", content)
-        self.assertIn("live_allowed_symbols", content)
-        self.assertIn("为什么现在先推进这个币", content)
-        self.assertIn("候选池先筛，live 子集后放", content)
-        self.assertIn("执行动作", content)
-        self.assertIn("最近执行结果", content)
-        self.assertIn("推荐策略", content)
-        self.assertIn("当前跟进对象", content)
-        self.assertIn("账户收口", content)
-        self.assertIn("余额页", content)
-        self.assertIn("订单页", content)
-        self.assertIn("持仓页", content)
-        self.assertNotIn("图表图层摘要", content)
-        self.assertNotIn("止损参考", content)
-        self.assertNotIn("执行决策", content)
-        self.assertNotIn("执行器控制", content)
+        self.assertIn("先看判断，再决定要不要派发", page_content)
+        self.assertIn("左侧先看推荐执行、研究候选和下一步动作，右侧只看执行器状态、账户收口和执行动作。", page_content)
+        self.assertIn("当前执行器状态", page_content)
+        self.assertIn("当前候选可推进性", page_content)
+        self.assertIn("当前执行模式", page_content)
+        self.assertIn("当前账户收口摘要", page_content)
+        self.assertIn("执行安全门配置", page_content)
+        self.assertIn("live_allowed_symbols", page_content)
+        self.assertIn("候选篮子与执行篮子是两层口径", page_content)
+        self.assertIn("研究 / dry-run 候选篮子", page_content)
+        self.assertIn("执行篮子", page_content)
+        self.assertIn("为什么先推进", page_content)
+        self.assertIn("最近执行结果", page_content)
+        self.assertIn("执行器暂时不可用", page_content)
+        self.assertIn("账户回填暂不可用", page_content)
+        self.assertIn("当前异常：", page_content)
+        self.assertIn("推荐策略", page_content)
+        self.assertIn("当前跟进对象", page_content)
+        self.assertIn("账户收口", page_content)
+        self.assertIn("去余额页", page_content)
+        self.assertIn("去订单页", page_content)
+        self.assertIn("去持仓页", page_content)
+        self.assertIn("策略主动作区", action_content)
+        self.assertIn("处理自动化动作", action_content)
+        self.assertIn("查看执行器动作", action_content)
+        self.assertIn("查看研究链跳转", action_content)
+        self.assertIn("查看工具详情", action_content)
+        self.assertIn("action=\"/actions\"", action_content)
+        self.assertIn("运行中…", action_content)
+        self.assertNotIn("图表图层摘要", page_content)
+        self.assertNotIn("止损参考", page_content)
+        self.assertNotIn("执行决策", page_content)
+
+    def test_strategy_workspace_api_normalizes_runtime_and_account_unavailable_fields(self) -> None:
+        content = (REPO_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(encoding="utf-8")
+
+        self.assertIn("status: String(row.status ?? \"ready\")", content)
+        self.assertIn("detail: String(row.detail ?? \"\")", content)
 
     def test_strategy_card_drops_explanatory_research_fields(self) -> None:
         content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
@@ -231,11 +265,13 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("Sharpe", content)
 
     def test_status_badge_compresses_long_internal_status_labels(self) -> None:
-        content = (WEB_COMPONENTS / "status-badge.tsx").read_text(encoding="utf-8")
+        badge_content = (WEB_COMPONENTS / "status-badge.tsx").read_text(encoding="utf-8")
+        status_language_content = (REPO_ROOT / "apps" / "web" / "lib" / "status-language.ts").read_text(encoding="utf-8")
 
-        self.assertIn("supportive_but_not_triggering", content)
-        self.assertIn("支持但未触发", content)
-        self.assertIn("replaceAll(\"_\", \" \")", content)
+        self.assertIn("resolveHumanStatus", badge_content)
+        self.assertIn("supportive_but_not_triggering", status_language_content)
+        self.assertIn("支持但未触发", status_language_content)
+        self.assertIn("replaceAll(\"_\", \" \")", status_language_content)
 
     def test_research_and_evaluation_pages_expose_split_and_threshold_fields(self) -> None:
         research_content = (WEB_APP / "research" / "page.tsx").read_text(encoding="utf-8")
@@ -269,23 +305,21 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("标签目标与止损说明", research_content)
         self.assertIn("因子明细表", features_content)
         self.assertIn("当前选中角色", features_content)
-        self.assertIn("为什么现在更适合", evaluation_content)
-        self.assertIn("这一轮更值得推进什么", evaluation_content)
+        self.assertIn("更适合哪套模板", evaluation_content)
+        self.assertIn("更值得进入 dry-run", evaluation_content)
         self.assertIn("先推荐谁", evaluation_content)
         self.assertIn("先淘汰谁", evaluation_content)
         self.assertIn("研究和执行差几步", evaluation_content)
-        self.assertIn("还差什么才能进入下一阶段", evaluation_content)
+        self.assertIn("当前主要阻塞", evaluation_content)
         self.assertIn("研究与执行差异", evaluation_content)
-        self.assertIn("name=\"timeframe_profiles.4h.trend_window\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.4h.rsi_period\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.4h.roc_period\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.4h.cci_period\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.4h.stoch_period\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.1h.breakout_lookback\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.1h.rsi_period\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.1h.roc_period\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.1h.cci_period\"", features_content)
-        self.assertIn("name=\"timeframe_profiles.1h.stoch_period\"", features_content)
+        self.assertIn('interval="4h"', features_content)
+        self.assertIn('interval="1h"', features_content)
+        self.assertIn("name={`timeframe_profiles.${interval}.trend_window`}", features_content)
+        self.assertIn("name={`timeframe_profiles.${interval}.rsi_period`}", features_content)
+        self.assertIn("name={`timeframe_profiles.${interval}.roc_period`}", features_content)
+        self.assertIn("name={`timeframe_profiles.${interval}.cci_period`}", features_content)
+        self.assertIn("name={`timeframe_profiles.${interval}.stoch_period`}", features_content)
+        self.assertIn("name={`timeframe_profiles.${interval}.breakout_lookback`}", features_content)
         self.assertIn("name=\"cost_model\"", backtest_content)
         self.assertIn("name=\"dry_run_min_net_return_pct\"", backtest_content)
         self.assertIn("name=\"dry_run_min_sharpe\"", backtest_content)
@@ -306,7 +340,7 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("name=\"enable_backtest_gate\"", backtest_content)
         self.assertIn("name=\"enable_consistency_gate\"", backtest_content)
         self.assertIn("name=\"enable_live_gate\"", backtest_content)
-        self.assertIn("按类别看当前启用情况", features_content)
+        self.assertIn("按因子类别选择", features_content)
         self.assertIn("name=\"enable_rule_gate\"", evaluation_content)
         self.assertIn("name=\"enable_validation_gate\"", evaluation_content)
         self.assertIn("name=\"enable_backtest_gate\"", evaluation_content)
@@ -337,12 +371,12 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("研究预设", evaluation_content)
         self.assertIn("标签预设", evaluation_content)
         self.assertIn("标签触发口径", evaluation_content)
-        self.assertIn("为什么先推进", evaluation_content)
-        self.assertIn("决策入口", evaluation_content)
-        self.assertIn("现在先推进哪一层", evaluation_content)
+        self.assertIn("推荐下一步", evaluation_content)
+        self.assertIn("当前建议动作", evaluation_content)
+        self.assertIn("当前下一步动作", evaluation_content)
         self.assertIn("严格规则", backtest_content)
         self.assertIn("门控开关", backtest_content)
-        self.assertIn("分组摘要", features_content)
+        self.assertIn("分组收益", features_content)
 
     def test_tasks_page_highlights_takeover_and_recovery_guidance(self) -> None:
         content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")
@@ -354,23 +388,80 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("告警摘要", content)
         self.assertIn("长期运行窗口", content)
         self.assertIn("今日轮次", content)
-        self.assertIn("冷却剩余", content)
         self.assertIn("连续失败", content)
         self.assertIn("升级级别", content)
-        self.assertIn("同步新鲜度", content)
-        self.assertIn("最后成功时间", content)
+        self.assertIn("同步失败细节", content)
         self.assertIn("自动化运行参数", content)
         self.assertIn("长时间接管阈值", content)
         self.assertIn("活跃告警窗口", content)
         self.assertIn("告警等级处理口径", content)
-        self.assertIn("活跃错误", content)
         self.assertIn("最近复盘记录", content)
         self.assertIn("这里最多显示最近", content)
         self.assertIn("现在先处理什么", content)
         self.assertIn("调度什么时候继续", content)
         self.assertIn("人工接管后怎么恢复", content)
-        self.assertIn("研究 / 执行差异", content)
-        self.assertIn("当前主要阻塞", content)
+        self.assertIn("接管复核截止", content)
+        self.assertIn("失败规则矩阵", content)
+        self.assertIn("当前人工接管状态", content)
+        self.assertIn("当前恢复建议", content)
+        self.assertIn("最近工作流摘要", content)
+
+    def test_tasks_page_uses_recovery_review_contract(self) -> None:
+        api_content = (REPO_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(encoding="utf-8")
+        page_content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("recoveryReview: Record<string, unknown>;", api_content)
+        self.assertIn("item.recovery_review", api_content)
+        self.assertIn("recoveryReview: isPlainObject(item.recovery_review) ? item.recovery_review : {}", api_content)
+        self.assertIn("recoveryReview: {},", api_content)
+        self.assertIn("const recoveryReview = asRecord(automation.recoveryReview);", page_content)
+        self.assertIn("recoveryReview.blockers", page_content)
+        self.assertIn("recoveryReview.operator_steps", page_content)
+        self.assertIn("readText(recoveryReview.headline", page_content)
+
+    def test_pages_share_automation_handoff_helper_and_runtime_guard_contract(self) -> None:
+        api_content = (REPO_ROOT / "apps" / "web" / "lib" / "api.ts").read_text(encoding="utf-8")
+        helper_content = (REPO_ROOT / "apps" / "web" / "lib" / "automation-handoff.ts").read_text(encoding="utf-8")
+        home_content = (WEB_APP / "page.tsx").read_text(encoding="utf-8")
+        evaluation_content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
+        strategies_content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
+        signals_content = (WEB_APP / "signals" / "page.tsx").read_text(encoding="utf-8")
+        tasks_content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("runtimeGuard: Record<string, unknown>;", api_content)
+        self.assertIn("item.runtime_guard", api_content)
+        self.assertIn("runtimeGuard: isPlainObject(item.runtime_guard) ? item.runtime_guard : {}", api_content)
+        self.assertIn("runtimeGuard: {},", api_content)
+        self.assertIn("export function buildAutomationHandoffSummary", helper_content)
+        self.assertIn("automation.recoveryReview", helper_content)
+        self.assertIn("automation.runtimeGuard", helper_content)
+        self.assertIn("runtimeGuard.reason_label", helper_content)
+        self.assertIn("runtimeGuard.alert_context", helper_content)
+        self.assertIn("runtimeGuard.takeover_review_due_at", helper_content)
+        self.assertIn('targetHref = tasksHref', helper_content)
+        self.assertIn("buildAutomationHandoffSummary", home_content)
+        self.assertIn("buildAutomationHandoffSummary", evaluation_content)
+        self.assertIn("buildAutomationHandoffSummary", strategies_content)
+        self.assertIn("buildAutomationHandoffSummary", signals_content)
+        self.assertIn("runtimeGuard", tasks_content)
+        self.assertIn("runtimeGuard.reason_label", tasks_content)
+        self.assertIn("runtimeGuard.alert_context", tasks_content)
+        self.assertIn("runtimeGuard.takeover_review_due_at", tasks_content)
+
+    def test_running_automation_routes_back_to_tasks_and_keeps_running_tone(self) -> None:
+        helper_content = (REPO_ROOT / "apps" / "web" / "lib" / "automation-handoff.ts").read_text(encoding="utf-8")
+        tasks_content = (WEB_APP / "tasks" / "page.tsx").read_text(encoding="utf-8")
+
+        self.assertIn('"running"', helper_content)
+        self.assertIn('runtimeGuardStatus === "running"', tasks_content)
+
+    def test_actions_route_reuses_automation_status_handoff_for_feedback(self) -> None:
+        actions_content = (WEB_APP / "actions" / "route.ts").read_text(encoding="utf-8")
+
+        self.assertIn("getAutomationStatus", actions_content)
+        self.assertIn("buildAutomationHandoffSummary", actions_content)
+        self.assertIn("先去任务页看当前恢复建议和人工接管状态。", actions_content)
+        self.assertIn("automation.runtimeGuard", actions_content)
 
     def test_evaluation_page_explains_research_vs_execution_alignment(self) -> None:
         content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
@@ -381,13 +472,12 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("差异说明", content)
         self.assertIn("建议动作", content)
         self.assertIn("执行对齐明细", content)
-        self.assertIn("这一轮更值得推进什么", content)
+        self.assertIn("当前推荐", content)
         self.assertIn("先推荐谁", content)
         self.assertIn("先淘汰谁", content)
         self.assertIn("研究和执行差几步", content)
         self.assertIn("最近订单标的", content)
         self.assertIn("最近持仓标的", content)
-        self.assertIn("实验对齐概况", content)
         self.assertIn("训练模型", content)
         self.assertIn("推理模型", content)
         self.assertIn("训练数据快照", content)
@@ -402,18 +492,20 @@ class FrontendRefactorTests(unittest.TestCase):
         self.assertIn("研究和执行差在哪里", content)
         self.assertIn("推荐摘要", content)
         self.assertIn("淘汰摘要", content)
-        self.assertIn("差异摘要", content)
+        self.assertIn("研究与执行差异", content)
         self.assertIn("当前卡在哪个门", content)
         self.assertIn("先怎么修", content)
-        self.assertIn("决策入口", content)
-        self.assertIn("现在先推进哪一层", content)
+        self.assertIn("当前下一步动作", content)
+        self.assertIn("当前建议动作", content)
 
     def test_strategies_page_surfaces_manual_takeover_risk_state(self) -> None:
-        content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
+        page_content = (WEB_APP / "strategies" / "page.tsx").read_text(encoding="utf-8")
+        action_content = (WEB_COMPONENTS / "strategies-primary-action-section.tsx").read_text(encoding="utf-8")
 
-        self.assertIn("当前自动化状态", content)
-        self.assertIn("当前已人工接管", content)
-        self.assertIn("去任务页处理接管与恢复", content)
+        self.assertIn("人工接管中", page_content)
+        self.assertIn("接管中先决定怎么恢复", page_content)
+        self.assertIn("当前自动化状态", action_content)
+        self.assertIn("去任务页看完整时间线", action_content)
 
     def test_evaluation_page_mentions_alignment_explanation_sections(self) -> None:
         content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
@@ -424,17 +516,17 @@ class FrontendRefactorTests(unittest.TestCase):
 
     def test_research_and_evaluation_pages_show_phase2_configuration_helpers(self) -> None:
         research_content = (WEB_APP / "research" / "page.tsx").read_text(encoding="utf-8")
-        evaluation_content = (WEB_APP / "evaluation" / "page.tsx").read_text(encoding="utf-8")
+        evaluation_action_content = (WEB_COMPONENTS / "evaluation-primary-action-section.tsx").read_text(encoding="utf-8")
 
-        self.assertIn("标签配方与模型口径", research_content)
+        self.assertIn("标签与模型说明", research_content)
         self.assertIn("当前标签预设", research_content)
-        self.assertIn("训练 / 验证 / 测试", research_content)
+        self.assertIn("训练/验证/测试切分比例", research_content)
 
-        self.assertIn("阶段筛选", evaluation_content)
-        self.assertIn("当前只看哪一层", evaluation_content)
-        self.assertIn("更新阶段视图", evaluation_content)
-        self.assertIn("当前阶段视图", evaluation_content)
-        self.assertIn("当前视图候选数", evaluation_content)
+        self.assertIn("阶段筛选", evaluation_action_content)
+        self.assertIn("当前只看哪一层", evaluation_action_content)
+        self.assertIn("更新阶段视图", evaluation_action_content)
+        self.assertIn("当前阶段视图", evaluation_action_content)
+        self.assertIn("当前视图候选数", evaluation_action_content)
 
 
 if __name__ == "__main__":

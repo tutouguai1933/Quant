@@ -154,7 +154,10 @@ class BinanceAccountClient:
 
         try:
             return self._signed_get(path, params)
-        except (HTTPError, URLError, TimeoutError, OSError):
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError):
+            return None
+        except Exception:
+            # 捕获所有其他异常，避免阻塞
             return None
 
 

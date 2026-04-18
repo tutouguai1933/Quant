@@ -1,0 +1,77 @@
+API 端点测试 - 快速参考
+================================================================================
+
+测试完成时间: 2026-04-18 03:52:13
+API 地址: http://localhost:9011
+
+总体状态
+--------
+✓ 成功: 23/29 (79.3%)
+✗ 失败: 6/29 (20.7%)
+⚠ 慢接口: 11/29 (>1秒)
+
+关键问题
+--------
+1. 超时失败 (6个) - 需要立即处理
+   - /api/v1/balances (Binance 同步)
+   - /api/v1/market (市场数据)
+   - /api/v1/market/BTCUSDT/chart (K线数据)
+   - /api/v1/strategies/workspace (策略工作台)
+   - /api/v1/tasks/automation (自动化状态)
+   - /api/v1/signals/strategy/run (策略执行)
+
+2. 极慢接口 (>3秒)
+   - /api/v1/tasks/validation-review: 6.2秒 ⚠️ 最慢
+   - /api/v1/positions: 3.1秒
+   - /api/v1/strategies: 3.1秒
+   - /api/v1/orders: 3.1秒
+
+任务相关端点状态
+--------------
+✓ /api/v1/tasks (4.37ms) - 正常
+✗ /api/v1/tasks/automation - 超时失败
+⚠ /api/v1/tasks/validation-review (6158ms) - 极慢
+⚠ /api/v1/tasks/sync (1536ms) - 较慢
+
+优先修复建议
+----------
+P0 (紧急):
+  1. 检查 Binance API 连接和配置
+  2. 为外部 API 添加超时控制 (3-5秒)
+  3. 实施降级策略和缓存
+
+P1 (高):
+  4. 优化 validation-review 性能 (当前 6.2秒)
+  5. 优化 Freqtrade 同步端点 (当前 3秒)
+  6. 为 tasks/sync 实施异步执行
+
+P2 (中):
+  7. 添加响应时间监控和告警
+  8. 实施缓存策略 (market/balances/positions)
+
+性能分布
+--------
+< 10ms:    18 个 (62.1%) ✓ 优秀
+1-3秒:      4 个 (13.8%) ⚠ 需优化
+3-10秒:     1 个 (3.4%)  ⚠ 严重
+>10秒:      6 个 (20.7%) ✗ 超时失败
+
+测试脚本
+--------
+位置: /home/djy/Quant/infra/deploy/api_endpoint_test.py
+
+运行: python3 api_endpoint_test.py --url http://localhost:9011
+
+详细报告
+--------
+- 完整报告: api_test_report.txt
+- 分析总结: api_test_summary.md
+
+下一步
+------
+1. 查看 API 服务日志定位超时原因
+2. 检查 Binance API 和 Freqtrade 连接
+3. 实施性能优化方案
+4. 添加监控和告警
+
+================================================================================

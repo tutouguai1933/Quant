@@ -1,0 +1,141 @@
+{
+  "test_metadata": {
+    "timestamp": "2026-04-18T03:52:13",
+    "api_url": "http://localhost:9011",
+    "total_endpoints": 29,
+    "success_count": 23,
+    "failure_count": 6,
+    "success_rate": 79.3,
+    "slow_threshold_ms": 1000,
+    "slow_count": 11
+  },
+  "performance_stats": {
+    "avg_response_time_ms": 740.33,
+    "min_response_time_ms": 3.88,
+    "max_response_time_ms": 6158.04,
+    "median_response_time_ms": 5.22
+  },
+  "endpoints": [
+    {"method": "GET", "path": "/health", "status": 200, "time_ms": 7.4, "success": true, "category": "health"},
+    {"method": "GET", "path": "/healthz", "status": 200, "time_ms": 4.86, "success": true, "category": "health"},
+    {"method": "POST", "path": "/api/v1/auth/login", "status": 200, "time_ms": 5.51, "success": true, "category": "auth"},
+    {"method": "GET", "path": "/api/v1/auth/model", "status": 200, "time_ms": 4.5, "success": true, "category": "auth"},
+    {"method": "GET", "path": "/api/v1/auth/session", "status": 200, "time_ms": 5.22, "success": true, "category": "auth"},
+    {"method": "GET", "path": "/api/v1/accounts", "status": 200, "time_ms": 3.88, "success": true, "category": "accounts"},
+    {"method": "GET", "path": "/api/v1/balances", "status": 0, "time_ms": 10010.33, "success": false, "category": "balances", "error": "timeout"},
+    {"method": "GET", "path": "/api/v1/positions", "status": 200, "time_ms": 3083.58, "success": true, "category": "trading"},
+    {"method": "GET", "path": "/api/v1/orders", "status": 200, "time_ms": 3078.71, "success": true, "category": "trading"},
+    {"method": "GET", "path": "/api/v1/market", "status": 0, "time_ms": 10009.0, "success": false, "category": "market", "error": "timeout"},
+    {"method": "GET", "path": "/api/v1/market/BTCUSDT/chart", "status": 0, "time_ms": 10012.2, "success": false, "category": "market", "error": "timeout"},
+    {"method": "GET", "path": "/api/v1/signals", "status": 200, "time_ms": 3.93, "success": true, "category": "signals"},
+    {"method": "GET", "path": "/api/v1/signals/research/latest", "status": 200, "time_ms": 4.45, "success": true, "category": "signals"},
+    {"method": "GET", "path": "/api/v1/signals/research/candidates", "status": 200, "time_ms": 5.26, "success": true, "category": "signals"},
+    {"method": "GET", "path": "/api/v1/signals/research/report", "status": 200, "time_ms": 5.93, "success": true, "category": "signals"},
+    {"method": "GET", "path": "/api/v1/signals/research/runtime", "status": 200, "time_ms": 4.1, "success": true, "category": "signals"},
+    {"method": "GET", "path": "/api/v1/strategies", "status": 200, "time_ms": 3080.11, "success": true, "category": "strategies"},
+    {"method": "GET", "path": "/api/v1/strategies/catalog", "status": 200, "time_ms": 4.91, "success": true, "category": "strategies"},
+    {"method": "GET", "path": "/api/v1/strategies/workspace", "status": 0, "time_ms": 10012.03, "success": false, "category": "strategies", "error": "timeout"},
+    {"method": "GET", "path": "/api/v1/tasks", "status": 200, "time_ms": 4.37, "success": true, "category": "tasks"},
+    {"method": "GET", "path": "/api/v1/tasks/automation", "status": 0, "time_ms": 10012.05, "success": false, "category": "tasks", "error": "timeout"},
+    {"method": "GET", "path": "/api/v1/tasks/validation-review", "status": 200, "time_ms": 6158.04, "success": true, "category": "tasks"},
+    {"method": "GET", "path": "/api/v1/risk-events", "status": 200, "time_ms": 4.65, "success": true, "category": "risk"},
+    {"method": "GET", "path": "/api/v1/features/workspace", "status": 200, "time_ms": 5.54, "success": true, "category": "workspace"},
+    {"method": "GET", "path": "/api/v1/research/workspace", "status": 200, "time_ms": 7.27, "success": true, "category": "workspace"},
+    {"method": "GET", "path": "/api/v1/workbench/config", "status": 200, "time_ms": 4.46, "success": true, "category": "config"},
+    {"method": "GET", "path": "/openclaw/snapshot", "status": 200, "time_ms": 4.66, "success": true, "category": "openclaw"},
+    {"method": "POST", "path": "/api/v1/signals/strategy/run", "status": 0, "time_ms": 10012.55, "success": false, "category": "signals", "error": "timeout"},
+    {"method": "POST", "path": "/api/v1/tasks/sync", "status": 200, "time_ms": 1536.18, "success": true, "category": "tasks"}
+  ],
+  "issues": {
+    "timeout_failures": [
+      "/api/v1/balances",
+      "/api/v1/market",
+      "/api/v1/market/BTCUSDT/chart",
+      "/api/v1/strategies/workspace",
+      "/api/v1/tasks/automation",
+      "/api/v1/signals/strategy/run"
+    ],
+    "slow_endpoints": [
+      {"path": "/api/v1/tasks/validation-review", "time_ms": 6158.04, "severity": "critical"},
+      {"path": "/api/v1/positions", "time_ms": 3083.58, "severity": "high"},
+      {"path": "/api/v1/strategies", "time_ms": 3080.11, "severity": "high"},
+      {"path": "/api/v1/orders", "time_ms": 3078.71, "severity": "high"},
+      {"path": "/api/v1/tasks/sync", "time_ms": 1536.18, "severity": "medium"}
+    ]
+  },
+  "category_stats": {
+    "health": {"total": 2, "success": 2, "avg_time_ms": 6.13},
+    "auth": {"total": 4, "success": 4, "avg_time_ms": 5.06},
+    "trading": {"total": 2, "success": 2, "avg_time_ms": 3081.15},
+    "market": {"total": 2, "success": 0, "avg_time_ms": null},
+    "signals": {"total": 6, "success": 5, "avg_time_ms": 4.61},
+    "strategies": {"total": 3, "success": 2, "avg_time_ms": 1542.51},
+    "tasks": {"total": 4, "success": 3, "avg_time_ms": 2566.20},
+    "risk": {"total": 1, "success": 1, "avg_time_ms": 4.65},
+    "workspace": {"total": 2, "success": 2, "avg_time_ms": 6.41},
+    "config": {"total": 1, "success": 1, "avg_time_ms": 4.46},
+    "openclaw": {"total": 1, "success": 1, "avg_time_ms": 4.66}
+  },
+  "recommendations": [
+    {
+      "priority": "P0",
+      "category": "timeout",
+      "action": "Fix Binance API connection and add timeout controls (3-5s)",
+      "affected_endpoints": ["/api/v1/balances", "/api/v1/market", "/api/v1/market/BTCUSDT/chart"],
+      "details": "Market and balances endpoints depend on Binance API. Check network connectivity, API credentials, and implement circuit breaker pattern."
+    },
+    {
+      "priority": "P0",
+      "category": "timeout",
+      "action": "Fix workspace and automation endpoint timeouts",
+      "affected_endpoints": ["/api/v1/strategies/workspace", "/api/v1/tasks/automation", "/api/v1/signals/strategy/run"],
+      "details": "These endpoints involve complex aggregations or external dependencies. Add timeout controls and implement graceful degradation."
+    },
+    {
+      "priority": "P1",
+      "category": "performance",
+      "action": "Optimize validation-review endpoint (currently 6.2s)",
+      "affected_endpoints": ["/api/v1/tasks/validation-review"],
+      "details": "validation_workflow_service.build_report() is extremely slow. Consider pagination, caching, or async report generation."
+    },
+    {
+      "priority": "P1",
+      "category": "performance",
+      "action": "Optimize Freqtrade sync endpoints (currently ~3s each)",
+      "affected_endpoints": ["/api/v1/positions", "/api/v1/orders", "/api/v1/strategies"],
+      "details": "sync_service calls to Freqtrade REST API are slow. Implement caching (1-2s TTL) or background sync with in-memory cache."
+    },
+    {
+      "priority": "P1",
+      "category": "performance",
+      "action": "Make tasks/sync asynchronous",
+      "affected_endpoints": ["/api/v1/tasks/sync"],
+      "details": "Currently takes 1.5s. Should return task ID immediately and allow polling for status."
+    },
+    {
+      "priority": "P2",
+      "category": "monitoring",
+      "action": "Add response time monitoring and alerting",
+      "affected_endpoints": "all",
+      "details": "Implement APM (Application Performance Monitoring) with alerts for endpoints >2s response time."
+    },
+    {
+      "priority": "P2",
+      "category": "caching",
+      "action": "Implement caching strategy",
+      "affected_endpoints": ["/api/v1/market", "/api/v1/balances", "/api/v1/positions", "/api/v1/orders"],
+      "details": "Market data: 5-10s TTL, Balances/Positions: 1-2s TTL, Catalog/Config: 30-60s TTL"
+    }
+  ],
+  "test_coverage": {
+    "tested_endpoints": 29,
+    "total_available_endpoints": 60,
+    "coverage_percentage": 48.3,
+    "untested_categories": [
+      "Individual resource endpoints (by ID)",
+      "Control operations (start/pause/stop)",
+      "Write operations (create/update/delete)",
+      "Automation control endpoints"
+    ]
+  }
+}

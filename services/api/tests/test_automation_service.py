@@ -228,6 +228,141 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["priority_queue_summary"]["active_symbol"], "ETHUSDT")
         self.assertEqual(status["priority_queue"][0]["symbol"], "ETHUSDT")
 
+    def test_get_status_falls_back_when_review_and_sync_raise(self) -> None:
+        scheduler = mock.Mock()
+        scheduler.get_health_summary.return_value = {}
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_QueuedResearchService(),
+            reviewer=_BrokenReviewer(),
+            syncer=_BrokenSyncService(),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["review_overview"]["workflow_status"], "unavailable")
+        self.assertEqual(status["review_overview"]["next_action"], "review_backend")
+        self.assertEqual(status["review_overview"]["detail"], "统一复盘暂时不可用，请先检查复盘服务。")
+        self.assertEqual(status["execution_health"]["status"], "unavailable")
+        self.assertEqual(status["execution_health"]["connection_status"], "disconnected")
+        self.assertEqual(status["execution_health"]["detail"], "执行同步暂时不可用，请先检查执行器和账户同步。")
+        self.assertEqual(status["runtime_guard"]["status"], "degraded")
+        self.assertEqual(status["runtime_guard"]["degrade_mode"], "task_hub_only")
+        self.assertEqual(status["runtime_guard"]["operator_route"], "/tasks")
+        self.assertEqual(status["runtime_guard"]["alert_context"]["level"], "error")
+        self.assertEqual(status["runtime_guard"]["alert_context"]["code"], "dependency_unavailable")
+        self.assertEqual(status["recovery_review"]["status"], "attention_required")
+        self.assertEqual(status["recovery_review"]["issue_code"], "execution_unavailable")
+        self.assertIn("执行同步暂时不可用", status["recovery_review"]["detail"])
+
+    def test_get_status_reuses_execution_health_snapshot_for_recovery_review(self) -> None:
+        scheduler = mock.Mock()
+        scheduler.get_health_summary.return_value = {}
+        automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
+        syncer = _CountingSyncService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_QueuedResearchService(),
+            reviewer=_FakeReviewer(),
+            syncer=syncer,
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(syncer.call_count, 1)
+        self.assertEqual(status["execution_health"]["connection_status"], "connected")
+        self.assertEqual(status["recovery_review"]["status"], "ready")
+
+    def test_get_status_marks_active_automation_cycle_as_running(self) -> None:
+        scheduler = _FakeScheduler(
+            health_summary={
+                "latest_status_by_type": {
+                    "automation_cycle": "running",
+                    "research_train": "running",
+                },
+                "latest_success_by_type": {},
+                "latest_failure_by_type": {},
+                "consecutive_failure_count_by_type": {},
+            }
+        )
+        automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_QueuedResearchService(),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        status = workflow.get_status()
+
+        self.assertEqual(status["recovery_review"]["status"], "running")
+        self.assertEqual(status["recovery_review"]["waiting_for"], "active_cycle")
+        self.assertEqual(status["recovery_review"]["next_action"], "observe_current_run")
+        self.assertIn("正在执行自动化", status["recovery_review"]["headline"])
+        self.assertEqual(status["runtime_guard"]["status"], "running")
+        self.assertEqual(status["runtime_guard"]["degrade_mode"], "cycle_running")
+        self.assertEqual(status["runtime_guard"]["operator_route"], "/tasks")
+        self.assertEqual(status["runtime_guard"]["alert_context"]["level"], "info")
+        self.assertEqual(status["runtime_guard"]["alert_context"]["code"], "automation_cycle_running")
+
+    def test_recovery_review_uses_primary_action_mapping_when_label_missing(self) -> None:
+        review = AutomationWorkflowService._build_recovery_review(
+            state={"mode": "auto_dry_run", "manual_takeover": False},
+            task_health={},
+            runtime_window={
+                "blocked_reason": "paused_waiting_review",
+                "ready_for_cycle": False,
+                "next_action": "wait_cooldown",
+                "story": {
+                    "headline": "当前处于暂停待复核状态",
+                    "when_it_runs": "先做完人工复核，再决定是否恢复当前模式。",
+                    "why_not_resume": "暂停原因和恢复清单还没完全收口。",
+                    "next_step": "先确认暂停原因。",
+                },
+            },
+            resume_status={
+                "recovery_state": "recoverable",
+                "waiting_for": "paused_review",
+                "waiting_for_label": "系统在等暂停原因复核完成",
+                "resume_needed": True,
+                "resume_ready": True,
+                "continue_after_resume": False,
+                "primary_action": "automation_resume",
+                "primary_action_label": "",
+                "primary_action_detail": "暂停原因已经处理完成，现在可以恢复当前自动化模式。",
+                "cannot_resume_reason": "现在可以恢复，而且恢复后就能继续下一轮自动化。",
+                "resume_blockers": [],
+                "earliest_continue_at": "",
+                "earliest_continue_text": "当前没有额外等待时间，确认无误后可继续。",
+            },
+            execution_health={"status": "ok", "connection_status": "connected"},
+            active_blockers=[],
+            operator_actions=[],
+            latest_alert=None,
+        )
+
+        self.assertEqual(review["next_action"], "automation_resume")
+        self.assertEqual(review["next_action_label"], "确认后恢复自动化")
+
+    def test_recovery_review_keeps_active_blockers_without_code(self) -> None:
+        blockers = AutomationWorkflowService._normalize_recovery_blockers(
+            resume_blockers=[],
+            active_blockers=[
+                {
+                    "label": "执行同步异常",
+                    "detail": "当前执行器和账户同步还没有恢复。",
+                }
+            ],
+        )
+
+        self.assertEqual(blockers, [{"label": "执行同步异常", "detail": "当前执行器和账户同步还没有恢复。"}])
+
     def test_manual_mode_cycle_reports_manual_review_message(self) -> None:
         scheduler = _FakeScheduler()
         automation = AutomationService()
@@ -246,6 +381,39 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "waiting")
         self.assertEqual(result["next_action"], "manual_review")
         self.assertEqual(result["message"], "当前处于手动模式，请先人工确认再继续。")
+        self.assertEqual(scheduler.named_calls, [])
+
+    def test_manual_mode_cycle_keeps_core_summary_shape(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_PassingDispatchService(runtime_mode="dry-run"),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        automation.configure_mode("manual", actor="tester")
+        result = workflow.run_cycle(source="tester")
+
+        self.assertEqual(result["status"], "waiting")
+        self.assertEqual(result["mode"], "manual")
+        self.assertEqual(result["recommended_symbol"], "")
+        self.assertEqual(result["recommended_strategy_id"], 0)
+        self.assertEqual(result["next_action"], "manual_review")
+        self.assertEqual(result["failure_reason"], "")
+        self.assertEqual(result["failure_policy_action"], "")
+        self.assertEqual(result["armed_symbol"], "")
+        self.assertEqual(result["priority_queue_summary"], {})
+        self.assertIsNone(result["train_task"])
+        self.assertIsNone(result["infer_task"])
+        self.assertIsNone(result["signal_task"])
+        self.assertIsNone(result["dispatch"])
+        self.assertIsNone(result["review_task"])
+        self.assertEqual(result["review_overview"], {})
+        self.assertEqual(scheduler.named_calls, [])
 
     def test_resume_blocks_when_plain_manual_mode_has_no_auto_target(self) -> None:
         service = AutomationService()
@@ -391,6 +559,17 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIn("last_failure_at", status["state"])
         self.assertIn("paused_at", status["state"])
         self.assertIn("manual_takeover_at", status["state"])
+        self.assertIn("recovery_review", status)
+        self.assertIn("runtime_guard", status)
+        self.assertEqual(status["runtime_guard"]["status"], "ready")
+        self.assertEqual(status["runtime_guard"]["degrade_mode"], "full")
+        self.assertEqual(status["runtime_guard"]["operator_route"], "/tasks")
+        self.assertEqual(status["recovery_review"]["status"], "ready")
+        self.assertEqual(status["recovery_review"]["next_action"], "automation_run_cycle")
+        self.assertEqual(status["recovery_review"]["next_action_label"], "运行自动化工作流")
+        self.assertEqual(status["recovery_review"]["waiting_for"], "none")
+        self.assertEqual(status["recovery_review"]["blockers"], [])
+        self.assertIn("可以继续", status["recovery_review"]["headline"])
 
     def test_execution_policy_preserves_empty_candidate_scope(self) -> None:
         automation_service_module.workbench_config_service.update_section(
@@ -445,6 +624,13 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertFalse(status["resume_status"]["resume_ready"])
         self.assertFalse(status["resume_status"]["continue_after_resume"])
         self.assertIn("不需要点恢复按钮", status["resume_status"]["cannot_resume_reason"])
+        self.assertEqual(status["runtime_guard"]["status"], "waiting")
+        self.assertEqual(status["runtime_guard"]["degrade_mode"], "window_wait")
+        self.assertEqual(status["recovery_review"]["status"], "waiting")
+        self.assertEqual(status["recovery_review"]["next_action"], "wait_cooldown")
+        self.assertEqual(status["recovery_review"]["waiting_for"], "cooldown_window")
+        self.assertEqual(status["recovery_review"]["earliest_resume_at"], status["runtime_window"]["next_run_at"])
+        self.assertIn("冷却", status["recovery_review"]["detail"])
 
     def test_runtime_window_requests_takeover_review_after_long_manual_takeover(self) -> None:
         scheduler = _FakeScheduler()
@@ -484,6 +670,17 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertTrue(status["resume_status"]["resume_needed"])
         self.assertFalse(status["resume_status"]["resume_ready"])
         self.assertIn("恢复清单还有", status["resume_status"]["cannot_resume_reason"])
+        self.assertEqual(status["runtime_guard"]["status"], "attention_required")
+        self.assertEqual(status["runtime_guard"]["degrade_mode"], "manual_only")
+        self.assertEqual(status["runtime_guard"]["takeover_review_due_at"], status["runtime_window"]["takeover_review_due_at"])
+        self.assertEqual(status["runtime_guard"]["alert_context"]["level"], "warning")
+        self.assertEqual(status["runtime_guard"]["alert_context"]["code"], "manual_takeover_enabled")
+        self.assertEqual(status["recovery_review"]["status"], "attention_required")
+        self.assertEqual(status["recovery_review"]["next_action"], "automation_mode_manual")
+        self.assertEqual(status["recovery_review"]["waiting_for"], "manual_takeover_review")
+        self.assertEqual(status["recovery_review"]["issue_code"], "manual_takeover")
+        self.assertTrue(status["recovery_review"]["blockers"])
+        self.assertIn("人工接管", status["recovery_review"]["headline"])
 
     def test_runtime_window_marks_daily_limit_as_waiting_not_resume(self) -> None:
         scheduler = _FakeScheduler()
@@ -512,6 +709,10 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertFalse(status["resume_status"]["resume_needed"])
         self.assertFalse(status["resume_status"]["resume_ready"])
         self.assertIn("下一日窗口", status["resume_status"]["cannot_resume_reason"])
+        self.assertEqual(status["recovery_review"]["status"], "waiting")
+        self.assertEqual(status["recovery_review"]["next_action"], "wait_next_window")
+        self.assertEqual(status["recovery_review"]["waiting_for"], "next_daily_window")
+        self.assertIn("下一日窗口", status["recovery_review"]["detail"])
 
     def test_runtime_window_marks_paused_review_as_resume_flow(self) -> None:
         scheduler = _FakeScheduler()
@@ -539,6 +740,11 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["resume_status"]["recovery_state"], "recoverable")
         self.assertEqual(status["control_matrix"]["state"], "recoverable")
         self.assertEqual(status["control_matrix"]["primary_action"], "automation_resume")
+        self.assertEqual(status["recovery_review"]["status"], "ready")
+        self.assertEqual(status["recovery_review"]["next_action"], "automation_resume")
+        self.assertEqual(status["recovery_review"]["waiting_for"], "paused_review")
+        self.assertEqual(status["recovery_review"]["blockers"], [])
+        self.assertIn("恢复", status["recovery_review"]["headline"])
 
     def test_resume_blocks_auto_live_without_armed_symbol_and_requests_dry_run_only(self) -> None:
         service = AutomationService()
@@ -602,6 +808,8 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertIsNotNone(disabled_resume)
         self.assertFalse(bool(disabled_resume["enabled"]))
         self.assertIn("人工处理", str(disabled_resume["disabled_reason"]))
+        self.assertEqual(status["runtime_guard"]["takeover_review_due_at"], status["runtime_window"]["takeover_review_due_at"])
+        self.assertEqual(status["recovery_review"]["issue_code"], "manual_takeover")
 
     def test_runtime_window_keeps_manual_takeover_as_manual_required(self) -> None:
         scheduler = _FakeScheduler()
@@ -650,6 +858,10 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["resume_status"]["waiting_for"], "manual_mode")
         self.assertFalse(status["resume_status"]["resume_needed"])
         self.assertIn("手动模式", status["resume_status"]["cannot_resume_reason"])
+        self.assertEqual(status["recovery_review"]["status"], "blocked")
+        self.assertEqual(status["recovery_review"]["next_action"], "automation_dry_run_only")
+        self.assertEqual(status["recovery_review"]["waiting_for"], "manual_mode")
+        self.assertIn("手动模式", status["recovery_review"]["headline"])
 
     def test_health_summary_exposes_blockers_actions_and_alert_summary(self) -> None:
         service = AutomationService()
@@ -1084,6 +1296,31 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertTrue(state["paused"])
         self.assertEqual(state["paused_reason"], "dispatch_execution_failed")
 
+    def test_run_cycle_handles_dispatch_exception_and_records_attention_required(self) -> None:
+        scheduler = _FakeScheduler()
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_ReadyResearchService(),
+            dispatcher=_DispatchExceptionService(),
+            reviewer=_FakeReviewer(),
+            syncer=_FakeSyncService(runtime_mode="dry-run"),
+        )
+
+        automation.configure_mode("auto_dry_run", actor="tester")
+        result = workflow.run_cycle(source="watchdog")
+        state = automation.get_state()
+
+        self.assertEqual(result["status"], "attention_required")
+        self.assertEqual(result["next_action"], "review_and_decide")
+        self.assertEqual(result["failure_reason"], "execution_failed")
+        self.assertEqual(result["failure_policy_action"], "review_and_decide")
+        self.assertTrue(state["manual_takeover"])
+        self.assertTrue(state["paused"])
+        self.assertEqual(state["paused_reason"], "dispatch_execution_failed")
+        self.assertIn("execution_failed", [str(item.get("code", "")) for item in state["alerts"]])
+
 
 class _ReadyResearchService:
     def get_research_recommendation(self) -> dict[str, object]:
@@ -1230,6 +1467,11 @@ class _DispatchFailedService:
         }
 
 
+class _DispatchExceptionService:
+    def dispatch_latest_signal(self, strategy_id: int, *, source: str = "system") -> dict[str, object]:
+        raise RuntimeError(f"dispatch crashed for strategy {strategy_id} from {source}")
+
+
 class _FakeScheduler:
     def __init__(self, *, health_summary: dict[str, object] | None = None) -> None:
         self.named_calls: list[tuple[str, dict[str, object]]] = []
@@ -1296,6 +1538,11 @@ class _FakeReviewer:
         }
 
 
+class _BrokenReviewer:
+    def build_report(self, limit: int = 10) -> dict[str, object]:
+        raise RuntimeError("review backend unavailable")
+
+
 class _FakeSyncService:
     def __init__(self, *, runtime_mode: str) -> None:
         self._runtime_mode = runtime_mode
@@ -1312,6 +1559,35 @@ class _FakeSyncService:
             "connection_status": "connected",
             "latest_sync_status": "succeeded",
             "latest_review_status": "succeeded",
+        }
+
+
+class _BrokenSyncService:
+    def get_execution_health_summary(
+        self,
+        *,
+        task_health: dict[str, object] | None = None,
+        automation_state: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        raise RuntimeError("freqtrade offline")
+
+
+class _CountingSyncService:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def get_execution_health_summary(
+        self,
+        *,
+        task_health: dict[str, object] | None = None,
+        automation_state: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        self.call_count += 1
+        return {
+            "status": "healthy",
+            "connection_status": "connected",
+            "detail": "",
+            "latest_sync_status": "succeeded",
         }
 
 

@@ -96,6 +96,8 @@ export type StrategyWorkspaceModel = {
     backend: string;
     mode: string;
     connection_status: string;
+    status: string;
+    detail: string;
   };
   research: WorkspaceResearchOverview;
   research_recommendation: ResearchRecommendation | null;
@@ -163,6 +165,8 @@ type WorkspaceAccountPosition = {
 };
 
 export type WorkspaceAccountState = {
+  status: string;
+  detail: string;
   source: string;
   truth_source: string;
   summary: {
@@ -220,6 +224,8 @@ export type AutomationStatusModel = {
   dailySummary: Record<string, unknown>;
   runtimeWindow: Record<string, unknown>;
   resumeStatus: Record<string, unknown>;
+  recoveryReview: Record<string, unknown>;
+  runtimeGuard: Record<string, unknown>;
   controlMatrix: Record<string, unknown>;
   controlActions: Array<Record<string, unknown>>;
   schedulerPlan: Array<Record<string, unknown>>;
@@ -581,6 +587,9 @@ export type FeatureWorkspaceModel = {
   }>;
   category_catalog?: Array<Record<string, unknown>>;
   selection_story?: Record<string, unknown>;
+  effectiveness_summary?: Record<string, unknown>;
+  redundancy_summary?: Record<string, unknown>;
+  score_story?: Record<string, unknown>;
 };
 
 export type ResearchWorkspaceModel = {
@@ -893,6 +902,8 @@ export type LoginPageModel = {
 const WEB_PROXY_BASE_URL = "/api/control";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
+
+export const DEFAULT_API_TIMEOUT = 10000;
 const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
 
 async function resolveControlPlaneBaseUrl(request?: Request): Promise<string> {
@@ -900,24 +911,9 @@ async function resolveControlPlaneBaseUrl(request?: Request): Promise<string> {
     return WEB_PROXY_BASE_URL;
   }
 
-  const localDebugBaseUrl = deriveLocalApiBaseUrl(request);
-  if (localDebugBaseUrl) {
-    return localDebugBaseUrl;
-  }
-
-  try {
-    const { headers } = await import("next/headers");
-    const requestHeaders = await headers();
-    const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "";
-    const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
-    if (host) {
-      return `${protocol}://${host}${WEB_PROXY_BASE_URL}`;
-    }
-  } catch {
-    // 服务端无法读取当前请求头时，回退到显式 API 基址。
-  }
-
-  return buildUpstreamApiUrl("/");
+  // 服务端渲染时直接使用环境变量或默认 API 地址
+  const configuredBaseUrl = (process.env.QUANT_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
+  return configuredBaseUrl;
 }
 
 export async function resolveControlPlaneUrl(path: string, request?: Request): Promise<string> {
@@ -1006,13 +1002,67 @@ export function isProtectedRoute(path: string): boolean {
   return PROTECTED_ROUTE_PATHS.includes(path);
 }
 
-export async function fetchJson<T>(path: string, token?: string): Promise<ApiEnvelope<T>> {
-  const response = await fetch(await resolveControlPlaneUrl(path), {
-    headers: buildAuthHeaders(token),
-    cache: "no-store",
-  });
+const inflightRequests = new Map<string, Promise<ApiEnvelope<any>>>();
 
-  return response.json() as Promise<ApiEnvelope<T>>;
+function buildRequestKey(url: string, token?: string): string {
+  return `${url}::${token || ''}`;
+}
+
+export async function fetchJson<T>(path: string, token?: string, signal?: AbortSignal): Promise<ApiEnvelope<T>> {
+  const url = await resolveControlPlaneUrl(path);
+  const requestKey = buildRequestKey(url, token);
+
+  if (inflightRequests.has(requestKey)) {
+    return inflightRequests.get(requestKey)! as Promise<ApiEnvelope<T>>;
+  }
+
+  const requestPromise = (async () => {
+    try {
+      const response = await fetch(url, {
+        headers: buildAuthHeaders(token),
+        cache: "no-store",
+        signal,
+      });
+
+      if (!response.ok) {
+        return {
+          data: {} as T,
+          error: {
+            code: `http_${response.status}`,
+            message: `API 请求失败: ${response.statusText}`,
+          },
+          meta: { status: response.status },
+        };
+      }
+
+      return response.json() as Promise<ApiEnvelope<T>>;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return {
+          data: {} as T,
+          error: {
+            code: "request_timeout",
+            message: "请求超时",
+          },
+          meta: { aborted: true },
+        };
+      }
+
+      return {
+        data: {} as T,
+        error: {
+          code: "network_error",
+          message: error instanceof Error ? error.message : "网络连接失败",
+        },
+        meta: {},
+      };
+    } finally {
+      inflightRequests.delete(requestKey);
+    }
+  })();
+
+  inflightRequests.set(requestKey, requestPromise);
+  return requestPromise;
 }
 
 export async function loginAdmin(
@@ -1020,17 +1070,39 @@ export async function loginAdmin(
   password: string,
   request?: Request,
 ): Promise<ApiEnvelope<{ item: { token: string; username: string; scope: string } }>> {
-  const response = await fetch(await resolveControlPlaneUrl("/auth/login", request), {
-    method: "POST",
-    headers: {
-      ...buildAuthHeaders(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ username, password }),
-    cache: "no-store",
-  });
+  try {
+    const response = await fetch(await resolveControlPlaneUrl("/auth/login", request), {
+      method: "POST",
+      headers: {
+        ...buildAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ username, password }),
+      cache: "no-store",
+    });
 
-  return response.json() as Promise<ApiEnvelope<{ item: { token: string; username: string; scope: string } }>>;
+    if (!response.ok) {
+      return {
+        data: { item: { token: "", username: "", scope: "" } },
+        error: {
+          code: `http_${response.status}`,
+          message: response.status === 401 ? "用户名或密码错误" : "登录失败",
+        },
+        meta: { status: response.status },
+      };
+    }
+
+    return response.json() as Promise<ApiEnvelope<{ item: { token: string; username: string; scope: string } }>>;
+  } catch (error) {
+    return {
+      data: { item: { token: "", username: "", scope: "" } },
+      error: {
+        code: "network_error",
+        message: error instanceof Error ? error.message : "网络连接失败",
+      },
+      meta: {},
+    };
+  }
 }
 
 export async function getAdminSession(
@@ -1043,21 +1115,64 @@ export async function logoutAdmin(
   token: string,
   request?: Request,
 ): Promise<ApiEnvelope<{ item: { token: string; status: string } }>> {
-  const response = await fetch(await resolveControlPlaneUrl(`/auth/logout?token=${token}`, request), {
-    method: "POST",
-    headers: buildAuthHeaders(token),
-    cache: "no-store",
-  });
+  try {
+    const response = await fetch(await resolveControlPlaneUrl(`/auth/logout?token=${token}`, request), {
+      method: "POST",
+      headers: buildAuthHeaders(token),
+      cache: "no-store",
+    });
 
-  return response.json() as Promise<ApiEnvelope<{ item: { token: string; status: string } }>>;
+    if (!response.ok) {
+      return {
+        data: { item: { token: "", status: "failed" } },
+        error: {
+          code: `http_${response.status}`,
+          message: "登出失败",
+        },
+        meta: { status: response.status },
+      };
+    }
+
+    return response.json() as Promise<ApiEnvelope<{ item: { token: string; status: string } }>>;
+  } catch (error) {
+    return {
+      data: { item: { token: "", status: "failed" } },
+      error: {
+        code: "network_error",
+        message: error instanceof Error ? error.message : "网络连接失败",
+      },
+      meta: {},
+    };
+  }
 }
 
-export async function listSignals(): Promise<
+export async function listSignals(signal?: AbortSignal): Promise<
   ApiEnvelope<{ items: SignalsPageModel["items"] }>
 > {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/signals");
+  let response: ApiEnvelope<{ items: Array<Record<string, unknown>> }>;
+  try {
+    response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/signals", undefined, signal);
+  } catch (error) {
+    return {
+      data: {
+        items: getSignalsPageFallback().items,
+      },
+      error: {
+        code: "signals_fetch_failed",
+        message: error instanceof Error ? error.message : "信号页暂时不可用",
+      },
+      meta: {
+        source: "signals",
+      },
+    };
+  }
   if (response.error) {
-    return response as ApiEnvelope<{ items: SignalsPageModel["items"] }>;
+    return {
+      ...response,
+      data: {
+        items: getSignalsPageFallback().items,
+      },
+    };
   }
   return {
     ...response,
@@ -1075,8 +1190,9 @@ export async function listSignals(): Promise<
 
 export async function listStrategies(
   token?: string,
+  signal?: AbortSignal,
 ): Promise<ApiEnvelope<{ items: StrategiesPageModel["items"] }>> {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/strategies", token);
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/strategies", token, signal);
   if (response.error) {
     return response as ApiEnvelope<{ items: StrategiesPageModel["items"] }>;
   }
@@ -1175,8 +1291,8 @@ export async function getResearchReport(): Promise<ApiEnvelope<{ item: ResearchR
   };
 }
 
-export async function getResearchRuntimeStatus(): Promise<ApiEnvelope<{ item: ResearchRuntimeStatusModel }>> {
-  const response = await fetchJson<{ item: Record<string, unknown> }>("/signals/research/runtime");
+export async function getResearchRuntimeStatus(signal?: AbortSignal): Promise<ApiEnvelope<{ item: ResearchRuntimeStatusModel }>> {
+  const response = await fetchJson<{ item: Record<string, unknown> }>("/signals/research/runtime", undefined, signal);
   if (response.error) {
     return {
       ...response,
@@ -1219,10 +1335,10 @@ export async function listBalances(): Promise<
   };
 }
 
-export async function listPositions(): Promise<
+export async function listPositions(signal?: AbortSignal): Promise<
   ApiEnvelope<PositionsPageModel>
 > {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/positions");
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/positions", undefined, signal);
   if (response.error) {
     return response as ApiEnvelope<PositionsPageModel>;
   }
@@ -1242,10 +1358,10 @@ export async function listPositions(): Promise<
   };
 }
 
-export async function listOrders(): Promise<
+export async function listOrders(signal?: AbortSignal): Promise<
   ApiEnvelope<OrdersPageModel>
 > {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/orders");
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/orders", undefined, signal);
   if (response.error) {
     return response as ApiEnvelope<OrdersPageModel>;
   }
@@ -1267,8 +1383,9 @@ export async function listOrders(): Promise<
 
 export async function listRiskEvents(
   token?: string,
+  signal?: AbortSignal,
 ): Promise<ApiEnvelope<{ items: RiskPageModel["items"] }>> {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/risk-events", token);
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/risk-events", token, signal);
   if (response.error) {
     return response as ApiEnvelope<{ items: RiskPageModel["items"] }>;
   }
@@ -1287,8 +1404,9 @@ export async function listRiskEvents(
 
 export async function listTasks(
   token?: string,
+  signal?: AbortSignal,
 ): Promise<ApiEnvelope<{ items: TasksPageModel["items"] }>> {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/tasks", token);
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/tasks", token, signal);
   if (response.error) {
     return response as ApiEnvelope<{ items: TasksPageModel["items"] }>;
   }
@@ -1305,12 +1423,48 @@ export async function listTasks(
   };
 }
 
+export async function getOpenclawSnapshot(
+  token?: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ snapshot: Record<string, unknown> }>> {
+  const response = await fetchJson<Record<string, unknown>>("/openclaw/snapshot", token, signal);
+  if (response.error) {
+    return {
+      ...response,
+      data: { snapshot: {} },
+    };
+  }
+  return {
+    ...response,
+    data: { snapshot: response.data },
+  };
+}
+
 export async function getAutomationStatus(
   token?: string,
+  signal?: AbortSignal,
 ): Promise<ApiEnvelope<{ item: AutomationStatusModel }>> {
-  const response = await fetchJson<{ item: Record<string, unknown> }>("/tasks/automation", token);
+  let response: ApiEnvelope<{ item: Record<string, unknown> }>;
+  try {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/tasks/automation", token, signal);
+  } catch (error) {
+    return {
+      data: getAutomationStatusFallback(),
+      error: {
+        code: "automation_status_fetch_failed",
+        message: error instanceof Error ? error.message : "自动化状态暂时不可用",
+      },
+      meta: {
+        source: "automation-status",
+      },
+    };
+  }
+
   if (response.error) {
-    return response as ApiEnvelope<{ item: AutomationStatusModel }>;
+    return {
+      ...response,
+      data: getAutomationStatusFallback(),
+    };
   }
   const item = isPlainObject(response.data.item) ? response.data.item : {};
   const state = isPlainObject(item.state) ? item.state : {};
@@ -1349,6 +1503,8 @@ export async function getAutomationStatus(
         dailySummary: isPlainObject(item.daily_summary) ? item.daily_summary : {},
         runtimeWindow: isPlainObject(item.runtime_window) ? item.runtime_window : {},
         resumeStatus: isPlainObject(item.resume_status) ? item.resume_status : {},
+        recoveryReview: isPlainObject(item.recovery_review) ? item.recovery_review : {},
+        runtimeGuard: isPlainObject(item.runtime_guard) ? item.runtime_guard : {},
         controlMatrix: isPlainObject(item.control_matrix) ? item.control_matrix : {},
         controlActions: Array.isArray(item.control_actions) ? item.control_actions.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
         schedulerPlan: Array.isArray(item.scheduler_plan) ? item.scheduler_plan.filter((entry) => isPlainObject(entry)) as Array<Record<string, unknown>> : [],
@@ -1392,20 +1548,37 @@ export async function getValidationReview(
 export async function listMarketSnapshots(): Promise<
   ApiEnvelope<{ items: MarketSnapshot[] }>
 > {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/market");
-  if (response.error) {
-    return response as ApiEnvelope<{ items: MarketSnapshot[] }>;
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-  const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
-  const items: unknown[] = Array.isArray(data.items) ? data.items : [];
-  return {
-    ...response,
-    data: {
-      ...data,
-      items: items.map((item) => normalizeMarketSnapshot(item)),
-    },
-  };
+  try {
+    const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/market", undefined, controller.signal);
+    clearTimeout(timeoutId);
+
+    if (response.error) {
+      return response as ApiEnvelope<{ items: MarketSnapshot[] }>;
+    }
+
+    const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
+    const items: unknown[] = Array.isArray(data.items) ? data.items : [];
+    return {
+      ...response,
+      data: {
+        ...data,
+        items: items.map((item) => normalizeMarketSnapshot(item)),
+      },
+    };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    return {
+      data: { items: [] },
+      error: {
+        code: "market_fetch_timeout",
+        message: "市场数据获取超时",
+      },
+      meta: {},
+    };
+  }
 }
 
 export async function getDataWorkspace(
@@ -1494,10 +1667,10 @@ export async function getFeatureWorkspace(): Promise<ApiEnvelope<{ item: Feature
   };
 }
 
-export async function getResearchWorkspace(): Promise<ApiEnvelope<{ item: ResearchWorkspaceModel }>> {
+export async function getResearchWorkspace(signal?: AbortSignal): Promise<ApiEnvelope<{ item: ResearchWorkspaceModel }>> {
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
-    response = await fetchJson<{ item: Record<string, unknown> }>("/research/workspace");
+    response = await fetchJson<{ item: Record<string, unknown> }>("/research/workspace", undefined, signal);
   } catch (error) {
     return {
       data: {
@@ -1566,10 +1739,10 @@ export async function getBacktestWorkspace(): Promise<ApiEnvelope<{ item: Backte
   };
 }
 
-export async function getEvaluationWorkspace(): Promise<ApiEnvelope<{ item: EvaluationWorkspaceModel }>> {
+export async function getEvaluationWorkspace(signal?: AbortSignal): Promise<ApiEnvelope<{ item: EvaluationWorkspaceModel }>> {
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
-    response = await fetchJson<{ item: Record<string, unknown> }>("/evaluation/workspace");
+    response = await fetchJson<{ item: Record<string, unknown> }>("/evaluation/workspace", undefined, signal);
   } catch (error) {
     return {
       data: {
@@ -1712,6 +1885,7 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
       auxiliary: [],
     },
     controls: {
+      feature_preset_key: "balanced_default",
       primary_factors: [],
       auxiliary_factors: [],
       trend_weight: "1.3",
@@ -1730,6 +1904,8 @@ export function getFeatureWorkspaceFallback(): FeatureWorkspaceModel {
       available_missing_policies: ["neutral_fill", "strict_drop"],
       available_outlier_policies: ["clip", "raw"],
       available_normalization_policies: ["fixed_4dp", "zscore_by_symbol"],
+      available_feature_presets: ["balanced_default"],
+      feature_preset_catalog: [],
     },
     preprocessing: {
       missing_policy: "",
@@ -2265,6 +2441,7 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
       auxiliary: normalizeStringArray(roles.auxiliary, []),
     },
     controls: {
+      feature_preset_key: String(controls.feature_preset_key ?? "balanced_default"),
       primary_factors: normalizeStringArray(controls.primary_factors, []),
       auxiliary_factors: normalizeStringArray(controls.auxiliary_factors, []),
       trend_weight: String(controls.trend_weight ?? "1.3"),
@@ -2288,6 +2465,10 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
       available_missing_policies: normalizeStringArray(controls.available_missing_policies, ["neutral_fill", "strict_drop"]),
       available_outlier_policies: normalizeStringArray(controls.available_outlier_policies, []),
       available_normalization_policies: normalizeStringArray(controls.available_normalization_policies, []),
+      available_feature_presets: normalizeStringArray(controls.available_feature_presets, []),
+      feature_preset_catalog: Array.isArray(controls.feature_preset_catalog)
+        ? controls.feature_preset_catalog.filter((value): value is Record<string, unknown> => isPlainObject(value))
+        : [],
     },
     preprocessing: {
       missing_policy: String(preprocessing.missing_policy ?? ""),
@@ -2321,6 +2502,9 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
       })
       .filter((value) => value.name.length > 0),
     category_catalog: categoryCatalog.filter((value): value is Record<string, unknown> => isPlainObject(value)),
+    effectiveness_summary: isPlainObject(row.effectiveness_summary) ? row.effectiveness_summary : {},
+    redundancy_summary: isPlainObject(row.redundancy_summary) ? row.redundancy_summary : {},
+    score_story: isPlainObject(row.score_story) ? row.score_story : {},
   };
 }
 
@@ -2800,6 +2984,8 @@ function normalizeExecutorRuntime(
     backend: String(row.backend ?? "memory"),
     mode: String(row.mode ?? "demo"),
     connection_status: String(row.connection_status ?? row.connectionStatus ?? "unknown"),
+    status: String(row.status ?? "ready"),
+    detail: String(row.detail ?? ""),
   };
 }
 
@@ -2856,6 +3042,8 @@ function normalizeWorkspaceAccountState(item: unknown): WorkspaceAccountState {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const summaryRow: Record<string, unknown> = isPlainObject(row.summary) ? row.summary : {};
   return {
+    status: String(row.status ?? "ready"),
+    detail: String(row.detail ?? ""),
     source: String(row.source ?? "unknown"),
     truth_source: String(row.truth_source ?? row.truthSource ?? "unknown"),
     summary: {
@@ -3195,6 +3383,8 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
       backend: "memory",
       mode: "demo",
       connection_status: "not_configured",
+      status: "ready",
+      detail: "",
     },
     research: {
       status: "unavailable",
@@ -3269,6 +3459,8 @@ export function getStrategyWorkspaceFallback(): StrategyWorkspaceModel {
     recent_signals: [],
     recent_orders: [],
     account_state: {
+      status: "ready",
+      detail: "",
       source: "freqtrade-sync",
       truth_source: "freqtrade",
       summary: {
@@ -3476,6 +3668,8 @@ export function getAutomationStatusFallback(): { item: AutomationStatusModel } {
       dailySummary: {},
       runtimeWindow: {},
       resumeStatus: {},
+      recoveryReview: {},
+      runtimeGuard: {},
       controlMatrix: {
         state: "waiting",
         primary_action: "automation_dry_run_only",

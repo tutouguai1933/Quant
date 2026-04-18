@@ -459,6 +459,58 @@ class ApiSkeletonTests(unittest.TestCase):
         finally:
             workbench_config_service.update_section("operations", original_operations)
 
+    def test_validation_review_route_stays_available_when_execution_sync_is_unavailable(self) -> None:
+        class _ExplodingFreqtradeClient:
+            def get_snapshot(self):
+                raise RuntimeError("freqtrade unavailable")
+
+            def get_runtime_snapshot(self) -> dict[str, object]:
+                return {
+                    "executor": "freqtrade",
+                    "backend": "rest",
+                    "mode": "dry-run",
+                    "connection_status": "error",
+                }
+
+        token = self._login_token()
+        with mock.patch.object(sync_service_module, "freqtrade_client", _ExplodingFreqtradeClient()):
+            payload = get_validation_review(token=token)
+
+        self.assertIsNone(payload["error"])
+        self.assertEqual(payload["data"]["item"]["execution_health"]["connection_status"], "error")
+        self.assertEqual(payload["data"]["item"]["account_snapshot"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", payload["data"]["item"]["execution_health"]["latest_error_message"])
+
+    def test_strategy_routes_return_unavailable_meta_when_execution_sync_is_unavailable(self) -> None:
+        class _UnavailableSyncService:
+            def list_strategies(self, limit: int = 50) -> list[dict[str, object]]:
+                raise RuntimeError("freqtrade unavailable")
+
+            def get_strategy(self, strategy_id: int) -> dict[str, object] | None:
+                raise RuntimeError("freqtrade unavailable")
+
+            def get_runtime_snapshot(self) -> dict[str, object]:
+                return {
+                    "executor": "freqtrade",
+                    "backend": "rest",
+                    "mode": "dry-run",
+                    "connection_status": "error",
+                }
+
+        token = self._login_token()
+        with mock.patch.object(strategies_route, "sync_service", _UnavailableSyncService()):
+            list_response = list_strategies(token=token)
+            detail_response = get_strategy(1, token=token)
+
+        self.assertIsNone(list_response["error"])
+        self.assertEqual(list_response["data"]["items"], [])
+        self.assertEqual(list_response["meta"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", list_response["meta"]["detail"])
+        self.assertIsNone(detail_response["error"])
+        self.assertIsNone(detail_response["data"]["item"])
+        self.assertEqual(detail_response["meta"]["status"], "unavailable")
+        self.assertIn("freqtrade unavailable", detail_response["meta"]["detail"])
+
     def test_research_report_route_stays_unavailable_without_results(self) -> None:
         original_research_service = signals_route.research_service
 
@@ -515,6 +567,24 @@ class ApiSkeletonTests(unittest.TestCase):
         self.assertIsNone(response["error"])
         self.assertEqual(response["data"]["item"]["symbol"], "SOL/USDT")
 
+    def test_signal_ingest_rejects_invalid_payload_with_structured_error(self) -> None:
+        response = ingest_signal(
+            {
+                "symbol": "SOL/USDT",
+                "side": "long",
+                "score": "0.650000",
+                "confidence": "0.710000",
+                "target_weight": "0.120000",
+                "generated_at": "not-a-timestamp",
+                "source": "mock",
+            }
+        )
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["data"])
+        self.assertEqual(response["error"]["code"], "invalid_request")
+        self.assertIn("generated_at", response["error"]["message"])
+
     def test_strategy_control_endpoints_update_status(self) -> None:
         token = self._login_token()
         started = start_strategy(1, token=token)
@@ -567,6 +637,98 @@ class ApiSkeletonTests(unittest.TestCase):
 
         self.assertEqual(response["error"]["code"], "execution_failed")
         self.assertIn("freqtrade busy", response["error"]["message"])
+
+    def test_dispatch_latest_signal_returns_structured_error_when_risk_task_fails(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        original_run_custom_task = strategy_dispatch_module.task_scheduler.run_custom_task
+        strategy_dispatch_module.task_scheduler.run_custom_task = lambda **_: {  # type: ignore[assignment]
+            "id": 1,
+            "status": "failed",
+            "result": None,
+            "error_message": "risk task crashed",
+        }
+        try:
+            response = dispatch_latest_signal(1, token=token)
+        finally:
+            strategy_dispatch_module.task_scheduler.run_custom_task = original_run_custom_task  # type: ignore[assignment]
+
+        self.assertEqual(response["error"]["code"], "risk_evaluation_failed")
+        self.assertIn("risk evaluation failed", response["error"]["message"])
+        self.assertEqual(get_signal(1)["data"]["item"]["status"], "received")
+
+    def test_dispatch_latest_signal_returns_failed_when_risk_task_status_missing(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        original_run_custom_task = strategy_dispatch_module.task_scheduler.run_custom_task
+        strategy_dispatch_module.task_scheduler.run_custom_task = lambda **_: {  # type: ignore[assignment]
+            "id": 1,
+            "result": {"status": "allow"},
+            "error_message": "risk task missing status",
+        }
+        try:
+            failed_response = dispatch_latest_signal(1, token=token)
+        finally:
+            strategy_dispatch_module.task_scheduler.run_custom_task = original_run_custom_task  # type: ignore[assignment]
+
+        succeeded_response = dispatch_latest_signal(1, token=token)
+        self.assertEqual(failed_response["error"]["code"], "risk_evaluation_failed")
+        self.assertIn("risk evaluation failed", failed_response["error"]["message"])
+        self.assertIn(get_signal(1)["data"]["item"]["status"], {"dispatched", "synced"})
+        self.assertIsNone(succeeded_response["error"])
+
+    def test_dispatch_latest_signal_returns_failed_when_risk_decision_status_missing(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        original_run_custom_task = strategy_dispatch_module.task_scheduler.run_custom_task
+        strategy_dispatch_module.task_scheduler.run_custom_task = lambda **_: {  # type: ignore[assignment]
+            "id": 1,
+            "status": "succeeded",
+            "result": {"reason": "risk decision missing status"},
+            "error_message": "",
+        }
+        try:
+            failed_response = dispatch_latest_signal(1, token=token)
+        finally:
+            strategy_dispatch_module.task_scheduler.run_custom_task = original_run_custom_task  # type: ignore[assignment]
+
+        succeeded_response = dispatch_latest_signal(1, token=token)
+        self.assertEqual(failed_response["error"]["code"], "risk_evaluation_failed")
+        self.assertIn("risk decision missing status", failed_response["error"]["message"])
+        self.assertIn(get_signal(1)["data"]["item"]["status"], {"dispatched", "synced"})
+        self.assertIsNone(succeeded_response["error"])
+
+    def test_dispatch_latest_signal_returns_failed_when_sync_task_fails(self) -> None:
+        token = self._login_token()
+        run_signal_pipeline("mock")
+        start_strategy(1, token=token)
+
+        original_run_named_task = strategy_dispatch_module.task_scheduler.run_named_task
+
+        def failing_sync(*args, **kwargs):  # type: ignore[no-untyped-def]
+            if kwargs.get("task_type") == "sync":
+                return {
+                    "id": 99,
+                    "status": "failed",
+                    "error_message": "sync pipeline failed",
+                }
+            return original_run_named_task(*args, **kwargs)
+
+        strategy_dispatch_module.task_scheduler.run_named_task = failing_sync  # type: ignore[assignment]
+        try:
+            response = dispatch_latest_signal(1, token=token)
+        finally:
+            strategy_dispatch_module.task_scheduler.run_named_task = original_run_named_task  # type: ignore[assignment]
+
+        self.assertEqual(response["error"]["code"], "sync_failed")
+        self.assertIn("sync pipeline failed", response["error"]["message"])
+        self.assertEqual(get_signal(1)["data"]["item"]["status"], "dispatched")
 
     def test_dispatch_latest_signal_skips_already_dispatched_signal(self) -> None:
         token = self._login_token()

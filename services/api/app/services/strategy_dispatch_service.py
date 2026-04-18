@@ -36,13 +36,47 @@ class StrategyDispatchService:
             payload={"strategy_id": strategy_id},
             runner=lambda: risk_service.evaluate_signal(int(latest["signal_id"]), strategy_context_id=strategy_id),
         )
+        if not isinstance(risk_task, dict):
+            risk_task = {}
         decision = risk_task.get("result")
-        if risk_task["status"] != "succeeded" or decision["status"] == "block":
+        risk_task_status = str(risk_task.get("status") or "").strip().lower()
+        if risk_task_status != "succeeded":
+            signal_service.release_dispatch_claim(int(latest["signal_id"]))
+            error_message = str(risk_task.get("error_message") or "").strip()
+            return {
+                "status": "failed",
+                "error_code": "risk_evaluation_failed",
+                "message": f"risk evaluation failed: {error_message}" if error_message else "risk evaluation failed",
+                "risk_task": risk_task,
+                "sync_task": None,
+            }
+        if not isinstance(decision, dict):
+            signal_service.release_dispatch_claim(int(latest["signal_id"]))
+            return {
+                "status": "failed",
+                "error_code": "risk_evaluation_failed",
+                "message": "risk evaluation failed",
+                "risk_task": risk_task,
+                "sync_task": None,
+            }
+        decision_status = str(decision.get("status") or "").strip().lower()
+        if not decision_status:
+            signal_service.release_dispatch_claim(int(latest["signal_id"]))
+            decision_message = str(decision.get("reason") or decision.get("message") or "").strip()
+            fallback_message = "risk evaluation failed: missing decision status"
+            return {
+                "status": "failed",
+                "error_code": "risk_evaluation_failed",
+                "message": f"risk evaluation failed: {decision_message}" if decision_message else fallback_message,
+                "risk_task": risk_task,
+                "sync_task": None,
+            }
+        if decision_status == "block":
             signal_service.release_dispatch_claim(int(latest["signal_id"]))
             return {
                 "status": "blocked",
                 "error_code": "risk_blocked",
-                "message": decision["reason"] if decision is not None else "risk evaluation failed",
+                "message": str(decision.get("reason") or "risk blocked"),
                 "risk_task": risk_task,
                 "sync_task": None,
             }
@@ -71,7 +105,22 @@ class StrategyDispatchService:
             target_id=strategy_id,
             payload=sync_payload,
         )
+        if not isinstance(sync_task, dict):
+            sync_task = {}
+        sync_status = str(sync_task.get("status") or "").strip().lower()
         signal_service.release_dispatch_claim(int(latest["signal_id"]))
+        if sync_status != "succeeded":
+            error_message = str(sync_task.get("error_message") or "").strip()
+            return {
+                "status": "failed",
+                "error_code": "sync_failed",
+                "message": f"sync failed: {error_message}" if error_message else "sync failed",
+                "signal": latest,
+                "item": result,
+                "risk_decision": decision,
+                "risk_task": risk_task,
+                "sync_task": sync_task,
+            }
         return {
             "status": "succeeded",
             "signal": latest,

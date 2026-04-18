@@ -16,6 +16,17 @@ class SyncService:
     def sync_execution_state(self) -> dict[str, object]:
         return freqtrade_client.get_snapshot().to_dict()
 
+    @staticmethod
+    def _empty_execution_snapshot() -> dict[str, object]:
+        """在执行器不可用时保持固定快照形状。"""
+
+        return {
+            "balances": [],
+            "positions": [],
+            "orders": [],
+            "strategies": [],
+        }
+
     def sync_task_state(
         self,
         limit: int = 100,
@@ -56,10 +67,19 @@ class SyncService:
     def get_runtime_snapshot(self) -> dict[str, object]:
         """返回执行器当前运行快照。"""
 
-        snapshot = self.sync_execution_state()
         runtime = dict(freqtrade_client.get_runtime_snapshot())
+        try:
+            snapshot = self.sync_execution_state()
+            runtime_status = "ready"
+            runtime_detail = ""
+        except Exception as exc:
+            snapshot = self._empty_execution_snapshot()
+            runtime_status = "unavailable"
+            runtime_detail = str(exc)
         runtime.update(
             {
+                "status": runtime_status,
+                "detail": runtime_detail,
                 "strategy_count": len(list(snapshot.get("strategies", []))),
                 "order_count": len(list(snapshot.get("orders", []))),
                 "position_count": len(list(snapshot.get("positions", []))),
@@ -116,6 +136,8 @@ class SyncService:
         latest_success = dict(health.get("latest_success_by_type") or {})
         latest_failure = dict(health.get("latest_failure_by_type") or {})
         latest_sync_status = str(latest_status.get("sync", "unknown"))
+        if latest_sync_status == "unknown" and str(runtime.get("status", "")) == "unavailable":
+            latest_sync_status = "unavailable"
         latest_review_status = str(latest_status.get("review", "unknown"))
         latest_failed_sync = dict(latest_failure.get("sync") or {})
         account_shape = self._build_account_shape(runtime=runtime)
@@ -124,6 +146,8 @@ class SyncService:
             "runtime_mode": str(runtime.get("mode", "")),
             "backend": str(runtime.get("backend", "")),
             "connection_status": str(runtime.get("connection_status", "")),
+            "runtime_status": str(runtime.get("status", "ready")),
+            "runtime_detail": str(runtime.get("detail", "")),
             "latest_sync_status": latest_sync_status,
             "latest_review_status": latest_review_status,
             "latest_successful_sync_at": str(latest_success.get("sync", "")),
@@ -133,12 +157,13 @@ class SyncService:
             "order_count": int(runtime.get("order_count", 0) or 0),
             "position_count": int(runtime.get("position_count", 0) or 0),
             "execution_state": execution_state,
-            "retry_allowed": latest_sync_status in {"failed", "retrying"},
+            "retry_allowed": latest_sync_status in {"failed", "retrying", "unavailable"},
             "reconnect_required": str(runtime.get("backend", "")) == "rest"
             and str(runtime.get("connection_status", "")) not in {"connected", "not_configured"},
             "latest_error_message": str(
                 latest_failed_sync.get("error_message")
                 or latest_failed_sync.get("detail")
+                or runtime.get("detail")
                 or ""
             ),
             "recovery_action": self._resolve_recovery_action(
@@ -153,16 +178,35 @@ class SyncService:
     def _build_account_shape(self, *, runtime: dict[str, object]) -> dict[str, object]:
         """整理执行层账户状态，区分持仓、待平仓和零头。"""
 
+        def unavailable_shape(detail: str) -> dict[str, object]:
+            return {
+                "status": "unavailable",
+                "detail": detail,
+                "dust_balance_count": 0,
+                "pending_exit_count": 0,
+                "open_position_count": 0,
+            }
+
         runtime_mode = str(runtime.get("mode", ""))
         if runtime_mode == "live":
-            balances = account_sync_service.list_balances(limit=100)
-            orders = account_sync_service.list_orders(limit=100)
-            positions = account_sync_service.list_positions(limit=100)
+            try:
+                balances = account_sync_service.list_balances(limit=100)
+                orders = account_sync_service.list_orders(limit=100)
+                positions = account_sync_service.list_positions(limit=100)
+            except Exception as exc:
+                return unavailable_shape(str(exc))
         else:
+            if str(runtime.get("status", "")) == "unavailable":
+                return unavailable_shape(str(runtime.get("detail", "")))
             balances = []
-            orders = self.list_orders(limit=100)
-            positions = self.list_positions(limit=100)
+            try:
+                orders = self.list_orders(limit=100)
+                positions = self.list_positions(limit=100)
+            except Exception as exc:
+                return unavailable_shape(str(exc))
         return {
+            "status": "ready",
+            "detail": "",
             "dust_balance_count": sum(1 for item in balances if str(item.get("tradeStatus", "")).lower() == "dust"),
             "pending_exit_count": sum(1 for item in orders if str(item.get("lifecycle", "")).lower() == "pending_exit"),
             "open_position_count": sum(1 for item in positions if str(item.get("positionStatus", "open")).lower() == "open"),

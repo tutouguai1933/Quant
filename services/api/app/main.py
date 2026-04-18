@@ -28,6 +28,7 @@ from services.api.app.routes.evaluation_workspace import router as evaluation_wo
 from services.api.app.routes.feature_workspace import router as feature_workspace_router
 from services.api.app.routes.health import router as health_router
 from services.api.app.routes.market import router as market_router
+from services.api.app.routes.openclaw import router as openclaw_router
 from services.api.app.routes.orders import router as orders_router
 from services.api.app.routes.positions import router as positions_router
 from services.api.app.routes.research_workspace import router as research_workspace_router
@@ -81,3 +82,5 @@ app.include_router(tasks_router)
 app.routers.append(tasks_router)  # type: ignore[attr-defined]
 app.include_router(risk_events_router)
 app.routers.append(risk_events_router)  # type: ignore[attr-defined]
+app.include_router(openclaw_router)
+app.routers.append(openclaw_router)  # type: ignore[attr-defined]

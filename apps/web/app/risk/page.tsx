@@ -8,6 +8,7 @@ import { FeedbackBanner } from "../../components/feedback-banner";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
+import { ToolDetailHub } from "../../components/tool-detail-hub";
 import { readFeedback } from "../../lib/feedback";
 import { getRiskPageModel, listRiskEvents } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -38,16 +39,24 @@ export default async function RiskPage({ searchParams }: PageProps) {
   return (
     <AppShell
       title="风险"
-      subtitle="风险页不只是为了看日志，而是为了让拒绝、告警和规则名称对用户直接可见。"
+      subtitle="风险页现在只负责核对告警和规则明细，不再承担主流程判断。"
       currentPath="/risk"
       isAuthenticated={isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
 
       <PageHero
-        badge="风险"
-        title="异常要能被立刻看懂"
-        description="当策略停止后再派发最新信号，基础风控会直接把拒绝事件写到这里，帮助你确认不是“没有发生”，而是“被明确阻止”。"
+        badge="风险详情"
+        title="风险详情页"
+        description="先在任务页或首页确认是否有异常，再回到这里核对规则、决定和最近风险事件。"
+      />
+
+      <ToolDetailHub
+        summary="风险页只负责把告警、规则和拒绝事件看清楚，主链判断继续留在首页、执行页和任务页。"
+        detail="这里保留规则名称、决策和风险事件明细，帮助你确认系统不是“没发生”，而是“被明确阻止”，但不再把风险页当成主流程入口。"
+        mainHint="首页已经先告诉你有没有头号阻塞，再回风险页核对具体规则。"
+        strategiesHint="执行页先决定是否继续推进；如果被挡住，再回风险页看具体拒绝原因。"
+        tasksHint="任务页负责恢复和接管，这里只负责把告警和规则明细看清楚。"
       />
 
       {!isAuthenticated ? (

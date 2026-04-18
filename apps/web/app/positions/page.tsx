@@ -5,6 +5,7 @@ import { DataTable } from "../../components/data-table";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
+import { ToolDetailHub } from "../../components/tool-detail-hub";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { getPositionsPageModel, listPositions } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -26,14 +27,22 @@ export default async function PositionsPage() {
   return (
     <AppShell
       title="持仓"
-      subtitle="持仓页的重点不是密度，而是让你快速判断执行后的仓位有没有真的形成。"
+      subtitle="持仓页现在只负责核对仓位结果，不再承担主流程判断。"
       currentPath="/positions"
       isAuthenticated={session.isAuthenticated}
     >
       <PageHero
-        badge="持仓"
-        title="仓位变化是否符合你的预期"
-        description="这里先看是否出现目标品种和方向，再看数量和浮盈亏。当前阶段不做主观交易终端。"
+        badge="持仓详情"
+        title="持仓详情页"
+        description="先在执行页或任务页确认要不要看结果，再回到这里核对仓位有没有真的形成。"
+      />
+
+      <ToolDetailHub
+        summary="持仓页只负责回答“执行后的仓位有没有真的形成”，不再承担主链推进。"
+        detail="这里保留最新方向、数量和浮盈亏，帮助你核对目标品种有没有真正建仓，但不再让持仓页自己承担判断职责。"
+        mainHint="首页先决定要不要继续看执行结果，需要核对仓位时再回持仓页。"
+        strategiesHint="策略页负责继续推进或暂停，这里只用来对照仓位结果。"
+        tasksHint="任务页提示同步或恢复问题时，再回持仓页确认是不是仓位层异常。"
       />
 
       <MetricGrid

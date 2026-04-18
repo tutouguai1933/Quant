@@ -618,5 +618,21 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(position_response["meta"]["status"], "unavailable")
         self.assertIn("freqtrade unavailable", position_response["meta"]["detail"])
 
+    def test_balance_route_returns_empty_items_when_account_sync_is_unavailable(self) -> None:
+        class UnavailableAccountSyncService:
+            def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
+                raise RuntimeError("account sync unavailable")
+
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):
+            with patch.object(balances, "account_sync_service", UnavailableAccountSyncService()):
+                response = balances.list_balances(limit=5)
+
+        self.assertIsNone(response["error"])
+        self.assertEqual(response["data"]["items"], [])
+        self.assertEqual(response["meta"]["source"], "binance-account-sync")
+        self.assertEqual(response["meta"]["truth_source"], "binance")
+        self.assertEqual(response["meta"]["status"], "unavailable")
+        self.assertIn("account sync unavailable", response["meta"]["detail"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -56,7 +56,7 @@ class MarketService:
         allowed_symbols = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
         catalog_whitelist = tuple(self._catalog_service.get_whitelist())
         effective_symbols = allowed_symbols & {symbol.strip().upper() for symbol in catalog_whitelist if symbol.strip()}
-        rows = self._client.get_tickers()
+        rows = self._client.get_tickers(tuple(effective_symbols) if effective_symbols else None)
         snapshots: list[dict[str, object]] = []
         for row in rows:
             normalized_symbol = str(row.get("symbol", "")).strip().upper()

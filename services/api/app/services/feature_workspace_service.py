@@ -52,8 +52,46 @@ class FeatureWorkspaceService:
         elif status != "ready":
             status = "unavailable"
 
-        primary = list((factor_protocol.get("roles") or {}).get("primary") or [])
-        auxiliary = list((factor_protocol.get("roles") or {}).get("auxiliary") or [])
+        protocol_primary = list((factor_protocol.get("roles") or {}).get("primary") or [])
+        protocol_auxiliary = list((factor_protocol.get("roles") or {}).get("auxiliary") or [])
+
+        configured_primary_factors = [
+            str(item).strip()
+            for item in list(configured_features.get("primary_factors") or [])
+            if str(item).strip()
+        ]
+        configured_auxiliary_factors = [
+            str(item).strip()
+            for item in list(configured_features.get("auxiliary_factors") or [])
+            if str(item).strip()
+        ]
+
+        category_insights = self._build_category_insights(
+            categories=categories,
+            configured_primary_factors=configured_primary_factors,
+            configured_auxiliary_factors=configured_auxiliary_factors,
+            configured_research=configured_research,
+        )
+        timeframe_summary = self._build_timeframe_summary(configured_timeframe_profiles)
+        effectiveness_summary = self._build_effectiveness_summary(
+            category_insights=category_insights,
+            configured_primary_factors=configured_primary_factors,
+            configured_auxiliary_factors=configured_auxiliary_factors,
+            configured_research=configured_research,
+            configured_features=configured_features,
+            timeframe_summary=timeframe_summary,
+        )
+        redundancy_summary = self._build_redundancy_summary(
+            categories=categories,
+            configured_factors=configured_primary_factors + configured_auxiliary_factors,
+            category_insights=category_insights,
+        )
+        score_story = self._build_score_story(
+            configured_research=configured_research,
+            category_insights=category_insights,
+            configured_primary_factors=configured_primary_factors,
+            configured_auxiliary_factors=configured_auxiliary_factors,
+        )
 
         return {
             "status": status,
@@ -65,19 +103,19 @@ class FeatureWorkspaceService:
                     or ""
                 ),
                 "factor_count": len(factors),
-                "primary_count": len(primary),
-                "auxiliary_count": len(auxiliary),
+                "primary_count": len(protocol_primary),
+                "auxiliary_count": len(protocol_auxiliary),
                 "holding_window": str(training_context.get("holding_window", "")),
             },
             "categories": categories,
             "roles": {
-                "primary": [str(item) for item in primary],
-                "auxiliary": [str(item) for item in auxiliary],
+                "primary": [str(item) for item in protocol_primary],
+                "auxiliary": [str(item) for item in protocol_auxiliary],
             },
             "controls": {
                 "feature_preset_key": str(configured_features.get("feature_preset_key", "balanced_default") or "balanced_default"),
-                "primary_factors": [str(item) for item in list(configured_features.get("primary_factors") or [])],
-                "auxiliary_factors": [str(item) for item in list(configured_features.get("auxiliary_factors") or [])],
+                "primary_factors": list(configured_primary_factors),
+                "auxiliary_factors": list(configured_auxiliary_factors),
                 "missing_policy": str(configured_features.get("missing_policy", "neutral_fill") or "neutral_fill"),
                 "outlier_policy": str(configured_features.get("outlier_policy", "clip") or "clip"),
                 "normalization_policy": str(configured_features.get("normalization_policy", "fixed_4dp") or "fixed_4dp"),
@@ -127,6 +165,9 @@ class FeatureWorkspaceService:
                 configured_features=configured_features,
                 timeframe_profiles=configured_timeframe_profiles,
             ),
+            "effectiveness_summary": effectiveness_summary,
+            "redundancy_summary": redundancy_summary,
+            "score_story": score_story,
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -301,6 +342,236 @@ class FeatureWorkspaceService:
             },
             "timeframe_summary": timeframe_summary,
         }
+
+    def _build_category_insights(
+        self,
+        *,
+        categories: dict[str, list[str]],
+        configured_primary_factors: list[str],
+        configured_auxiliary_factors: list[str],
+        configured_research: dict[str, object],
+    ) -> dict[str, object]:
+        """统计每个类别的启用情况，作为摘要的辅助数据。"""
+
+        configured_primary_set = {item for item in configured_primary_factors}
+        configured_auxiliary_set = {item for item in configured_auxiliary_factors}
+        configured_all = configured_primary_set | configured_auxiliary_set
+        rows: list[dict[str, object]] = []
+        by_category: dict[str, dict[str, object]] = {}
+        total_primary = 0
+        total_auxiliary = 0
+        total_enabled = 0
+        for category, factors in categories.items():
+            canonical_category = str(category).strip()
+            if not canonical_category:
+                continue
+            description = self._describe_feature_category(canonical_category)
+            normalized_name = canonical_category.lower()
+            primary_count = sum(1 for item in factors if str(item).strip() in configured_primary_set)
+            auxiliary_count = sum(1 for item in factors if str(item).strip() in configured_auxiliary_set)
+            enabled_factors = [str(item).strip() for item in factors if str(item).strip() in configured_all]
+            total = primary_count + auxiliary_count
+            total_primary += primary_count
+            total_auxiliary += auxiliary_count
+            total_enabled += total
+            row = {
+                "category": canonical_category,
+                "label": description["label"],
+                "weight_entry": description["weight_entry"],
+                "detail": description["detail"],
+                "primary_count": primary_count,
+                "auxiliary_count": auxiliary_count,
+                "total_enabled": total,
+                "enabled_factors": enabled_factors,
+            }
+            rows.append(row)
+            by_category[normalized_name] = {
+                "label": description["label"],
+                "weight_entry": description["weight_entry"],
+                "detail": description["detail"],
+                "primary_count": primary_count,
+                "auxiliary_count": auxiliary_count,
+                "total_enabled": total,
+                "enabled_factors": enabled_factors,
+            }
+        return {
+            "rows": rows,
+            "by_category": by_category,
+            "primary_total": total_primary,
+            "auxiliary_total": total_auxiliary,
+            "total_enabled": total_enabled,
+        }
+
+    def _build_effectiveness_summary(
+        self,
+        *,
+        category_insights: dict[str, object],
+        configured_primary_factors: list[str],
+        configured_auxiliary_factors: list[str],
+        configured_research: dict[str, object],
+        configured_features: dict[str, object],
+        timeframe_summary: str,
+    ) -> dict[str, object]:
+        """构建有效性摘要，突出主力因子分布与信号稳定性。"""
+
+        category_rows = list(category_insights.get("rows") or [])
+        total_enabled = category_insights.get("total_enabled", 0)
+        top_category_row = max(category_rows, key=lambda row: row.get("total_enabled", 0), default=None)
+        top_category_label = top_category_row["label"] if top_category_row else "暂无主导类别"
+        signal_confidence_floor = str(configured_research.get("signal_confidence_floor", "0.55") or "0.55")
+        primary_count = len(configured_primary_factors)
+        auxiliary_count = len(configured_auxiliary_factors)
+        headline = f"{primary_count} 主 + {auxiliary_count} 辅 / 已启用 {total_enabled} 个因子"
+        detail = f"首轮观察 {configured_features.get('feature_preset_key', 'balanced_default')} 设置 / {timeframe_summary}"
+        ic_story = f"{top_category_label} 贡献领先，当前权重入口 {top_category_row.get('weight_entry', '研究页统一评分')} 控制其评分。"
+        bucket_story = f"{len([row for row in category_rows if row.get('total_enabled')])} 类因子都参与了判断，{top_category_label} 保持主导。"
+        stability_story = f"信心底线 {signal_confidence_floor}，保持混合候选（{primary_count} 主 {auxiliary_count} 辅）的稳定性。"
+        category_rows_output: list[dict[str, object]] = []
+        for row in category_rows:
+            category_rows_output.append(
+                {
+                    "category": row.get("category", "默认"),
+                    "headline": f"{row.get('label', row.get('category', ''))} {row.get('primary_count', 0)} 主 / {row.get('auxiliary_count', 0)} 辅 / {row.get('total_enabled', 0)} 启用",
+                    "detail": row.get("detail", "暂无说明"),
+                    "weight_entry": row.get("weight_entry", "研究页统一评分"),
+                }
+            )
+        if not category_rows_output:
+            category_rows_output.append(
+                {
+                    "category": "未分类",
+                    "headline": "当前未启用任何因子",
+                    "detail": "请在配置里启用主判断或辅助判断因子以获得更多摘要。",
+                    "weight_entry": "研究页统一评分",
+                }
+            )
+        return {
+            "headline": headline,
+            "detail": detail,
+            "top_category": top_category_label,
+            "ic_story": ic_story,
+            "bucket_story": bucket_story,
+            "stability_story": stability_story,
+            "category_rows": category_rows_output,
+        }
+
+    def _build_redundancy_summary(
+        self,
+        *,
+        categories: dict[str, list[str]],
+        configured_factors: list[str],
+        category_insights: dict[str, object],
+    ) -> dict[str, object]:
+        """建立冗余摘要，显化趋势 / 动量 / 震荡 / 波动的重合情况。"""
+
+        by_category = category_insights.get("by_category", {})
+        configured_set = {str(item).strip() for item in configured_factors}
+        target_pairs: list[tuple[str, str]] = [
+            ("trend", "momentum"),
+            ("oscillator", "volatility"),
+        ]
+        overlap_groups: list[dict[str, object]] = []
+        for a, b in target_pairs:
+            info_a = by_category.get(a, {})
+            info_b = by_category.get(b, {})
+            factors = list({*info_a.get("enabled_factors", []), *info_b.get("enabled_factors", [])})
+            label = f"{info_a.get('label', a.title())} / {info_b.get('label', b.title())} 重合".strip()
+            detail = (
+                f"{label} 包含 {len(factors)} 个启用因子：{', '.join(factors)}"
+                if factors
+                else f"{label} 当前尚未激活因子，冗余可控。"
+            )
+            overlap_groups.append({
+                "label": label,
+                "detail": detail,
+                "factors": factors,
+            })
+        volume_info = by_category.get("volume", {})
+        volume_factors = volume_info.get("enabled_factors", [])
+        volume_detail = (
+            f"量能类因子 {', '.join(volume_factors)} 被激活，冗余较低。"
+            if volume_factors
+            else "当前未启用量能类因子，无法识别重复。"
+        )
+        overlap_groups.append(
+            {
+                "label": volume_info.get("label", "量能类因子"),
+                "detail": volume_detail,
+                "factors": volume_factors,
+            }
+        )
+        headline = f"已检视 {len(overlap_groups)} 组重合趋势"
+        detail = f"{sum(len(group.get('factors', [])) for group in overlap_groups)} 个因子参与 冗余/差异 校验。"
+        next_step = (
+            f"优先检查 {overlap_groups[0]['label']} 的因子组合，若冗余过高可从配置中删减。"
+            if overlap_groups
+            else "暂无重合因子，继续保持配置。"
+        )
+        return {
+            "headline": headline,
+            "detail": detail,
+            "next_step": next_step,
+            "overlap_groups": overlap_groups,
+        }
+
+    def _build_score_story(
+        self,
+        *,
+        configured_research: dict[str, object],
+        category_insights: dict[str, object],
+        configured_primary_factors: list[str],
+        configured_auxiliary_factors: list[str],
+    ) -> dict[str, object]:
+        """汇总多因子打分、当前权重和混合程度。"""
+
+        weight_map: list[tuple[str, str, str]] = [
+            ("trend_weight", "trend", "趋势"),
+            ("momentum_weight", "momentum", "动量"),
+            ("volume_weight", "volume", "量能"),
+            ("oscillator_weight", "oscillator", "震荡"),
+            ("volatility_weight", "volatility", "波动"),
+        ]
+        contributors: list[dict[str, object]] = []
+        total_weight = 0.0
+        by_category = category_insights.get("by_category", {})
+        for key, category_key, label in weight_map:
+            raw_value = str(configured_research.get(key, "1") or "1")
+            numeric = self._parse_decimal(raw_value)
+            total_weight += numeric
+            category_info = by_category.get(category_key, {})
+            descriptor = (
+                f"当前有 {category_info.get('total_enabled', 0)} 个启用因子。"
+                if category_info
+                else "暂无启用因子。"
+            )
+            contributors.append(
+                {
+                    "label": label,
+                    "weight": raw_value,
+                    "description": f"研究页 {label} 权重 {raw_value}，{descriptor}",
+                }
+            )
+        signal_confidence_floor = str(configured_research.get("signal_confidence_floor", "0.55") or "0.55")
+        headline = f"研究权重总和 {total_weight:.1f}" if total_weight else "研究权重待配置"
+        detail = f"信心底线 {signal_confidence_floor}；已按主/辅混合 ({len(configured_primary_factors)} 主 / {len(configured_auxiliary_factors)} 辅) 构建候选。"
+        candidate_explanation = (
+            f"主判断 {len(configured_primary_factors)} 个因子和辅助 {len(configured_auxiliary_factors)} 个因子共同构成打分篮子。"
+        )
+        return {
+            "headline": headline,
+            "detail": detail,
+            "candidate_explanation": candidate_explanation,
+            "contributors": contributors,
+        }
+
+    @staticmethod
+    def _parse_decimal(value: str) -> float:
+        """Safely parse a numeric string to float, defaulting to 1.0."""
+
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 1.0
 
     @staticmethod
     def _build_timeframe_summary(timeframe_profiles: dict[str, dict[str, object]]) -> str:

@@ -1,6 +1,7 @@
 /* 这个文件负责挂载全局样式和页面元数据。 */
 
 import "./globals.css";
+import { ErrorBoundary } from "../components/error-boundary";
 
 export const metadata = {
   title: "Quant Control Plane",
@@ -14,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="dark min-h-screen bg-background text-foreground antialiased">{children}</body>
+      <body className="dark min-h-screen bg-background text-foreground antialiased">
+        <ErrorBoundary>{children}</ErrorBoundary>
+      </body>
     </html>
   );
 }

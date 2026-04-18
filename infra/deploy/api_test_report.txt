@@ -1,0 +1,122 @@
+
+================================================================================
+API 端点测试报告
+================================================================================
+
+测试时间: 2026-04-18 03:52:13
+API 地址: http://localhost:9011
+
+总测试数: 29
+成功: 23 (79.3%)
+失败: 6 (20.7%)
+慢接口 (>1000ms): 11
+
+响应时间统计:
+  平均: 740.33ms
+  最快: 3.88ms
+  最慢: 6158.04ms
+
+--------------------------------------------------------------------------------
+所有端点测试结果:
+--------------------------------------------------------------------------------
+方法     路径                                            状态码      响应时间         结果      
+--------------------------------------------------------------------------------
+GET    /health                                       200      7.4ms        ✓ 成功    
+GET    /healthz                                      200      4.86ms       ✓ 成功    
+POST   /api/v1/auth/login                            200      5.51ms       ✓ 成功    
+GET    /api/v1/auth/model                            200      4.5ms        ✓ 成功    
+GET    /api/v1/auth/session                          200      5.22ms       ✓ 成功    
+GET    /api/v1/accounts                              200      3.88ms       ✓ 成功    
+GET    /api/v1/balances                              0        10010.33ms [慢] ✗ 失败    
+GET    /api/v1/positions                             200      3083.58ms [慢] ✓ 成功    
+GET    /api/v1/orders                                200      3078.71ms [慢] ✓ 成功    
+GET    /api/v1/market                                0        10009.0ms [慢] ✗ 失败    
+GET    /api/v1/market/BTCUSDT/chart                  0        10012.2ms [慢] ✗ 失败    
+GET    /api/v1/signals                               200      3.93ms       ✓ 成功    
+GET    /api/v1/signals/research/latest               200      4.45ms       ✓ 成功    
+GET    /api/v1/signals/research/candidates           200      5.26ms       ✓ 成功    
+GET    /api/v1/signals/research/report               200      5.93ms       ✓ 成功    
+GET    /api/v1/signals/research/runtime              200      4.1ms        ✓ 成功    
+GET    /api/v1/strategies                            200      3080.11ms [慢] ✓ 成功    
+GET    /api/v1/strategies/catalog                    200      4.91ms       ✓ 成功    
+GET    /api/v1/strategies/workspace                  0        10012.03ms [慢] ✗ 失败    
+GET    /api/v1/tasks                                 200      4.37ms       ✓ 成功    
+GET    /api/v1/tasks/automation                      0        10012.05ms [慢] ✗ 失败    
+GET    /api/v1/tasks/validation-review               200      6158.04ms [慢] ✓ 成功    
+GET    /api/v1/risk-events                           200      4.65ms       ✓ 成功    
+GET    /api/v1/features/workspace                    200      5.54ms       ✓ 成功    
+GET    /api/v1/research/workspace                    200      7.27ms       ✓ 成功    
+GET    /api/v1/workbench/config                      200      4.46ms       ✓ 成功    
+GET    /openclaw/snapshot                            200      4.66ms       ✓ 成功    
+POST   /api/v1/signals/strategy/run                  0        10012.55ms [慢] ✗ 失败    
+POST   /api/v1/tasks/sync                            200      1536.18ms [慢] ✓ 成功    
+
+--------------------------------------------------------------------------------
+失败端点详情:
+--------------------------------------------------------------------------------
+
+端点: GET /api/v1/balances
+  状态码: 0
+  响应时间: 10010.33ms
+  错误信息: 请求超时
+  数据结构: 无效
+
+端点: GET /api/v1/market
+  状态码: 0
+  响应时间: 10009.0ms
+  错误信息: 请求超时
+  数据结构: 无效
+
+端点: GET /api/v1/market/BTCUSDT/chart
+  状态码: 0
+  响应时间: 10012.2ms
+  错误信息: 请求超时
+  数据结构: 无效
+
+端点: GET /api/v1/strategies/workspace
+  状态码: 0
+  响应时间: 10012.03ms
+  错误信息: 请求超时
+  数据结构: 无效
+
+端点: GET /api/v1/tasks/automation
+  状态码: 0
+  响应时间: 10012.05ms
+  错误信息: 请求超时
+  数据结构: 无效
+
+端点: POST /api/v1/signals/strategy/run
+  状态码: 0
+  响应时间: 10012.55ms
+  错误信息: 请求超时
+  数据结构: 无效
+
+--------------------------------------------------------------------------------
+慢接口列表 (>1000ms):
+--------------------------------------------------------------------------------
+  GET /api/v1/tasks/validation-review: 6158.04ms
+  GET /api/v1/positions: 3083.58ms
+  GET /api/v1/strategies: 3080.11ms
+  GET /api/v1/orders: 3078.71ms
+  POST /api/v1/tasks/sync: 1536.18ms
+
+--------------------------------------------------------------------------------
+性能问题建议:
+--------------------------------------------------------------------------------
+• 发现 11 个慢接口，建议优化:
+  - /api/v1/positions: 3083.58ms
+  - /api/v1/orders: 3078.71ms
+  - /api/v1/strategies: 3080.11ms
+  - /api/v1/tasks/validation-review: 6158.04ms
+  - /api/v1/tasks/sync: 1536.18ms
+
+• 发现 6 个失败接口，需要检查:
+  - /api/v1/balances: 请求超时
+  - /api/v1/market: 请求超时
+  - /api/v1/market/BTCUSDT/chart: 请求超时
+  - /api/v1/strategies/workspace: 请求超时
+  - /api/v1/tasks/automation: 请求超时
+
+================================================================================
+报告结束
+================================================================================
