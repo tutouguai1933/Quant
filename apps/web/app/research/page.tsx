@@ -15,7 +15,7 @@ import { type ResearchFocusCard, ResearchFocusGrid } from "../../components/rese
 import { ResearchPrimaryActionSection } from "../../components/research-primary-action-section";
 import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
 import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
-import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearchWorkspace, getResearchWorkspaceFallback } from "../../lib/api";
+import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearchWorkspace, getResearchWorkspaceFallback, isTechnicalError } from "../../lib/api";
 import { readFeedback } from "../../lib/feedback";
 
 const MODEL_LABELS: Record<string, string> = {
@@ -79,7 +79,7 @@ export default function ResearchPage() {
         clearTimeout(timeoutId);
 
         const errors = [workspaceResponse, runtimeResponse].some(
-          (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && result.value.error !== null && result.value.error !== undefined)
+          (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
         );
 
         if (workspaceResponse.status === "fulfilled" && !workspaceResponse.value.error) {

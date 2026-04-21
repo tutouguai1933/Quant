@@ -27,6 +27,7 @@ import {
   getResearchRuntimeStatus,
   getResearchRuntimeStatusFallback,
   getSignalsPageFallback,
+  isTechnicalError,
   listSignals,
 } from "../../lib/api";
 import { getControlSessionState } from "../../lib/session";
@@ -54,7 +55,7 @@ export default async function SignalsPage({ searchParams }: PageProps) {
   ]);
 
   const hasApiErrors = [signalsResult, researchReportResult, runtimeResult, evaluationResult].some(
-    (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && result.value.error !== null && result.value.error !== undefined)
+    (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
   );
 
   if (signalsResult.status === "fulfilled" && !signalsResult.value.error) {

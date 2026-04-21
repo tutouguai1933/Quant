@@ -15,6 +15,7 @@ import {
   getAutomationStatusFallback,
   getEvaluationWorkspace,
   getEvaluationWorkspaceFallback,
+  isTechnicalError,
 } from "../../lib/api";
 
 type EvaluationClientProps = {
@@ -42,7 +43,7 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
         const hasApiErrors = [workspaceResult, automationResult].some(
           (result) =>
             result.status === "rejected" ||
-            (result.status === "fulfilled" && result.value && result.value.error !== null && result.value.error !== undefined)
+            (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
         );
 
         if (workspaceResult.status === "fulfilled" && !workspaceResult.value.error) {

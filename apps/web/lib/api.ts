@@ -906,6 +906,32 @@ export const AUTH_STORAGE_KEY = "quant_admin_token";
 export const DEFAULT_API_TIMEOUT = 10000;
 const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
 
+/* 业务错误 code 列表：这些是正常的业务状态，不应该触发降级模式 */
+const BUSINESS_ERROR_CODES = [
+  "unauthorized",
+  "forbidden",
+  "not_found",
+  "invalid_input",
+  "validation_error",
+];
+
+/* 判断 error 是否是技术故障（需要显示降级模式） */
+export function isTechnicalError(error: { code: string; message: string } | null | undefined): boolean {
+  if (error === null || error === undefined) {
+    return false;
+  }
+  // 业务错误不触发降级
+  if (BUSINESS_ERROR_CODES.includes(error.code)) {
+    return false;
+  }
+  // HTTP 4xx 错误（除 401/403 外）通常是业务问题
+  if (error.code.startsWith("http_4") && error.code !== "http_401" && error.code !== "http_403") {
+    return false;
+  }
+  // 其他错误（5xx、network_error、timeout 等）是技术故障
+  return true;
+}
+
 async function resolveControlPlaneBaseUrl(request?: Request): Promise<string> {
   if (typeof window !== "undefined") {
     return WEB_PROXY_BASE_URL;

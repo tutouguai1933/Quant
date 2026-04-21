@@ -19,6 +19,7 @@ import {
   getAutomationStatusFallback,
   getStrategyWorkspace,
   getStrategyWorkspaceFallback,
+  isTechnicalError,
   type StrategyWorkspaceCard,
   type WorkspaceAccountState,
 } from "../../lib/api";
@@ -43,7 +44,7 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   ]);
 
   const hasApiErrors = [workspaceResult, automationResult].some(
-    (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && result.value.error !== null && result.value.error !== undefined)
+    (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
   );
 
   if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
