@@ -17,6 +17,16 @@ class OpenclawActionPolicyService:
         "automation_confirm_alert",
     }
 
+    # 系统动作白名单（允许系统自动执行的动作）
+    SYSTEM_ACTION_WHITELIST = {
+        "restart_api",
+        "restart_web",
+        "restart_freqtrade",
+        "reload_config",
+        "sync_state",
+        "health_check",
+    }
+
     # 明确禁止的危险动作
     FORBIDDEN_ACTIONS = {
         "automation_auto_live",
@@ -25,6 +35,14 @@ class OpenclawActionPolicyService:
         "execute_order",
         "modify_strategy",
         "modify_risk_params",
+    }
+
+    # 重启节流配置
+    RESTART_THROTTLE_CONFIG = {
+        "max_attempts_per_window": 3,
+        "window_seconds": 3600,
+        "cooldown_seconds": 300,
+        "consecutive_failure_limit": 2,
     }
 
     def is_action_allowed(self, action: str) -> bool:
@@ -76,6 +94,64 @@ class OpenclawActionPolicyService:
             return True, "允许确认告警"
 
         return False, f"未定义动作 {action} 的前置条件"
+
+    def validate_restart_conditions(
+        self,
+        service: str,
+        restart_history: dict[str, Any],
+    ) -> tuple[bool, str]:
+        """验证重启条件是否满足。
+
+        Args:
+            service: 要重启的服务名称
+            restart_history: 重启历史记录
+
+        Returns:
+            (是否允许重启, 原因说明)
+        """
+        # 检查服务是否在允许重启的列表中
+        allowed_services = {"api", "web", "freqtrade"}
+        if service not in allowed_services:
+            return False, f"服务 {service} 不在允许重启的服务列表中"
+
+        # 获取服务历史
+        service_history = restart_history.get(service, {})
+        consecutive_failures = int(service_history.get("consecutive_failures", 0))
+        last_attempt_at = service_history.get("last_attempt_at")
+
+        # 检查连续失败次数
+        limit = self.RESTART_THROTTLE_CONFIG["consecutive_failure_limit"]
+        if consecutive_failures >= limit:
+            return False, f"连续失败 {consecutive_failures} 次，已达限制 {limit} 次，需人工介入"
+
+        # 检查冷却时间
+        if last_attempt_at:
+            from datetime import datetime, timezone
+            try:
+                last_time = datetime.fromisoformat(str(last_attempt_at))
+                now = datetime.now(timezone.utc)
+                elapsed = (now - last_time).total_seconds()
+                cooldown = self.RESTART_THROTTLE_CONFIG["cooldown_seconds"]
+                if elapsed < cooldown:
+                    remaining = int(cooldown - elapsed)
+                    return False, f"冷却中，还需等待 {remaining} 秒"
+            except (ValueError, TypeError):
+                pass
+
+        return True, "允许重启"
+
+    def is_system_action_allowed(self, action: str) -> bool:
+        """检查系统动作是否允许执行。
+
+        系统动作由 OpenClaw 自动执行，不通过 HTTP 接口触发。
+
+        Args:
+            action: 动作名称
+
+        Returns:
+            是否允许执行
+        """
+        return action in self.SYSTEM_ACTION_WHITELIST
 
 
 openclaw_action_policy_service = OpenclawActionPolicyService()
