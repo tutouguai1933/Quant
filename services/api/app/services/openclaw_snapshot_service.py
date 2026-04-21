@@ -10,6 +10,9 @@ from typing import Any
 
 from services.api.app.services.automation_service import AutomationService
 from services.api.app.services.strategy_dispatch_service import StrategyDispatchService
+from services.api.app.services.service_health_service import ServiceHealthService, service_health_service
+from services.api.app.services.openclaw_restart_history_service import OpenclawRestartHistoryService, openclaw_restart_history_service
+from services.api.app.services.openclaw_audit_service import OpenclawAuditService, openclaw_audit_service
 
 
 class OpenclawSnapshotService:
@@ -19,9 +22,15 @@ class OpenclawSnapshotService:
         self,
         automation: AutomationService,
         strategies: StrategyDispatchService,
+        health_service: ServiceHealthService | None = None,
+        restart_history_service: OpenclawRestartHistoryService | None = None,
+        audit_service: OpenclawAuditService | None = None,
     ):
         self._automation = automation
         self._strategies = strategies
+        self._health_service = health_service or service_health_service
+        self._restart_history = restart_history_service or openclaw_restart_history_service
+        self._audit_service = audit_service or openclaw_audit_service
 
     def get_snapshot(self) -> dict[str, Any]:
         """获取统一运维快照。"""
@@ -52,6 +61,16 @@ class OpenclawSnapshotService:
             blocked_reason=blocked_reason,
         )
 
+        # 获取服务健康状态
+        service_health = self._health_service.get_all_health()
+
+        # 获取重启历史摘要
+        restart_history = self._restart_history.get_all_history()
+
+        # 获取最近动作记录
+        recent_audit = self._audit_service.get_recent_records(limit=1)
+        last_openclaw_action = recent_audit[0] if recent_audit else None
+
         allowed_actions = self._resolve_allowed_actions(
             overall_status=overall_status,
             connection_status=connection_status,
@@ -60,6 +79,20 @@ class OpenclawSnapshotService:
             manual_takeover=manual_takeover,
             ready_for_cycle=ready_for_cycle,
         )
+
+        # 为每个允许的动作添加前置条件检查
+        allowed_actions_with_preconditions = []
+        for action in allowed_actions:
+            can_execute, precondition_reason = self._check_action_preconditions(
+                action_name=action["action"],
+                overall_status=overall_status,
+                service_health=service_health,
+            )
+            allowed_actions_with_preconditions.append({
+                **action,
+                "preconditions_met": can_execute,
+                "precondition_reason": precondition_reason,
+            })
 
         return {
             "snapshot_id": snapshot_id,
@@ -87,7 +120,10 @@ class OpenclawSnapshotService:
                 "web_expected_up": True,
                 "freqtrade_expected_up": True,
             },
-            "allowed_safe_actions": allowed_actions,
+            "service_health": service_health,
+            "restart_history": restart_history,
+            "last_openclaw_action": last_openclaw_action,
+            "allowed_safe_actions": allowed_actions_with_preconditions,
             "protection_boundaries": {
                 "live_enable_allowed": False,
                 "manual_takeover_release_allowed": False,
@@ -147,3 +183,55 @@ class OpenclawSnapshotService:
             })
 
         return actions
+
+    def _check_action_preconditions(
+        self,
+        action_name: str,
+        overall_status: str,
+        service_health: dict[str, Any],
+    ) -> tuple[bool, str]:
+        """检查动作前置条件。
+
+        Args:
+            action_name: 动作名称
+            overall_status: 整体状态
+            service_health: 服务健康状态
+
+        Returns:
+            (是否满足前置条件, 原因说明)
+        """
+        # 检查系统重启动作的前置条件
+        if action_name.startswith("system_restart_"):
+            service = action_name.replace("system_restart_", "")
+            if service not in ("web", "freqtrade"):
+                return False, f"不支持重启服务: {service}"
+
+            # 检查重启节流
+            can_restart, reason = self._restart_history.can_restart(service)
+            if not can_restart:
+                return False, reason
+
+            # 检查服务当前健康状态
+            services = service_health.get("services", {})
+            service_info = services.get(service, {})
+            if service_info.get("reachable", False):
+                return True, "服务当前健康，允许重启"
+
+            return True, "服务当前不健康，允许尝试重启"
+
+        # 检查自动化动作的前置条件
+        if action_name == "automation_run_cycle":
+            if overall_status != "ready":
+                return False, f"当前状态 {overall_status}，不允许运行周期"
+            return True, "前置条件满足"
+
+        if action_name == "automation_dry_run_only":
+            # dry_run_only 总是允许
+            return True, "切换到 dry-run 总是允许"
+
+        if action_name == "automation_clear_non_error_alerts":
+            # 清理告警总是允许
+            return True, "清理非错误告警总是允许"
+
+        # 默认情况
+        return True, "前置条件检查通过"

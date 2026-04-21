@@ -22,6 +22,7 @@ import {
   getAutomationStatus,
   getAutomationStatusFallback,
   getOpenclawSnapshot,
+  getOpenclawAuditRecords,
   listTasks,
 } from "../../lib/api";
 
@@ -41,6 +42,7 @@ export default function TasksPage() {
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [automation, setAutomation] = useState<Record<string, unknown>>(getAutomationStatusFallback().item);
   const [openclawSnapshot, setOpenclawSnapshot] = useState<Record<string, unknown>>({});
+  const [openclawAuditRecords, setOpenclawAuditRecords] = useState<Array<Record<string, unknown>>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasApiErrors, setHasApiErrors] = useState(false);
 
@@ -74,12 +76,14 @@ export default function TasksPage() {
         [],
       ),
       safeLoadSnapshot((signal) => getOpenclawSnapshot(session.token!, signal), {}),
+      safeLoadAudit((signal) => getOpenclawAuditRecords(signal), []),
     ])
-      .then(([tasksResult, automationResult, openclawResult]) => {
+      .then(([tasksResult, automationResult, openclawResult, auditResult]) => {
         setItems(tasksResult);
         const automationData = (automationResult[0] as Record<string, unknown>) ?? getAutomationStatusFallback().item;
         setAutomation(automationData);
         setOpenclawSnapshot(openclawResult);
+        setOpenclawAuditRecords(auditResult);
 
         const automationFailed = !automationResult[0] || !(automationResult[0] as Record<string, unknown>).state || Object.keys(automationResult[0]).length === 0;
         setHasApiErrors(tasksResult.length === 0 && Object.keys(openclawResult || {}).length === 0 && automationFailed);
@@ -308,12 +312,52 @@ export default function TasksPage() {
                       <li key={idx}>
                         <span className="font-medium">{readText(action.action, "")}</span>
                         {action.reason ? <span className="text-muted-foreground"> - {readText(action.reason, "")}</span> : null}
+                        {action.preconditions_met !== undefined ? (
+                          <span className={`ml-2 ${Boolean(action.preconditions_met) ? "text-green-600" : "text-red-600"}`}>
+                            [{Boolean(action.preconditions_met) ? "可执行" : "前置条件不满足"}]
+                          </span>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
                 </div>
               ) : (
                 <p className="text-muted-foreground">当前没有可用的安全动作</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <p className="eyebrow">动作历史</p>
+              <CardTitle>OpenClaw 运维动作</CardTitle>
+              <CardDescription>展示最近 5 条动作记录</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {openclawAuditRecords.length > 0 ? (
+                <div className="space-y-2">
+                  {openclawAuditRecords.slice(0, 5).map((record, idx) => {
+                    const actionName = readText(record.action, "未知动作");
+                    const success = Boolean(record.success);
+                    const executedAt = readText(record.executed_at || record.recorded_at, "");
+                    const reason = readText(record.reason || "", "");
+                    return (
+                      <div key={idx} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex h-2 w-2 rounded-full ${success ? "bg-green-500" : "bg-red-500"}`} />
+                          <span className="font-medium">{actionName}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className={success ? "text-green-600" : "text-red-600"}>{success ? "成功" : "失败"}</span>
+                          {executedAt ? <span className="ml-2 text-muted-foreground text-xs">{executedAt}</span> : null}
+                        </div>
+                        {reason ? <p className="text-xs text-muted-foreground mt-1">{reason}</p> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-muted-foreground">暂无动作记录</p>
               )}
             </CardContent>
           </Card>
@@ -337,6 +381,41 @@ export default function TasksPage() {
               <Button asChild variant="secondary" size="sm">
                 <Link href="/actions?action=automation_dry_run_only&returnTo=/tasks">切换到 dry-run</Link>
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <p className="eyebrow">动作历史</p>
+              <CardTitle>OpenClaw 运维动作</CardTitle>
+              <CardDescription>展示最近 5 条动作记录</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {openclawAuditRecords.length > 0 ? (
+                <div className="space-y-2">
+                  {openclawAuditRecords.slice(0, 5).map((record, idx) => {
+                    const actionName = readText(record.action, "未知动作");
+                    const success = Boolean(record.success);
+                    const executedAt = readText(record.executed_at || record.recorded_at, "");
+                    const reason = readText(record.reason || "", "");
+                    return (
+                      <div key={idx} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex h-2 w-2 rounded-full ${success ? "bg-green-500" : "bg-red-500"}`} />
+                          <span className="font-medium">{actionName}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className={success ? "text-green-600" : "text-red-600"}>{success ? "成功" : "失败"}</span>
+                        {executedAt ? <span className="ml-2 text-muted-foreground text-xs">{executedAt}</span> : null}
+                      </div>
+                      {reason ? <p className="text-xs text-muted-foreground mt-1">{reason}</p> : null}
+                    </div>
+                  );
+                })}
+                </div>
+              ) : (
+                <p className="text-muted-foreground">暂无动作记录</p>
+              )}
             </CardContent>
           </Card>
 
@@ -444,6 +523,22 @@ async function safeLoadSnapshot(
   try {
     const response = await loader(signal);
     return response.error ? fallback : response.data.snapshot;
+  } catch {
+    return fallback;
+  } finally {
+    cleanup();
+  }
+}
+
+async function safeLoadAudit(
+  loader: (signal: AbortSignal) => Promise<{ data: { items: Array<Record<string, unknown>> }; error: unknown }>,
+  fallback: Array<Record<string, unknown>>,
+  timeoutMs = DEFAULT_API_TIMEOUT,
+): Promise<Array<Record<string, unknown>>> {
+  const { signal, cleanup } = createTimeoutController(timeoutMs);
+  try {
+    const response = await loader(signal);
+    return response.error ? fallback : response.data.items;
   } catch {
     return fallback;
   } finally {

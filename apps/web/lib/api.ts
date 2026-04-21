@@ -3878,3 +3878,103 @@ function normalizePriorityQueue(value: unknown): PriorityQueueItemModel[] {
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+
+/* Openclaw API 函数 */
+
+export async function getOpenclawAuditRecords(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ items: Array<Record<string, unknown>> }>> {
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/openclaw/audit", undefined, signal);
+  if (response.error) {
+    return {
+      ...response,
+      data: { items: [] },
+    };
+  }
+  return {
+    ...response,
+    data: {
+      items: Array.isArray(response.data.items) ? response.data.items : [],
+    },
+  };
+}
+
+export async function getOpenclawRestartHistory(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ api: Record<string, unknown>; web: Record<string, unknown>; freqtrade: Record<string, unknown> }>> {
+  const response = await fetchJson<Record<string, unknown>>("/openclaw/restart-history", undefined, signal);
+  if (response.error) {
+    return {
+      ...response,
+      data: { api: {}, web: {}, freqtrade: {} },
+    };
+  }
+  return {
+    ...response,
+    data: {
+      api: isPlainObject(response.data.api) ? response.data.api : {},
+      web: isPlainObject(response.data.web) ? response.data.web : {},
+      freqtrade: isPlainObject(response.data.freqtrade) ? response.data.freqtrade : {},
+    },
+  };
+}
+
+export async function executeOpenclawAction(
+  action: string,
+  payload?: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ success: boolean; message: string }>> {
+  try {
+    const url = await resolveControlPlaneUrl("/openclaw/actions");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action, payload }),
+      cache: "no-store",
+      signal,
+    });
+
+    if (!response.ok) {
+      return {
+        data: { success: false, message: `API 请求失败: ${response.statusText}` },
+        error: {
+          code: `http_${response.status}`,
+          message: `API 请求失败: ${response.statusText}`,
+        },
+        meta: { status: response.status },
+      };
+    }
+
+    const json = await response.json() as Record<string, unknown>;
+    return {
+      data: {
+        success: Boolean(json.success),
+        message: String(json.message ?? json.reason ?? ""),
+      },
+      error: null,
+      meta: {},
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        data: { success: false, message: "请求超时" },
+        error: {
+          code: "request_timeout",
+          message: "请求超时",
+        },
+        meta: { aborted: true },
+      };
+    }
+    return {
+      data: { success: false, message: error instanceof Error ? error.message : "网络连接失败" },
+      error: {
+        code: "network_error",
+        message: error instanceof Error ? error.message : "网络连接失败",
+      },
+      meta: {},
+    };
+  }
+}
