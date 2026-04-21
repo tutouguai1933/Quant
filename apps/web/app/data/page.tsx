@@ -263,7 +263,7 @@ export default function DataPage() {
             disabled={!configEditable}
             disabledReason={unavailableConfigReason}
           >
-            <ConfigField label="候选池预设" hint="先选一套候选池口径，再决定要不要继续手动勾选币种。研究和 dry-run 会共用这组候选池。">
+            <ConfigField label="候选篮子预设" hint="先选一套候选篮子口径，再决定要不要继续手动勾选币种。研究和 dry-run 会共用这组候选篮子。">
               <ConfigSelect
                 name="candidate_pool_preset_key"
                 defaultValue={String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid")}
@@ -284,7 +284,7 @@ export default function DataPage() {
               />
             </ConfigField>
             <p className="text-sm leading-6 text-muted-foreground">
-              这里就是研究 / dry-run 候选池。研究推荐出来的币会先在这组标的里比较，只有通过更严门控的子集，后面才允许继续进入 live。
+              这里就是研究 / dry-run 候选篮子。研究推荐出来的币会先在这组标的里比较，只有通过更严门控的子集，后面才允许继续进入 live。
             </p>
             <ConfigField label="主标的" hint="数据工作台和后续入口会优先聚焦这个币。">
               <ConfigSelect
@@ -358,7 +358,7 @@ export default function DataPage() {
                 }
               />
               <InfoBlock
-                label="候选池预设"
+                label="候选篮子预设"
                 value={String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid")}
               />
               <InfoBlock label="预览状态" value={workspace.preview.status === "ready" ? "样本预览正常" : workspace.preview.detail || "当前预览不可用"} />
@@ -366,29 +366,29 @@ export default function DataPage() {
           </Card>
 
           <DataTable
-            columns={["候选池预设", "适用场景", "当前是否选中", "说明"]}
+            columns={["候选篮子预设", "适用场景", "当前是否选中", "说明"]}
             rows={(workspace.controls.candidate_pool_preset_catalog || []).map((item, index) => ({
               id: `${String(item.key ?? index)}`,
               cells: [
                 String(item.label ?? item.key ?? "n/a"),
                 String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid") ? "当前候选池预设" : "可切换",
-                String(item.detail ?? "当前没有候选池说明"),
+                String(item.key ?? "") === String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid") ? "当前候选篮子预设" : "可切换",
+                String(item.detail ?? "当前没有候选篮子说明"),
               ],
             }))}
-            emptyTitle="当前还没有候选池预设目录"
+            emptyTitle="当前还没有候选篮子预设目录"
             emptyDetail="恢复工作台后可用"
           />
 
           <Card className="bg-card/90">
             <CardHeader>
-              <CardTitle>候选池怎么走到 live</CardTitle>
-              <CardDescription>先把研究和 dry-run 的共享候选池讲清楚，再决定哪些币继续进入更严格的 live 子集。</CardDescription>
+              <CardTitle>候选篮子怎么走到 live</CardTitle>
+              <CardDescription>先把研究和 dry-run 的共享候选篮子讲清楚，再决定哪些币继续进入更严格的 执行篮子。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-3">
-              <InfoBlock label="第一层：候选池" value="研究和 dry-run 会共用这组更大的候选池，先尽量找出值得继续比较的币。" />
-              <InfoBlock label="第二层：评估门" value="候选池里的币会继续经过规则门、验证门、回测门和一致性门，不是进池就直接执行。" />
-              <InfoBlock label="第三层：live 子集" value="只有候选池里通过更严门控的一小部分币，后面才会继续进入 live 子集做小额真实验证。" />
+              <InfoBlock label="第一层：候选篮子" value="研究和 dry-run 会共用这组更大的候选篮子，先尽量找出值得继续比较的币。" />
+              <InfoBlock label="第二层：评估门" value="候选篮子里的币会继续经过规则门、验证门、回测门和一致性门，不是进池就直接执行。" />
+              <InfoBlock label="第三层：执行篮子" value="只有候选篮子里通过更严门控的一小部分币，后面才会继续进入 执行篮子做小额真实验证。" />
             </CardContent>
           </Card>
 

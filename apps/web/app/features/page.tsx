@@ -9,6 +9,7 @@ import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FeaturesFactorDetailDrawer, type FeatureFactorDetailItem } from "../../components/features-factor-detail-drawer";
 import { FeaturesFocusGrid, type FeaturesFocusCard } from "../../components/features-focus-grid";
+import { FeaturesMainlineSteps } from "../../components/features-mainline-steps";
 import { FeatureFlowLinks, FeaturesPrimaryActionSection } from "../../components/features-primary-action-section";
 import { PageHero } from "../../components/page-hero";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -742,6 +743,8 @@ export default function FeaturePage() {
         title="先把多因子体系讲清楚，再决定哪些因子值得继续进入研究评分。"
         description="因子页默认不再只是权重配置页，而是先回答五件事：因子怎么分、现在启用了什么、当前有效性如何、哪些地方可能重复、总分主要被谁拉动。"
       />
+
+      <FeaturesMainlineSteps />
 
       <FeaturesPrimaryActionSection
         primaryActionLabel={primaryActionLabel}
