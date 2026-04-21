@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
-import { ApiErrorFallback } from "../../components/api-error-fallback";
 import { LoadingBanner } from "../../components/loading-banner";
 import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
 import { DataTable } from "../../components/data-table";
@@ -44,7 +43,6 @@ export default function TasksPage() {
   const [openclawSnapshot, setOpenclawSnapshot] = useState<Record<string, unknown>>({});
   const [openclawAuditRecords, setOpenclawAuditRecords] = useState<Array<Record<string, unknown>>>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasApiErrors, setHasApiErrors] = useState(false);
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -84,20 +82,9 @@ export default function TasksPage() {
         setAutomation(automationData);
         setOpenclawSnapshot(openclawResult);
         setOpenclawAuditRecords(auditResult);
-
-        // 只有在已登录状态下数据为空才认为是技术故障
-        // 未登录时返回空数据是正常的业务状态
-        if (session.isAuthenticated) {
-          const automationFailed = !automationResult[0] || !(automationResult[0] as Record<string, unknown>).state || Object.keys(automationResult[0]).length === 0;
-          setHasApiErrors(tasksResult.length === 0 && Object.keys(openclawResult || {}).length === 0 && automationFailed);
-        } else {
-          // 未登录时不触发降级模式
-          setHasApiErrors(false);
-        }
         setIsLoading(false);
       })
       .catch(() => {
-        setHasApiErrors(true);
         setIsLoading(false);
       });
   }, [session.token]);
@@ -180,14 +167,6 @@ export default function TasksPage() {
       <FeedbackBanner feedback={feedback} />
 
       {isLoading && <LoadingBanner />}
-
-      {!isLoading && hasApiErrors && (
-        <ApiErrorFallback
-          title="部分数据加载失败"
-          message="后端 API 暂时不可用，当前显示降级数据"
-          detail="任务页正在使用本地 fallback 数据，请稍后刷新页面重试。"
-        />
-      )}
 
       <PageHero
         badge="自动化控制台"

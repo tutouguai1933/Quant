@@ -1,4 +1,7 @@
 /* 这个文件负责渲染持仓页。 */
+"use client";
+
+import { useEffect, useState } from "react";
 
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
@@ -7,22 +10,73 @@ import { PageHero } from "../../components/page-hero";
 import { StatusBadge } from "../../components/status-badge";
 import { ToolDetailHub } from "../../components/tool-detail-hub";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Skeleton } from "../../components/ui/skeleton";
 import { getPositionsPageModel, listPositions } from "../../lib/api";
-import { getControlSessionState } from "../../lib/session";
 
+type PositionItem = {
+  id: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+  unrealizedPnl: string;
+};
 
-export default async function PositionsPage() {
-  const session = await getControlSessionState();
-  let model = getPositionsPageModel();
+type PositionsPageModel = {
+  source: string;
+  truthSource: string;
+  items: PositionItem[];
+};
 
-  try {
-    const response = await listPositions();
-    if (!response.error) {
-      model = response.data;
+export default function PositionsPage() {
+  const [session, setSession] = useState<{ token: string | null; isAuthenticated: boolean }>({
+    token: null,
+    isAuthenticated: false,
+  });
+  const [model, setModel] = useState<PositionsPageModel>(getPositionsPageModel());
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/control/session")
+      .then((res) => res.json())
+      .then((data) => {
+        setSession({
+          token: data.token || null,
+          isAuthenticated: Boolean(data.isAuthenticated),
+        });
+      })
+      .catch(() => {
+        // Keep default session state
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!session.token) {
+      setIsLoading(false);
+      return;
     }
-  } catch {
-    // API 不可用时仍然保留演示数据。
-  }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    listPositions(controller.signal)
+      .then((response) => {
+        if (!response.error) {
+          setModel(response.data);
+        }
+      })
+      .catch(() => {
+        // API 不可用时仍然保留演示数据。
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+        setIsLoading(false);
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [session.token]);
 
   return (
     <AppShell
@@ -38,31 +92,43 @@ export default async function PositionsPage() {
       />
 
       <ToolDetailHub
-        summary="持仓页只负责回答“执行后的仓位有没有真的形成”，不再承担主链推进。"
+        summary="持仓页只负责回答「执行后的仓位有没有真的形成」，不再承担主链推进。"
         detail="这里保留最新方向、数量和浮盈亏，帮助你核对目标品种有没有真正建仓，但不再让持仓页自己承担判断职责。"
         mainHint="首页先决定要不要继续看执行结果，需要核对仓位时再回持仓页。"
         strategiesHint="策略页负责继续推进或暂停，这里只用来对照仓位结果。"
         tasksHint="任务页提示同步或恢复问题时，再回持仓页确认是不是仓位层异常。"
       />
 
-      <MetricGrid
-        items={[
-          { label: "持仓数量", value: String(model.items.length), detail: "执行后应该能在这里看到最新仓位" },
-          { label: "最新方向", value: model.items[0]?.side ?? "waiting", detail: "long / short / flat 是最先要确认的信号" },
-          { label: "最新品种", value: model.items[0]?.symbol ?? "n/a", detail: "确认是不是你刚刚派发的目标品种" },
-        ]}
-      />
+      {isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      ) : (
+        <MetricGrid
+          items={[
+            { label: "持仓数量", value: String(model.items.length), detail: "执行后应该能在这里看到最新仓位" },
+            { label: "最新方向", value: model.items[0]?.side ?? "waiting", detail: "long / short / flat 是最先要确认的信号" },
+            { label: "最新品种", value: model.items[0]?.symbol ?? "n/a", detail: "确认是不是你刚刚派发的目标品种" },
+          ]}
+        />
+      )}
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <DataTable
-          columns={["Symbol", "Side", "Quantity", "PnL"]}
-          rows={model.items.map((item) => ({
-            id: item.id,
-            cells: [item.symbol, <StatusBadge key={item.id} value={item.side} />, item.quantity, item.unrealizedPnl],
-          }))}
-          emptyTitle="还没有持仓"
-          emptyDetail="当订单已经成交后，再回到这里确认是否形成最新仓位；如果这里只显示空列表，记得去余额页看看是否只剩交易所零头。"
-        />
+        {isLoading ? (
+          <Skeleton className="h-64" />
+        ) : (
+          <DataTable
+            columns={["Symbol", "Side", "Quantity", "PnL"]}
+            rows={model.items.map((item) => ({
+              id: item.id,
+              cells: [item.symbol, <StatusBadge key={item.id} value={item.side} />, item.quantity, item.unrealizedPnl],
+            }))}
+            emptyTitle="还没有持仓"
+            emptyDetail="当订单已经成交后，再回到这里确认是否形成最新仓位；如果这里只显示空列表，记得去余额页看看是否只剩交易所零头。"
+          />
+        )}
 
         <div className="space-y-6">
           <Card className="bg-card/90">
@@ -72,9 +138,19 @@ export default async function PositionsPage() {
               <CardDescription>这里只解释结果，不和主表抢空间。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              <p>source：<span className="text-foreground">{model.source}</span></p>
-              <p>truth source：<span className="text-foreground">{model.truthSource}</span></p>
-              <p>最新仓位：<span className="text-foreground">{model.items[0]?.symbol ?? "n/a"} / {model.items[0]?.side ?? "waiting"}</span></p>
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-48" />
+                </>
+              ) : (
+                <>
+                  <p>source：<span className="text-foreground">{model.source}</span></p>
+                  <p>truth source：<span className="text-foreground">{model.truthSource}</span></p>
+                  <p>最新仓位：<span className="text-foreground">{model.items[0]?.symbol ?? "n/a"} / {model.items[0]?.side ?? "waiting"}</span></p>
+                </>
+              )}
             </CardContent>
           </Card>
 

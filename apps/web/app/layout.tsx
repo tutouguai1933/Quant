@@ -2,6 +2,7 @@
 
 import "./globals.css";
 import { ErrorBoundary } from "../components/error-boundary";
+import { WebSocketProvider } from "../lib/websocket-context";
 
 export const metadata = {
   title: "Quant Control Plane",
@@ -16,7 +17,9 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="dark min-h-screen bg-background text-foreground antialiased">
-        <ErrorBoundary>{children}</ErrorBoundary>
+        <WebSocketProvider>
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </WebSocketProvider>
       </body>
     </html>
   );

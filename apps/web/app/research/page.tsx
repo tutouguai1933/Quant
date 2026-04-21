@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AppShell } from "../../components/app-shell";
-import { ApiErrorFallback } from "../../components/api-error-fallback";
 import { LoadingBanner } from "../../components/loading-banner";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -15,7 +14,7 @@ import { type ResearchFocusCard, ResearchFocusGrid } from "../../components/rese
 import { ResearchPrimaryActionSection } from "../../components/research-primary-action-section";
 import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
 import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
-import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearchWorkspace, getResearchWorkspaceFallback, isTechnicalError } from "../../lib/api";
+import { getResearchRuntimeStatus, getResearchRuntimeStatusFallback, getResearchWorkspace, getResearchWorkspaceFallback } from "../../lib/api";
 import { readFeedback } from "../../lib/feedback";
 
 const MODEL_LABELS: Record<string, string> = {
@@ -51,7 +50,6 @@ export default function ResearchPage() {
   const [workspace, setWorkspace] = useState(getResearchWorkspaceFallback());
   const [runtimeStatus, setRuntimeStatus] = useState(getResearchRuntimeStatusFallback());
   const [isLoading, setIsLoading] = useState(true);
-  const [hasApiErrors, setHasApiErrors] = useState(false);
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -78,10 +76,6 @@ export default function ResearchPage() {
       .then(([workspaceResponse, runtimeResponse]) => {
         clearTimeout(timeoutId);
 
-        const errors = [workspaceResponse, runtimeResponse].some(
-          (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
-        );
-
         if (workspaceResponse.status === "fulfilled" && !workspaceResponse.value.error) {
           setWorkspace(workspaceResponse.value.data.item);
         }
@@ -89,12 +83,10 @@ export default function ResearchPage() {
           setRuntimeStatus(runtimeResponse.value.data.item);
         }
 
-        setHasApiErrors(errors);
         setIsLoading(false);
       })
       .catch(() => {
         clearTimeout(timeoutId);
-        setHasApiErrors(true);
         setIsLoading(false);
       });
 
@@ -710,14 +702,6 @@ export default function ResearchPage() {
       <FeedbackBanner feedback={feedback} />
 
       {isLoading && <LoadingBanner />}
-
-      {!isLoading && hasApiErrors && (
-        <ApiErrorFallback
-          title="部分数据加载失败"
-          message="后端 API 暂时不可用，当前显示降级数据"
-          detail="研究页正在使用本地 fallback 数据，请稍后刷新页面重试。"
-        />
-      )}
 
       <PageHero
         badge="策略研究工作台"

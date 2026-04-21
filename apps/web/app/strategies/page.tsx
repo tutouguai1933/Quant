@@ -1,9 +1,11 @@
 /* 策略中心：精简版，提升信息密度 */
+"use client";
 
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
-import { ApiErrorFallback } from "../../components/api-error-fallback";
 import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -12,6 +14,7 @@ import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Skeleton } from "../../components/ui/skeleton";
 import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
 import { readFeedback } from "../../lib/feedback";
 import {
@@ -19,72 +22,102 @@ import {
   getAutomationStatusFallback,
   getStrategyWorkspace,
   getStrategyWorkspaceFallback,
-  isTechnicalError,
   type StrategyWorkspaceCard,
-  type WorkspaceAccountState,
 } from "../../lib/api";
-import { getControlSessionState } from "../../lib/session";
 
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export default async function StrategiesPage({ searchParams }: PageProps) {
-  const params = (await searchParams) ?? {};
-  const session = await getControlSessionState();
-  const { token, isAuthenticated } = session;
+export default function StrategiesPage() {
+  const searchParams = useSearchParams();
+  const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
   const feedback = readFeedback(params);
 
-  let workspace = getStrategyWorkspaceFallback();
-  let automation = getAutomationStatusFallback().item;
+  const [session, setSession] = useState<{ token: string | null; isAuthenticated: boolean }>({
+    token: null,
+    isAuthenticated: false,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [workspace, setWorkspace] = useState(getStrategyWorkspaceFallback());
+  const [automation, setAutomation] = useState(getAutomationStatusFallback().item);
 
-  const [workspaceResult, automationResult] = await Promise.allSettled([
-    token ? getStrategyWorkspace(token) : Promise.resolve(null),
-    token ? getAutomationStatus(token) : Promise.resolve(null),
-  ]);
+  useEffect(() => {
+    fetch("/api/control/session")
+      .then((res) => res.json())
+      .then((data) => {
+        setSession({
+          token: data.token || null,
+          isAuthenticated: Boolean(data.isAuthenticated),
+        });
+      })
+      .catch(() => {
+        // Keep default session state
+      });
+  }, []);
 
-  const hasApiErrors = [workspaceResult, automationResult].some(
-    (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
-  );
+  useEffect(() => {
+    if (!session.token) {
+      setIsLoading(false);
+      return;
+    }
 
-  if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
-    workspace = workspaceResult.value.data;
-  }
-  if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
-    automation = automationResult.value.data.item;
-  }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    Promise.allSettled([
+      getStrategyWorkspace(session.token!, controller.signal),
+      getAutomationStatus(session.token!, controller.signal),
+    ])
+      .then(([workspaceResult, automationResult]) => {
+        clearTimeout(timeoutId);
+
+        if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
+          setWorkspace(workspaceResult.value.data);
+        }
+        if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
+          setAutomation(automationResult.value.data.item);
+        }
+        setIsLoading(false);
+      })
+      .catch(() => {
+        clearTimeout(timeoutId);
+        setIsLoading(false);
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [session.token]);
 
   const arbitration = asRecord(automation.arbitration);
   const arbitrationSuggestedAction = asRecord(arbitration.suggested_action);
-  const tasksHref = isAuthenticated ? "/tasks" : "/login?next=%2Ftasks";
+  const tasksHref = session.isAuthenticated ? "/tasks" : "/login?next=%2Ftasks";
 
   const automationHandoff = buildAutomationHandoffSummary({
     automation,
     tasksHref,
-    fallbackTargetHref: readText(arbitrationSuggestedAction.target_page, "/research"),
+    fallbackTargetHref: readText(arbitrationSuggestedAction, "target_page", "/research"),
     fallbackTargetLabel: workspace.research_recommendation?.next_action || "先进入 dry-run 观察。",
-    fallbackHeadline: readText(arbitration.headline, "当前自动化可以继续推进"),
-    fallbackDetail: readText(arbitration.detail, "当前自动化可以继续推进"),
+    fallbackHeadline: readText(arbitration, "headline", "当前自动化可以继续推进"),
+    fallbackDetail: readText(arbitration, "detail", "当前自动化可以继续推进"),
   });
 
-  const executorRuntimeStatus = readText(workspace.executor_runtime.status, "ready");
-  const executorRuntimeDetail = readText(workspace.executor_runtime.detail, "");
-  const executorConnectionStatus = readText(workspace.executor_runtime.connection_status, "unknown");
+  const executorRuntimeStatus = readText(workspace.executor_runtime, "status", "ready");
+  const executorRuntimeDetail = readText(workspace.executor_runtime, "detail", "");
+  const executorConnectionStatus = readText(workspace.executor_runtime, "connection_status", "unknown");
   const executorStatusLabel = [
     workspace.executor_runtime.executor,
     workspace.executor_runtime.backend,
     workspace.executor_runtime.mode,
   ].filter(Boolean).join(" / ") || "未配置";
 
-  const accountStateStatus = readText(workspace.account_state.status, "ready");
-  const accountStateDetail = readText(workspace.account_state.detail, "");
+  const accountStateStatus = readText(workspace.account_state, "status", "ready");
+  const accountStateDetail = readText(workspace.account_state, "detail", "");
 
   const recentSignals = Array.isArray(workspace.recent_signals) ? workspace.recent_signals : [];
   const recentOrders = Array.isArray(workspace.recent_orders) ? workspace.recent_orders : [];
   const strategyCards = Array.isArray(workspace.strategies) ? workspace.strategies : [];
 
   const isManualTakeover = Boolean(automation.manualTakeover);
-  const takeoverReason = readText(automation.pauseReason, "");
+  const takeoverReason = readText(automation, "pauseReason", "");
 
   const statusItems = [
     {
@@ -118,17 +151,9 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
       title="策略"
       subtitle="策略中心先回答三件事：哪套策略在运行、它现在怎么看市场、最近有没有真正走到执行。"
       currentPath="/strategies"
-      isAuthenticated={isAuthenticated}
+      isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
-
-      {hasApiErrors && (
-        <ApiErrorFallback
-          title="部分数据加载失败"
-          message="后端 API 暂时不可用，当前显示降级数据"
-          detail="策略页正在使用本地 fallback 数据，请稍后刷新页面重试。"
-        />
-      )}
 
       <PageHero
         badge="策略中心"
@@ -138,12 +163,22 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
 
       <ArbitrationHandoffCard
         arbitration={arbitration}
-        isAuthenticated={isAuthenticated}
+        isAuthenticated={session.isAuthenticated}
         surfaceLabel="策略页"
-        showActions={!isAuthenticated}
+        showActions={!session.isAuthenticated}
       />
 
-      {!isAuthenticated ? (
+      {isLoading ? (
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-20 rounded-xl" />
+            ))}
+          </div>
+          <Skeleton className="h-40 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+        </div>
+      ) : !session.isAuthenticated ? (
         <Card>
           <CardHeader>
             <p className="eyebrow">动作反馈</p>
@@ -303,8 +338,12 @@ export default async function StrategiesPage({ searchParams }: PageProps) {
   );
 }
 
-function readText(value: unknown, fallback: string): string {
-  const text = String(value ?? "").trim();
+function readText(obj: unknown, key: string, fallback: string): string {
+  if (!obj || typeof obj !== "object") return fallback;
+  const record = obj as Record<string, unknown>;
+  const value = record[key];
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
   return text.length > 0 ? text : fallback;
 }
 

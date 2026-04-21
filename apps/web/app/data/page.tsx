@@ -1,5 +1,8 @@
 /* 这个文件负责渲染数据工作台，让研究数据来源和快照状态直接可见。 */
+"use client";
 
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
@@ -10,27 +13,73 @@ import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchCo
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Skeleton } from "../../components/ui/skeleton";
 import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 import { getDataWorkspace, getDataWorkspaceFallback } from "../../lib/api";
-import { getControlSessionState } from "../../lib/session";
+import type { DataWorkspaceModel } from "../../lib/api";
 
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
+export default function DataPage() {
+  const searchParams = useSearchParams();
+  const symbol = searchParams?.get("symbol") || "";
+  const interval = searchParams?.get("interval") || "";
+  const limitParam = searchParams?.get("limit");
+  const limit = limitParam ? Math.max(1, parseInt(limitParam, 10) || 200) : 200;
 
-export default async function DataPage({ searchParams }: PageProps) {
-  const params = (await searchParams) ?? {};
-  const session = await getControlSessionState();
-  const symbol = readStringParam(params.symbol);
-  const interval = readStringParam(params.interval);
-  const limit = readNumberParam(params.limit, 200);
+  const [session, setSession] = useState<{ isAuthenticated: boolean }>({ isAuthenticated: false });
+  const [workspace, setWorkspace] = useState<DataWorkspaceModel | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  let workspace = getDataWorkspaceFallback(symbol, interval, limit);
-  try {
-    const response = await getDataWorkspace(symbol, interval, limit);
-    workspace = response.data.item;
-  } catch {
-    workspace = getDataWorkspaceFallback(symbol, interval, limit);
+  useEffect(() => {
+    fetch("/api/control/session")
+      .then((res) => res.json())
+      .then((data) => {
+        setSession({
+          isAuthenticated: Boolean(data.isAuthenticated),
+        });
+      })
+      .catch(() => {
+        // Keep default session state
+      });
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    getDataWorkspace(symbol, interval, limit, controller.signal)
+      .then((response) => {
+        setWorkspace(response.data.item);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        setWorkspace(getDataWorkspaceFallback(symbol, interval, limit));
+        setIsLoading(false);
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [symbol, interval, limit]);
+
+  if (isLoading || !workspace) {
+    return (
+      <AppShell
+        title="数据工作台"
+        subtitle="先把研究到底用了什么数据讲清楚，再进入特征、策略研究和回测。"
+        currentPath="/data"
+        isAuthenticated={session.isAuthenticated}
+      >
+        <div className="space-y-5">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-96 w-full" />
+        </div>
+      </AppShell>
+    );
   }
 
   const stateSummary = formatDataStates(workspace.snapshot.data_states);
@@ -93,7 +142,7 @@ export default async function DataPage({ searchParams }: PageProps) {
           <Card className="bg-card/90">
             <CardHeader>
               <CardTitle>数据快照</CardTitle>
-              <CardDescription>回答“这次研究到底用了什么数据”。</CardDescription>
+              <CardDescription>回答"这次研究到底用了什么数据"。</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
               <InfoBlock label="快照来源" value={formatSnapshotSource(workspace.snapshot.run_type, workspace.snapshot.run_id)} />
@@ -369,15 +418,6 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value || "n/a"}</p>
     </div>
   );
-}
-
-function readStringParam(value: string | string[] | undefined): string {
-  return Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
-}
-
-function readNumberParam(value: string | string[] | undefined, fallback: number): number {
-  const parsed = Number(readStringParam(value));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function buildRefreshHref(symbol: string, interval: string, limit: number): string {

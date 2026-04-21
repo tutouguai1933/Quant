@@ -1,11 +1,12 @@
 "use client";
 
-/* 这个文件负责在前端轮询研究任务状态，并把进度、预计时长和结果去向显示出来。 */
+/* 这个文件负责显示研究任务状态，通过 WebSocket 接收实时推送，并在连接失败时降级为轮询。 */
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import type { ResearchRuntimeStatusModel } from "../lib/api";
+import { useResearchRuntimeStatus } from "../lib/use-realtime-status";
 
 type ResearchRuntimePanelProps = {
   initialStatus: ResearchRuntimeStatusModel;
@@ -32,57 +33,8 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProps) {
-  const [status, setStatus] = useState<ResearchRuntimeStatusModel>(initialStatus);
-
-  useEffect(() => {
-    setStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (status.status !== "running") {
-      return;
-    }
-
-    const timer = window.setInterval(async () => {
-      try {
-        const response = await fetch("/api/control/signals/research/runtime", {
-          headers: {
-            Accept: "application/json",
-          },
-          cache: "no-store",
-        });
-        const payload = await response.json();
-        const item = payload?.data?.item;
-        if (item && typeof item === "object") {
-          setStatus({
-            status: String(item.status ?? "idle"),
-            action: String(item.action ?? ""),
-            current_stage: String(item.current_stage ?? "idle"),
-            progress_pct: Number(item.progress_pct ?? 0),
-            started_at: String(item.started_at ?? ""),
-            finished_at: String(item.finished_at ?? ""),
-            message: String(item.message ?? "当前没有研究任务在运行。"),
-            last_completed_action: String(item.last_completed_action ?? ""),
-            last_finished_at: String(item.last_finished_at ?? ""),
-            result_paths: Array.isArray(item.result_paths) ? item.result_paths.map((value: unknown) => String(value ?? "")) : ["/research", "/evaluation", "/signals"],
-            history: item.history && typeof item.history === "object" && !Array.isArray(item.history) ? item.history : {},
-            estimated_seconds: item.estimated_seconds && typeof item.estimated_seconds === "object" && !Array.isArray(item.estimated_seconds)
-              ? {
-                  training: Number((item.estimated_seconds as Record<string, unknown>).training ?? 25),
-                  inference: Number((item.estimated_seconds as Record<string, unknown>).inference ?? 12),
-                  pipeline: Number((item.estimated_seconds as Record<string, unknown>).pipeline ?? 40),
-                }
-              : { training: 25, inference: 12, pipeline: 40 },
-            current_estimate_seconds: Number(item.current_estimate_seconds ?? 0),
-          });
-        }
-      } catch {
-        // 轮询失败时保留当前状态，避免页面闪烁。
-      }
-    }, 2000);
-
-    return () => window.clearInterval(timer);
-  }, [status.status]);
+  // 使用 WebSocket 实时状态 Hook（自动降级为轮询）
+  const { status, isWebSocketConnected, isPollingFallback } = useResearchRuntimeStatus(initialStatus);
 
   const actionLabel = useMemo(() => ACTION_LABELS[status.action] ?? "研究任务", [status.action]);
   const stageLabel = useMemo(
@@ -91,12 +43,22 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
   );
   const currentEstimate = status.current_estimate_seconds || status.estimated_seconds[status.action] || 0;
 
+  // 连接状态提示
+  const connectionHint = isWebSocketConnected
+    ? "实时推送"
+    : isPollingFallback
+      ? "轮询模式"
+      : "已连接";
+
   return (
     <section className="rounded-2xl border border-border/70 bg-card/90 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.28)] backdrop-blur">
       <div className="flex flex-col gap-2">
         <p className="eyebrow">研究运行状态</p>
         <h3 className="text-lg font-semibold tracking-tight text-foreground">点了之后，不用再猜系统是不是还在跑</h3>
         <p className="text-sm leading-6 text-muted-foreground">{status.message}</p>
+        {isPollingFallback && (
+          <p className="text-xs text-muted-foreground/60">WebSocket 断开，已切换为轮询模式</p>
+        )}
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">

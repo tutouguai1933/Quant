@@ -915,6 +915,13 @@ const BUSINESS_ERROR_CODES = [
   "validation_error",
 ];
 
+/* Temporary network/fetch errors that should NOT trigger degraded mode banner.
+ * These occur when API is temporarily unavailable but we have valid fallback data. */
+const TEMPORARY_FETCH_ERROR_CODES = [
+  "network_error",
+  "request_timeout",
+];
+
 /* 判断 error 是否是技术故障（需要显示降级模式） */
 export function isTechnicalError(error: { code: string; message: string } | null | undefined): boolean {
   if (error === null || error === undefined) {
@@ -924,11 +931,15 @@ export function isTechnicalError(error: { code: string; message: string } | null
   if (BUSINESS_ERROR_CODES.includes(error.code)) {
     return false;
   }
+  // 临时网络错误不触发降级（有 fallback 数据可用）
+  if (TEMPORARY_FETCH_ERROR_CODES.includes(error.code)) {
+    return false;
+  }
   // HTTP 4xx 错误（除 401/403 外）通常是业务问题
   if (error.code.startsWith("http_4") && error.code !== "http_401" && error.code !== "http_403") {
     return false;
   }
-  // 其他错误（5xx、network_error、timeout 等）是技术故障
+  // 其他错误（5xx、真正的技术故障）需要显示降级模式
   return true;
 }
 
@@ -1178,17 +1189,16 @@ export async function listSignals(signal?: AbortSignal): Promise<
   let response: ApiEnvelope<{ items: Array<Record<string, unknown>> }>;
   try {
     response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/signals", undefined, signal);
-  } catch (error) {
+  } catch {
+    // Fetch failed (timeout/network), but we have valid fallback data
     return {
       data: {
         items: getSignalsPageFallback().items,
       },
-      error: {
-        code: "signals_fetch_failed",
-        message: error instanceof Error ? error.message : "信号页暂时不可用",
-      },
+      error: null,
       meta: {
         source: "signals",
+        fallback: true,
       },
     };
   }
@@ -1237,8 +1247,9 @@ export async function listStrategies(
 
 export async function getStrategyWorkspace(
   token?: string,
+  signal?: AbortSignal,
 ): Promise<ApiEnvelope<StrategyWorkspaceModel>> {
-  const response = await fetchJson<Record<string, unknown>>("/strategies/workspace", token);
+  const response = await fetchJson<Record<string, unknown>>("/strategies/workspace", token, signal);
   if (response.error) {
     return response as ApiEnvelope<StrategyWorkspaceModel>;
   }
@@ -1335,10 +1346,10 @@ export async function getResearchRuntimeStatus(signal?: AbortSignal): Promise<Ap
   };
 }
 
-export async function listBalances(): Promise<
+export async function listBalances(signal?: AbortSignal): Promise<
   ApiEnvelope<BalancesPageModel>
 > {
-  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/balances");
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/balances", undefined, signal);
   if (response.error) {
     return response as ApiEnvelope<BalancesPageModel>;
   }
@@ -1473,15 +1484,15 @@ export async function getAutomationStatus(
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
     response = await fetchJson<{ item: Record<string, unknown> }>("/tasks/automation", token, signal);
-  } catch (error) {
+  } catch {
+    // Fetch failed (timeout/network), but we have valid fallback data
+    // Don't return an error - page should work normally with fallback
     return {
       data: getAutomationStatusFallback(),
-      error: {
-        code: "automation_status_fetch_failed",
-        message: error instanceof Error ? error.message : "自动化状态暂时不可用",
-      },
+      error: null,
       meta: {
         source: "automation-status",
+        fallback: true,
       },
     };
   }
@@ -1594,15 +1605,15 @@ export async function listMarketSnapshots(): Promise<
         items: items.map((item) => normalizeMarketSnapshot(item)),
       },
     };
-  } catch (error) {
+  } catch {
     clearTimeout(timeoutId);
+    // Fetch failed (timeout/network), but we have valid fallback data
     return {
       data: { items: [] },
-      error: {
-        code: "market_fetch_timeout",
-        message: "市场数据获取超时",
+      error: null,
+      meta: {
+        fallback: true,
       },
-      meta: {},
     };
   }
 }
@@ -1611,6 +1622,7 @@ export async function getDataWorkspace(
   symbol?: string,
   interval?: string,
   limit?: number,
+  signal?: AbortSignal,
 ): Promise<ApiEnvelope<{ item: DataWorkspaceModel }>> {
   const query = new URLSearchParams();
   if (symbol) {
@@ -1625,18 +1637,17 @@ export async function getDataWorkspace(
   const path = query.size > 0 ? `/data/workspace?${query.toString()}` : "/data/workspace";
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
-    response = await fetchJson<{ item: Record<string, unknown> }>(path);
-  } catch (error) {
+    response = await fetchJson<{ item: Record<string, unknown> }>(path, undefined, signal);
+  } catch {
+    // Fetch failed (timeout/network), but we have valid fallback data
     return {
       data: {
         item: getDataWorkspaceFallback(symbol, interval, limit),
       },
-      error: {
-        code: "workspace_fetch_failed",
-        message: error instanceof Error ? error.message : "数据工作台暂时不可用",
-      },
+      error: null,
       meta: {
         source: "data-workspace",
+        fallback: true,
       },
     };
   }
@@ -1657,21 +1668,20 @@ export async function getDataWorkspace(
   };
 }
 
-export async function getFeatureWorkspace(): Promise<ApiEnvelope<{ item: FeatureWorkspaceModel }>> {
+export async function getFeatureWorkspace(signal?: AbortSignal): Promise<ApiEnvelope<{ item: FeatureWorkspaceModel }>> {
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
-    response = await fetchJson<{ item: Record<string, unknown> }>("/features/workspace");
-  } catch (error) {
+    response = await fetchJson<{ item: Record<string, unknown> }>("/features/workspace", undefined, signal);
+  } catch {
+    // Fetch failed (timeout/network), but we have valid fallback data
     return {
       data: {
         item: getFeatureWorkspaceFallback(),
       },
-      error: {
-        code: "feature_workspace_fetch_failed",
-        message: error instanceof Error ? error.message : "特征工作台暂时不可用",
-      },
+      error: null,
       meta: {
         source: "feature-workspace",
+        fallback: true,
       },
     };
   }
@@ -1697,17 +1707,16 @@ export async function getResearchWorkspace(signal?: AbortSignal): Promise<ApiEnv
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
     response = await fetchJson<{ item: Record<string, unknown> }>("/research/workspace", undefined, signal);
-  } catch (error) {
+  } catch {
+    // Fetch failed (timeout/network), but we have valid fallback data
     return {
       data: {
         item: getResearchWorkspaceFallback(),
       },
-      error: {
-        code: "research_workspace_fetch_failed",
-        message: error instanceof Error ? error.message : "策略研究工作台暂时不可用",
-      },
+      error: null,
       meta: {
         source: "research-workspace",
+        fallback: true,
       },
     };
   }
@@ -1733,17 +1742,16 @@ export async function getBacktestWorkspace(): Promise<ApiEnvelope<{ item: Backte
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
     response = await fetchJson<{ item: Record<string, unknown> }>("/backtest/workspace");
-  } catch (error) {
+  } catch {
+    // Fetch failed (timeout/network), but we have valid fallback data
     return {
       data: {
         item: getBacktestWorkspaceFallback(),
       },
-      error: {
-        code: "backtest_workspace_fetch_failed",
-        message: error instanceof Error ? error.message : "回测工作台暂时不可用",
-      },
+      error: null,
       meta: {
         source: "backtest-workspace",
+        fallback: true,
       },
     };
   }
@@ -1769,17 +1777,17 @@ export async function getEvaluationWorkspace(signal?: AbortSignal): Promise<ApiE
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
     response = await fetchJson<{ item: Record<string, unknown> }>("/evaluation/workspace", undefined, signal);
-  } catch (error) {
+  } catch {
+    // Fetch failed (timeout/network), but we have valid fallback data
+    // Don't return an error - page should work normally with fallback
     return {
       data: {
         item: getEvaluationWorkspaceFallback(),
       },
-      error: {
-        code: "evaluation_workspace_fetch_failed",
-        message: error instanceof Error ? error.message : "评估与实验中心暂时不可用",
-      },
+      error: null,
       meta: {
         source: "evaluation-workspace",
+        fallback: true,
       },
     };
   }

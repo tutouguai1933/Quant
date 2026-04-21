@@ -19,6 +19,7 @@ from services.api.app.services.signal_service import signal_service
 from services.api.app.services.validation_workflow_service import validation_workflow_service
 from services.api.app.services.workbench_config_service import workbench_config_service
 from services.api.app.tasks.scheduler import task_scheduler
+from services.api.app.websocket.push_bridge import push_bridge
 from services.worker.qlib_config import load_qlib_config
 
 
@@ -338,22 +339,31 @@ class ResearchRuntimeService:
             action_history.append(duration_seconds)
             history[action] = action_history[-5:]
             next_action = "run_inference" if action == "training" and status == "succeeded" else "review_results"
+            finished_at = _utc_now()
             completed = {
                 "status": status,
                 "action": action,
                 "current_stage": "completed" if status == "succeeded" else "failed",
                 "progress_pct": 100 if status == "succeeded" else int(state.get("progress_pct") or 0),
                 "started_at": str(state.get("started_at") or _utc_now()),
-                "finished_at": _utc_now(),
+                "finished_at": finished_at,
                 "message": message,
                 "last_completed_action": action if status == "succeeded" else str(state.get("last_completed_action") or ""),
-                "last_finished_at": _utc_now() if status == "succeeded" else str(state.get("last_finished_at") or ""),
+                "last_finished_at": finished_at if status == "succeeded" else str(state.get("last_finished_at") or ""),
                 "result_paths": ["/research", "/evaluation", "/signals"],
                 "history": history,
                 "last_duration_seconds": duration_seconds,
                 "next_action": next_action,
             }
             self._write_state(self._status_path(config), completed)
+
+        # WebSocket 推送完成状态
+        push_bridge.push_research_runtime_complete(
+            action=action,
+            status=status,
+            message=message,
+            finished_at=finished_at,
+        )
 
     def _update_state(self, action: str, stage: str, progress_pct: int, message: str) -> None:
         """更新运行中的阶段。"""
@@ -371,6 +381,15 @@ class ResearchRuntimeService:
                 }
             )
             self._write_state(self._status_path(config), state)
+
+        # WebSocket 推送状态变更
+        push_bridge.push_research_runtime_update(
+            status="running",
+            action=action,
+            current_stage=stage,
+            progress_pct=progress_pct,
+            message=message,
+        )
 
     def _status_path(self, config: object) -> Path:
         """返回状态文件路径。"""

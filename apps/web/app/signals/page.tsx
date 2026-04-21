@@ -1,15 +1,19 @@
 /* 这个文件负责渲染信号页，并提供最小信号流水线入口。 */
+"use client";
+
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { FlaskConical, ScanSearch, Sparkles } from "lucide-react";
 
 import { AppShell } from "../../components/app-shell";
-import { ApiErrorFallback } from "../../components/api-error-fallback";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FormSubmitButton } from "../../components/form-submit-button";
 import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
+import { Skeleton } from "../../components/ui/skeleton";
 import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
@@ -27,55 +31,82 @@ import {
   getResearchRuntimeStatus,
   getResearchRuntimeStatusFallback,
   getSignalsPageFallback,
-  isTechnicalError,
   listSignals,
 } from "../../lib/api";
-import { getControlSessionState } from "../../lib/session";
 
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export default async function SignalsPage({ searchParams }: PageProps) {
-  const params = (await searchParams) ?? {};
+export default function SignalsPage() {
+  const searchParams = useSearchParams();
+  const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
   const feedback = readFeedback(params);
-  const session = await getControlSessionState();
-  let items = getSignalsPageFallback().items;
-  let researchReport = getResearchReportFallback().item;
-  let runtimeStatus = getResearchRuntimeStatusFallback();
-  let automation = getAutomationStatusFallback().item;
-  let evaluationWorkspace = getEvaluationWorkspaceFallback();
 
-  const [signalsResult, researchReportResult, runtimeResult, automationResult, evaluationResult] = await Promise.allSettled([
-    listSignals(),
-    getResearchReport(),
-    getResearchRuntimeStatus(),
-    session.token ? getAutomationStatus(session.token) : Promise.resolve(null),
-    getEvaluationWorkspace(),
-  ]);
+  const [session, setSession] = useState<{ token: string; isAuthenticated: boolean }>({
+    token: "",
+    isAuthenticated: false,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [items, setItems] = useState(getSignalsPageFallback().items);
+  const [researchReport, setResearchReport] = useState(getResearchReportFallback().item);
+  const [runtimeStatus, setRuntimeStatus] = useState(getResearchRuntimeStatusFallback());
+  const [automation, setAutomation] = useState(getAutomationStatusFallback().item);
+  const [evaluationWorkspace, setEvaluationWorkspace] = useState(getEvaluationWorkspaceFallback());
 
-  const hasApiErrors = [signalsResult, researchReportResult, runtimeResult, evaluationResult].some(
-    (result) => result.status === "rejected" || (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
-  );
+  useEffect(() => {
+    fetch("/api/control/session")
+      .then((res) => res.json())
+      .then((data) => {
+        setSession({
+          token: data.token || "",
+          isAuthenticated: Boolean(data.isAuthenticated),
+        });
+      })
+      .catch(() => {
+        // Keep default session state
+      });
+  }, []);
 
-  if (signalsResult.status === "fulfilled" && !signalsResult.value.error) {
-    const signalItems = signalsResult.value.data?.items;
-    if (Array.isArray(signalItems)) {
-      items = signalItems;
-    }
-  }
-  if (researchReportResult.status === "fulfilled" && !researchReportResult.value.error) {
-    researchReport = researchReportResult.value.data.item;
-  }
-  if (runtimeResult.status === "fulfilled" && !runtimeResult.value.error) {
-    runtimeStatus = runtimeResult.value.data.item;
-  }
-  if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
-    automation = automationResult.value.data.item;
-  }
-  if (evaluationResult.status === "fulfilled" && !evaluationResult.value.error) {
-    evaluationWorkspace = evaluationResult.value.data.item;
-  }
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    Promise.allSettled([
+      listSignals(controller.signal),
+      getResearchReport(),
+      getResearchRuntimeStatus(controller.signal),
+      session.token ? getAutomationStatus(session.token, controller.signal) : Promise.resolve(null),
+      getEvaluationWorkspace(controller.signal),
+    ])
+      .then(([signalsResult, researchReportResult, runtimeResult, automationResult, evaluationResult]) => {
+        clearTimeout(timeoutId);
+        if (signalsResult.status === "fulfilled" && !signalsResult.value.error) {
+          const signalItems = signalsResult.value.data?.items;
+          if (Array.isArray(signalItems)) {
+            setItems(signalItems);
+          }
+        }
+        if (researchReportResult.status === "fulfilled" && !researchReportResult.value.error) {
+          setResearchReport(researchReportResult.value.data.item);
+        }
+        if (runtimeResult.status === "fulfilled" && !runtimeResult.value.error) {
+          setRuntimeStatus(runtimeResult.value.data.item);
+        }
+        if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
+          setAutomation(automationResult.value.data.item);
+        }
+        if (evaluationResult.status === "fulfilled" && !evaluationResult.value.error) {
+          setEvaluationWorkspace(evaluationResult.value.data.item);
+        }
+        setIsLoading(false);
+      })
+      .catch(() => {
+        clearTimeout(timeoutId);
+        setIsLoading(false);
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [session.token]);
 
   const latestTraining = asRecord(researchReport.latest_training);
   const latestInference = asRecord(researchReport.latest_inference);
@@ -138,14 +169,6 @@ export default async function SignalsPage({ searchParams }: PageProps) {
     >
       <FeedbackBanner feedback={feedback} />
 
-      {hasApiErrors && (
-        <ApiErrorFallback
-          title="部分数据加载失败"
-          message="后端 API 暂时不可用，当前显示降级数据"
-          detail="信号页正在使用本地 fallback 数据，请稍后刷新页面重试。"
-        />
-      )}
-
       <PageHero
         badge="研究终端"
         title="先看候选，再看报告，不把研究信息一路往下堆。"
@@ -162,140 +185,156 @@ export default async function SignalsPage({ searchParams }: PageProps) {
 
       <ResearchRuntimePanel initialStatus={runtimeStatus} />
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+      {isLoading ? (
         <div className="space-y-6">
-          <Card className="bg-card/90">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <ScanSearch className="size-4 text-primary" />
-                <p className="eyebrow">自动化入口</p>
-              </div>
-              <CardTitle>先确认这一轮会不会继续往下跑</CardTitle>
-              <CardDescription>信号页只给你自动化摘要，真正的恢复建议、人工接管和降级处理统一回任务页。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <InfoBlock label="当前模式" value={formatText(automation.mode, "manual")} />
-                <InfoBlock label="最近一轮" value={formatText(automationCycle.status, "waiting")} />
-                <InfoBlock label="当前判断" value={automationHandoff.headline} />
-                <InfoBlock label="下一步动作" value={automationHandoff.targetLabel} />
-              </div>
-              <p className="text-sm leading-6 text-muted-foreground">{automationHandoff.detail}</p>
-              <div className="flex flex-wrap gap-3">
-                <Button asChild variant="terminal" size="sm">
-                  <a href={tasksHref}>去任务页看自动化</a>
-                </Button>
-                {automationHandoff.targetHref !== tasksHref ? (
-                  <Button asChild variant="secondary" size="sm">
-                    <a href={automationHandoff.targetHref}>{automationHandoff.targetLabel}</a>
+          <Skeleton className="h-48 rounded-xl" />
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+            <div className="space-y-6">
+              <Skeleton className="h-64 rounded-xl" />
+              <Skeleton className="h-48 rounded-xl" />
+            </div>
+            <div className="space-y-6">
+              <Skeleton className="h-80 rounded-xl" />
+              <Skeleton className="h-48 rounded-xl" />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+          <div className="space-y-6">
+            <Card className="bg-card/90">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <ScanSearch className="size-4 text-primary" />
+                  <p className="eyebrow">自动化入口</p>
+                </div>
+                <CardTitle>先确认这一轮会不会继续往下跑</CardTitle>
+                <CardDescription>信号页只给你自动化摘要，真正的恢复建议、人工接管和降级处理统一回任务页。</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <InfoBlock label="当前模式" value={formatText(automation.mode, "manual")} />
+                  <InfoBlock label="最近一轮" value={formatText(automationCycle.status, "waiting")} />
+                  <InfoBlock label="当前判断" value={automationHandoff.headline} />
+                  <InfoBlock label="下一步动作" value={automationHandoff.targetLabel} />
+                </div>
+                <p className="text-sm leading-6 text-muted-foreground">{automationHandoff.detail}</p>
+                <div className="flex flex-wrap gap-3">
+                  <Button asChild variant="terminal" size="sm">
+                    <a href={tasksHref}>去任务页看自动化</a>
                   </Button>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
+                  {automationHandoff.targetHref !== tasksHref ? (
+                    <Button asChild variant="secondary" size="sm">
+                      <a href={automationHandoff.targetHref}>{automationHandoff.targetLabel}</a>
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
 
-          <ResearchCandidateBoard
-            title="候选排行榜"
-            summary={{
-              candidate_count: researchReport.overview.candidate_count,
-              ready_count: researchReport.overview.ready_count,
-              blocked_count: researchReport.overview.blocked_count,
-              pass_rate_pct: researchReport.overview.pass_rate_pct,
-              top_candidate_symbol: researchReport.overview.top_candidate_symbol,
-              top_candidate_score: researchReport.overview.top_candidate_score,
-            }}
-            items={researchReport.candidates}
-            nextStep="下一步动作：优先看允许进入 dry-run 的候选，再进入策略中心确认是否继续派发。"
-          />
+            <ResearchCandidateBoard
+              title="候选排行榜"
+              summary={{
+                candidate_count: researchReport.overview.candidate_count,
+                ready_count: researchReport.overview.ready_count,
+                blocked_count: researchReport.overview.blocked_count,
+                pass_rate_pct: researchReport.overview.pass_rate_pct,
+                top_candidate_symbol: researchReport.overview.top_candidate_symbol,
+                top_candidate_score: researchReport.overview.top_candidate_score,
+              }}
+              items={researchReport.candidates}
+              nextStep="下一步动作：优先看允许进入 dry-run 的候选，再进入策略中心确认是否继续派发。"
+            />
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <FlaskConical className="size-4 text-primary" />
-                <p className="eyebrow">研究动作</p>
-              </div>
-              <CardTitle>先训练，再推理</CardTitle>
-              <CardDescription>研究动作全部留在左侧，避免和统一研究报告抢主视线。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <ActionForm action="run_research_training" label="研究训练" returnTo="/signals" />
-              <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
-            </CardContent>
-          </Card>
-        </div>
+            <Card className="bg-card/90">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <FlaskConical className="size-4 text-primary" />
+                  <p className="eyebrow">研究动作</p>
+                </div>
+                <CardTitle>先训练，再推理</CardTitle>
+                <CardDescription>研究动作全部留在左侧，避免和统一研究报告抢主视线。</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2">
+                <ActionForm action="run_research_training" label="研究训练" returnTo="/signals" />
+                <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
+              </CardContent>
+            </Card>
+          </div>
 
-        <div className="space-y-6">
-          <Card className="bg-card/90">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <Sparkles className="size-4 text-primary" />
-                <p className="eyebrow">统一研究报告</p>
-              </div>
-              <CardTitle>最近研究结果</CardTitle>
-              <CardDescription>
-                当前可进入 dry-run：{String(researchReport.overview.ready_count)}，被拦下：{String(researchReport.overview.blocked_count)}。
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <InfoBlock label="研究状态" value={`${formatText(researchReport.status, "n/a")} / ${formatText(researchReport.backend, "n/a")}`} />
-                <InfoBlock label="筛选通过率" value={`${researchReport.overview.pass_rate_pct}%`} />
-                <InfoBlock label="当前最佳候选" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
-                <InfoBlock label="最近推理信号数" value={String(researchReport.overview.signal_count)} />
-              </div>
+          <div className="space-y-6">
+            <Card className="bg-card/90">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <Sparkles className="size-4 text-primary" />
+                  <p className="eyebrow">统一研究报告</p>
+                </div>
+                <CardTitle>最近研究结果</CardTitle>
+                <CardDescription>
+                  当前可进入 dry-run：{String(researchReport.overview.ready_count)}，被拦下：{String(researchReport.overview.blocked_count)}。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <InfoBlock label="研究状态" value={`${formatText(researchReport.status, "n/a")} / ${formatText(researchReport.backend, "n/a")}`} />
+                  <InfoBlock label="筛选通过率" value={`${researchReport.overview.pass_rate_pct}%`} />
+                  <InfoBlock label="当前最佳候选" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
+                  <InfoBlock label="最近推理信号数" value={String(researchReport.overview.signal_count)} />
+                </div>
 
-              <Tabs defaultValue="experiments">
-                <TabsList>
-                  <TabsTrigger value="experiments">最近实验摘要</TabsTrigger>
-                  <TabsTrigger value="signals">最新信号</TabsTrigger>
-                </TabsList>
+                <Tabs defaultValue="experiments">
+                  <TabsList>
+                    <TabsTrigger value="experiments">最近实验摘要</TabsTrigger>
+                    <TabsTrigger value="signals">最新信号</TabsTrigger>
+                  </TabsList>
 
-                <TabsContent value="experiments" className="mt-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <ExperimentCard
-                      label="训练摘要"
-                      title="研究训练"
-                      status={formatText(trainingExperiment["status"], "unavailable")}
-                      meta={`模型版本：${formatText(latestTraining["model_version"], "n/a")}`}
+                  <TabsContent value="experiments" className="mt-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <ExperimentCard
+                        label="训练摘要"
+                        title="研究训练"
+                        status={formatText(trainingExperiment["status"], "unavailable")}
+                        meta={`模型版本：${formatText(latestTraining["model_version"], "n/a")}`}
+                      />
+                      <ExperimentCard
+                        label="推理摘要"
+                        title="研究推理"
+                        status={formatText(inferenceExperiment["status"], "unavailable")}
+                        meta={`生成时间：${inferenceGeneratedAt}`}
+                      />
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="signals" className="mt-4">
+                    <DataTable
+                      columns={["Symbol", "Source", "Generated", "Status"]}
+                      rows={items.map((item) => ({
+                        id: item.id,
+                        cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
+                      }))}
+                      emptyTitle="还没有 signal"
+                      emptyDetail="先运行信号流水线，再回到这里确认是否已经产生最新信号。"
                     />
-                    <ExperimentCard
-                      label="推理摘要"
-                      title="研究推理"
-                      status={formatText(inferenceExperiment["status"], "unavailable")}
-                      meta={`生成时间：${inferenceGeneratedAt}`}
-                    />
-                  </div>
-                </TabsContent>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
 
-                <TabsContent value="signals" className="mt-4">
-                  <DataTable
-                    columns={["Symbol", "Source", "Generated", "Status"]}
-                    rows={items.map((item) => ({
-                      id: item.id,
-                      cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
-                    }))}
-                    emptyTitle="还没有 signal"
-                    emptyDetail="先运行信号流水线，再回到这里确认是否已经产生最新信号。"
-                  />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>模板适配判断</CardTitle>
-              <CardDescription>这里直接回答当前推荐为什么更适合这套研究模板，不用切到评估页再拼上下文。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              <InfoBlock label="当前推荐" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
-              <InfoBlock label="更适合哪套模板" value={formatText(recommendationTemplateFit.headline, "当前还没有模板适配结论")} />
-              <InfoBlock label="模板适配说明" value={formatText(recommendationTemplateFit.detail, "当前还没有模板适配说明")} />
-              <InfoBlock label="下一步动作" value={formatText(stageDecisionSummary.next_step, "continue_research")} />
-            </CardContent>
-          </Card>
-        </div>
-      </section>
+            <Card className="bg-card/90">
+              <CardHeader>
+                <CardTitle>模板适配判断</CardTitle>
+                <CardDescription>这里直接回答当前推荐为什么更适合这套研究模板，不用切到评估页再拼上下文。</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-2">
+                <InfoBlock label="当前推荐" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
+                <InfoBlock label="更适合哪套模板" value={formatText(recommendationTemplateFit.headline, "当前还没有模板适配结论")} />
+                <InfoBlock label="模板适配说明" value={formatText(recommendationTemplateFit.detail, "当前还没有模板适配说明")} />
+                <InfoBlock label="下一步动作" value={formatText(stageDecisionSummary.next_step, "continue_research")} />
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+      )}
     </AppShell>
   );
 }

@@ -1,5 +1,8 @@
 /* 这个文件负责渲染单币页的交易终端外壳。 */
+"use client";
 
+import { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
@@ -7,6 +10,7 @@ import { AppShell } from "../../../components/app-shell";
 import { MarketSymbolWorkspace } from "../../../components/market-symbol-workspace";
 import { PageHero } from "../../../components/page-hero";
 import { Button } from "../../../components/ui/button";
+import { Skeleton } from "../../../components/ui/skeleton";
 import {
   type ApiEnvelope,
   getMarketChart,
@@ -16,34 +20,66 @@ import {
   type ResearchCandidateItem,
   type ResearchCockpitSummary,
 } from "../../../lib/api";
-import { getControlSessionState } from "../../../lib/session";
-
-type PageProps = {
-  params: Promise<{ symbol: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
 
 /* 渲染单币交易终端页面。 */
-export default async function MarketSymbolPage({ params, searchParams }: PageProps) {
-  const session = await getControlSessionState();
-  const { symbol } = await params;
+export default function MarketSymbolPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const symbol = (params?.symbol as string) ?? "";
   const normalizedSymbol = symbol.toUpperCase();
-  const query = (await searchParams) ?? {};
-  const interval = readQueryText(query.interval);
-  let chartData = getEmptyMarketChartData();
-  let candidate: ResearchCandidateItem | null =
-    getResearchCandidatesFallback().items.find((item) => item.symbol === normalizedSymbol) ?? null;
+  const interval = searchParams?.get("interval") ?? undefined;
 
-  const [chartResult, candidateResult] = await Promise.all([
-    withTimeout(getMarketChart(symbol, interval), getMarketChartTimeoutFallback(), 2500),
-    withTimeout(getResearchCandidate(normalizedSymbol), getResearchCandidateTimeoutFallback(), 1500),
-  ]);
-  if (!chartResult.error) {
-    chartData = chartResult.data;
-  }
-  if (!candidateResult.error) {
-    candidate = candidateResult.data.item;
-  }
+  const [session, setSession] = useState<{ isAuthenticated: boolean }>({
+    isAuthenticated: false,
+  });
+  const [chartData, setChartData] = useState<MarketChartData>(getEmptyMarketChartData());
+  const [candidate, setCandidate] = useState<ResearchCandidateItem | null>(
+    getResearchCandidatesFallback().items.find((item) => item.symbol === normalizedSymbol) ?? null
+  );
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/control/session")
+      .then((res) => res.json())
+      .then((data) => {
+        setSession({
+          isAuthenticated: Boolean(data.isAuthenticated),
+        });
+      })
+      .catch(() => {
+        // Keep default session state
+      });
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadData = async () => {
+      setIsLoading(true);
+
+      const [chartResult, candidateResult] = await Promise.all([
+        withTimeout(getMarketChart(symbol, interval), getMarketChartTimeoutFallback(), 2500),
+        withTimeout(getResearchCandidate(normalizedSymbol), getResearchCandidateTimeoutFallback(), 1500),
+      ]);
+
+      if (!mounted) return;
+
+      if (!chartResult.error) {
+        setChartData(chartResult.data);
+      }
+      if (!candidateResult.error) {
+        setCandidate(candidateResult.data.item);
+      }
+
+      setIsLoading(false);
+    };
+
+    loadData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [symbol, normalizedSymbol, interval]);
 
   return (
     <AppShell
@@ -72,18 +108,18 @@ export default async function MarketSymbolPage({ params, searchParams }: PagePro
       />
 
       <section className="space-y-6">
-        <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} candidate={candidate} />
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : (
+          <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} candidate={candidate} />
+        )}
       </section>
     </AppShell>
   );
-}
-
-/* 读取查询参数里的单个文本值。 */
-function readQueryText(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) {
-    return value[0];
-  }
-  return value;
 }
 
 /* 返回单币页的空策略上下文。 */

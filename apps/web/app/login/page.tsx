@@ -1,29 +1,74 @@
+"use client";
+
 /* 这个文件负责渲染登录页，并明确告诉用户登录后该去哪里。 */
 
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AppShell } from "../../components/app-shell";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FormSubmitButton } from "../../components/form-submit-button";
 import { MetricGrid } from "../../components/metric-grid";
 import { PageHero } from "../../components/page-hero";
-import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { readFeedback } from "../../lib/feedback";
-import { getLoginPageModel } from "../../lib/api";
-import { getControlSessionState, normalizeAppPath } from "../../lib/session";
+import { getLoginPageModel, LoginPageModel } from "../../lib/api";
+import { normalizeAppPath } from "../../lib/session-client";
 
-
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+type SessionState = {
+  token: string;
+  isAuthenticated: boolean;
 };
 
-export default async function LoginPage({ searchParams }: PageProps) {
-  const params = (await searchParams) ?? {};
-  const session = await getControlSessionState();
-  const model = await getLoginPageModel();
-  const feedback = readFeedback(params);
-  const nextPath = normalizeAppPath(params.next, "/strategies");
-  const hasError = readSingleParam(params.state) === "error";
+export default function LoginPage() {
+  const searchParams = useSearchParams();
+  const [session, setSession] = useState<SessionState>({ token: "", isAuthenticated: false });
+  const [model, setModel] = useState<LoginPageModel | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchSession() {
+      try {
+        const response = await fetch("/api/control/session");
+        if (response.ok) {
+          const data = await response.json();
+          setSession({
+            token: data.token ?? "",
+            isAuthenticated: data.isAuthenticated ?? false,
+          });
+        }
+      } catch {
+        // Keep default unauthenticated state
+      }
+    }
+
+    async function fetchModel() {
+      try {
+        const data = await getLoginPageModel();
+        setModel(data);
+      } catch {
+        // Keep model as null
+      }
+    }
+
+    Promise.all([fetchSession(), fetchModel()]).finally(() => {
+      setIsLoading(false);
+    });
+  }, []);
+
+  const nextPath = normalizeAppPath(searchParams?.get("next") ?? undefined, "/strategies");
+  const hasError = searchParams?.get("state") === "error";
+  const feedback = readFeedback(
+    Object.fromEntries(searchParams?.entries() ?? []) as Record<string, string | string[] | undefined>
+  );
+
+  if (isLoading || !model) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">加载中...</p>
+      </div>
+    );
+  }
 
   return (
     <AppShell
@@ -89,7 +134,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
                   type="submit"
                   className="w-full"
                   idleLabel="登录并继续"
-                  pendingLabel="登录中…"
+                  pendingLabel="登录中..."
                   pendingHint="正在建立管理员会话，完成后会自动跳转。"
                 />
               </div>
@@ -135,8 +180,4 @@ export default async function LoginPage({ searchParams }: PageProps) {
       </section>
     </AppShell>
   );
-}
-
-function readSingleParam(value?: string | string[]): string {
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }

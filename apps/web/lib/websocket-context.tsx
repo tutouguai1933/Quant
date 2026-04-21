@@ -1,0 +1,204 @@
+"use client";
+
+/**
+ * WebSocket Context - 提供实时状态推送连接管理。
+ *
+ * 当连接成功时，组件通过订阅通道接收推送；
+ * 当连接失败时，自动降级为 HTTP 轮询。
+ */
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+// WebSocket 连接状态类型
+type WebSocketStatus = "connecting" | "connected" | "disconnected" | "error";
+
+// 推送消息类型
+type WebSocketMessage = {
+  channel: string;
+  type?: string;
+  timestamp: string;
+  data: unknown;
+};
+
+// Context 值类型
+type WebSocketContextValue = {
+  status: WebSocketStatus;
+  subscribe: (channel: string) => void;
+  unsubscribe: (channel: string) => void;
+  lastMessage: WebSocketMessage | null;
+  channelMessages: Record<string, WebSocketMessage>;
+  reconnect: () => void;
+};
+
+const WebSocketContext = createContext<WebSocketContextValue | null>(null);
+
+// WebSocket URL 配置
+function getWebSocketUrl(): string {
+  if (typeof window === "undefined") return "";
+
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host;
+
+  // 开发环境可能需要连接到不同的后端端口
+  const wsPort = process.env.NEXT_PUBLIC_WS_PORT || "";
+  const wsHost = wsPort ? `${window.location.hostname}:${wsPort}` : host;
+
+  return `${protocol}//${wsHost}/api/v1/ws`;
+}
+
+export function WebSocketProvider({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = useState<WebSocketStatus>("connecting");
+  const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
+  const [channelMessages, setChannelMessages] = useState<Record<string, WebSocketMessage>>({});
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const subscriptionsRef = useRef<Set<string>>(new Set());
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
+
+  const connect = useCallback(() => {
+    const url = getWebSocketUrl();
+    if (!url) return;
+
+    setStatus("connecting");
+
+    try {
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setStatus("connected");
+        reconnectAttemptsRef.current = 0;
+
+        // 重新订阅之前的通道
+        subscriptionsRef.current.forEach((channel) => {
+          ws.send(JSON.stringify({ action: "subscribe", channel }));
+        });
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message: WebSocketMessage = JSON.parse(event.data);
+          setLastMessage(message);
+
+          if (message.channel) {
+            setChannelMessages((prev) => ({
+              ...prev,
+              [message.channel]: message,
+            }));
+          }
+        } catch {
+          // 忽略解析错误（如 pong 响应）
+        }
+      };
+
+      ws.onerror = () => {
+        setStatus("error");
+      };
+
+      ws.onclose = () => {
+        setStatus("disconnected");
+        wsRef.current = null;
+
+        // 自动重连（指数退避）
+        if (reconnectAttemptsRef.current < 10) {
+          const delay = Math.min(
+            1000 * Math.pow(2, reconnectAttemptsRef.current),
+            30000
+          );
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            reconnectAttemptsRef.current += 1;
+            connect();
+          }, delay);
+        }
+      };
+    } catch {
+      setStatus("error");
+    }
+  }, []);
+
+  const reconnect = useCallback(() => {
+    reconnectAttemptsRef.current = 0;
+    if (reconnectTimeoutRef.current) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+    }
+    connect();
+  }, [connect]);
+
+  const subscribe = useCallback((channel: string) => {
+    subscriptionsRef.current.add(channel);
+
+    if (wsRef.current && status === "connected") {
+      wsRef.current.send(JSON.stringify({ action: "subscribe", channel }));
+    }
+  }, [status]);
+
+  const unsubscribe = useCallback((channel: string) => {
+    subscriptionsRef.current.delete(channel);
+
+    if (wsRef.current && status === "connected") {
+      wsRef.current.send(JSON.stringify({ action: "unsubscribe", channel }));
+    }
+  }, [status]);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [connect]);
+
+  // 定期发送心跳
+  useEffect(() => {
+    if (status !== "connected") return;
+
+    const interval = window.setInterval(() => {
+      if (wsRef.current) {
+        wsRef.current.send(JSON.stringify({ action: "ping" }));
+      }
+    }, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [status]);
+
+  const value: WebSocketContextValue = {
+    status,
+    subscribe,
+    unsubscribe,
+    lastMessage,
+    channelMessages,
+    reconnect,
+  };
+
+  return (
+    <WebSocketContext.Provider value={value}>
+      {children}
+    </WebSocketContext.Provider>
+  );
+}
+
+export function useWebSocket(): WebSocketContextValue {
+  const context = useContext(WebSocketContext);
+  if (!context) {
+    throw new Error("useWebSocket must be used within a WebSocketProvider");
+  }
+  return context;
+}
+
+export function useWebSocketStatus(): WebSocketStatus {
+  const context = useContext(WebSocketContext);
+  return context?.status ?? "disconnected";
+}

@@ -6,6 +6,8 @@ before the user approves dependency installation.
 
 from __future__ import annotations
 
+import asyncio
+
 try:
     from fastapi import FastAPI
 except ImportError:
@@ -36,7 +38,9 @@ from services.api.app.routes.risk_events import router as risk_events_router
 from services.api.app.routes.signals import router as signals_router
 from services.api.app.routes.strategies import router as strategies_router
 from services.api.app.routes.tasks import router as tasks_router
+from services.api.app.routes.websocket import router as websocket_router
 from services.api.app.routes.workbench_config import router as workbench_config_router
+from services.api.app.websocket.manager import connection_manager
 
 
 app = FastAPI(
@@ -84,3 +88,12 @@ app.include_router(risk_events_router)
 app.routers.append(risk_events_router)  # type: ignore[attr-defined]
 app.include_router(openclaw_router)
 app.routers.append(openclaw_router)  # type: ignore[attr-defined]
+app.include_router(websocket_router)
+app.routers.append(websocket_router)  # type: ignore[attr-defined]
+
+
+@app.on_event("startup")
+async def setup_event_loop() -> None:
+    """在 FastAPI 启动时设置事件循环引用，用于 WebSocket 推送。"""
+    loop = asyncio.get_running_loop()
+    connection_manager.set_loop(loop)

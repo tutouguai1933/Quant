@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-import { ApiErrorFallback } from "../../components/api-error-fallback";
-import { LoadingBanner } from "../../components/loading-banner";
 import { PageHero } from "../../components/page-hero";
 import { StatusBar } from "../../components/status-bar";
 import { Button } from "../../components/ui/button";
@@ -15,7 +13,6 @@ import {
   getAutomationStatusFallback,
   getEvaluationWorkspace,
   getEvaluationWorkspaceFallback,
-  isTechnicalError,
 } from "../../lib/api";
 
 type EvaluationClientProps = {
@@ -26,8 +23,7 @@ type EvaluationClientProps = {
 export function EvaluationClient({ token, isAuthenticated }: EvaluationClientProps) {
   const [workspace, setWorkspace] = useState(getEvaluationWorkspaceFallback());
   const [automation, setAutomation] = useState(getAutomationStatusFallback().item);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -40,26 +36,16 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
       .then(([workspaceResult, automationResult]) => {
         clearTimeout(timeoutId);
 
-        const hasApiErrors = [workspaceResult, automationResult].some(
-          (result) =>
-            result.status === "rejected" ||
-            (result.status === "fulfilled" && result.value && isTechnicalError(result.value.error))
-        );
-
-        if (workspaceResult.status === "fulfilled" && !workspaceResult.value.error) {
+        // Always use available data, no degraded mode banner needed
+        if (workspaceResult.status === "fulfilled" && workspaceResult.value?.data?.item) {
           setWorkspace(workspaceResult.value.data.item);
         }
-        if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
+        if (automationResult.status === "fulfilled" && automationResult.value?.data?.item) {
           setAutomation(automationResult.value.data.item);
         }
-
-        setHasError(hasApiErrors);
-        setIsLoading(false);
       })
       .catch(() => {
         clearTimeout(timeoutId);
-        setHasError(true);
-        setIsLoading(false);
       });
 
     return () => {
@@ -139,16 +125,6 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
 
   return (
     <>
-      {isLoading && <LoadingBanner />}
-
-      {!isLoading && hasError && (
-        <ApiErrorFallback
-          title="部分数据加载失败"
-          message="后端 API 暂时不可用，当前显示降级数据"
-          detail="评估页正在使用本地 fallback 数据，请稍后刷新页面重试。"
-        />
-      )}
-
       <PageHero
         badge="评估与实验中心"
         title="先看推荐，再看原因"

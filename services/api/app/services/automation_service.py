@@ -21,6 +21,7 @@ from services.api.app.services.workbench_config_service import (
     _describe_catalog_item,
     workbench_config_service,
 )
+from services.api.app.websocket.push_bridge import push_bridge
 
 
 AUTOMATION_MODES = {"manual", "auto_dry_run", "auto_live"}
@@ -352,6 +353,15 @@ class AutomationService:
         self._updated_at = _utc_now()
         self._persist_state()
 
+        # WebSocket 推送周期状态变更
+        push_bridge.push_automation_cycle_update(
+            status=status,
+            mode=str(payload.get("mode", "") or self._mode),
+            recommended_symbol=str(payload.get("recommended_symbol", "") or ""),
+            next_action=str(payload.get("next_action", "") or ""),
+            message=str(payload.get("message", "") or ""),
+        )
+
     def record_alert(self, *, level: str, code: str, message: str, source: str, detail: str = "") -> dict[str, object]:
         """记录自动化告警。"""
 
@@ -374,6 +384,16 @@ class AutomationService:
         self._daily_summary["alert_level_counts"] = level_counts
         self._updated_at = _utc_now()
         self._persist_state()
+
+        # WebSocket 推送告警
+        push_bridge.push_automation_alert(
+            level=level,
+            code=code,
+            message=message,
+            source=source,
+            detail=detail,
+        )
+
         return dict(item)
 
     def _pop_alert(self, alert_id: int) -> dict[str, object] | None:

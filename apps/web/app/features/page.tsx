@@ -1,6 +1,8 @@
-/* 这个文件负责渲染因子工作台，把默认首屏收成分类总览、当前启用、有效性、冗余和总分解释五张摘要卡。 */
+"use client";
 
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { AppShell } from "../../components/app-shell";
 import { DataTable } from "../../components/data-table";
@@ -9,10 +11,10 @@ import { FeaturesFactorDetailDrawer, type FeatureFactorDetailItem } from "../../
 import { FeaturesFocusGrid, type FeaturesFocusCard } from "../../components/features-focus-grid";
 import { FeatureFlowLinks, FeaturesPrimaryActionSection } from "../../components/features-primary-action-section";
 import { PageHero } from "../../components/page-hero";
+import { Skeleton } from "../../components/ui/skeleton";
 import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { getFeatureWorkspace } from "../../lib/api";
 import { readFeedback } from "../../lib/feedback";
-import { getControlSessionState } from "../../lib/session";
 
 const CATEGORY_META = [
   { key: "trend", label: "趋势" },
@@ -31,16 +33,84 @@ const REDUNDANCY_GROUPS = [
   { key: "volume", label: "量能确认组", factors: ["volume_ratio"] },
 ] as const;
 
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+type SessionState = {
+  isAuthenticated: boolean;
 };
 
-export default async function FeaturePage({ searchParams }: PageProps) {
-  const params = (await searchParams) ?? {};
+type WorkspaceData = Awaited<ReturnType<typeof getFeatureWorkspace>>["data"]["item"];
+
+export default function FeaturePage() {
+  const searchParams = useSearchParams();
+  const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState<SessionState>({ isAuthenticated: false });
+  const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 15000);
+
+    fetch("/api/control/session", { signal: abortController.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        setSession({ isAuthenticated: data?.isAuthenticated ?? false });
+      })
+      .catch(() => {
+        setSession({ isAuthenticated: false });
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 15000);
+
+    setIsLoading(true);
+    getFeatureWorkspace(abortController.signal)
+      .then((response) => {
+        setWorkspace(response.data.item);
+      })
+      .catch(() => {
+        setWorkspace(null);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+
+    return () => {
+      clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, []);
+
+  const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
   const feedback = readFeedback(params);
-  const session = await getControlSessionState();
-  const response = await getFeatureWorkspace();
-  const workspace = response.data.item;
+
+  if (isLoading || !workspace) {
+    return (
+      <AppShell
+        title="因子工作台"
+        subtitle="先看因子分类、当前启用、有效性、冗余和总分解释，细节按需展开。"
+        currentPath="/features"
+        isAuthenticated={session.isAuthenticated}
+      >
+        <PageHero
+          badge="因子工作台"
+          title="先把多因子体系讲清楚，再决定哪些因子值得继续进入研究评分。"
+          description="因子页默认不再只是权重配置页，而是先回答五件事：因子怎么分、现在启用了什么、当前有效性如何、哪些地方可能重复、总分主要被谁拉动。"
+        />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
+        </div>
+      </AppShell>
+    );
+  }
   const selectionStory = asRecord(workspace.selection_story);
   const selectedFeaturePreset = asRecord(selectionStory.feature_preset);
   const preprocessingStory = asRecord(selectionStory.preprocessing);
