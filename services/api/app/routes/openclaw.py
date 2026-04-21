@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from services.api.app.services.openclaw_snapshot_service import OpenclawSnapshotService
 from services.api.app.services.openclaw_action_service import OpenclawActionService
+from services.api.app.services.openclaw_patrol_service import OpenclawPatrolService, openclaw_patrol_service
 from services.api.app.services.automation_service import automation_service
 from services.api.app.services.strategy_dispatch_service import strategy_dispatch_service
 from services.api.app.services.automation_workflow_service import automation_workflow_service
@@ -109,6 +110,87 @@ def get_restart_history():
             "api": history.get("api", {}),
             "web": history.get("web", {}),
             "freqtrade": history.get("freqtrade", {}),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/patrol")
+def execute_patrol(patrol_type: str = "full"):
+    """执行一轮巡检。
+
+    Args:
+        patrol_type: 巡检类型，可选 "health_check", "state_sync", "cycle_check", "full"
+        默认为 "full" 执行完整巡检
+
+    Returns:
+        巡检结果，包含执行的动作列表
+    """
+    try:
+        result = openclaw_patrol_service.patrol(patrol_type=patrol_type)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/patrol-history")
+def get_patrol_history(limit: int = 10):
+    """获取最近的巡检记录。
+
+    Args:
+        limit: 返回的最大记录数，默认 10 条
+
+    Returns:
+        最近的巡检记录列表
+    """
+    try:
+        records = openclaw_patrol_service.get_recent_patrols(limit=limit)
+        return {
+            "items": records,
+            "total": len(records),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/patrol-counters")
+def get_patrol_counters():
+    """获取动作计数器状态。
+
+    Returns:
+        所有动作的节流计数器状态
+    """
+    try:
+        counters = openclaw_patrol_service.get_action_counters()
+        return {
+            "counters": counters,
+            "config": {
+                "throttle_window_seconds": openclaw_patrol_service.THROTTLE_WINDOW_SECONDS,
+                "max_action_count_per_window": openclaw_patrol_service.MAX_ACTION_COUNT_PER_WINDOW,
+                "max_consecutive_failures": openclaw_patrol_service.MAX_CONSECUTIVE_FAILURES,
+                "alert_threshold": openclaw_patrol_service.ALERT_THRESHOLD,
+            },
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/patrol-reset")
+def reset_patrol_counter(action: str):
+    """重置指定动作的计数器。
+
+    Args:
+        action: 要重置的动作名称
+
+    Returns:
+        重置结果
+    """
+    try:
+        openclaw_patrol_service.reset_action_counter(action=action)
+        return {
+            "success": True,
+            "action": action,
+            "message": f"已重置动作 {action} 的计数器",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

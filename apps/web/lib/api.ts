@@ -3982,6 +3982,93 @@ export async function getOpenclawRestartHistory(
   };
 }
 
+export async function executeOpenclawPatrol(
+  patrolType: string = "full",
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ patrolled: boolean; status: string; message: string; actions_taken: Array<Record<string, unknown>> }>> {
+  try {
+    const url = await resolveControlPlaneUrl(`/openclaw/patrol?patrol_type=${patrolType}`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      signal,
+    });
+
+    if (!response.ok) {
+      return {
+        error: { code: "patrol_failed", message: `Patrol request failed: ${response.status}` },
+        data: { patrolled: false, status: "error", message: "", actions_taken: [] },
+        meta: {},
+      };
+    }
+
+    const data = await response.json();
+    return {
+      error: null,
+      data: {
+        patrolled: Boolean(data.patrolled),
+        status: String(data.status || "unknown"),
+        message: String(data.message || ""),
+        actions_taken: Array.isArray(data.actions_taken) ? data.actions_taken : [],
+      },
+      meta: {},
+    };
+  } catch (err) {
+    return {
+      error: { code: "patrol_error", message: err instanceof Error ? err.message : "Unknown error" },
+      data: { patrolled: false, status: "error", message: "", actions_taken: [] },
+      meta: {},
+    };
+  }
+}
+
+export async function getOpenclawPatrolHistory(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ items: Array<Record<string, unknown>> }>> {
+  const response = await fetchJson<{ items: Array<Record<string, unknown>> }>("/openclaw/patrol-history", undefined, signal);
+  if (response.error) {
+    return {
+      ...response,
+      data: { items: [] },
+    };
+  }
+  return {
+    ...response,
+    data: {
+      items: Array.isArray(response.data.items) ? response.data.items : [],
+    },
+  };
+}
+
+export async function getOpenclawPatrolCounters(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ counters: Record<string, Record<string, unknown>>; config: Record<string, unknown> }>> {
+  const response = await fetchJson<Record<string, unknown>>("/openclaw/patrol-counters", undefined, signal);
+  if (response.error) {
+    return {
+      ...response,
+      data: { counters: {}, config: {} },
+    };
+  }
+  const countersData = isPlainObject(response.data.counters) ? response.data.counters : {};
+  const counters: Record<string, Record<string, unknown>> = {};
+  for (const [key, value] of Object.entries(countersData)) {
+    if (isPlainObject(value)) {
+      counters[key] = value as Record<string, unknown>;
+    }
+  }
+  return {
+    ...response,
+    data: {
+      counters,
+      config: isPlainObject(response.data.config) ? response.data.config : {},
+    },
+  };
+}
+
 export async function executeOpenclawAction(
   action: string,
   payload?: Record<string, unknown>,

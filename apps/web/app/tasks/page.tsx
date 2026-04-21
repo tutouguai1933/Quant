@@ -23,6 +23,7 @@ import {
   getAutomationStatusFallback,
   getOpenclawSnapshot,
   getOpenclawAuditRecords,
+  getOpenclawPatrolHistory,
   listTasks,
 } from "../../lib/api";
 
@@ -44,6 +45,7 @@ export default function TasksPage() {
   const [automation, setAutomation] = useState<Record<string, unknown>>(getAutomationStatusFallback().item);
   const [openclawSnapshot, setOpenclawSnapshot] = useState<Record<string, unknown>>({});
   const [openclawAuditRecords, setOpenclawAuditRecords] = useState<Array<Record<string, unknown>>>([]);
+  const [openclawPatrolHistory, setOpenclawPatrolHistory] = useState<Array<Record<string, unknown>>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // 确认弹窗状态
@@ -118,13 +120,15 @@ export default function TasksPage() {
       ),
       safeLoadSnapshot((signal) => getOpenclawSnapshot(session.token!, signal), {}),
       safeLoadAudit((signal) => getOpenclawAuditRecords(signal), []),
+      safeLoadPatrol((signal) => getOpenclawPatrolHistory(signal), []),
     ])
-      .then(([tasksResult, automationResult, openclawResult, auditResult]) => {
+      .then(([tasksResult, automationResult, openclawResult, auditResult, patrolResult]) => {
         setItems(tasksResult);
         const automationData = (automationResult[0] as Record<string, unknown>) ?? getAutomationStatusFallback().item;
         setAutomation(automationData);
         setOpenclawSnapshot(openclawResult);
         setOpenclawAuditRecords(auditResult);
+        setOpenclawPatrolHistory(patrolResult);
         setIsLoading(false);
       })
       .catch(() => {
@@ -429,6 +433,61 @@ export default function TasksPage() {
 
           <Card>
             <CardHeader>
+              <p className="eyebrow">定时巡检</p>
+              <CardTitle>OpenClaw 运维巡检</CardTitle>
+              <CardDescription>
+                最近巡检状态和动作记录
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+              {openclawPatrolHistory.length > 0 ? (
+                <>
+                  {(() => {
+                    const latestPatrol = asRecord(openclawPatrolHistory[0]);
+                    const patrolStatus = readText(latestPatrol.status, "unknown");
+                    const patrolMessage = readText(latestPatrol.message, "");
+                    const patrolType = readText(latestPatrol.patrol_type, "");
+                    const executedAt = readText(latestPatrol.executed_at, "");
+                    const actionsTaken = Array.isArray(latestPatrol.actions_taken) ? latestPatrol.actions_taken : [];
+                    return (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span>状态：</span>
+                          <StatusBadge value={patrolStatus === "normal" ? "正常" : patrolStatus === "action_taken" ? "已执行动作" : patrolStatus === "throttled" ? "已节流" : patrolStatus} />
+                        </div>
+                        {patrolMessage ? <p>{patrolMessage}</p> : null}
+                        {executedAt ? <p className="text-xs text-muted-foreground">执行时间：{executedAt}</p> : null}
+                        {actionsTaken.length > 0 ? (
+                          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">执行动作</p>
+                            <ul className="mt-2 space-y-1 text-sm">
+                              {actionsTaken.slice(0, 3).map((action, idx) => {
+                                const actionRecord = asRecord(action);
+                                const actionName = readText(actionRecord.action, "");
+                                const actionSuccess = Boolean(actionRecord.success);
+                                return (
+                                  <li key={idx} className="flex items-center gap-2">
+                                    <span className={`inline-flex h-2 w-2 rounded-full ${actionSuccess ? "bg-green-500" : "bg-red-500"}`} />
+                                    <span className="font-medium">{actionName}</span>
+                                    <span className={actionSuccess ? "text-green-600" : "text-red-600"}>{actionSuccess ? "成功" : "失败"}</span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </>
+              ) : (
+                <p className="text-muted-foreground">暂无巡检记录</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <p className="eyebrow">Openclaw 安全动作</p>
               <CardTitle>统一动作网关</CardTitle>
               <CardDescription>
@@ -681,6 +740,22 @@ async function safeLoadSnapshot(
 }
 
 async function safeLoadAudit(
+  loader: (signal: AbortSignal) => Promise<{ data: { items: Array<Record<string, unknown>> }; error: unknown }>,
+  fallback: Array<Record<string, unknown>>,
+  timeoutMs = DEFAULT_API_TIMEOUT,
+): Promise<Array<Record<string, unknown>>> {
+  const { signal, cleanup } = createTimeoutController(timeoutMs);
+  try {
+    const response = await loader(signal);
+    return response.error ? fallback : response.data.items;
+  } catch {
+    return fallback;
+  } finally {
+    cleanup();
+  }
+}
+
+async function safeLoadPatrol(
   loader: (signal: AbortSignal) => Promise<{ data: { items: Array<Record<string, unknown>> }; error: unknown }>,
   fallback: Array<Record<string, unknown>>,
   timeoutMs = DEFAULT_API_TIMEOUT,
