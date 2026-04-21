@@ -479,7 +479,7 @@ export default function FeaturePage() {
           columns={["周期", "参数映射"]}
           rows={timeframeRows}
           emptyTitle="还没有周期参数"
-          emptyDetail="当前研究协议还没有写出周期参数映射。"
+          emptyDetail="运行后产生"
         />
       </DetailSection>
 
@@ -541,7 +541,7 @@ export default function FeaturePage() {
               columns={["因子分组", "包含因子"]}
               rows={categoryRows}
               emptyTitle="还没有因子分组"
-              emptyDetail="先运行一次 Qlib 研究训练，特征协议才会在这里出现。"
+              emptyDetail="运行后产生"
             />
           </DetailSection>
           <DetailSection title="分类权重入口" description="这里说明每类因子在研究页里由哪档权重承接。">
@@ -549,7 +549,7 @@ export default function FeaturePage() {
               columns={["因子类别", "当前角色分布", "研究页权重入口", "主要影响什么", "说明"]}
               rows={categoryWeightRows}
               emptyTitle="当前还没有类别权重解释"
-              emptyDetail="先生成一轮特征协议，再回来看每个因子类别在研究页里由哪一档权重控制。"
+              emptyDetail="运行后产生"
             />
           </DetailSection>
         </div>

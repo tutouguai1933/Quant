@@ -423,41 +423,6 @@ export default function TasksPage() {
             />
           )}
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">动作历史</p>
-              <CardTitle>OpenClaw 运维动作</CardTitle>
-              <CardDescription>展示最近 5 条动作记录</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              {openclawAuditRecords.length > 0 ? (
-                <div className="space-y-2">
-                  {openclawAuditRecords.slice(0, 5).map((record, idx) => {
-                    const actionName = readText(record.action, "未知动作");
-                    const success = Boolean(record.success);
-                    const executedAt = readText(record.executed_at || record.recorded_at, "");
-                    const reason = readText(record.reason || "", "");
-                    return (
-                      <div key={idx} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-2 w-2 rounded-full ${success ? "bg-green-500" : "bg-red-500"}`} />
-                          <span className="font-medium">{actionName}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className={success ? "text-green-600" : "text-red-600"}>{success ? "成功" : "失败"}</span>
-                        {executedAt ? <span className="ml-2 text-muted-foreground text-xs">{executedAt}</span> : null}
-                      </div>
-                      {reason ? <p className="text-xs text-muted-foreground mt-1">{reason}</p> : null}
-                    </div>
-                  );
-                })}
-                </div>
-              ) : (
-                <p className="text-muted-foreground">暂无动作记录</p>
-              )}
-            </CardContent>
-          </Card>
-
           <DataTable
             columns={["任务", "状态", "创建时间", "完成时间"]}
             rows={items.slice(0, 20).map((item, index) => ({

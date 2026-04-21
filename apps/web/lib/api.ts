@@ -904,6 +904,8 @@ const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
 
 export const DEFAULT_API_TIMEOUT = 10000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_BASE = 500; // ms
 const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
 
 /* 业务错误 code 列表：这些是正常的业务状态，不应该触发降级模式 */
@@ -941,6 +943,18 @@ export function isTechnicalError(error: { code: string; message: string } | null
   }
   // 其他错误（5xx、真正的技术故障）需要显示降级模式
   return true;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableError(error: { code: string }): boolean {
+  return (
+    error.code === "network_error" ||
+    error.code === "request_timeout" ||
+    error.code.startsWith("http_5")
+  );
 }
 
 async function resolveControlPlaneBaseUrl(request?: Request): Promise<string> {
@@ -1054,51 +1068,66 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
   }
 
   const requestPromise = (async () => {
-    try {
-      const response = await fetch(url, {
-        headers: buildAuthHeaders(token),
-        cache: "no-store",
-        signal,
-      });
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch(url, {
+          headers: buildAuthHeaders(token),
+          cache: "no-store",
+          signal,
+        });
 
-      if (!response.ok) {
+        if (!response.ok) {
+          const errorCode = `http_${response.status}`;
+          if (isRetryableError({ code: errorCode }) && attempt < MAX_RETRIES) {
+            await sleep(RETRY_DELAY_BASE * Math.pow(2, attempt));
+            continue;
+          }
+          return {
+            data: {} as T,
+            error: {
+              code: errorCode,
+              message: `API 请求失败: ${response.statusText}`,
+            },
+            meta: { status: response.status },
+          };
+        }
+
+        return response.json() as Promise<ApiEnvelope<T>>;
+      } catch (error) {
+        const errorCode = error instanceof Error && error.name === "AbortError"
+          ? "request_timeout"
+          : "network_error";
+
+        if (isRetryableError({ code: errorCode }) && attempt < MAX_RETRIES) {
+          await sleep(RETRY_DELAY_BASE * Math.pow(2, attempt));
+          continue;
+        }
+
         return {
           data: {} as T,
           error: {
-            code: `http_${response.status}`,
-            message: `API 请求失败: ${response.statusText}`,
+            code: errorCode,
+            message: errorCode === "request_timeout" ? "请求超时" : (error instanceof Error ? error.message : "网络连接失败"),
           },
-          meta: { status: response.status },
+          meta: errorCode === "request_timeout" ? { aborted: true } : {},
         };
       }
-
-      return response.json() as Promise<ApiEnvelope<T>>;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        return {
-          data: {} as T,
-          error: {
-            code: "request_timeout",
-            message: "请求超时",
-          },
-          meta: { aborted: true },
-        };
-      }
-
-      return {
-        data: {} as T,
-        error: {
-          code: "network_error",
-          message: error instanceof Error ? error.message : "网络连接失败",
-        },
-        meta: {},
-      };
-    } finally {
-      inflightRequests.delete(requestKey);
     }
+    // Should not reach here, but return a fallback error
+    return {
+      data: {} as T,
+      error: {
+        code: "network_error",
+        message: "请求失败，请稍后重试",
+      },
+      meta: {},
+    };
   })();
 
   inflightRequests.set(requestKey, requestPromise);
+  requestPromise.finally(() => {
+    inflightRequests.delete(requestKey);
+  });
   return requestPromise;
 }
 

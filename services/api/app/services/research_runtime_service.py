@@ -365,6 +365,16 @@ class ResearchRuntimeService:
             finished_at=finished_at,
         )
 
+        # 失败时触发告警
+        if status == "failed":
+            push_bridge.push_automation_alert(
+                level="error",
+                code=f"research_{action}_failed",
+                message=f"研究任务 {action} 执行失败: {message}",
+                source="research_runtime",
+                detail=f"持续时间: {duration_seconds}秒",
+            )
+
     def _update_state(self, action: str, stage: str, progress_pct: int, message: str) -> None:
         """更新运行中的阶段。"""
 
