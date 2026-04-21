@@ -67,15 +67,17 @@
    看当前做到哪、最近决策是什么
 2. [docs/roadmap.md](/home/djy/Quant/docs/roadmap.md)  
    看当前阶段、后续规划和待办
-3. [docs/architecture.md](/home/djy/Quant/docs/architecture.md)  
+3. [docs/startup-and-config.md](/home/djy/Quant/docs/startup-and-config.md)  
+   看如何启动项目、配置文件和常见问题（**推荐优先阅读**）
+4. [docs/architecture.md](/home/djy/Quant/docs/architecture.md)  
    看系统分层、模块职责和主链关系
-4. [docs/developer-handbook.md](/home/djy/Quant/docs/developer-handbook.md)  
+5. [docs/developer-handbook.md](/home/djy/Quant/docs/developer-handbook.md)  
    看怎么开发、怎么验证、怎么改文档
-5. [docs/deployment-handbook.md](/home/djy/Quant/docs/deployment-handbook.md)  
-   看本地和服务器部署
-6. [docs/user-handbook.md](/home/djy/Quant/docs/user-handbook.md)  
+6. [docs/deployment-handbook.md](/home/djy/Quant/docs/deployment-handbook.md)  
+   看本地和服务器部署详细说明
+7. [docs/user-handbook.md](/home/djy/Quant/docs/user-handbook.md)  
    看页面怎么用
-7. [docs/system-flow-guide.md](/home/djy/Quant/docs/system-flow-guide.md)  
+8. [docs/system-flow-guide.md](/home/djy/Quant/docs/system-flow-guide.md)  
    看系统导览、整条系统流程和按钮背后的运行逻辑
 
 补充入口：
@@ -112,6 +114,22 @@
 
 ## 本地运行
 
+### 推荐方式：Docker Compose
+
+最简单的启动方式：
+
+```bash
+cd /home/djy/Quant
+docker compose -f infra/deploy/docker-compose.yml up -d --build
+```
+
+访问：
+- Web：http://localhost:9012
+- API：http://localhost:9011
+- Freqtrade：http://localhost:9013
+
+详细说明见：[docs/startup-and-config.md](/home/djy/Quant/docs/startup-and-config.md)
+
 ### 标准端口
 
 - API：`9011`
@@ -125,7 +143,7 @@
 - 如果通过端口注册表开 `Quant-Debug-N`，就使用那一段分配到的端口
 - 例如 `Quant-Debug-1` 可以使用 `9021-9030`
 
-### 本地启动
+### 本地开发启动
 
 ```bash
 source /home/djy/miniforge3/etc/profile.d/conda.sh
@@ -179,6 +197,34 @@ HOSTNAME=127.0.0.1 PORT=9012 pnpm start
 
 - [docs/deployment-handbook.md](/home/djy/Quant/docs/deployment-handbook.md)
 - [docs/ops-freqtrade.md](/home/djy/Quant/docs/ops-freqtrade.md)
+
+## 最近修复与注意事项
+
+### 降级模式误报修复（2026-04-18）
+
+**问题**：页面误显示"降级模式：部分数据加载失败"警告，即使 API 正常返回数据。
+
+**原因**：前端错误检测逻辑 bug，误判 `"error": null` 为错误状态。
+
+**修复**：Commit `91d27f1` 已修正所有页面的错误检测逻辑。
+
+**验证**：
+```bash
+# 页面不应显示降级模式
+curl -s http://localhost:9012/evaluation | grep -o "降级模式" | wc -l  # 应返回 0
+```
+
+详细说明见：[docs/2026-04-18-degraded-mode-fix.md](/home/djy/Quant/docs/2026-04-18-degraded-mode-fix.md)
+
+### 配置变更注意事项
+
+**重要**：修改 Docker 配置文件后，必须强制重建容器：
+
+```bash
+docker compose -f infra/deploy/docker-compose.yml up -d --force-recreate
+```
+
+普通重启不会重新加载环境变量。
 
 ## 测试方式
 
