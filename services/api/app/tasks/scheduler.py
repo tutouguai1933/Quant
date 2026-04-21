@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import signal
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Callable
 
 from services.api.app.services.signal_service import signal_service
 from services.api.app.services.sync_service import sync_service
+
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now() -> str:
@@ -190,7 +195,13 @@ class TaskScheduler:
         def _run_task() -> dict[str, object]:
             return self._execute_task_impl(task_type, payload)
 
-        return self._run_with_timeout(_run_task, timeout_seconds, task_type)
+        try:
+            return self._run_with_timeout(_run_task, timeout_seconds, task_type)
+        except (TaskTimeoutError, OSError) as exc:
+            # Auto-retry once for network_error/task_timeout with 5-second delay
+            logger.info(f"{task_type} task failed with {type(exc).__name__}, retrying after 5s delay")
+            time.sleep(5)
+            return self._run_with_timeout(_run_task, timeout_seconds, task_type)
 
     def _execute_task_impl(self, task_type: str, payload: dict[str, object]) -> dict[str, object]:
         """实际执行任务逻辑。"""

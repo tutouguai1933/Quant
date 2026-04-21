@@ -26,6 +26,8 @@ class ConnectionManager:
         self._channel_subscribers: dict[str, set[WebSocket]] = defaultdict(set)
         # 异步事件循环引用（从同步服务调用时使用）
         self._loop: asyncio.AbstractEventLoop | None = None
+        # 每个连接的最后心跳时间
+        self._last_ping_time: dict[WebSocket, float] = {}
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """设置事件循环引用，用于从同步代码调度异步推送。"""
@@ -35,12 +37,14 @@ class ConnectionManager:
         """接受新连接并注册到活跃列表。"""
         await websocket.accept()
         self._active_connections.append(websocket)
+        self._last_ping_time[websocket] = asyncio.get_event_loop().time()
         logger.info(f"WebSocket 连接已建立，当前活跃连接数: {len(self._active_connections)}")
 
     async def disconnect(self, websocket: WebSocket) -> None:
         """移除连接并清理所有订阅。"""
         if websocket in self._active_connections:
             self._active_connections.remove(websocket)
+        self._last_ping_time.pop(websocket, None)
         # 清理所有通道订阅
         for channel_subscribers in self._channel_subscribers.values():
             channel_subscribers.discard(websocket)
@@ -113,6 +117,27 @@ class ConnectionManager:
             self.broadcast_to_channel(channel, message),
             self._loop
         )
+
+    def update_ping_time(self, websocket: WebSocket) -> None:
+        """更新连接的心跳时间。"""
+        self._last_ping_time[websocket] = asyncio.get_event_loop().time()
+
+    async def check_stale_connections(self, timeout_seconds: float = 60.0) -> None:
+        """检查并断开超过指定时间无心跳的连接。"""
+        current_time = asyncio.get_event_loop().time()
+        stale_connections: list[WebSocket] = []
+
+        for websocket, last_ping in list(self._last_ping_time.items()):
+            if current_time - last_ping > timeout_seconds:
+                stale_connections.append(websocket)
+
+        for ws in stale_connections:
+            logger.warning(f"连接超时无心跳，主动断开: {id(ws)}")
+            try:
+                await ws.close()
+            except Exception:
+                pass
+            await self.disconnect(ws)
 
     @asynccontextmanager
     async def managed_connection(self, websocket: WebSocket):

@@ -353,7 +353,7 @@ export default function FeaturePage() {
               ],
             }))}
             emptyTitle="当前还没有因子预设"
-            emptyDetail="先恢复特征工作台，系统才会给出一键预设。"
+            emptyDetail="恢复工作台后可用"
           />
         </WorkbenchConfigCard>
 
@@ -470,7 +470,7 @@ export default function FeaturePage() {
           columns={["因子明细表", "类别", "协议角色", "当前选中角色", "说明"]}
           rows={selectionMatrixRows}
           emptyTitle="当前还没有因子明细"
-          emptyDetail="先恢复因子协议，系统才会告诉你每个因子当前是主判断、辅助确认还是未启用。"
+          emptyDetail="恢复工作台后可用"
         />
       </DetailSection>
 
@@ -593,7 +593,7 @@ export default function FeaturePage() {
               columns={["因子名", "类别", "协议角色", "当前选中角色", "说明"]}
               rows={selectionMatrixRows}
               emptyTitle="当前还没有因子明细"
-              emptyDetail="先恢复因子协议，系统才会告诉你每个因子当前是主判断、辅助确认还是未启用。"
+              emptyDetail="恢复工作台后可用"
             />
           </DetailSection>
         </div>
@@ -632,7 +632,7 @@ export default function FeaturePage() {
                 cells: [row.label, row.currentMix, row.currentWeight, row.icNote, row.bucketNote, row.stabilityNote],
               }))}
               emptyTitle="当前还没有有效性摘要"
-              emptyDetail="先恢复特征协议，再回来看哪类因子最影响当前研究判断。"
+              emptyDetail="恢复工作台后可用"
             />
           </DetailSection>
         </div>
@@ -676,7 +676,7 @@ export default function FeaturePage() {
                 ],
               }))}
               emptyTitle="当前还没有冗余摘要"
-              emptyDetail="先恢复因子协议，再看哪些同类因子需要去重。"
+              emptyDetail="恢复工作台后可用"
             />
           </DetailSection>
         </div>
@@ -714,7 +714,7 @@ export default function FeaturePage() {
                 cells: [item.label, item.weight, item.currentMix, item.effect],
               }))}
               emptyTitle="当前还没有总分贡献摘要"
-              emptyDetail="先恢复因子协议，再回来看哪类因子最影响总分。"
+              emptyDetail="恢复工作台后可用"
             />
           </DetailSection>
         </div>

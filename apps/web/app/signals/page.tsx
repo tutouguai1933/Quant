@@ -163,7 +163,7 @@ export default function SignalsPage() {
   return (
     <AppShell
       title="信号"
-      subtitle="左侧先判断哪些候选值得跟进，右侧再看统一研究报告和实验结果。"
+      subtitle="左侧候选判断，右侧研究报告。"
       currentPath="/signals"
       isAuthenticated={session.isAuthenticated}
     >
@@ -313,7 +313,7 @@ export default function SignalsPage() {
                         cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
                       }))}
                       emptyTitle="还没有 signal"
-                      emptyDetail="先运行信号流水线，再回到这里确认是否已经产生最新信号。"
+                      emptyDetail="运行后产生"
                     />
                   </TabsContent>
                 </Tabs>

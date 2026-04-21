@@ -107,7 +107,7 @@ export default function DataPage() {
       <PageHero
         badge="数据工作台"
         title="先确认数据来源、时间范围、样本数量和快照状态。"
-        description="这里把研究主链里最容易被隐藏的部分直接摊开：数据来源、数据快照、时间范围、样本数量，以及 raw / cleaned / feature-ready 现在停在哪一层。"
+        description="直接展示数据来源、快照、时间范围和样本数量，以及当前数据状态。"
         aside={
           <div className="grid gap-3">
             <Button asChild size="sm">
@@ -377,7 +377,7 @@ export default function DataPage() {
               ],
             }))}
             emptyTitle="当前还没有候选池预设目录"
-            emptyDetail="先恢复数据工作台，系统才会给出候选池预设说明。"
+            emptyDetail="恢复工作台后可用"
           />
 
           <Card className="bg-card/90">

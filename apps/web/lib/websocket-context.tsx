@@ -169,7 +169,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       if (wsRef.current) {
         wsRef.current.send(JSON.stringify({ action: "ping" }));
       }
-    }, 30000);
+    }, 15000);
 
     return () => window.clearInterval(interval);
   }, [status]);

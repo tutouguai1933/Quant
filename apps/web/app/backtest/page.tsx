@@ -322,7 +322,7 @@ export default function BacktestPage() {
                   ],
                 }))}
                 emptyTitle="当前还没有回测预设"
-                emptyDetail="先恢复回测工作台，系统才会给出一键回测预设。"
+                emptyDetail="恢复工作台后可用"
               />
             </WorkbenchConfigCard>
 
@@ -458,7 +458,7 @@ export default function BacktestPage() {
                 ],
               }))}
               emptyTitle="当前还没有成本模型目录"
-              emptyDetail="先恢复工作台配置选项，成本模型说明才会在这里出现。"
+              emptyDetail="恢复工作台后可用"
             />
 
             <DataTable
@@ -473,7 +473,7 @@ export default function BacktestPage() {
                 ],
               }))}
               emptyTitle="当前还没有过滤参数目录"
-              emptyDetail="先恢复回测配置目录，系统才会告诉你当前有哪些成本与过滤口径。"
+              emptyDetail="恢复工作台后可用"
             />
 
             <DataTable

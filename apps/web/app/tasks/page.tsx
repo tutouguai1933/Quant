@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { AppShell } from "../../components/app-shell";
@@ -10,6 +10,7 @@ import { LoadingBanner } from "../../components/loading-banner";
 import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
+import { OpenclawActionConfirmDialog } from "../../components/openclaw-action-confirm-dialog";
 import { PageHero } from "../../components/page-hero";
 import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
@@ -31,6 +32,7 @@ type PageProps = {
 
 export default function TasksPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
   const feedback = readFeedback(params);
 
@@ -43,6 +45,47 @@ export default function TasksPage() {
   const [openclawSnapshot, setOpenclawSnapshot] = useState<Record<string, unknown>>({});
   const [openclawAuditRecords, setOpenclawAuditRecords] = useState<Array<Record<string, unknown>>>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 确认弹窗状态
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    action: string;
+    label: string;
+    riskLevel: "safe" | "medium" | "danger" | "critical";
+  } | null>(null);
+
+  // 动作风险等级映射
+  const getActionRiskLevel = (action: string): "safe" | "medium" | "danger" | "critical" => {
+    if (action === "automation_clear_non_error_alerts" || action === "automation_confirm_alert") {
+      return "safe";
+    }
+    if (action === "automation_run_cycle" || action === "automation_dry_run_only") {
+      return "medium";
+    }
+    if (action.startsWith("system_restart_")) {
+      return "danger";
+    }
+    return "medium";
+  };
+
+  const openConfirmDialog = (action: string, label: string) => {
+    setConfirmDialog({
+      open: true,
+      action,
+      label,
+      riskLevel: getActionRiskLevel(action),
+    });
+  };
+
+  const closeConfirmDialog = () => {
+    setConfirmDialog(null);
+  };
+
+  const executeAction = () => {
+    if (confirmDialog) {
+      router.push(`/actions?action=${confirmDialog.action}&returnTo=/tasks`);
+    }
+  };
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -160,7 +203,7 @@ export default function TasksPage() {
   return (
     <AppShell
       title="任务"
-      subtitle="自动化监控、异常处理、恢复操作统一在这里。"
+      subtitle="自动化监控与恢复操作入口。"
       currentPath="/tasks"
       isAuthenticated={session.isAuthenticated}
     >
@@ -355,20 +398,30 @@ export default function TasksPage() {
               <CardDescription>恢复、暂停、切换模式等操作。</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
-              <Button asChild variant="terminal" size="sm">
-                <Link href="/actions?action=automation_resume&returnTo=/tasks">恢复自动化</Link>
+              <Button variant="terminal" size="sm" onClick={() => openConfirmDialog("automation_resume", "恢复自动化")}>
+                恢复自动化
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/actions?action=automation_pause&returnTo=/tasks">暂停自动化</Link>
+              <Button variant="outline" size="sm" onClick={() => openConfirmDialog("automation_pause", "暂停自动化")}>
+                暂停自动化
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link href="/actions?action=automation_run_cycle&returnTo=/tasks">运行一轮</Link>
+              <Button variant="outline" size="sm" onClick={() => openConfirmDialog("automation_run_cycle", "运行一轮")}>
+                运行一轮
               </Button>
-              <Button asChild variant="secondary" size="sm">
-                <Link href="/actions?action=automation_dry_run_only&returnTo=/tasks">切换到 dry-run</Link>
+              <Button variant="secondary" size="sm" onClick={() => openConfirmDialog("automation_dry_run_only", "切换到 dry-run")}>
+                切换到 dry-run
               </Button>
             </CardContent>
           </Card>
+
+          {confirmDialog?.open && (
+            <OpenclawActionConfirmDialog
+              action={confirmDialog.action}
+              label={confirmDialog.label}
+              riskLevel={confirmDialog.riskLevel}
+              onConfirm={executeAction}
+              onCancel={closeConfirmDialog}
+            />
+          )}
 
           <Card>
             <CardHeader>
@@ -417,7 +470,7 @@ export default function TasksPage() {
               ],
             }))}
             emptyTitle="当前还没有任务"
-            emptyDetail="自动化运行后会产生任务记录。"
+            emptyDetail="运行后产生"
           />
 
           <Card>

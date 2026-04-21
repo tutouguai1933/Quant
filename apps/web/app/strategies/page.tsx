@@ -149,7 +149,7 @@ export default function StrategiesPage() {
   return (
     <AppShell
       title="策略"
-      subtitle="策略中心先回答三件事：哪套策略在运行、它现在怎么看市场、最近有没有真正走到执行。"
+      subtitle="策略状态、市场判断、执行结果。"
       currentPath="/strategies"
       isAuthenticated={session.isAuthenticated}
     >
@@ -289,7 +289,7 @@ export default function StrategiesPage() {
                 ],
               }))}
               emptyTitle="当前还没有最近信号"
-              emptyDetail="还没有新的持久化 signal 时，可以先看执行器状态和候选推进结论。"
+              emptyDetail="运行后产生"
             />
 
             <DataTable
@@ -304,7 +304,7 @@ export default function StrategiesPage() {
                 ],
               }))}
               emptyTitle="当前还没有最近执行结果"
-              emptyDetail="先启动策略并派发最新信号，再回到这里确认执行链路有没有真正走通。"
+              emptyDetail="运行后产生"
             />
           </div>
 

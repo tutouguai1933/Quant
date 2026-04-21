@@ -259,7 +259,7 @@ export default function ResearchPage() {
 
   const configContent = (
     <div className="space-y-5">
-      <DetailSection title="当前配置摘要" description="先确认这轮研究当前采用的是哪套预设、模板、模型和切分比例。">
+      <DetailSection title="当前配置摘要" description="确认当前预设、模板、模型和切分比例。">
         <div className="grid gap-3 md:grid-cols-2">
           <InfoBlock label="当前组合" value={configHeadline} />
           <InfoBlock label="组合说明" value={configDetail} />
@@ -298,7 +298,7 @@ export default function ResearchPage() {
               ],
             }))}
             emptyTitle="当前还没有研究预设"
-            emptyDetail="先恢复研究工作台，系统才会给出一键研究预设。"
+            emptyDetail="恢复工作台后可用"
           />
         </WorkbenchConfigCard>
 
@@ -403,7 +403,7 @@ export default function ResearchPage() {
 
   const configGuideContent = (
     <div className="space-y-5">
-      <DetailSection title="当前研究选择" description="把这轮研究真正采用的预设、模板、模型和标签组合讲清楚。">
+      <DetailSection title="当前研究选择" description="说明实际采用的预设、模板、模型和标签组合。">
         <div className="grid gap-3 md:grid-cols-2">
           <InfoBlock label="当前组合" value={readPlainText(selectionStory.headline, "当前还没有研究组合摘要")} />
           <InfoBlock label="当前组合说明" value={readPlainText(selectionStory.detail, "当前还没有组合说明")} />
@@ -439,7 +439,7 @@ export default function ResearchPage() {
         </div>
       </DetailSection>
 
-      <DetailSection title="候选范围契约" description="研究、评估、策略和自动化现在共用同一份候选篮子与执行篮子说明。">
+      <DetailSection title="候选范围契约" description="各模块共用同一份候选篮子与执行篮子说明。">
         <div className="grid gap-3 md:grid-cols-2">
           <InfoBlock label="统一说明" value={candidateScopeHeadline} />
           <InfoBlock label="为什么这样分层" value={candidateScopeDetail} />
@@ -450,7 +450,7 @@ export default function ResearchPage() {
         </div>
       </DetailSection>
 
-      <DetailSection title="标签与模型说明" description="这里解释模型、标签方式、触发基础和持有窗口会怎样影响结果。">
+      <DetailSection title="标签与模型说明" description="解释模型、标签方式、触发基础和持有窗口的影响。">
         <div className="grid gap-3 md:grid-cols-2">
           <InfoBlock label="当前模型" value={MODEL_LABELS[selectedModelKey] || selectedModelKey} />
           <InfoBlock label="当前标签预设" value={selectedLabelPresetKey} />
@@ -471,49 +471,49 @@ export default function ResearchPage() {
         columns={["研究模板说明", "更适合什么", "当前是否选中", "说明"]}
         rows={buildCatalogRows(researchTemplateCatalog, researchTemplateKey, "当前模板", "当前没有适用场景说明", "当前没有模板说明")}
         emptyTitle="当前还没有研究模板目录"
-        emptyDetail="先恢复研究工作台，系统才会给出研究模板说明目录。"
+        emptyDetail="恢复工作台后可用"
       />
 
       <DataTable
         columns={["模型目录", "更适合什么", "当前是否选中", "说明"]}
         rows={buildCatalogRows(modelCatalog, selectedModelKey, "当前模型", "当前没有适用场景说明", "当前没有模型说明")}
         emptyTitle="当前还没有模型目录"
-        emptyDetail="先恢复研究工作台，系统才会给出模型目录。"
+        emptyDetail="恢复工作台后可用"
       />
 
       <DataTable
         columns={["标签预设", "更适合什么", "当前是否选中", "说明"]}
         rows={buildCatalogRows(labelPresetCatalog, selectedLabelPresetKey, "当前标签预设", "当前没有适用场景说明", "当前没有标签预设说明")}
         emptyTitle="当前还没有标签预设目录"
-        emptyDetail="先恢复研究工作台，系统才会给出标签预设目录。"
+        emptyDetail="恢复工作台后可用"
       />
 
       <DataTable
         columns={["标签方式说明", "更适合什么", "当前是否选中", "说明"]}
         rows={buildCatalogRows(labelModeCatalog, labelModeKey, "当前标签方式", "当前没有适用场景说明", "当前没有标签说明")}
         emptyTitle="当前还没有标签方式目录"
-        emptyDetail="先恢复研究工作台，系统才会给出标签方式目录。"
+        emptyDetail="恢复工作台后可用"
       />
 
       <DataTable
         columns={["触发基础说明", "更适合什么", "当前是否选中", "说明"]}
         rows={buildCatalogRows(labelTriggerCatalog, labelTriggerBasisKey, "当前触发基础", "当前没有适用场景说明", "当前没有触发说明")}
         emptyTitle="当前还没有触发基础目录"
-        emptyDetail="先恢复研究工作台，系统才会给出触发基础目录。"
+        emptyDetail="恢复工作台后可用"
       />
 
       <DataTable
         columns={["持有窗口说明", "更适合什么", "当前是否选中", "说明"]}
         rows={buildCatalogRows(holdingWindowCatalog, holdingWindowLabel, "当前持有窗口", "当前没有适用场景说明", "当前没有持有窗口说明")}
         emptyTitle="当前还没有持有窗口目录"
-        emptyDetail="先恢复研究工作台，系统才会给出持有窗口目录。"
+        emptyDetail="恢复工作台后可用"
       />
     </div>
   );
 
   const artifactDetailContent = (
     <div className="space-y-5">
-      <DetailSection title="模板产物对齐" description="这里确认当前配置模板、最近训练模板和最近推理模板是不是同一条主线。">
+      <DetailSection title="模板产物对齐" description="确认配置、训练、推理模板是否同一条主线。">
         <div className="grid gap-3 md:grid-cols-2">
           <InfoBlock label="当前配置模板" value={`${readPlainText(artifactTemplates.current.label, "未选择")} / ${readPlainText(artifactTemplates.current.fit, "当前没有模板说明")}`} />
           <InfoBlock label="最近训练模板" value={`${readPlainText(artifactTemplates.training.label, "未生成")} / ${readPlainText(artifactTemplates.training.fit, "当前还没有训练产物")}`} />
@@ -547,7 +547,7 @@ export default function ResearchPage() {
 
   const experimentContent = (
     <div className="space-y-5">
-      <DetailSection title="训练切分说明" description="研究页只保留当前实验窗口和切分摘要，完整实验中心继续由评估页承接。">
+      <DetailSection title="训练切分说明" description="实验窗口和切分摘要；完整实验中心在评估页。">
         <div className="space-y-4">
           <DataTable
             columns={["窗口", "样本摘要"]}
@@ -556,13 +556,13 @@ export default function ResearchPage() {
               cells: [name, formatWindow(payloadRecord(payload))],
             }))}
             emptyTitle="还没有训练窗口"
-            emptyDetail="先运行研究训练，窗口摘要才会在这里出现。"
+            emptyDetail="运行后产生"
           />
           <DataTable
             columns={["训练切分说明", "当前配置", "按当前样本大致会怎样切"]}
             rows={splitPreviewRows}
             emptyTitle="当前还没有切分预览"
-            emptyDetail="先生成一轮训练窗口，系统才会把训练/验证/测试切分预览出来。"
+            emptyDetail="运行后产生"
           />
         </div>
       </DetailSection>
@@ -583,12 +583,12 @@ export default function ResearchPage() {
         </div>
       </DetailSection>
 
-      <DetailSection title="实验参数" description="这里只保留当前实验参数快照，需要做更完整的对比时再去评估页。">
+      <DetailSection title="实验参数" description="实验参数快照；完整对比在评估页。">
         <DataTable
           columns={["参数名", "参数值"]}
           rows={parameterRows}
           emptyTitle="还没有实验参数"
-          emptyDetail="当前训练上下文还没有写出实验参数。"
+          emptyDetail="运行后产生"
         />
       </DetailSection>
     </div>
@@ -695,7 +695,7 @@ export default function ResearchPage() {
   return (
     <AppShell
       title="策略研究工作台"
-      subtitle="先看当前状态、当前配置摘要和当前产物，细节按需展开。"
+      subtitle="先看状态、配置和产物，细节按需展开。"
       currentPath="/research"
       isAuthenticated={session.isAuthenticated}
     >
