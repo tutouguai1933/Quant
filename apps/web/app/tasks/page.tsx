@@ -339,8 +339,8 @@ export default function TasksPage() {
               </CardHeader>
               <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                 <p>运行状态：{runtimeStatus}</p>
-                <p>降级模式：{degradeMode === "none" ? "无降级" : degradeMode}</p>
-                {degradeReason ? <p>降级原因：{degradeReason}</p> : null}
+                <p>运行模式：{degradeMode === "none" ? "完全自动" : degradeMode === "manual_only" ? "手动控制" : degradeMode === "window_wait" ? "等待窗口" : degradeMode}</p>
+                {degradeReason ? <p>模式原因：{degradeReason}</p> : null}
                 {runtimeReasonLabel ? <p>当前原因：{runtimeReasonLabel}</p> : null}
                 {takeoverReviewDueAt ? <p>接管复核截止：{takeoverReviewDueAt}</p> : null}
                 {cooldownEndsAt ? <p>冷却结束时间：{cooldownEndsAt}</p> : null}
@@ -497,7 +497,7 @@ export default function TasksPage() {
             <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
               <p>运行时守卫：{openclawReadyForCycle ? "就绪" : "阻塞中"}</p>
               {openclawBlockedReason ? <p>阻塞原因：{openclawBlockedReason}</p> : null}
-              <p>降级模式：{openclawDegradeMode === "none" ? "无降级" : openclawDegradeMode}</p>
+              <p>运行模式：{openclawDegradeMode === "none" ? "完全自动" : openclawDegradeMode === "manual_only" ? "手动控制" : openclawDegradeMode}</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">自动运行</p>
