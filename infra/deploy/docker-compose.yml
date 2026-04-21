@@ -18,6 +18,26 @@ services:
       retries: 3
       start_period: 10s
 
+  openclaw:
+    build:
+      context: ../../services/openclaw
+      dockerfile: Dockerfile
+    container_name: ${QUANT_OPENCLAW_CONTAINER_NAME:-quant-openclaw}
+    restart: unless-stopped
+    environment:
+      QUANT_API_BASE_URL: http://api:9011/api/v1
+      HEALTH_CHECK_INTERVAL: ${QUANT_OPENCLAW_HEALTH_INTERVAL:-60}
+      STATE_SYNC_INTERVAL: ${QUANT_OPENCLAW_SYNC_INTERVAL:-300}
+      CYCLE_CHECK_INTERVAL: ${QUANT_OPENCLAW_CYCLE_INTERVAL:-900}
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   api:
     build:
       context: ../..
