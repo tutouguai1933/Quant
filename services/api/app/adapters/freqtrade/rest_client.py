@@ -86,6 +86,7 @@ class FreqtradeRestConfig:
     timeout_seconds: float = 10.0
     max_retries: int = 3
     base_delay: float = 0.5
+    max_total_timeout_seconds: float = 120.0
 
     def __post_init__(self) -> None:
         normalized_url = self.base_url.strip().rstrip("/")
@@ -99,6 +100,8 @@ class FreqtradeRestConfig:
             raise ValueError("max_retries must be at least 1")
         if self.base_delay <= 0:
             raise ValueError("base_delay must be greater than 0")
+        if self.max_total_timeout_seconds <= 0:
+            raise ValueError("max_total_timeout_seconds must be greater than 0")
         object.__setattr__(self, "base_url", normalized_url)
 
 
@@ -663,7 +666,7 @@ class FreqtradeRestClient:
         payload: dict[str, object] | None = None,
         retry_on_unauthorized: bool = True,
     ) -> dict[str, object]:
-        """执行一次 JSON 请求并处理错误，带重试和指数退避。"""
+        """执行一次 JSON 请求并处理错误，带重试、指数退避和总超时检查。"""
 
         url = self._config.base_url + path
         headers = {"Accept": "application/json"}
@@ -677,8 +680,16 @@ class FreqtradeRestClient:
             raise FreqtradeRestError("token login must use auth=True")
 
         last_exception: Exception | None = None
+        start_time = time.time()
 
         for attempt in range(self._config.max_retries):
+            # Check total timeout before each attempt
+            elapsed = time.time() - start_time
+            if elapsed > self._config.max_total_timeout_seconds:
+                raise FreqtradeRestError(
+                    f"Freqtrade REST {method} {path} 总超时 ({elapsed:.1f}s > {self._config.max_total_timeout_seconds}s)"
+                )
+
             token_request = request.Request(url, data=body, method=method, headers=headers)
             try:
                 with self._opener.open(token_request, timeout=self._config.timeout_seconds) as response:
@@ -702,6 +713,9 @@ class FreqtradeRestClient:
                     last_exception = exc
                     if attempt < self._config.max_retries - 1:
                         delay = self._config.base_delay * (2 ** attempt)
+                        # Check if delay would exceed total timeout
+                        if elapsed + delay > self._config.max_total_timeout_seconds:
+                            break
                         time.sleep(delay)
                     continue
                 detail = error_body or exc.reason or "unknown error"
@@ -710,12 +724,16 @@ class FreqtradeRestClient:
                 last_exception = exc
                 if attempt < self._config.max_retries - 1:
                     delay = self._config.base_delay * (2 ** attempt)
+                    if elapsed + delay > self._config.max_total_timeout_seconds:
+                        break
                     time.sleep(delay)
                 continue
             except (TimeoutError, OSError) as exc:
                 last_exception = exc
                 if attempt < self._config.max_retries - 1:
                     delay = self._config.base_delay * (2 ** attempt)
+                    if elapsed + delay > self._config.max_total_timeout_seconds:
+                        break
                     time.sleep(delay)
                 continue
             except json.JSONDecodeError as exc:

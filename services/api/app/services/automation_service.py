@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,7 @@ from services.api.app.services.workbench_config_service import (
 
 
 AUTOMATION_MODES = {"manual", "auto_dry_run", "auto_live"}
+MAX_BACKUP_COUNT = 3
 
 
 def _utc_now() -> str:
@@ -1436,13 +1439,18 @@ class AutomationService:
         try:
             payload = json.loads(self._state_path.read_text(encoding="utf-8"))
         except Exception:
-            return
+            # Try to restore from backup if primary state file is corrupted
+            payload = self._restore_from_backup()
+            if payload is None:
+                return
         if not isinstance(payload, dict):
-            return
+            payload = self._restore_from_backup()
+            if payload is None:
+                return
         self._apply_state_payload(payload)
 
     def _persist_state(self) -> None:
-        """把当前自动化状态写回本地状态文件。"""
+        """把当前自动化状态写回本地状态文件，使用原子写入。"""
 
         payload = {
             "mode": self._mode,
@@ -1463,7 +1471,85 @@ class AutomationService:
             "manual_takeover_at": self._manual_takeover_at,
         }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        self._state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # Create backup before writing new state
+        self._backup_state()
+
+        # Atomic write: write to temp file then rename
+        temp_path = self._state_path.with_suffix(".tmp")
+        try:
+            temp_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            # Ensure data is flushed to disk
+            with open(temp_path, "r+b") as f:
+                f.flush()
+                os.fsync(f.fileno())
+            # Atomic rename
+            shutil.move(str(temp_path), str(self._state_path))
+        except Exception:
+            # Clean up temp file if write failed
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+            raise
+
+    def _backup_state(self) -> None:
+        """备份当前状态文件，保留最近 MAX_BACKUP_COUNT 个备份。"""
+
+        if not self._state_path.exists():
+            return
+
+        backup_dir = self._state_path.parent
+        base_name = self._state_path.stem
+        suffix = self._state_path.suffix
+
+        # Create new backup with timestamp
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        new_backup = backup_dir / f"{base_name}_backup_{timestamp}{suffix}"
+
+        try:
+            shutil.copy2(str(self._state_path), str(new_backup))
+        except OSError:
+            return
+
+        # Clean up old backups, keep only the most recent ones
+        backups = sorted(
+            backup_dir.glob(f"{base_name}_backup_*{suffix}"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old_backup in backups[MAX_BACKUP_COUNT:]:
+            try:
+                old_backup.unlink()
+            except OSError:
+                pass
+
+    def _restore_from_backup(self) -> dict[str, object] | None:
+        """从备份恢复状态，按修改时间优先。"""
+
+        backup_dir = self._state_path.parent
+        base_name = self._state_path.stem
+        suffix = self._state_path.suffix
+
+        backups = sorted(
+            backup_dir.glob(f"{base_name}_backup_*{suffix}"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+
+        for backup in backups:
+            try:
+                payload = json.loads(backup.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    return payload
+            except Exception:
+                continue
+
+        return None
 
     def _apply_state_payload(self, payload: dict[str, object]) -> None:
         """把状态载荷恢复到当前实例。"""

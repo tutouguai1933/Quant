@@ -76,7 +76,7 @@ export function FeaturesFocusGrid({ cards }: FeaturesFocusGridProps) {
 /* 渲染因子摘要卡里的摘要块。 */
 function DigestBlock({ label, value, detail }: FeaturesFocusDigest) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/70 p-4">
+    <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
       <p className="eyebrow">{label}</p>
       <p className="mt-2 text-sm font-semibold leading-6 text-foreground">{value}</p>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>

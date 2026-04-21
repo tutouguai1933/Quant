@@ -56,6 +56,9 @@
   --chart-4: #c084fc;
   --chart-5: #fb7185;
   --panel-strong: rgba(13, 23, 32, 0.88);
+  --shadow-card-sm: 0 18px 40px rgba(2, 6, 23, 0.18);
+  --shadow-card-md: 0 24px 60px rgba(2, 6, 23, 0.28);
+  --shadow-overlay: 0 24px 80px rgba(2, 6, 23, 0.45);
 }
 
 @layer base {

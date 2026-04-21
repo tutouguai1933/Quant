@@ -28,7 +28,7 @@ export function DetailDialog({
   closeLabel = "关闭详情弹窗",
   children,
   footer,
-  triggerVariant = "secondary",
+  triggerVariant = "outline",
   triggerSize = "sm",
   className,
 }: DetailDialogProps) {

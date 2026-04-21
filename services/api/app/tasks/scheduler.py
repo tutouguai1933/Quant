@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import signal
+import threading
 from datetime import datetime, timezone
+from typing import Callable
 
 from services.api.app.services.signal_service import signal_service
 from services.api.app.services.sync_service import sync_service
@@ -10,6 +13,27 @@ from services.api.app.services.sync_service import sync_service
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# Task timeout configuration in seconds
+_TASK_TIMEOUT_SECONDS: dict[str, int] = {
+    "train": 300,
+    "research_train": 600,
+    "research_infer": 300,
+    "signal_output": 60,
+    "sync": 120,
+    "reconcile": 60,
+    "review": 180,
+    "automation_cycle": 600,
+    "archive": 60,
+    "health_check": 30,
+    "signal_ingest": 30,
+    "risk_check": 30,
+}
+
+
+class TaskTimeoutError(RuntimeError):
+    """任务超时错误。"""
 
 
 class TaskScheduler:
@@ -24,6 +48,11 @@ class TaskScheduler:
             "latest_failure_by_type": {},
             "consecutive_failure_count_by_type": {},
         }
+        self._task_timeout_seconds = dict(_TASK_TIMEOUT_SECONDS)
+
+    def get_task_timeout(self, task_type: str) -> int:
+        """获取指定任务类型的超时配置。"""
+        return self._task_timeout_seconds.get(task_type, 300)
 
     def list_tasks(self, limit: int = 100) -> list[dict[str, object]]:
         ordered = sorted(self._tasks.values(), key=lambda item: int(item["id"]), reverse=True)
@@ -156,6 +185,15 @@ class TaskScheduler:
         if payload.get("simulate_failure"):
             raise RuntimeError(f"{task_type} task simulated failure")
 
+        timeout_seconds = self._task_timeout_seconds.get(task_type, 300)
+
+        def _run_task() -> dict[str, object]:
+            return self._execute_task_impl(task_type, payload)
+
+        return self._run_with_timeout(_run_task, timeout_seconds, task_type)
+
+    def _execute_task_impl(self, task_type: str, payload: dict[str, object]) -> dict[str, object]:
+        """实际执行任务逻辑。"""
         if task_type == "train":
             source = str(payload.get("pipeline_source", "mock"))
             return signal_service.run_pipeline(source=source)
@@ -202,6 +240,40 @@ class TaskScheduler:
         if task_type == "risk_check":
             return {"status": "recorded", "detail": "risk evaluation completed"}
         raise RuntimeError(f"unsupported task type: {task_type}")
+
+    def _run_with_timeout(
+        self,
+        runner: Callable[[], dict[str, object]],
+        timeout_seconds: int,
+        task_type: str,
+    ) -> dict[str, object]:
+        """带超时控制的任务执行器。"""
+
+        result: dict[str, object] | None = None
+        exception: Exception | None = None
+
+        def _worker() -> None:
+            nonlocal result, exception
+            try:
+                result = runner()
+            except Exception as exc:
+                exception = exc
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        thread.join(timeout=float(timeout_seconds))
+
+        if thread.is_alive():
+            # Task exceeded timeout - raise error
+            raise TaskTimeoutError(f"{task_type} task exceeded timeout of {timeout_seconds}s")
+
+        if exception is not None:
+            raise exception
+
+        if result is None:
+            raise RuntimeError(f"{task_type} task returned no result")
+
+        return result
 
     def _apply_success_side_effects(self, task: dict[str, object]) -> None:
         """在任务成功后补齐最小状态推进。"""
