@@ -17,10 +17,10 @@ export function FeedbackBanner({ feedback, fallbackTitle = "动作反馈" }: Fee
 
   const toneClass =
     feedback.tone === "error"
-      ? "border-rose-500/40 bg-rose-500/10"
+      ? "border-destructive/50 bg-destructive/10"
       : feedback.tone === "warning"
-        ? "border-amber-500/40 bg-amber-500/10"
-        : "border-emerald-500/30 bg-emerald-500/10";
+        ? "border-amber-500/50 bg-amber-500/10"
+        : "border-emerald-500/50 bg-emerald-500/10";
 
   return (
     <Card className={toneClass}>

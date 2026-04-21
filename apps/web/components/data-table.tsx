@@ -10,14 +10,16 @@ type DataTableProps = {
   rows: Array<{ id: string; cells: ReactNode[] }>;
   emptyTitle: string;
   emptyDetail: string;
+  emptyEyebrow?: string;
 };
 
 /* 渲染数据表格。 */
-export function DataTable({ columns, rows, emptyTitle, emptyDetail }: DataTableProps) {
+export function DataTable({ columns, rows, emptyTitle, emptyDetail, emptyEyebrow }: DataTableProps) {
   if (!rows.length) {
     return (
       <Card className="bg-card/80">
         <CardHeader>
+          {emptyEyebrow ? <p className="eyebrow">{emptyEyebrow}</p> : null}
           <CardTitle>{emptyTitle}</CardTitle>
         </CardHeader>
         <CardContent>

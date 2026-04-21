@@ -276,37 +276,44 @@ export default function StrategiesPage() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <DataTable
-              columns={["最近信号", "Symbol", "Status", "Generated"]}
-              rows={recentSignals.map((item, index) => ({
-                id: String(item.signal_id ?? index),
-                cells: [
-                  String(item.strategy_id ?? "n/a"),
-                  String(item.symbol ?? ""),
-                  <StatusBadge key={String(item.signal_id ?? index)} value={String(item.status ?? "")} />,
-                  String(item.generated_at ?? ""),
-                ],
-              }))}
-              emptyTitle="当前还没有最近信号"
-              emptyDetail="运行后产生"
-            />
+          <Card>
+            <CardHeader>
+              <p className="eyebrow">最近数据</p>
+              <CardTitle>信号与执行摘要</CardTitle>
+              <CardDescription>展示最近 3 条信号和执行结果。</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-5 lg:grid-cols-2">
+                <DataTable
+                  columns={["信号", "Symbol", "状态"]}
+                  rows={recentSignals.slice(0, 3).map((item, index) => ({
+                    id: String(item.signal_id ?? index),
+                    cells: [
+                      String(item.strategy_id ?? "n/a"),
+                      String(item.symbol ?? ""),
+                      <StatusBadge key={String(item.signal_id ?? index)} value={String(item.status ?? "")} />,
+                    ],
+                  }))}
+                  emptyTitle="当前还没有信号"
+                  emptyDetail="运行后产生"
+                />
 
-            <DataTable
-              columns={["最近执行结果", "Side", "Type", "Status"]}
-              rows={recentOrders.map((item, index) => ({
-                id: String(item.id ?? index),
-                cells: [
-                  String(item.symbol ?? ""),
-                  String(item.side ?? ""),
-                  String(item.orderType ?? item.order_type ?? ""),
-                  <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "")} />,
-                ],
-              }))}
-              emptyTitle="当前还没有最近执行结果"
-              emptyDetail="运行后产生"
-            />
-          </div>
+                <DataTable
+                  columns={["执行", "Side", "状态"]}
+                  rows={recentOrders.slice(0, 3).map((item, index) => ({
+                    id: String(item.id ?? index),
+                    cells: [
+                      String(item.symbol ?? ""),
+                      String(item.side ?? ""),
+                      <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "")} />,
+                    ],
+                  }))}
+                  emptyTitle="当前还没有执行结果"
+                  emptyDetail="运行后产生"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

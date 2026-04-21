@@ -423,20 +423,29 @@ export default function TasksPage() {
             />
           )}
 
-          <DataTable
-            columns={["任务", "状态", "创建时间", "完成时间"]}
-            rows={items.slice(0, 20).map((item, index) => ({
-              id: String(item.id ?? index),
-              cells: [
-                String(item.task_type ?? "unknown"),
-                <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "pending")} />,
-                String(item.created_at ?? ""),
-                String(item.finished_at ?? ""),
-              ],
-            }))}
-            emptyTitle="当前还没有任务"
-            emptyDetail="运行后产生"
-          />
+          <Card>
+            <CardHeader>
+              <p className="eyebrow">任务记录</p>
+              <CardTitle>最近任务</CardTitle>
+              <CardDescription>展示最近 3 条任务摘要。</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DataTable
+                columns={["任务", "状态", "创建时间", "完成时间"]}
+                rows={items.slice(0, 3).map((item, index) => ({
+                  id: String(item.id ?? index),
+                  cells: [
+                    String(item.task_type ?? "unknown"),
+                    <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "pending")} />,
+                    String(item.created_at ?? ""),
+                    String(item.finished_at ?? ""),
+                  ],
+                }))}
+                emptyTitle="当前还没有任务"
+                emptyDetail="运行后产生"
+              />
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

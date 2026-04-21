@@ -13,7 +13,7 @@ export function ApiErrorFallback({
   detail = "当前显示的是降级数据，请稍后刷新页面重试。",
 }: ApiErrorFallbackProps) {
   return (
-    <Card className="border-amber-500/50 bg-amber-500/5">
+    <Card className="border-amber-500/50 bg-amber-500/10">
       <CardHeader>
         <div className="flex items-center gap-3">
           <AlertCircle className="size-4 text-amber-500" />
