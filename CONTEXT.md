@@ -1,16 +1,23 @@
 # 当前进度
 
-- 当前正在做：Phase K 综合验收进行中，前端重构（Phase A-K）已基本完成。
-- 上次停留位置：Phase I/J 已完成并提交，构建通过。
+- 当前正在做：Phase 2 内层判断强化已完成，准备进入 Phase 3（定时巡检机制）。
+- 上次停留位置：Phase 2 批次实施已完成，所有子任务已验收。
 - 最近完成：
-  - Phase I: 视觉和交互统一（反馈条、空态、错误态、加载态颜色和结构统一）
-  - Phase J: 多因子主线补强（FeaturesMainlineSteps 集成到因子页，候选池→候选篮子，live子集→执行篮子）
-  - WebSocket 实时推送已完成（ConnectionManager + push_bridge + 前端 WebSocket Context）
-  - 稳定性加固：API 重试机制、告警联动、降级处理
+  - P2.1: 扩展 runtime_guard 结构 - 新增 blockers 数组、suggested_action、auto_run_allowed、cycles_today 等字段
+  - P2.2: 扩展 recovery_review 结构 - 新增 operator_steps、auto_recoverable、manual_required_reason 等字段
+  - P2.3: 扩展快照 suggested_action 字段 - 在 allowed_safe_actions 中添加 auto_execute 和 priority
+  - P2.5: 更新策略服务校验 - 添加 is_safe_action()、validate_suggested_action() 方法
+  - P2.4: 更新前端任务页展示 - 在"当前恢复建议"和"长期运行状态"卡片中展示新增字段
 
 # 关键决定
 
-- `Phase2` 已完成，`Phase3` 已完成综合验收，主入口文档继续统一按这个口径维护。
+- Phase 2 采用分层实施：程序负责判断（90%），模型辅助边界场景（10%）。
+- runtime_guard 新增结构化 blockers 数组 [{code, label, severity}]，便于前端按严重程度排序展示。
+- suggested_action 和 suggested_action_reason 由程序自动计算，OpenClaw 只读取并执行白名单内动作。
+- auto_run_allowed 标志明确告诉 OpenClaw 是否可以自动执行下一轮周期。
+- auto_recoverable 标志明确告诉前端是否允许程序自动恢复，false 时显示 manual_required_reason。
+- 前端"程序建议动作"使用醒目蓝色按钮样式，便于用户快速识别下一步操作。
+- Phase 2 已完成，`Phase2` 已完成，`Phase3` 已完成综合验收，主入口文档继续统一按这个口径维护。
 - 前端默认视图继续坚持“摘要优先，细节按需展开”；主动作区只回答“现在该做什么”，说明、配置和实验细节全部下沉到抽屉或弹窗。
 - `C /features` 已完成：`/features` 现在正式改成“因子工作台”，默认只保留 `因子分类总览 / 当前启用因子 / 因子有效性摘要 / 因子冗余摘要 / 总分解释入口` 五张摘要卡，完整配置、因子说明、研究承接和单因子细节全部下沉到抽屉。
 - `H /工具页收口` 已完成：工具页统一降成“详情页心智”，先说明“这页只负责查明细”，并固定提供 `回到主工作台 / 回到执行工作台 / 回到运维工作台` 三个返回入口。
@@ -41,7 +48,13 @@
 
 # 最近验证
 
-- 前端构建：`pnpm build` 通过
+- Phase 2 内层判断强化验收：
+  - 前端构建：`pnpm build` 通过（清理 .next 目录后重新构建）
+  - 修改文件已确认：`automation_service.py`、`automation_workflow_service.py`、`openclaw_action_policy_service.py`、`openclaw_snapshot_service.py`、`tasks/page.tsx`
+  - 新增字段已在前端展示：
+    - runtime_guard: blockers、suggested_action、suggested_action_reason、auto_run_allowed、cycles_today
+    - recovery_review: operator_steps、auto_recoverable、manual_required_reason
+  - 前端构建：`pnpm build` 通过
 - 前端重构验收：
   - Phase 1: 前端重构规划与设计 ✓
   - Phase 2: 重构首页和核心导航 ✓（首页 274 行）
@@ -119,4 +132,8 @@
 
 # 下一步
 
-- 当前这轮共享承接已经把“人工接管 / 降级 / 运行中 / 冷却等待”都补进统一口径；下一步先按 `Openclaw` 安全动作模式设计拆执行计划，优先做统一快照、动作白名单、动作网关、运维审计和任务页承接，再进入服务器长跑验证。
+- Phase 2 内层判断强化已完成，准备进入 Phase 3（定时巡检机制）：
+  - 创建 `openclaw_patrol_service.py`
+  - 注册定时任务（每分钟健康检查、每5分钟状态同步、每15分钟周期检查）
+  - 实现巡检规则和节流逻辑
+  - 在任务页展示巡检状态

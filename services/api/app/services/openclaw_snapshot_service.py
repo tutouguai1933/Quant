@@ -54,6 +54,11 @@ class OpenclawSnapshotService:
         ready_for_cycle = bool(runtime_guard.get("ready_for_cycle", False))
         blocked_reason = str(runtime_guard.get("blocked_reason", ""))
 
+        # 从 runtime_guard 获取建议动作
+        suggested_action = str(runtime_guard.get("suggested_action", "") or "")
+        suggested_action_reason = str(runtime_guard.get("suggested_action_reason", "") or "")
+        auto_run_allowed = bool(runtime_guard.get("auto_run_allowed", False))
+
         overall_status = self._resolve_overall_status(
             paused=paused,
             manual_takeover=manual_takeover,
@@ -101,6 +106,11 @@ class OpenclawSnapshotService:
             "mode": mode,
             "paused": paused,
             "manual_takeover": manual_takeover,
+            "suggested_action": {
+                "action": suggested_action,
+                "reason": suggested_action_reason,
+                "auto_run_allowed": auto_run_allowed,
+            },
             "runtime_guard": {
                 "ready_for_cycle": ready_for_cycle,
                 "blocked_reason": blocked_reason,
@@ -161,26 +171,35 @@ class OpenclawSnapshotService:
         manual_takeover: bool,
         ready_for_cycle: bool,
     ) -> list[dict[str, Any]]:
-        """解析允许的安全动作列表。"""
+        """解析允许的安全动作列表，包含 auto_execute 和 priority 字段。"""
         actions = []
 
         if overall_status == "ready" and not manual_takeover:
             actions.append({
                 "action": "automation_run_cycle",
                 "reason": "当前允许继续下一轮自动化",
+                "auto_execute": ready_for_cycle and not paused,
+                "priority": 2,
             })
 
         if connection_status in ("error", "disconnected") or account_status == "error":
             actions.append({
                 "action": "automation_dry_run_only",
                 "reason": "执行器异常，建议切到 dry-run only",
+                "auto_execute": True,
+                "priority": 3,
             })
 
         if not manual_takeover:
             actions.append({
                 "action": "automation_clear_non_error_alerts",
                 "reason": "清理非错误级告警",
+                "auto_execute": True,
+                "priority": 1,
             })
+
+        # 按优先级排序（高优先级在前）
+        actions.sort(key=lambda x: -int(x.get("priority", 0)))
 
         return actions
 

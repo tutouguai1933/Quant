@@ -62,6 +62,7 @@ class AutomationService:
 
         settings = Settings.from_env()
         last_cycle = self._build_cycle_summary(self._last_cycle)
+        recovery_review = self._build_recovery_review()
         return {
             "mode": self._mode,
             "paused": self._paused,
@@ -80,6 +81,7 @@ class AutomationService:
             "last_failure_at": self._last_failure_at,
             "paused_at": self._paused_at,
             "manual_takeover_at": self._manual_takeover_at,
+            "recovery_review": recovery_review,
         }
 
     @staticmethod
@@ -1298,6 +1300,279 @@ class AutomationService:
         if not normalized:
             return "当前没有接管原因"
         return mapping.get(normalized, normalized)
+
+    def _build_recovery_review(self) -> dict[str, object]:
+        """构建恢复审查结构，用于前端展示恢复状态和下一步建议。"""
+
+        blockers = self._resolve_recovery_blockers()
+        operator_steps = self._resolve_operator_steps()
+        status = self._resolve_recovery_status(blockers=blockers)
+        headline = self._resolve_recovery_headline(status=status, blockers=blockers)
+        detail = self._resolve_recovery_detail(status=status, blockers=blockers)
+        next_action = self._resolve_next_action(blockers=blockers)
+        next_action_reason = self._resolve_next_action_reason(blockers=blockers, next_action=next_action)
+        auto_recoverable = self._resolve_auto_recoverable(blockers=blockers)
+        manual_required_reason = self._resolve_manual_required_reason(blockers=blockers, auto_recoverable=auto_recoverable)
+        return {
+            "status": status,
+            "headline": headline,
+            "detail": detail,
+            "next_action": next_action,
+            "next_action_reason": next_action_reason,
+            "blockers": blockers,
+            "operator_steps": operator_steps,
+            "auto_recoverable": auto_recoverable,
+            "manual_required_reason": manual_required_reason,
+        }
+
+    def _resolve_recovery_blockers(self) -> list[dict[str, str]]:
+        """解析恢复阻塞列表。"""
+
+        blockers: list[dict[str, str]] = []
+        if self._paused_reason == "kill_switch":
+            blockers.append(
+                {
+                    "code": "kill_switch",
+                    "label": "Kill Switch 已触发",
+                    "action": "先确认执行器、仓位和同步状态已收口，再手动恢复",
+                }
+            )
+        if self._manual_takeover:
+            blockers.append(
+                {
+                    "code": "manual_takeover",
+                    "label": "人工接管中",
+                    "action": "确认接管原因已处理完毕后，恢复自动化",
+                }
+            )
+        if self._paused and self._paused_reason not in {"kill_switch", "manual_takeover"}:
+            blockers.append(
+                {
+                    "code": "paused",
+                    "label": f"自动化已暂停 ({self._describe_pause_reason(self._paused_reason)})",
+                    "action": "确认暂停原因已处理后，恢复自动化",
+                }
+            )
+        if self._mode == "manual" and not self._paused:
+            blockers.append(
+                {
+                    "code": "manual_mode",
+                    "label": "当前处于手动模式",
+                    "action": "切到 auto_dry_run 或 auto_live 后恢复自动化",
+                }
+            )
+        if self._consecutive_failure_count >= 2:
+            blockers.append(
+                {
+                    "code": "consecutive_failures",
+                    "label": f"连续失败 {self._consecutive_failure_count} 次",
+                    "action": "检查最近失败原因并处理后再恢复",
+                }
+            )
+        if not blockers:
+            blockers.append(
+                {
+                    "code": "none",
+                    "label": "无阻塞",
+                    "action": "可以直接继续自动化",
+                }
+            )
+        return blockers
+
+    def _resolve_operator_steps(self) -> list[dict[str, object]]:
+        """解析恢复步骤清单。"""
+
+        steps: list[dict[str, object]] = []
+        if self._paused_reason == "kill_switch":
+            steps.append(
+                {
+                    "step": "确认执行器状态",
+                    "action": "检查执行器是否已停止",
+                    "done": False,
+                }
+            )
+            steps.append(
+                {
+                    "step": "确认仓位状态",
+                    "action": "确认所有仓位已平仓或收口",
+                    "done": False,
+                }
+            )
+            steps.append(
+                {
+                    "step": "确认同步状态",
+                    "action": "确认账户同步已恢复",
+                    "done": False,
+                }
+            )
+            steps.append(
+                {
+                    "step": "手动恢复",
+                    "action": "点击恢复自动化",
+                    "done": False,
+                }
+            )
+        elif self._manual_takeover:
+            steps.append(
+                {
+                    "step": "检查接管原因",
+                    "action": "确认触发接管的具体原因",
+                    "done": False,
+                }
+            )
+            steps.append(
+                {
+                    "step": "处理阻塞",
+                    "action": "按阻塞清单逐项处理",
+                    "done": False,
+                }
+            )
+            steps.append(
+                {
+                    "step": "恢复自动化",
+                    "action": "点击恢复自动化",
+                    "done": False,
+                }
+            )
+        elif self._paused:
+            steps.append(
+                {
+                    "step": "检查暂停原因",
+                    "action": f"确认 {self._describe_pause_reason(self._paused_reason)} 是否已处理",
+                    "done": False,
+                }
+            )
+            steps.append(
+                {
+                    "step": "恢复自动化",
+                    "action": "点击恢复自动化",
+                    "done": False,
+                }
+            )
+        elif self._mode == "manual":
+            steps.append(
+                {
+                    "step": "切回自动模式",
+                    "action": "选择 auto_dry_run 或 auto_live",
+                    "done": False,
+                }
+            )
+            steps.append(
+                {
+                    "step": "继续自动化",
+                    "action": "系统开始自动推进",
+                    "done": False,
+                }
+            )
+        else:
+            steps.append(
+                {
+                    "step": "检查当前状态",
+                    "action": "确认系统状态正常",
+                    "done": True,
+                }
+            )
+            steps.append(
+                {
+                    "step": "继续自动化",
+                    "action": "系统继续下一轮",
+                    "done": True,
+                }
+            )
+        return steps
+
+    def _resolve_recovery_status(self, *, blockers: list[dict[str, str]]) -> str:
+        """解析恢复状态。"""
+
+        blocker_codes = {str(item.get("code", "")) for item in blockers}
+        if "kill_switch" in blocker_codes or "manual_takeover" in blocker_codes:
+            return "manual"
+        if "consecutive_failures" in blocker_codes or "paused" in blocker_codes:
+            return "attention_required"
+        if "manual_mode" in blocker_codes:
+            return "waiting"
+        if blocker_codes == {"none"}:
+            return "ready"
+        return "attention_required"
+
+    def _resolve_recovery_headline(self, *, status: str, blockers: list[dict[str, str]]) -> str:
+        """解析恢复标题。"""
+
+        if status == "manual":
+            return "需要人工处理才能恢复"
+        if status == "attention_required":
+            primary = blockers[0] if blockers else {}
+            return f"需要先处理: {str(primary.get('label', '') or '阻塞项')}"
+        if status == "waiting":
+            return "等待切换模式"
+        return "可以继续自动化"
+
+    def _resolve_recovery_detail(self, *, status: str, blockers: list[dict[str, str]]) -> str:
+        """解析恢复详情。"""
+
+        if status == "manual":
+            return "当前处于 Kill Switch 或人工接管状态，必须人工确认并手动恢复"
+        if status == "attention_required":
+            blocker_labels = [str(item.get("label", "")) for item in blockers if str(item.get("code", "")) != "none"]
+            if blocker_labels:
+                return f"当前阻塞项: {', '.join(blocker_labels[:3])}"
+            return "存在需要处理的阻塞项"
+        if status == "waiting":
+            return "当前处于手动模式，需要切换到自动模式后才能恢复自动化"
+        return "当前没有阻塞，系统可以继续自动推进"
+
+    def _resolve_next_action(self, *, blockers: list[dict[str, str]]) -> str:
+        """解析推荐的下一步。"""
+
+        blocker_codes = {str(item.get("code", "")) for item in blockers}
+        if "kill_switch" in blocker_codes:
+            return "先确认执行器和仓位状态，再手动恢复"
+        if "manual_takeover" in blocker_codes:
+            return "确认接管原因已处理后恢复"
+        if "paused" in blocker_codes:
+            return "确认暂停原因已处理后恢复"
+        if "manual_mode" in blocker_codes:
+            return "切到 auto_dry_run 或 auto_live"
+        if "consecutive_failures" in blocker_codes:
+            return "检查失败原因后再恢复"
+        return "可以直接继续自动化"
+
+    def _resolve_next_action_reason(self, *, blockers: list[dict[str, str]], next_action: str) -> str:
+        """解析下一步的原因。"""
+
+        blocker_codes = {str(item.get("code", "")) for item in blockers}
+        if "kill_switch" in blocker_codes:
+            return "Kill Switch 触发后必须人工确认，不能自动恢复"
+        if "manual_takeover" in blocker_codes:
+            return "人工接管需要人工确认后才能恢复"
+        if "paused" in blocker_codes:
+            return "暂停状态需要人工确认暂停原因已处理"
+        if "manual_mode" in blocker_codes:
+            return "手动模式下系统不会自动推进，需要切换模式"
+        if "consecutive_failures" in blocker_codes:
+            return "连续失败表示系统可能存在问题，需要人工排查"
+        return "当前无阻塞，系统状态正常"
+
+    def _resolve_auto_recoverable(self, *, blockers: list[dict[str, str]]) -> bool:
+        """解析是否可自动恢复。"""
+
+        blocker_codes = {str(item.get("code", "")) for item in blockers}
+        non_auto_codes = {"kill_switch", "manual_takeover", "manual_mode"}
+        return blocker_codes.isdisjoint(non_auto_codes)
+
+    def _resolve_manual_required_reason(self, *, blockers: list[dict[str, str]], auto_recoverable: bool) -> str:
+        """解析必须人工处理的原因。"""
+
+        if auto_recoverable:
+            return ""
+        blocker_codes = {str(item.get("code", "")) for item in blockers}
+        if "kill_switch" in blocker_codes:
+            return "Kill Switch 触发后必须人工确认执行器和仓位状态，不能自动恢复"
+        if "manual_takeover" in blocker_codes:
+            return "人工接管状态下必须人工确认才能恢复，防止意外自动执行"
+        if "manual_mode" in blocker_codes:
+            return "手动模式下必须人工切换到自动模式后才能恢复"
+        return "存在必须人工处理的阻塞项"
 
     def _build_run_health(
         self,

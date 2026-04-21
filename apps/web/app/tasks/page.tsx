@@ -151,6 +151,11 @@ export default function TasksPage() {
   const recoveryBlockers = Array.isArray(recoveryReview.blockers)
     ? recoveryReview.blockers.map((item) => readText(asRecord(item).label, ""))
     : [];
+  const recoveryOperatorSteps = Array.isArray(recoveryReview.operator_steps)
+    ? recoveryReview.operator_steps.map((item) => readText(typeof item === "string" ? item : asRecord(item).step ?? "", ""))
+    : [];
+  const recoveryAutoRecoverable = recoveryReview.auto_recoverable;
+  const recoveryManualRequiredReason = readText(recoveryReview.manual_required_reason, "");
 
   const runtimeStatus = readText(runtimeGuard.status, "unknown");
   const runtimeHeadline = readText(runtimeGuard.headline, "当前运行正常");
@@ -159,6 +164,25 @@ export default function TasksPage() {
   const runtimeReasonLabel = readText(runtimeGuard.reason_label, "");
   const runtimeAlertContext = asRecord(runtimeGuard.alert_context);
   const takeoverReviewDueAt = readText(runtimeGuard.takeover_review_due_at, "");
+  const cooldownEndsAt = readText(runtimeGuard.cooldown_ends_at, "");
+  const lastCycleAt = readText(runtimeGuard.last_cycle_at, "");
+  const degradeReason = readText(runtimeGuard.degrade_reason, "");
+  // 新增 runtime_guard 字段
+  const runtimeBlockersFull = Array.isArray(runtimeGuard.blockers)
+    ? runtimeGuard.blockers.map((item) => {
+        const blocker = asRecord(item);
+        return {
+          code: readText(blocker.code, ""),
+          label: readText(blocker.label, ""),
+          severity: readText(blocker.severity, "info"),
+        };
+      })
+    : [];
+  const runtimeBlockers = runtimeBlockersFull.map((b) => b.label);
+  const runtimeSuggestedAction = readText(runtimeGuard.suggested_action, "");
+  const runtimeSuggestedActionReason = readText(runtimeGuard.suggested_action_reason, "");
+  const runtimeAutoRunAllowed = runtimeGuard.auto_run_allowed;
+  const runtimeCyclesToday = Number(runtimeGuard.cycles_today ?? 0);
 
   const cycleCount = Number(dailySummary.cycle_count ?? 0);
   const successCount = Number(dailySummary.success_count ?? 0);
@@ -172,6 +196,10 @@ export default function TasksPage() {
   const openclawReadyForCycle = Boolean(openclawRuntimeGuard?.ready_for_cycle);
   const openclawBlockedReason = readText(openclawRuntimeGuard?.blocked_reason, "");
   const openclawDegradeMode = readText(openclawSnapshot?.degrade_mode, "none");
+  const openclawSuggestedAction = asRecord(openclawSnapshot?.suggested_action);
+  const openclawSuggestedActionName = readText(openclawSuggestedAction?.action, "");
+  const openclawSuggestedActionReason = readText(openclawSuggestedAction?.reason, "");
+  const openclawAutoRunAllowed = Boolean(openclawSuggestedAction?.auto_run_allowed);
 
   const statusItems = [
     {
@@ -261,6 +289,32 @@ export default function TasksPage() {
                     </ul>
                   </div>
                 ) : null}
+                {recoveryOperatorSteps.length > 0 ? (
+                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">恢复步骤清单</p>
+                    <ol className="mt-2 space-y-1 text-sm list-decimal list-inside">
+                      {recoveryOperatorSteps.map((step, idx) => (
+                        <li key={idx}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <span>自动恢复：</span>
+                  {recoveryAutoRecoverable === true ? (
+                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">可自动恢复</span>
+                  ) : recoveryAutoRecoverable === false ? (
+                    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/30 dark:text-red-400">需人工处理</span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-300">未知</span>
+                  )}
+                </div>
+                {recoveryAutoRecoverable === false && recoveryManualRequiredReason ? (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+                    <p className="font-medium text-red-600 dark:text-red-400">必须人工处理</p>
+                    <p className="mt-1 text-red-600/80 dark:text-red-400/80">{recoveryManualRequiredReason}</p>
+                  </div>
+                ) : null}
                 {recoveryStatus === "attention_required" ? (
                   <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3">
                     <p className="font-medium text-yellow-600 dark:text-yellow-400">需要人工处理</p>
@@ -282,8 +336,60 @@ export default function TasksPage() {
               <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
                 <p>运行状态：{runtimeStatus}</p>
                 <p>降级模式：{degradeMode === "none" ? "无降级" : degradeMode}</p>
+                {degradeReason ? <p>降级原因：{degradeReason}</p> : null}
                 {runtimeReasonLabel ? <p>当前原因：{runtimeReasonLabel}</p> : null}
-                {takeoverReviewDueAt ? <p>接管复核：{takeoverReviewDueAt}</p> : null}
+                {takeoverReviewDueAt ? <p>接管复核截止：{takeoverReviewDueAt}</p> : null}
+                {cooldownEndsAt ? <p>冷却结束时间：{cooldownEndsAt}</p> : null}
+                {lastCycleAt ? <p>上一周期结束：{lastCycleAt}</p> : null}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">今日周期数</p>
+                    <p className="mt-2 text-lg font-semibold text-foreground">{runtimeCyclesToday}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">自动运行</p>
+                    <p className="mt-2 text-lg font-semibold">
+                      {runtimeAutoRunAllowed === true ? (
+                        <span className="text-green-600 dark:text-green-400">允许</span>
+                      ) : runtimeAutoRunAllowed === false ? (
+                        <span className="text-red-600 dark:text-red-400">禁止</span>
+                      ) : (
+                        <span className="text-muted-foreground">未知</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {runtimeBlockersFull.length > 0 ? (
+                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">阻塞列表</p>
+                    <ul className="mt-2 space-y-1 text-sm">
+                      {runtimeBlockersFull.map((blocker, idx) => (
+                        <li key={idx} className="flex items-center gap-2">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            blocker.severity === "error" ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                            : blocker.severity === "warning" ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+                            : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                          }`}>
+                            {blocker.severity}
+                          </span>
+                          <span>{blocker.label}</span>
+                          {blocker.code ? <span className="text-muted-foreground text-xs">({blocker.code})</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {runtimeSuggestedAction ? (
+                  <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">程序建议动作</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-md bg-blue-600 px-2.5 py-1 text-sm font-semibold text-white">{runtimeSuggestedAction}</span>
+                    </div>
+                    {runtimeSuggestedActionReason ? (
+                      <p className="mt-2 text-sm text-blue-600/80 dark:text-blue-400/80">原因：{runtimeSuggestedActionReason}</p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {runtimeStatus === "attention_required" || runtimeStatus === "degraded" ? (
                   <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-3">
                     <p className="font-medium text-orange-600 dark:text-orange-400">运行异常</p>
@@ -333,19 +439,50 @@ export default function TasksPage() {
               <p>运行时守卫：{openclawReadyForCycle ? "就绪" : "阻塞中"}</p>
               {openclawBlockedReason ? <p>阻塞原因：{openclawBlockedReason}</p> : null}
               <p>降级模式：{openclawDegradeMode === "none" ? "无降级" : openclawDegradeMode}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">自动运行</p>
+                  <p className="mt-2 text-lg font-semibold">
+                    {openclawAutoRunAllowed ? (
+                      <span className="text-green-600 dark:text-green-400">允许</span>
+                    ) : (
+                      <span className="text-red-600 dark:text-red-400">禁止</span>
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">程序建议</p>
+                  <p className="mt-2 text-sm font-medium">{openclawSuggestedActionName || "暂无建议"}</p>
+                  {openclawSuggestedActionReason ? (
+                    <p className="text-xs text-muted-foreground">{openclawSuggestedActionReason}</p>
+                  ) : null}
+                </div>
+              </div>
               {openclawAllowedActions.length > 0 ? (
                 <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">可用动作</p>
                   <ul className="mt-2 space-y-1 text-sm">
                     {openclawAllowedActions.map((action, idx) => (
-                      <li key={idx}>
+                      <li key={idx} className="flex items-center gap-2">
                         <span className="font-medium">{readText(action.action, "")}</span>
                         {action.reason ? <span className="text-muted-foreground"> - {readText(action.reason, "")}</span> : null}
-                        {action.preconditions_met !== undefined ? (
-                          <span className={`ml-2 ${Boolean(action.preconditions_met) ? "text-green-600" : "text-red-600"}`}>
-                            [{Boolean(action.preconditions_met) ? "可执行" : "前置条件不满足"}]
-                          </span>
-                        ) : null}
+                        <div className="flex items-center gap-1 ml-2">
+                          {action.auto_execute !== undefined ? (
+                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs ${Boolean(action.auto_execute) ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"}`}>
+                              {Boolean(action.auto_execute) ? "自动" : "需确认"}
+                            </span>
+                          ) : null}
+                          {action.priority !== undefined ? (
+                            <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                              P{Number(action.priority)}
+                            </span>
+                          ) : null}
+                          {action.preconditions_met !== undefined ? (
+                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs ${Boolean(action.preconditions_met) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                              {Boolean(action.preconditions_met) ? "可执行" : "前置条件不满足"}
+                            </span>
+                          ) : null}
+                        </div>
                       </li>
                     ))}
                   </ul>

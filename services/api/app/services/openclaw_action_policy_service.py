@@ -45,6 +45,9 @@ class OpenclawActionPolicyService:
         "consecutive_failure_limit": 2,
     }
 
+    # 允许的安全动作白名单（只有这些动作可以 auto_execute=True）
+    ALLOWED_SAFE_ACTIONS = ALLOWED_HTTP_ACTIONS | SYSTEM_ACTION_WHITELIST
+
     def is_action_allowed(self, action: str) -> bool:
         """检查动作是否在白名单中。"""
         return action in self.ALLOWED_HTTP_ACTIONS
@@ -53,21 +56,66 @@ class OpenclawActionPolicyService:
         """检查动作是否被明确禁止。"""
         return action in self.FORBIDDEN_ACTIONS
 
+    def is_safe_action(self, action: str) -> bool:
+        """检查动作是否在安全动作白名单中（允许 auto_execute）。"""
+        return action in self.ALLOWED_SAFE_ACTIONS
+
+    def validate_suggested_action(
+        self,
+        suggested_action: str,
+    ) -> tuple[bool, str]:
+        """验证程序建议的动作是否在白名单中。
+
+        Args:
+            suggested_action: 程序建议的动作名称
+
+        Returns:
+            (is_valid, reason) - 是否有效及原因说明
+        """
+        if not suggested_action:
+            return False, "未提供 suggested_action"
+
+        if self.is_action_forbidden(suggested_action):
+            return False, f"建议动作 {suggested_action} 被明确禁止"
+
+        if not self.is_safe_action(suggested_action):
+            return False, f"建议动作 {suggested_action} 不在安全白名单中，不允许 auto_execute"
+
+        return True, f"建议动作 {suggested_action} 通过白名单校验"
+
     def validate_action_preconditions(
         self,
         action: str,
         snapshot: dict[str, Any],
-    ) -> tuple[bool, str]:
+        suggested_action: str | None = None,
+    ) -> tuple[bool, str, bool]:
         """验证动作的前置条件。
 
+        Args:
+            action: 要执行的动作名称
+            snapshot: 系统状态快照
+            suggested_action: 程序建议的动作（可选）
+
         Returns:
-            (是否允许执行, 原因说明)
+            (是否允许执行, 原因说明, 是否允许 auto_execute)
         """
         if self.is_action_forbidden(action):
-            return False, f"动作 {action} 被明确禁止"
+            return False, f"动作 {action} 被明确禁止", False
 
         if not self.is_action_allowed(action):
-            return False, f"动作 {action} 不在安全白名单中"
+            return False, f"动作 {action} 不在安全白名单中", False
+
+        # 校验 suggested_action
+        auto_execute = False
+        if suggested_action:
+            is_valid, reason = self.validate_suggested_action(suggested_action)
+            if is_valid and suggested_action == action:
+                # 只有 suggested_action 通过白名单校验且与要执行的动作一致时，
+                # 才允许标记为 auto_execute=True
+                auto_execute = True
+            elif not is_valid:
+                # suggested_action 校验失败，记录原因但不阻止手动执行
+                pass
 
         overall_status = str(snapshot.get("overall_status", ""))
         manual_takeover = bool(snapshot.get("manual_takeover", False))
@@ -75,25 +123,25 @@ class OpenclawActionPolicyService:
 
         if action == "automation_run_cycle":
             if manual_takeover:
-                return False, "当前处于人工接管状态，不允许自动运行周期"
+                return False, "当前处于人工接管状态，不允许自动运行周期", False
             if not ready_for_cycle:
-                return False, "当前不满足运行周期的条件"
-            return True, "允许运行自动化周期"
+                return False, "当前不满足运行周期的条件", False
+            return True, "允许运行自动化周期", auto_execute
 
         if action == "automation_dry_run_only":
             if manual_takeover:
-                return False, "当前处于人工接管状态，不允许自动切换模式"
-            return True, "允许切换到 dry-run only 模式"
+                return False, "当前处于人工接管状态，不允许自动切换模式", False
+            return True, "允许切换到 dry-run only 模式", auto_execute
 
         if action == "automation_clear_non_error_alerts":
             if manual_takeover:
-                return False, "当前处于人工接管状态，不允许清理告警"
-            return True, "允许清理非错误级告警"
+                return False, "当前处于人工接管状态，不允许清理告警", False
+            return True, "允许清理非错误级告警", auto_execute
 
         if action == "automation_confirm_alert":
-            return True, "允许确认告警"
+            return True, "允许确认告警", auto_execute
 
-        return False, f"未定义动作 {action} 的前置条件"
+        return False, f"未定义动作 {action} 的前置条件", False
 
     def validate_restart_conditions(
         self,

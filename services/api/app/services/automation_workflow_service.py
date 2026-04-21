@@ -295,6 +295,29 @@ class AutomationWorkflowService:
             self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
+        # 手动模式早期返回，不执行任何自动化任务
+        if mode == "manual":
+            summary = {
+                "status": "waiting",
+                "mode": mode,
+                "recommended_symbol": "",
+                "recommended_strategy_id": 0,
+                "next_action": "manual_review",
+                "message": "当前处于手动模式，请先人工确认再继续。",
+                "failure_reason": "",
+                "failure_policy_action": "",
+                "armed_symbol": armed_symbol,
+                "priority_queue_summary": {},
+                "train_task": None,
+                "infer_task": None,
+                "signal_task": None,
+                "review_task": None,
+                "dispatch": None,
+                "review_overview": {},
+            }
+            self._automation.record_cycle(summary, count_towards_daily=False)
+            return summary
+
         train_task = self._scheduler.run_named_task(task_type="research_train", source=source, target_type="system")
         if train_task["status"] != "succeeded":
             self._automation.record_alert(
@@ -381,6 +404,8 @@ class AutomationWorkflowService:
 
         if mode == "manual":
             next_action = "manual_review"
+            recommended_symbol = ""
+            recommended_strategy_id = 0
             cycle_message = "当前处于手动模式，请先人工确认再继续。"
         elif not active_candidate:
             next_action = "continue_dry_run" if mode == "auto_live" else (next_action or "continue_research")
@@ -434,7 +459,29 @@ class AutomationWorkflowService:
             cycle_message = "当前候选还没有完成上一轮 dry-run 验证"
             failure_reason = "dry_run_not_confirmed"
         else:
-            dispatch_result = self._dispatcher.dispatch_latest_signal(recommended_strategy_id, source=source)
+            try:
+                dispatch_result = self._dispatcher.dispatch_latest_signal(recommended_strategy_id, source=source)
+            except Exception as e:
+                self._automation.record_alert(
+                    level="error",
+                    code="execution_failed",
+                    message="执行信号派发异常",
+                    source=source,
+                    detail=str(e),
+                )
+                if auto_pause_on_error:
+                    self._automation.manual_takeover(reason="dispatch_execution_failed", actor=source)
+                return self._finalize_failed_cycle(
+                    mode=mode,
+                    next_action="review_and_decide",
+                    review_limit=review_limit,
+                    tasks={"train": train_task, "infer": infer_task, "signal_output": signal_task},
+                    failure_policy_action="review_and_decide",
+                    takeover_reason="dispatch_execution_failed",
+                    source=source,
+                    auto_pause_on_error=auto_pause_on_error,
+                    failure_reason="execution_failed",
+                )
             if dispatch_result["status"] != "succeeded":
                 level = "warning" if dispatch_result["error_code"] in {"signal_not_ready", "risk_blocked"} else "error"
                 self._automation.record_alert(
@@ -541,6 +588,7 @@ class AutomationWorkflowService:
         takeover_reason: str,
         source: str,
         auto_pause_on_error: bool,
+        failure_reason: str = "workflow_failed",
     ) -> dict[str, object]:
         """在训练或推理失败时统一收口工作流。"""
 
@@ -559,7 +607,7 @@ class AutomationWorkflowService:
             "recommended_symbol": "",
             "next_action": next_action,
             "message": "自动化本轮在训练或推理阶段失败，请先看统一复盘。",
-            "failure_reason": "workflow_failed",
+            "failure_reason": failure_reason,
             "failure_policy_action": failure_policy_action,
             "review_task": review_task,
             "review_overview": dict(report.get("overview") or {}),
@@ -603,7 +651,7 @@ class AutomationWorkflowService:
         resume_status: dict[str, object],
         execution_health: dict[str, object],
     ) -> dict[str, object]:
-        """构建运行时守卫状态，包括降级模式判断。"""
+        """构建运行时守卫状态，包括降级模式判断和完整阻塞列表。"""
 
         ready_for_cycle = bool(runtime_window.get("ready_for_cycle", False))
         blocked_reason = str(runtime_window.get("blocked_reason", ""))
@@ -624,31 +672,41 @@ class AutomationWorkflowService:
         degrade_mode = "none"
         status = "ready"
         operator_route = "/tasks"
+        degrade_reason = ""
 
         # 如果执行器或同步异常，进入 task_hub_only 模式
         if connection_status == "disconnected" or executor_status in {"error", "disconnected"} or sync_status in {"error", "stale"}:
             degrade_mode = "task_hub_only"
             status = "degraded"
+            degrade_reason = "执行器或同步服务异常，仅允许任务页操作"
         # 如果正在运行周期，进入 cycle_running 模式
         elif automation_cycle_running:
             degrade_mode = "cycle_running"
             status = "running"
+            degrade_reason = "自动化周期正在执行中"
         # 如果人工接管或暂停，进入 manual_only 模式
         elif manual_takeover or (paused and blocked_reason in {"manual_takeover_active", "paused_waiting_review"}):
             degrade_mode = "manual_only"
             status = "attention_required"
+            degrade_reason = "人工接管或暂停中，需要人工确认后才能继续"
         # 如果手动模式，进入 manual_only
         elif mode == "manual":
             degrade_mode = "manual_only"
             status = "ready"
+            degrade_reason = "手动模式下系统不会自动推进"
         # 如果在等待窗口（冷却或日限），进入 window_wait 模式
         elif blocked_reason in {"cooldown_active", "daily_limit_reached"}:
             degrade_mode = "window_wait"
             status = "waiting"
+            if blocked_reason == "cooldown_active":
+                degrade_reason = "冷却窗口未结束，需等待后才能继续"
+            else:
+                degrade_reason = "今日轮次已用完，需等待下一轮时间窗口"
         # 否则进入 full 模式
         else:
             degrade_mode = "full"
             status = "ready"
+            degrade_reason = "无阻塞，系统可完全自动运行"
 
         # 构建告警上下文
         alert_context = {}
@@ -685,11 +743,137 @@ class AutomationWorkflowService:
                     "message": str(latest_alert.get("message", "")),
                 }
 
+        # 构建阻塞列表
+        blockers: list[dict[str, str]] = []
+        if connection_status == "disconnected":
+            blockers.append({
+                "code": "dependency_unavailable",
+                "label": "执行器或同步服务连接断开",
+                "severity": "error",
+            })
+        if executor_status in {"error", "disconnected"}:
+            blockers.append({
+                "code": "executor_error",
+                "label": "执行器状态异常",
+                "severity": "error",
+            })
+        if sync_status in {"error", "stale"}:
+            blockers.append({
+                "code": "sync_error",
+                "label": "同步状态异常或陈旧",
+                "severity": "error",
+            })
+        if manual_takeover:
+            blockers.append({
+                "code": "manual_takeover_active",
+                "label": "人工接管中",
+                "severity": "warning",
+            })
+        if paused and blocked_reason == "paused_waiting_review":
+            blockers.append({
+                "code": "paused_waiting_review",
+                "label": "自动化暂停等待复核",
+                "severity": "warning",
+            })
+        if mode == "manual":
+            blockers.append({
+                "code": "manual_mode",
+                "label": "手动模式",
+                "severity": "info",
+            })
+        if blocked_reason == "cooldown_active":
+            blockers.append({
+                "code": "cooldown_active",
+                "label": "冷却窗口中",
+                "severity": "info",
+            })
+        if blocked_reason == "daily_limit_reached":
+            blockers.append({
+                "code": "daily_limit_reached",
+                "label": "今日轮次已用完",
+                "severity": "info",
+            })
+        if automation_cycle_running:
+            blockers.append({
+                "code": "automation_cycle_running",
+                "label": "自动化周期执行中",
+                "severity": "info",
+            })
+        # 如果没有任何阻塞项，添加一个空阻塞表示可运行
+        if not blockers:
+            blockers.append({
+                "code": "none",
+                "label": "无阻塞",
+                "severity": "info",
+            })
+
+        # 构建建议动作
+        suggested_action = ""
+        suggested_action_reason = ""
+        if status == "ready" and ready_for_cycle:
+            suggested_action = "run_cycle"
+            suggested_action_reason = "当前无阻塞，可以启动下一轮自动化周期"
+        elif status == "ready" and not ready_for_cycle:
+            suggested_action = "wait"
+            suggested_action_reason = "当前无阻塞但暂未准备好，等待条件满足后自动启动"
+        elif status == "running":
+            suggested_action = "wait"
+            suggested_action_reason = "自动化周期正在执行中，等待完成后检查结果"
+        elif status == "waiting":
+            if blocked_reason == "cooldown_active":
+                suggested_action = "wait_cooldown"
+                suggested_action_reason = "冷却窗口中，等待冷却结束后可继续"
+            elif blocked_reason == "daily_limit_reached":
+                suggested_action = "wait_next_window"
+                suggested_action_reason = "今日轮次已用完，等待下一轮时间窗口"
+            else:
+                suggested_action = "wait"
+                suggested_action_reason = "等待条件满足后可继续"
+        elif status == "attention_required":
+            if manual_takeover:
+                suggested_action = "review_takeover"
+                suggested_action_reason = "人工接管中，需确认执行器、同步和账户状态后再决定是否恢复"
+            elif paused:
+                suggested_action = "resume_after_review"
+                suggested_action_reason = "自动化暂停中，处理阻塞原因后可恢复"
+            else:
+                suggested_action = "review"
+                suggested_action_reason = "需要人工确认后才能继续"
+        elif status == "blocked" or status == "degraded":
+            suggested_action = "resolve_blocker"
+            suggested_action_reason = "存在阻塞项，需先处理阻塞原因后才能继续"
+        else:
+            suggested_action = "observe"
+            suggested_action_reason = "当前状态无需特殊操作，继续观察"
+
+        # 获取额外时间字段
+        cooldown_ends_at = str(runtime_window.get("next_run_at", "") or "")
+        last_cycle = dict(state.get("last_cycle") or {})
+        last_cycle_at = str(last_cycle.get("recorded_at", "") or "")
+        cycles_today = int(runtime_window.get("current_cycle_count", 0) or 0)
+
+        # 判断是否允许 OpenClaw 自动运行
+        auto_run_allowed = (
+            status in {"ready", "waiting"}
+            and degrade_mode in {"full", "window_wait"}
+            and mode in {"auto_dry_run", "auto_live"}
+            and not paused
+            and not manual_takeover
+        )
+
         return {
+            "status": status,
             "ready_for_cycle": ready_for_cycle,
             "blocked_reason": blocked_reason,
+            "blockers": blockers,
             "degrade_mode": degrade_mode,
-            "status": status,
+            "degrade_reason": degrade_reason,
+            "suggested_action": suggested_action,
+            "suggested_action_reason": suggested_action_reason,
+            "cooldown_ends_at": cooldown_ends_at,
+            "last_cycle_at": last_cycle_at,
+            "cycles_today": cycles_today,
+            "auto_run_allowed": auto_run_allowed,
             "operator_route": operator_route,
             "takeover_review_due_at": str(runtime_window.get("takeover_review_due_at", "")),
             "alert_context": alert_context,
