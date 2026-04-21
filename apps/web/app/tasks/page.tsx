@@ -85,8 +85,15 @@ export default function TasksPage() {
         setOpenclawSnapshot(openclawResult);
         setOpenclawAuditRecords(auditResult);
 
-        const automationFailed = !automationResult[0] || !(automationResult[0] as Record<string, unknown>).state || Object.keys(automationResult[0]).length === 0;
-        setHasApiErrors(tasksResult.length === 0 && Object.keys(openclawResult || {}).length === 0 && automationFailed);
+        // 只有在已登录状态下数据为空才认为是技术故障
+        // 未登录时返回空数据是正常的业务状态
+        if (session.isAuthenticated) {
+          const automationFailed = !automationResult[0] || !(automationResult[0] as Record<string, unknown>).state || Object.keys(automationResult[0]).length === 0;
+          setHasApiErrors(tasksResult.length === 0 && Object.keys(openclawResult || {}).length === 0 && automationFailed);
+        } else {
+          // 未登录时不触发降级模式
+          setHasApiErrors(false);
+        }
         setIsLoading(false);
       })
       .catch(() => {
