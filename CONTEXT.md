@@ -1,17 +1,20 @@
 # 当前进度
 
-- 当前正在做：Phase 2 内层判断强化已完成，准备进入 Phase 3（定时巡检机制）。
-- 上次停留位置：Phase 2 批次实施已完成，所有子任务已验收。
+- 当前正在做：前端完整流程验证已完成，系统现已可用。
+- 上次停留位置：修复 WebSocket 和代理配置，完成端到端测试。
 - 最近完成：
-  - P2.1: 扩展 runtime_guard 结构 - 新增 blockers 数组、suggested_action、auto_run_allowed、cycles_today 等字段
-  - P2.2: 扩展 recovery_review 结构 - 新增 operator_steps、auto_recoverable、manual_required_reason 等字段
-  - P2.3: 扩展快照 suggested_action 字段 - 在 allowed_safe_actions 中添加 auto_execute 和 priority
-  - P2.5: 更新策略服务校验 - 添加 is_safe_action()、validate_suggested_action() 方法
-  - P2.4: 更新前端任务页展示 - 在"当前恢复建议"和"长期运行状态"卡片中展示新增字段
+  - 修复 WebSocket URL：从 `/api/v1/ws` 改为 `/ws`，直接连接后端端口 9011
+  - 修复 API 代理：使用 Docker 网关 IP `172.21.0.1:7890` 替代 `mihomo` hostname
+  - 修复 Freqtrade API 端口：`listen_port` 从 9013 改为 8080（匹配 Docker 映射）
+  - 完成 Playwright 端到端测试：登录 → 研究 → 训练 → 评估 → 策略 → 任务，全部 7 项通过
+  - 验证 WebSocket 实时进度显示：训练进度正常更新
 
 # 关键决定
 
 - Phase 2 采用分层实施：程序负责判断（90%），模型辅助边界场景（10%）。
+- Phase 3 定时巡检采用节流策略：同一动作每小时最多执行3次，连续失败2次后停止自动执行。
+- 巡检只执行白名单内动作，遵循三条铁规则：白名单、降风险、高风险收口人工。
+- 每轮巡检最多执行1个动作，避免连锁反应。
 - runtime_guard 新增结构化 blockers 数组 [{code, label, severity}]，便于前端按严重程度排序展示。
 - suggested_action 和 suggested_action_reason 由程序自动计算，OpenClaw 只读取并执行白名单内动作。
 - auto_run_allowed 标志明确告诉 OpenClaw 是否可以自动执行下一轮周期。
@@ -48,13 +51,23 @@
 
 # 最近验证
 
-- Phase 2 内层判断强化验收：
-  - 前端构建：`pnpm build` 通过（清理 .next 目录后重新构建）
-  - 修改文件已确认：`automation_service.py`、`automation_workflow_service.py`、`openclaw_action_policy_service.py`、`openclaw_snapshot_service.py`、`tasks/page.tsx`
-  - 新增字段已在前端展示：
-    - runtime_guard: blockers、suggested_action、suggested_action_reason、auto_run_allowed、cycles_today
-    - recovery_review: operator_steps、auto_recoverable、manual_required_reason
+- WebSocket 和代理配置修复验证：
+  - WebSocket 连接成功：`ws://localhost:9011/ws`
+  - 市场数据获取成功：Binance K 线数据正常返回
+  - Freqtrade API ping 成功：`{"status":"pong"}`
+  - 研究训练成功：训练和推理完成，生成 10 个候选信号
+  - Playwright 端到端测试：登录、研究页状态面板、训练进度、评估页候选、策略页执行器、任务页自动化 - 全部 7 项 PASS
+- 系统架构说明：
+  - 因子控制买入/卖出：因子值 × 因子权重 → 评分 → 信号方向 → 候选排序 → 门控过滤 → 实际执行
+  - 回测在训练过程中自动执行：每轮训练计算净收益率、最大回撤、夏普比率、胜率
+  - 推荐币每次不一样是正常行为：系统基于市场数据和因子权重动态计算
+  - 候选筛选遵循安全设计：score_gate、rule_gate、backtest_gate 验证后才进入 dry-run
+- Phase 3 定时巡检机制验收：
+  - 后端测试：53条通过
   - 前端构建：`pnpm build` 通过
+  - 新增文件：`openclaw_patrol_service.py`
+  - 新增API路由：`/patrol`、`/patrol-history`、`/patrol-counters`、`/patrol-reset`
+  - 前端展示：任务页新增"定时巡检"卡片，显示最近巡检状态和执行动作
 - 前端重构验收：
   - Phase 1: 前端重构规划与设计 ✓
   - Phase 2: 重构首页和核心导航 ✓（首页 274 行）
@@ -132,8 +145,9 @@
 
 # 下一步
 
-- Phase 2 内层判断强化已完成，准备进入 Phase 3（定时巡检机制）：
-  - 创建 `openclaw_patrol_service.py`
-  - 注册定时任务（每分钟健康检查、每5分钟状态同步、每15分钟周期检查）
-  - 实现巡检规则和节流逻辑
-  - 在任务页展示巡检状态
+- 系统现已可用，可继续：
+  - Phase 4：模型辅助边界场景（创建 model_suggestion_service.py）
+  - Phase 5：扩展安全动作白名单（新增 HTTP 安全动作和系统安全动作）
+  - 真实联调：运行研究训练观察候选排序，通过门控进入 dry-run/live
+  - 因子调整：修改因子权重观察推荐币变化
+  - 回测验证：检查训练结果中的回测指标
