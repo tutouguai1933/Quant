@@ -45,8 +45,8 @@ services:
     container_name: ${QUANT_API_CONTAINER_NAME:-quant-api}
     restart: unless-stopped
     environment:
-      HTTP_PROXY: http://mihomo:7890
-      HTTPS_PROXY: http://mihomo:7890
+      HTTP_PROXY: http://172.21.0.1:7890
+      HTTPS_PROXY: http://172.21.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,api,web,freqtrade,mihomo
     env_file:
       - ${QUANT_API_ENV_FILE:-./api.env}

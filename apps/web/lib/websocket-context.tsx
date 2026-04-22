@@ -44,13 +44,15 @@ function getWebSocketUrl(): string {
   if (typeof window === "undefined") return "";
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const host = window.location.host;
 
-  // 开发环境可能需要连接到不同的后端端口
-  const wsPort = process.env.NEXT_PUBLIC_WS_PORT || "";
-  const wsHost = wsPort ? `${window.location.hostname}:${wsPort}` : host;
+  // 后端 API WebSocket 端点在端口 9011，路径是 /ws（无 prefix）
+  // 生产环境：使用 NEXT_PUBLIC_API_URL 或默认端口
+  // 开发环境：直接连接 localhost:9011
+  const apiPort = process.env.NEXT_PUBLIC_API_PORT || "9011";
+  const apiHost = process.env.NEXT_PUBLIC_API_HOST || window.location.hostname;
+  const wsHost = `${apiHost}:${apiPort}`;
 
-  return `${protocol}//${wsHost}/api/v1/ws`;
+  return `${protocol}//${wsHost}/ws`;
 }
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
