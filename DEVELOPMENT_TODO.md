@@ -13,9 +13,14 @@
 - **Commit**：19a7b62
 
 ### 2. VPN节点自动切换机制
-- **状态**：待开始
-- **负责人**：-
-- **预估工时**：2小时
+- **状态**：✅ 已完成（2026-04-27）
+- **文件**：services/api/app/services/vpn_switch_service.py
+- **配置**：QUANT_VPN_WHITELIST_IPS, QUANT_VPN_HEALTH_CHECK_INTERVAL
+
+### 3. 研究到执行自动化
+- **状态**：✅ 已完成（2026-04-27）
+- **文件**：services/api/app/services/auto_dispatch_service.py
+- **配置**：QUANT_AUTO_DISPATCH_ENABLED, QUANT_AUTO_DISPATCH_MIN_SCORE
 
 ### 3. 研究到执行自动化
 - **问题**：研究推荐候选后需手动forceenter，无法全自动化
@@ -107,11 +112,11 @@
 | 交易告警推送 | 2小时 | ✅ 完成 |
 | 门控阈值调整 | 1小时 | ✅ 完成 |
 
-### 组C - 自动化流程（依赖组A完成）
+### 组C - 自动化流程
 | 任务 | 预估工时 | 状态 |
 |------|----------|------|
-| 研究到执行自动化 | 4小时 | 待开始 |
-| WebSocket同步验证 | 1小时 | 待开始 |
+| 研究到执行自动化 | 4小时 | ✅ 完成 |
+| VPN节点自动切换 | 2小时 | ✅ 完成 |
 
 ### 组D - 策略与数据（依赖组C完成）
 | 任务 | 预估工时 | 状态 |
