@@ -59,16 +59,44 @@
 - QUANT_QLIB_DRY_RUN_MIN_SCORE=0.50
 - QUANT_QLIB_DRY_RUN_MIN_SHARPE=0.3
 
-## 并行开发任务（Agent Team运行中）
-### automation-team
-1. VPN节点自动切换 - Agent ID: ad7f74d0961646352 (运行中)
-2. 研究到执行自动化 - Agent ID: ac8f3792a709e32d1 (运行中)
+## 并行开发任务（全部完成）
 
-### 已完成任务
-- 服务器代码同步（GitHub）
-- 门控阈值调整（DOGEUSDT通过）
-- 告警推送服务（alert_push_service.py）
-- 风控熔断机制（risk_guard_service.py）
+### 已完成功能（2026-04-27）
+| 功能 | 文件 | 状态 |
+|------|------|------|
+| VPN节点自动切换 | vpn_switch_service.py | ✅ |
+| 研究到执行自动化 | auto_dispatch_service.py | ✅ |
+| 告警推送服务 | alert_push_service.py | ✅ |
+| 风控熔断机制 | risk_guard_service.py | ✅ |
+| 服务器代码同步 | GitHub push/pull | ✅ |
+| 门控阈值调整 | api.env | ✅ |
+
+### 新增配置
+```bash
+# VPN自动切换
+QUANT_VPN_WHITELIST_IPS=154.31.113.7,154.3.37.169,202.85.76.66
+QUANT_VPN_HEALTH_CHECK_INTERVAL=60
+
+# 自动派发
+QUANT_AUTO_DISPATCH_ENABLED=false  # 开关
+QUANT_AUTO_DISPATCH_MIN_SCORE=0.7
+QUANT_AUTO_DISPATCH_MAX_DAILY=5
+
+# 风控熔断
+QUANT_RISK_DAILY_MAX_LOSS_PCT=3
+QUANT_RISK_MAX_TRADES_PER_DAY=5
+QUANT_RISK_CRASH_THRESHOLD_PCT=5
+
+# 告警推送
+QUANT_ALERT_TELEGRAM_TOKEN=
+QUANT_ALERT_TELEGRAM_CHAT_ID=
+QUANT_ALERT_ENABLED=true
+```
+
+### 待完成任务（P2）
+- 策略实现（SampleStrategy → 真实策略）
+- 数据分析报表
+- 配置统一管理
 
 ## SSH连接服务器
 ```bash
