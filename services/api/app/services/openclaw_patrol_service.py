@@ -351,6 +351,148 @@ class OpenclawPatrolService:
             "patrol_status": "normal",
         }
 
+    def _check_vpn_health(self) -> dict[str, Any]:
+        """检查VPN节点健康状态。
+
+        Returns:
+            检查结果
+        """
+        try:
+            # 检查当前节点健康状态
+            health_result = vpn_switch_service.check_node_health_sync()
+
+            logger.info(
+                "VPN健康检查: 节点=%s, 状态=%s, IP=%s, 白名单=%s, 延迟=%.2fms",
+                health_result.node_name,
+                health_result.status.value,
+                health_result.exit_ip,
+                health_result.is_whitelisted,
+                health_result.latency_ms or 0,
+            )
+
+            # 如果节点健康且在白名单，无需切换
+            if health_result.status == NodeHealthStatus.HEALTHY and health_result.is_whitelisted:
+                return {
+                    "action_taken": False,
+                    "message": f"VPN节点健康，IP在白名单: {health_result.exit_ip}",
+                    "patrol_status": "normal",
+                    "vpn_health": health_result.to_dict(),
+                }
+
+            # 节点不健康或IP不在白名单，尝试自动切换
+            can_switch, reason = self._can_switch_vpn()
+            if not can_switch:
+                logger.warning("VPN切换被节流: %s", reason)
+                return {
+                    "action_taken": False,
+                    "blocked_reason": reason,
+                    "message": f"VPN异常但切换被节流: {reason}",
+                    "patrol_status": "vpn_throttled",
+                    "vpn_health": health_result.to_dict(),
+                }
+
+            # 执行自动切换
+            switch_result = vpn_switch_service.auto_switch_to_healthy_node_sync()
+            self._record_vpn_switch_result(switch_result.success)
+
+            return {
+                "action_taken": True,
+                "action": "vpn_auto_switch",
+                "success": switch_result.success,
+                "message": (
+                    f"VPN节点切换成功: {switch_result.current_node}, IP: {switch_result.exit_ip}"
+                    if switch_result.success
+                    else f"VPN节点切换失败: {switch_result.error_message}"
+                ),
+                "patrol_status": "vpn_switched" if switch_result.success else "vpn_switch_failed",
+                "vpn_health": health_result.to_dict(),
+                "vpn_switch": switch_result.to_dict(),
+            }
+
+        except Exception as e:
+            logger.exception("VPN健康检查异常: %s", e)
+            return {
+                "action_taken": False,
+                "message": f"VPN健康检查异常: {e}",
+                "patrol_status": "vpn_error",
+                "error": str(e),
+            }
+
+    def _can_switch_vpn(self) -> tuple[bool, str]:
+        """检查是否可以执行VPN切换（节流校验）。
+
+        Returns:
+            (是否可切换, 原因)
+        """
+        now = datetime.now(timezone.utc)
+
+        counter = self._vpn_switch_counter
+        window_start = datetime.fromisoformat(str(counter.get("window_start", ""))) if counter.get("window_start") else None
+        count_in_window = int(counter.get("count", 0))
+        consecutive_failures = int(counter.get("consecutive_failures", 0))
+
+        # 如果窗口过期，重置计数器
+        if window_start and (now - window_start).total_seconds() > self.VPN_SWITCH_WINDOW_SECONDS:
+            count_in_window = 0
+            consecutive_failures = 0
+            window_start = None
+
+        # 检查连续失败次数（超过2次后停止自动切换）
+        if consecutive_failures >= 2:
+            return False, f"VPN切换连续失败 {consecutive_failures} 次，已停止自动切换"
+
+        # 检查窗口内切换次数
+        if count_in_window >= self.MAX_VPN_SWITCH_PER_WINDOW:
+            return False, f"VPN切换在窗口内已执行 {count_in_window} 次，已达上限"
+
+        return True, "允许切换"
+
+    def _record_vpn_switch_result(self, success: bool) -> None:
+        """记录VPN切换结果用于节流计算。
+
+        Args:
+            success: 是否成功
+        """
+        now = datetime.now(timezone.utc)
+
+        with self._lock:
+            counter = self._vpn_switch_counter
+            window_start = datetime.fromisoformat(str(counter.get("window_start", ""))) if counter.get("window_start") else None
+
+            # 如果窗口过期或不存在，重置窗口
+            if not window_start or (now - window_start).total_seconds() > self.VPN_SWITCH_WINDOW_SECONDS:
+                window_start = now
+                counter = {
+                    "window_start": window_start.isoformat(),
+                    "count": 0,
+                    "consecutive_failures": 0,
+                }
+
+            # 更新计数
+            counter["count"] = int(counter.get("count", 0)) + 1
+            if success:
+                counter["consecutive_failures"] = 0
+            else:
+                counter["consecutive_failures"] = int(counter.get("consecutive_failures", 0)) + 1
+
+            self._vpn_switch_counter = counter
+            self._save()
+
+    def get_vpn_switch_counter(self) -> dict[str, Any]:
+        """获取VPN切换计数器状态。
+
+        Returns:
+            VPN切换计数器状态
+        """
+        with self._lock:
+            return dict(self._vpn_switch_counter)
+
+    def reset_vpn_switch_counter(self) -> None:
+        """重置VPN切换计数器。"""
+        with self._lock:
+            self._vpn_switch_counter = {}
+            self._save()
+
     def _check_auto_dispatch(self, snapshot: dict) -> dict[str, Any]:
         """检查是否需要自动派发信号。
 

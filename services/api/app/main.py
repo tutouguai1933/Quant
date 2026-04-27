@@ -22,9 +22,11 @@ except ImportError:
 
 
 from services.api.app.routes.accounts import router as accounts_router
+from services.api.app.routes.analytics import router as analytics_router
 from services.api.app.routes.auth import router as auth_router
 from services.api.app.routes.backtest_workspace import router as backtest_workspace_router
 from services.api.app.routes.balances import router as balances_router
+from services.api.app.routes.config import router as config_router
 from services.api.app.routes.data_workspace import router as data_workspace_router
 from services.api.app.routes.evaluation_workspace import router as evaluation_workspace_router
 from services.api.app.routes.feature_workspace import router as feature_workspace_router
@@ -56,6 +58,8 @@ app.include_router(health_router)
 app.routers.append(health_router)  # type: ignore[attr-defined]
 app.include_router(auth_router)
 app.routers.append(auth_router)  # type: ignore[attr-defined]
+app.include_router(config_router)
+app.routers.append(config_router)  # type: ignore[attr-defined]
 app.include_router(backtest_workspace_router)
 app.routers.append(backtest_workspace_router)  # type: ignore[attr-defined]
 app.include_router(evaluation_workspace_router)
@@ -90,6 +94,8 @@ app.include_router(openclaw_router)
 app.routers.append(openclaw_router)  # type: ignore[attr-defined]
 app.include_router(websocket_router)
 app.routers.append(websocket_router)  # type: ignore[attr-defined]
+app.include_router(analytics_router)
+app.routers.append(analytics_router)  # type: ignore[attr-defined]
 
 
 @app.on_event("startup")

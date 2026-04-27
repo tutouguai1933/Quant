@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -89,7 +90,7 @@ class AutoDispatchState:
         self._consecutive_failure_count: int = 0
         self._last_success_at: str = ""
         self._last_failure_at: str = ""
-        self._lock = threading.Lock() if hasattr(__import__("threading"), "Lock") else None
+        self._lock = threading.Lock()
 
     def _ensure_daily_summary(self) -> None:
         """跨天时自动重置日报计数。"""
@@ -128,10 +129,6 @@ class AutoDispatchState:
             "last_success_at": self._last_success_at,
             "last_failure_at": self._last_failure_at,
         }
-
-
-# 引入 threading 用于状态锁
-import threading
 
 
 class AutoDispatchService:
