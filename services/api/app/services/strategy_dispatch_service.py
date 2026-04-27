@@ -1,15 +1,28 @@
 """策略派发服务。
 
-这个文件负责把“认领信号 -> 风控 -> 执行 -> 同步”收成一条统一链路。
+这个文件负责把"认领信号 -> 风控熔断 -> 风控 -> 执行 -> 同步"收成一条统一链路。
 """
 
 from __future__ import annotations
 
+import logging
+
+from services.api.app.services.alert_push_service import (
+    AlertEventType,
+    AlertLevel,
+    AlertMessage,
+    alert_push_service,
+    push_open_position_alert,
+    push_close_position_alert,
+)
 from services.api.app.services.execution_service import execution_service
+from services.api.app.services.risk_guard_service import risk_guard_service
 from services.api.app.services.risk_service import risk_service
 from services.api.app.services.signal_service import signal_service
 from services.api.app.services.sync_service import sync_service
 from services.api.app.tasks.scheduler import task_scheduler
+
+logger = logging.getLogger(__name__)
 
 
 class StrategyDispatchService:
@@ -17,6 +30,37 @@ class StrategyDispatchService:
 
     def dispatch_latest_signal(self, strategy_id: int, *, source: str = "system") -> dict[str, object]:
         """派发一条最新可执行信号。"""
+
+        # 首先执行风控熔断检查
+        risk_guard_result = risk_guard_service.check_all(strategy_id=strategy_id)
+        if not risk_guard_result.get("passed"):
+            error_message = str(risk_guard_result.get("summary") or "risk guard blocked")
+            logger.warning("风控熔断检查未通过: %s", error_message)
+            # 推送熔断告警
+            try:
+                alert_push_service.push_sync(
+                    AlertMessage(
+                        event_type=AlertEventType.RISK_ALERT,
+                        level=AlertLevel.CRITICAL,
+                        title="风控熔断触发",
+                        message=error_message,
+                        details={
+                            "strategy_id": strategy_id,
+                            "checks": risk_guard_result.get("checks", []),
+                            "circuit_breaker_state": risk_guard_result.get("circuit_breaker_state", {}),
+                        },
+                    )
+                )
+            except Exception as alert_exc:
+                logger.warning("熔断告警推送失败: %s", alert_exc)
+            return {
+                "status": "blocked",
+                "error_code": "risk_guard_blocked",
+                "message": error_message,
+                "risk_guard_result": risk_guard_result,
+                "risk_task": None,
+                "sync_task": None,
+            }
 
         latest = signal_service.claim_latest_dispatchable_signal(strategy_id)
         if latest is None:
@@ -85,6 +129,23 @@ class StrategyDispatchService:
             result = execution_service.dispatch_signal(int(latest["signal_id"]), strategy_context_id=strategy_id)
         except Exception as exc:
             signal_service.release_dispatch_claim(int(latest["signal_id"]))
+            # 推送执行失败告警
+            try:
+                alert_push_service.push_sync(
+                    AlertMessage(
+                        event_type=AlertEventType.SYSTEM_ERROR,
+                        level=AlertLevel.ERROR,
+                        title="交易执行失败",
+                        message=f"信号 {latest['signal_id']} 执行失败: {exc}",
+                        details={
+                            "signal_id": int(latest["signal_id"]),
+                            "strategy_id": strategy_id,
+                            "error": str(exc)[:200],
+                        },
+                    )
+                )
+            except Exception as alert_exc:
+                logger.warning("告警推送失败: %s", alert_exc)
             return {
                 "status": "failed",
                 "error_code": "execution_failed",
@@ -94,6 +155,37 @@ class StrategyDispatchService:
             }
 
         signal_service.update_signal_status(int(latest["signal_id"]), "dispatched")
+
+        # 记录交易计数，用于风控熔断
+        risk_guard_service.increment_trade_count()
+
+        # 推送交易执行告警
+        try:
+            action = result.get("action", {})
+            symbol = str(action.get("symbol", "unknown"))
+            side = str(action.get("side", "unknown"))
+            quantity = action.get("quantity") or action.get("stake_amount") or "0"
+            runtime = result.get("runtime", {})
+            mode = str(runtime.get("mode", "unknown"))
+
+            if side.lower() == "flat":
+                push_close_position_alert(
+                    symbol=symbol,
+                    side=side,
+                    quantity=quantity,
+                    reason="signal_dispatch",
+                )
+            else:
+                push_open_position_alert(
+                    symbol=symbol,
+                    side=side,
+                    quantity=quantity,
+                    strategy_id=strategy_id,
+                    signal_id=int(latest["signal_id"]),
+                )
+            logger.info("已推送交易告警: %s %s %s", symbol, side, quantity)
+        except Exception as alert_exc:
+            logger.warning("告警推送失败: %s", alert_exc)
         sync_payload: dict[str, object] = {}
         if str(result.get("runtime", {}).get("mode", "")).strip().lower() == "live":
             sync_payload.update(sync_service.build_live_sync_payload(result))

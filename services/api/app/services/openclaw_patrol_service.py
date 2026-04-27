@@ -11,12 +11,21 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 import json
+import logging
 import threading
 
+from services.api.app.services.alert_push_service import (
+    AlertEventType,
+    AlertLevel,
+    AlertMessage,
+    alert_push_service,
+)
 from services.api.app.services.openclaw_snapshot_service import OpenclawSnapshotService
 from services.api.app.services.openclaw_action_service import OpenclawActionService
 from services.api.app.services.openclaw_action_policy_service import openclaw_action_policy_service
 from services.api.app.services.service_health_service import ServiceHealthService, service_health_service
+
+logger = logging.getLogger(__name__)
 
 
 class OpenclawPatrolService:
@@ -174,6 +183,25 @@ class OpenclawPatrolService:
         if connection_status == "error":
             action = "automation_dry_run_only"
             can_execute, reason = self._can_execute_action(action)
+
+            # 推送执行器异常告警
+            try:
+                alert_push_service.push_sync(
+                    AlertMessage(
+                        event_type=AlertEventType.NODE_FAILURE,
+                        level=AlertLevel.ERROR,
+                        title="执行器连接异常",
+                        message=f"Freqtrade 执行器连接状态异常 ({connection_status})",
+                        details={
+                            "connection_status": connection_status,
+                            "suggested_action": action,
+                            "can_execute": can_execute,
+                        },
+                    )
+                )
+            except Exception as alert_exc:
+                logger.warning("告警推送失败: %s", alert_exc)
+
             if can_execute:
                 result = self._action_service.execute_action(action)
                 success = bool(result.get("success"))
