@@ -20,10 +20,12 @@ from services.api.app.services.alert_push_service import (
     AlertMessage,
     alert_push_service,
 )
+from services.api.app.services.auto_dispatch_service import auto_dispatch_service
 from services.api.app.services.openclaw_snapshot_service import OpenclawSnapshotService
 from services.api.app.services.openclaw_action_service import OpenclawActionService
 from services.api.app.services.openclaw_action_policy_service import openclaw_action_policy_service
 from services.api.app.services.service_health_service import ServiceHealthService, service_health_service
+from services.api.app.services.vpn_switch_service import vpn_switch_service, NodeHealthStatus
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,8 @@ class OpenclawPatrolService:
         "health_check": 60,      # 每分钟健康检查
         "state_sync": 300,       # 每5分钟状态同步
         "cycle_check": 900,      # 每15分钟周期检查
+        "vpn_check": 60,         # 每分钟VPN检查
+        "auto_dispatch": 300,    # 每5分钟自动派发检查（可通过 QUANT_AUTO_DISPATCH_INTERVAL 配置）
     }
 
     # 节流配置
@@ -47,6 +51,10 @@ class OpenclawPatrolService:
     SYNC_STALE_THRESHOLD_MINUTES = 10  # 同步超过10分钟视为过期
 
     MAX_PATROL_RECORDS = 50
+
+    # VPN切换节流（独立于动作节流）
+    VPN_SWITCH_WINDOW_SECONDS = 300   # VPN切换窗口5分钟
+    MAX_VPN_SWITCH_PER_WINDOW = 3     # 窗口内最多切换3次
 
     def __init__(
         self,
@@ -69,6 +77,7 @@ class OpenclawPatrolService:
         self._state_path = state_path or Path(".runtime/openclaw_patrol_records.json")
         self._records: list[dict[str, Any]] = []
         self._action_counters: dict[str, dict[str, Any]] = {}  # 动作节流计数器
+        self._vpn_switch_counter: dict[str, Any] = {}  # VPN切换节流计数器
         self._lock = threading.Lock()
         self._load()
 
@@ -80,12 +89,15 @@ class OpenclawPatrolService:
                     data = json.load(f)
                     self._records = list(data.get("records", []))
                     self._action_counters = dict(data.get("action_counters", {}))
+                    self._vpn_switch_counter = dict(data.get("vpn_switch_counter", {}))
             except (json.JSONDecodeError, IOError):
                 self._records = []
                 self._action_counters = {}
+                self._vpn_switch_counter = {}
         else:
             self._records = []
             self._action_counters = {}
+            self._vpn_switch_counter = {}
 
     def _save(self) -> None:
         """保存巡检记录到文件。"""
@@ -94,13 +106,14 @@ class OpenclawPatrolService:
             json.dump({
                 "records": self._records,
                 "action_counters": self._action_counters,
+                "vpn_switch_counter": self._vpn_switch_counter,
             }, f, ensure_ascii=False, indent=2)
 
     def patrol(self, patrol_type: str = "full") -> dict[str, Any]:
         """执行一轮巡检。
 
         Args:
-            patrol_type: 巡检类型，可选 "health_check", "state_sync", "cycle_check", "full"
+            patrol_type: 巡检类型，可选 "health_check", "state_sync", "cycle_check", "vpn_check", "full"
 
         Returns:
             巡检结果，包含 actions_taken 列表
@@ -115,6 +128,16 @@ class OpenclawPatrolService:
         actions_taken: list[dict[str, Any]] = []
         patrol_status = "normal"
         patrol_message = "巡检正常，无需执行动作"
+
+        # 0. VPN健康检查（health_check, vpn_check, full 都执行）
+        if patrol_type in ("health_check", "vpn_check", "full"):
+            vpn_result = self._check_vpn_health()
+            if vpn_result.get("action_taken"):
+                actions_taken.append(vpn_result)
+                # VPN切换失败不阻止其他检查，但记录状态
+                if vpn_result.get("success"):
+                    patrol_status = vpn_result.get("patrol_status", patrol_status)
+                    patrol_message = vpn_result.get("message", patrol_message)
 
         # 1. 健康检查（所有类型都执行）
         health_result = self._check_service_health(snapshot)
@@ -138,6 +161,14 @@ class OpenclawPatrolService:
                 actions_taken.append(alert_result)
                 patrol_status = alert_result.get("patrol_status", patrol_status)
                 patrol_message = alert_result.get("message", patrol_message)
+
+        # 4. 自动派发检查（auto_dispatch 或 full）
+        if patrol_type in ("auto_dispatch", "full") and patrol_status == "normal":
+            dispatch_result = self._check_auto_dispatch(snapshot)
+            if dispatch_result.get("action_taken"):
+                actions_taken.append(dispatch_result)
+                patrol_status = dispatch_result.get("patrol_status", patrol_status)
+                patrol_message = dispatch_result.get("message", patrol_message)
 
         # 记录巡检结果
         patrol_record = {
@@ -319,6 +350,62 @@ class OpenclawPatrolService:
             "message": "告警数量正常",
             "patrol_status": "normal",
         }
+
+    def _check_auto_dispatch(self, snapshot: dict) -> dict[str, Any]:
+        """检查是否需要自动派发信号。
+
+        Args:
+            snapshot: 当前快照
+
+        Returns:
+            检查结果
+        """
+        # 获取自动派发配置
+        auto_dispatch_config = auto_dispatch_service.get_config()
+
+        # 检查自动派发是否启用
+        if not auto_dispatch_config.get("enabled"):
+            return {
+                "action_taken": False,
+                "message": "自动派发功能未启用",
+                "patrol_status": "normal",
+                "config": auto_dispatch_config,
+            }
+
+        # 执行自动派发流程
+        try:
+            dispatch_result = auto_dispatch_service.run_auto_dispatch_cycle()
+            dispatched = bool(dispatch_result.get("dispatched"))
+
+            if dispatched:
+                symbol = str(dispatch_result.get("symbol", ""))
+                logger.info("自动派发成功: %s", symbol)
+                return {
+                    "action_taken": True,
+                    "action": "auto_dispatch",
+                    "success": True,
+                    "message": f"已自动派发候选 {symbol}",
+                    "patrol_status": "action_taken",
+                    "dispatch_result": dispatch_result,
+                }
+            else:
+                reason = str(dispatch_result.get("reason", ""))
+                logger.info("本轮不执行自动派发: %s", reason)
+                return {
+                    "action_taken": False,
+                    "message": reason,
+                    "patrol_status": "normal",
+                    "dispatch_result": dispatch_result,
+                }
+
+        except Exception as exc:
+            logger.warning("自动派发检查异常: %s", exc)
+            return {
+                "action_taken": False,
+                "message": f"自动派发检查异常: {exc}",
+                "patrol_status": "normal",
+                "error": str(exc),
+            }
 
     def _can_execute_action(self, action: str) -> tuple[bool, str]:
         """检查是否可以执行指定动作（节流校验）。

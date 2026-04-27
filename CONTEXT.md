@@ -59,11 +59,16 @@
 - QUANT_QLIB_DRY_RUN_MIN_SCORE=0.50
 - QUANT_QLIB_DRY_RUN_MIN_SHARPE=0.3
 
-## 并行开发任务（Agent运行中）
-1. 服务器代码同步 - Agent ID: ad131818ea5616d96
-2. 门控阈值调整 - Agent ID: a2f78fbbba90df1fd
-3. 告警推送实现 - Agent ID: ac84206da9a288726
-4. 风控熔断机制 - Agent ID: a19375b32dff3e9f3
+## 并行开发任务（Agent Team运行中）
+### automation-team
+1. VPN节点自动切换 - Agent ID: ad7f74d0961646352 (运行中)
+2. 研究到执行自动化 - Agent ID: ac8f3792a709e32d1 (运行中)
+
+### 已完成任务
+- 服务器代码同步（GitHub）
+- 门控阈值调整（DOGEUSDT通过）
+- 告警推送服务（alert_push_service.py）
+- 风控熔断机制（risk_guard_service.py）
 
 ## SSH连接服务器
 ```bash
