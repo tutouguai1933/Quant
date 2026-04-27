@@ -1,9 +1,9 @@
-/* 这个文件负责渲染研究页默认首屏的 3 张摘要卡，把配置、说明和实验细节统一收进抽屉或弹窗。 */
+/* 这个文件负责渲染研究页默认首屏的 3 张摘要卡，把配置、说明和实验细节统一收进弹窗。 */
 
 import type { ReactNode } from "react";
 
 import { DetailDialog } from "./detail-dialog";
-import { DetailDrawer } from "./detail-drawer";
+import { FullScreenModal } from "./full-screen-modal";
 import { SectionShell } from "./section-shell";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "./ui/card";
 
@@ -20,7 +20,7 @@ type ResearchFocusAction = {
   description: string;
   content: ReactNode;
   footer?: ReactNode;
-  mode: "drawer" | "dialog";
+  mode: "dialog" | "modal";
 };
 
 export type ResearchFocusCard = {
@@ -76,7 +76,7 @@ export function ResearchFocusGrid({ cards }: ResearchFocusGridProps) {
                     {action.content}
                   </DetailDialog>
                 ) : (
-                  <DetailDrawer
+                  <FullScreenModal
                     key={`${card.id}-${action.key}`}
                     triggerLabel={action.label}
                     title={action.title}
@@ -84,7 +84,7 @@ export function ResearchFocusGrid({ cards }: ResearchFocusGridProps) {
                     footer={action.footer}
                   >
                     {action.content}
-                  </DetailDrawer>
+                  </FullScreenModal>
                 ),
               )}
             </CardFooter>

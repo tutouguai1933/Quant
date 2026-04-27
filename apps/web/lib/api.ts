@@ -511,6 +511,24 @@ export type ResearchReportItem = {
   };
 };
 
+export type ResearchResultSnapshot = {
+  recommended_symbol: string;
+  recommended_strategy_id: string;
+  top_candidates: string[];
+  model_version: string;
+  research_template: string;
+  signal_count: number;
+};
+
+export type ResearchRunRecord = {
+  started_at: string;
+  finished_at: string;
+  duration_seconds: number;
+  status: string;
+  message: string;
+  result_snapshot: ResearchResultSnapshot | null;
+};
+
 export type ResearchRuntimeStatusModel = {
   status: string;
   action: string;
@@ -522,7 +540,7 @@ export type ResearchRuntimeStatusModel = {
   last_completed_action: string;
   last_finished_at: string;
   result_paths: string[];
-  history: Record<string, unknown>;
+  history: Record<string, ResearchRunRecord[]>;
   estimated_seconds: Record<string, number>;
   current_estimate_seconds: number;
 };
@@ -3355,6 +3373,34 @@ function normalizeResearchReportItem(item: unknown): ResearchReportItem {
 function normalizeResearchRuntimeStatus(item: unknown): ResearchRuntimeStatusModel {
   const row: Record<string, unknown> = isPlainObject(item) ? item : {};
   const estimatedRow: Record<string, unknown> = isPlainObject(row.estimated_seconds) ? row.estimated_seconds : {};
+  const historyRow: Record<string, unknown> = isPlainObject(row.history) ? row.history : {};
+  const normalizedHistory: Record<string, ResearchRunRecord[]> = {};
+
+  for (const [key, value] of Object.entries(historyRow)) {
+    if (Array.isArray(value)) {
+      const validRecords: ResearchRunRecord[] = [];
+      for (const v of value) {
+        if (isPlainObject(v)) {
+          const record: Record<string, unknown> = v;
+          // 只保留有时间戳的记录
+          if (record.started_at && record.finished_at) {
+            validRecords.push({
+              started_at: String(record.started_at ?? ""),
+              finished_at: String(record.finished_at ?? ""),
+              duration_seconds: Number(record.duration_seconds ?? 0),
+              status: String(record.status ?? "unknown"),
+              message: String(record.message ?? ""),
+              result_snapshot: normalizeResultSnapshot(record.result_snapshot),
+            });
+          }
+        }
+      }
+      if (validRecords.length > 0) {
+        normalizedHistory[key] = validRecords;
+      }
+    }
+  }
+
   return {
     status: String(row.status ?? "idle"),
     action: String(row.action ?? ""),
@@ -3366,13 +3412,27 @@ function normalizeResearchRuntimeStatus(item: unknown): ResearchRuntimeStatusMod
     last_completed_action: String(row.last_completed_action ?? ""),
     last_finished_at: String(row.last_finished_at ?? ""),
     result_paths: normalizeStringArray(row.result_paths, ["/research", "/evaluation", "/signals"]),
-    history: isPlainObject(row.history) ? row.history : {},
+    history: normalizedHistory,
     estimated_seconds: {
       training: Number(estimatedRow.training ?? 25),
       inference: Number(estimatedRow.inference ?? 12),
       pipeline: Number(estimatedRow.pipeline ?? 40),
     },
     current_estimate_seconds: Number(row.current_estimate_seconds ?? 0),
+  };
+}
+
+function normalizeResultSnapshot(value: unknown): ResearchResultSnapshot | null {
+  if (!isPlainObject(value)) return null;
+  const snapshot = value as Record<string, unknown>;
+  const candidates = snapshot.top_candidates;
+  return {
+    recommended_symbol: String(snapshot.recommended_symbol ?? ""),
+    recommended_strategy_id: String(snapshot.recommended_strategy_id ?? ""),
+    top_candidates: Array.isArray(candidates) ? candidates.map((c) => String(c ?? "")) : [],
+    model_version: String(snapshot.model_version ?? ""),
+    research_template: String(snapshot.research_template ?? ""),
+    signal_count: Number(snapshot.signal_count ?? 0),
   };
 }
 

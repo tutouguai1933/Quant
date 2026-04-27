@@ -24,8 +24,9 @@ services:
       dockerfile: Dockerfile
     container_name: ${QUANT_OPENCLAW_CONTAINER_NAME:-quant-openclaw}
     restart: unless-stopped
+    network_mode: host
     environment:
-      QUANT_API_BASE_URL: http://api:9011/api/v1
+      QUANT_API_BASE_URL: http://127.0.0.1:9011/api/v1
       HEALTH_CHECK_INTERVAL: ${QUANT_OPENCLAW_HEALTH_INTERVAL:-60}
       STATE_SYNC_INTERVAL: ${QUANT_OPENCLAW_SYNC_INTERVAL:-300}
       CYCLE_CHECK_INTERVAL: ${QUANT_OPENCLAW_CYCLE_INTERVAL:-900}
@@ -44,14 +45,13 @@ services:
       dockerfile: services/api/Dockerfile
     container_name: ${QUANT_API_CONTAINER_NAME:-quant-api}
     restart: unless-stopped
+    network_mode: host
     environment:
-      HTTP_PROXY: http://172.21.0.1:7890
-      HTTPS_PROXY: http://172.21.0.1:7890
+      HTTP_PROXY: http://127.0.0.1:7890
+      HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,api,web,freqtrade,mihomo
     env_file:
       - ${QUANT_API_ENV_FILE:-./api.env}
-    ports:
-      - "${QUANT_API_PORT:-9011}:9011"
     depends_on:
       - mihomo
       - freqtrade
@@ -68,10 +68,9 @@ services:
       dockerfile: apps/web/Dockerfile
     container_name: ${QUANT_WEB_CONTAINER_NAME:-quant-web}
     restart: unless-stopped
+    network_mode: host
     environment:
-      QUANT_API_BASE_URL: http://api:9011/api/v1
-    ports:
-      - "${QUANT_WEB_PORT:-9012}:9012"
+      QUANT_API_BASE_URL: http://127.0.0.1:9011/api/v1
     depends_on:
       - api
     healthcheck:
@@ -85,16 +84,15 @@ services:
     image: ${QUANT_FREQTRADE_IMAGE:-freqtradeorg/freqtrade:stable}
     container_name: ${QUANT_FREQTRADE_CONTAINER_NAME:-quant-freqtrade}
     restart: unless-stopped
+    network_mode: host
     environment:
-      HTTP_PROXY: http://172.21.0.1:7890
-      HTTPS_PROXY: http://172.21.0.1:7890
+      HTTP_PROXY: http://127.0.0.1:7890
+      HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,api,web,freqtrade,mihomo
     env_file:
       - ${QUANT_FREQTRADE_ENV_FILE:-../freqtrade/.env}
     volumes:
       - ../freqtrade/user_data:/freqtrade/user_data
-    ports:
-      - "${QUANT_FREQTRADE_PORT:-9013}:8080"
     depends_on:
       - mihomo
     command: >
@@ -102,10 +100,10 @@ services:
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PUBLIC_CONFIG:-config.base.json}
       --config /freqtrade/user_data/${QUANT_FREQTRADE_DEPLOY_CONFIG:-config.deploy.json}
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PRIVATE_CONFIG:-config.private.json}
-      --config /freqtrade/user_data/${QUANT_FREQTRADE_PROXY_CONFIG:-config.proxy.noop.json}
+      --config /freqtrade/user_data/${QUANT_FREQTRADE_PROXY_CONFIG:-config.proxy.mihomo.json}
       --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}
     healthcheck:
-      test: ["CMD", "curl", "-f", "-u", "freqtrader:freqtrade123", "http://localhost:9013/api/v1/ping"]
+      test: ["CMD", "curl", "-f", "-u", "freqtrader:freqtrade123", "http://localhost:8080/api/v1/ping"]
       interval: 30s
       timeout: 10s
       retries: 3

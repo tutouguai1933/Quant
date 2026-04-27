@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { DetailDrawer } from "./detail-drawer";
+import { FullScreenModal } from "./full-screen-modal";
 import { FeaturesMainlineSteps } from "./features-mainline-steps";
 import { SectionShell } from "./section-shell";
 import { SummaryCard } from "./summary-card";
@@ -58,28 +58,28 @@ export function FeaturesPrimaryActionSection({
           detail={primaryActionDetail}
           actions={(
             <>
-              <DetailDrawer
+              <FullScreenModal
                 triggerLabel="查看因子配置"
                 title="因子配置详情"
                 description="完整配置表单统一收在这里，默认不再把复选和参数直接铺满首屏。"
                 triggerVariant="terminal"
               >
                 {configContent}
-              </DetailDrawer>
-              <DetailDrawer
+              </FullScreenModal>
+              <FullScreenModal
                 triggerLabel="查看因子说明"
                 title="因子说明详情"
                 description="因子协议、预处理口径和因子细节统一放到这里，需要时再看。"
               >
                 {guideContent}
-              </DetailDrawer>
-              <DetailDrawer
+              </FullScreenModal>
+              <FullScreenModal
                 triggerLabel="查看研究承接"
                 title="研究承接详情"
                 description="因子怎么进入候选篮子和执行篮子，统一从这里解释和跳转。"
               >
                 {flowContent}
-              </DetailDrawer>
+              </FullScreenModal>
               {detailAction}
             </>
           )}

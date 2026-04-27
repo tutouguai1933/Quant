@@ -1,12 +1,10 @@
 {
   "exchange": {
     "ccxt_config": {
-      "httpsProxy": null,
-      "aiohttp_proxy": "http://172.21.0.1:7890"
+      "aiohttp_proxy": "http://127.0.0.1:7890"
     },
     "ccxt_async_config": {
-      "httpsProxy": null,
-      "aiohttp_proxy": "http://172.21.0.1:7890"
+      "aiohttp_proxy": "http://127.0.0.1:7890"
     }
   }
 }

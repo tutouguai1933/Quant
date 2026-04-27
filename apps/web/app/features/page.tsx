@@ -533,9 +533,9 @@ export default function FeaturePage() {
       summary: "先按六类把因子体系看懂，再决定要不要改具体组合。",
       detail: `${activeCategoryCount} 类已启用 / ${totalFactorCount} 个因子${dominantCategory ? `；当前最密集的是 ${dominantCategory.label}` : ""}`,
       triggerLabel: "查看分类详情",
-      drawerTitle: "因子分类详情",
-      drawerDescription: "把分类清单、每类当前混合和研究权重入口统一放到这里。",
-      drawerContent: (
+      modalTitle: "因子分类详情",
+      modalDescription: "把分类清单、每类当前混合和研究权重入口统一放到这里。",
+      modalContent: (
         <div className="space-y-5">
           <DetailSection title="因子分类清单" description="默认六类都会显式保留，没启用的类别也会保留位置。">
             <DataTable
@@ -555,7 +555,7 @@ export default function FeaturePage() {
           </DetailSection>
         </div>
       ),
-      drawerFooter: "默认首屏只保留分类摘要；完整分类目录和权重入口都从这里展开。",
+      modalFooter: "默认首屏只保留分类摘要；完整分类目录和权重入口都从这里展开。",
       digests: [
         { label: "分类数量", value: String(activeCategoryCount), detail: `默认保留 ${totalCategoryCount} 类展示位` },
         { label: "因子总数", value: String(totalFactorCount || workspace.overview.factor_count), detail: "当前协议里纳入的因子数量" },
@@ -569,9 +569,9 @@ export default function FeaturePage() {
       summary: "这一块直接回答现在有哪些主判断因子、哪些只是辅助确认。",
       detail: `主判断 ${workspace.overview.primary_count} 个 / 辅助 ${workspace.overview.auxiliary_count} 个`,
       triggerLabel: "查看启用详情",
-      drawerTitle: "当前启用详情",
-      drawerDescription: "主判断、辅助因子和当前组合故事都统一收在这里。",
-      drawerContent: (
+      modalTitle: "当前启用详情",
+      modalDescription: "主判断、辅助因子和当前组合故事都统一收在这里。",
+      modalContent: (
         <div className="space-y-5">
           <DetailSection title="当前因子选择" description="把这轮因子 preset、预处理规则和周期参数压成一屏。">
             <div className="grid gap-3 md:grid-cols-2">
@@ -599,7 +599,7 @@ export default function FeaturePage() {
           </DetailSection>
         </div>
       ),
-      drawerFooter: "默认首屏只回答启用概况；完整角色分配和组合说明都放到这里。",
+      modalFooter: "默认首屏只回答启用概况；完整角色分配和组合说明都放到这里。",
       digests: [
         { label: "主判断因子", value: String(workspace.overview.primary_count), detail: primaryFactors.length ? primaryFactors.slice(0, 3).join(" / ") : "当前没有主判断因子" },
         { label: "辅助确认因子", value: String(workspace.overview.auxiliary_count), detail: auxiliaryFactors.length ? auxiliaryFactors.slice(0, 3).join(" / ") : "当前没有辅助因子" },
@@ -613,9 +613,9 @@ export default function FeaturePage() {
       summary: "先把哪类因子最该先看、为什么这样配、稳定性来自哪里讲清楚。",
       detail: effectivenessDetail,
       triggerLabel: "查看有效性详情",
-      drawerTitle: "因子有效性详情",
-      drawerDescription: "把协议级 IC、分组收益和稳定性摘要统一放到这里。",
-      drawerContent: (
+      modalTitle: "因子有效性详情",
+      modalDescription: "把协议级 IC、分组收益和稳定性摘要统一放到这里。",
+      modalContent: (
         <div className="space-y-5">
           <DetailSection title="当前有效性摘要" description="当前先用协议级摘要解释因子效果，不把完整实验中心搬到因子页。">
             <div className="grid gap-3 md:grid-cols-2">
@@ -638,7 +638,7 @@ export default function FeaturePage() {
           </DetailSection>
         </div>
       ),
-      drawerFooter: "这里解释的是协议级效果；真正候选层面的得分表现继续去研究页和评估页看。",
+      modalFooter: "这里解释的是协议级效果；真正候选层面的得分表现继续去研究页和评估页看。",
       digests: [
         { label: "当前最强类别", value: effectivenessHeadline, detail: effectivenessDetail },
         { label: "IC 摘要", value: icStory, detail: "当前按主判断覆盖和权重入口先解释，不把完整 IC 面板直接铺在首屏。" },
@@ -652,9 +652,9 @@ export default function FeaturePage() {
       summary: "这里先回答当前哪些同类因子可能过度重合，应该先去重哪里。",
       detail: redundancyDetail,
       triggerLabel: "查看冗余详情",
-      drawerTitle: "因子冗余详情",
-      drawerDescription: "把高重合组、去重状态和下一步统一收进这里。",
-      drawerContent: (
+      modalTitle: "因子冗余详情",
+      modalDescription: "把高重合组、去重状态和下一步统一收进这里。",
+      modalContent: (
         <div className="space-y-5">
           <DetailSection title="当前冗余摘要" description="先按同组启用情况判断哪一组最需要去重。">
             <div className="grid gap-3 md:grid-cols-2">
@@ -682,7 +682,7 @@ export default function FeaturePage() {
           </DetailSection>
         </div>
       ),
-      drawerFooter: "因子页先把“哪里可能重复了”说清楚；更细的相关矩阵后续再补。",
+      modalFooter: "因子页先把“哪里可能重复了”说清楚；更细的相关矩阵后续再补。",
       digests: [
         { label: "当前最需要处理", value: redundancyHeadline, detail: redundancyDetail },
         { label: "高重合组", value: leadingOverlapGroup?.label || "当前没有", detail: leadingOverlapGroup?.note || "当前没有明显高重合组" },
@@ -696,9 +696,9 @@ export default function FeaturePage() {
       summary: "这里不直接给候选篮子或执行篮子排行，而是先解释候选篮子总分会被哪些因子类别拉动。",
       detail: scoreDetail,
       triggerLabel: "查看总分解释",
-      drawerTitle: "总分解释详情",
-      drawerDescription: "把当前最影响总分的类别、权重顺序和候选/执行篮子承接说明统一收进这里。",
-      drawerContent: (
+      modalTitle: "总分解释详情",
+      modalDescription: "把当前最影响总分的类别、权重顺序和候选/执行篮子承接说明统一收进这里。",
+      modalContent: (
         <div className="space-y-5">
           <DetailSection title="总分解释" description="先说明候选篮子总分现在主要看哪几类因子，再说明为什么。">
             <div className="grid gap-3 md:grid-cols-2">
@@ -720,7 +720,7 @@ export default function FeaturePage() {
           </DetailSection>
         </div>
       ),
-      drawerFooter: "因子页只解释总分来源；候选篮子排行与执行篮子推进继续由研究页、评估页承接。",
+      modalFooter: "因子页只解释总分来源；候选篮子排行与执行篮子推进继续由研究页、评估页承接。",
       digests: [
         { label: "当前最影响总分的类别", value: scoreHeadline, detail: scoreDetail },
         { label: "权重前三", value: scoreContributors.slice(0, 3).map((item) => `${item.label}(${item.weight})`).join(" / ") || "当前没有", detail: "这里先看顺序，不直接替代候选篮子排行。" },

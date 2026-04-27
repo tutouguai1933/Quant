@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { useWebSocket } from "./websocket-context";
-import type { ResearchRuntimeStatusModel } from "./api";
+import type { ResearchResultSnapshot, ResearchRunRecord, ResearchRuntimeStatusModel } from "./api";
 
 // WebSocket 通道名称
 const CHANNEL_RESEARCH_RUNTIME = "research_runtime";
@@ -193,13 +193,64 @@ function normalizeResearchRuntimeStatus(item: Record<string, unknown>): Research
     result_paths: Array.isArray(item.result_paths)
       ? item.result_paths.map((v) => String(v ?? ""))
       : ["/research", "/evaluation", "/signals"],
-    history: (item.history as Record<string, unknown>) ?? {},
+    history: normalizeHistoryRecord(item.history),
     estimated_seconds: {
       training: Number(estimatedSeconds?.training ?? 25),
       inference: Number(estimatedSeconds?.inference ?? 12),
       pipeline: Number(estimatedSeconds?.pipeline ?? 40),
     },
     current_estimate_seconds: Number(item.current_estimate_seconds ?? 0),
+  };
+}
+
+// 辅助函数：规范化历史记录
+function normalizeHistoryRecord(value: unknown): Record<string, ResearchRunRecord[]> {
+  if (!isPlainObject(value)) return {};
+  const obj = value as Record<string, unknown>;
+  const result: Record<string, ResearchRunRecord[]> = {};
+
+  for (const [key, arr] of Object.entries(obj)) {
+    if (!Array.isArray(arr)) continue;
+
+    const validRecords: ResearchRunRecord[] = [];
+    for (const v of arr) {
+      if (isPlainObject(v)) {
+        const record = v as Record<string, unknown>;
+        // 只保留有时间戳的记录
+        if (record.started_at && record.finished_at) {
+          const snapshot = record.result_snapshot;
+          validRecords.push({
+            started_at: String(record.started_at ?? ""),
+            finished_at: String(record.finished_at ?? ""),
+            duration_seconds: Number(record.duration_seconds ?? 0),
+            status: String(record.status ?? "unknown"),
+            message: String(record.message ?? ""),
+            result_snapshot: normalizeResultSnapshot(snapshot),
+          });
+        }
+      }
+    }
+
+    if (validRecords.length > 0) {
+      result[key] = validRecords;
+    }
+  }
+
+  return result;
+}
+
+// 辅助函数：规范化结果快照
+function normalizeResultSnapshot(value: unknown): ResearchResultSnapshot | null {
+  if (!isPlainObject(value)) return null;
+  const snapshot = value as Record<string, unknown>;
+  const candidates = snapshot.top_candidates;
+  return {
+    recommended_symbol: String(snapshot.recommended_symbol ?? ""),
+    recommended_strategy_id: String(snapshot.recommended_strategy_id ?? ""),
+    top_candidates: Array.isArray(candidates) ? candidates.map((c) => String(c ?? "")) : [],
+    model_version: String(snapshot.model_version ?? ""),
+    research_template: String(snapshot.research_template ?? ""),
+    signal_count: Number(snapshot.signal_count ?? 0),
   };
 }
 
@@ -226,6 +277,10 @@ function normalizeAutomationStatus(value: Record<string, unknown>): Record<strin
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function isPlainObject(value: unknown): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function readText(value: unknown): string {

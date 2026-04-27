@@ -1,11 +1,11 @@
 "use client";
 
-/* 这个文件负责把单因子的说明与观察维度收进统一抽屉，避免因子页首屏再次摊开成长列表。 */
+/* 这个文件负责把单因子的说明与观察维度收进统一全屏弹窗，避免因子页首屏再次摊开成长列表。 */
 
 import type { ReactNode } from "react";
 
 import { DataTable } from "./data-table";
-import { DetailDrawer } from "./detail-drawer";
+import { FullScreenModal } from "./full-screen-modal";
 
 export type FeatureFactorDetailItem = {
   id: string;
@@ -28,7 +28,7 @@ type FeaturesFactorDetailDrawerProps = {
   timeframeSummary: string;
 };
 
-/* 渲染因子详情抽屉，让单因子信息按需展开。 */
+/* 渲染因子详情全屏弹窗，让单因子信息按需展开。 */
 export function FeaturesFactorDetailDrawer({
   items,
   primaryCount,
@@ -39,11 +39,11 @@ export function FeaturesFactorDetailDrawer({
   const selectedCount = items.length;
 
   return (
-    <DetailDrawer
+    <FullScreenModal
       triggerLabel="查看因子详情"
-      title="因子详情抽屉"
+      title="因子详情"
       description="单因子的说明、时间序列、IC、分组收益、稳定性和相关性统一收在这里，默认不占首屏。"
-      footer="因子页首屏只保留摘要；单因子细节统一从这个抽屉进入。"
+      footer="因子页首屏只保留摘要；单因子细节统一从这个弹窗进入。"
     >
       <div className="space-y-5">
         <DetailSection title="当前抽屉摘要" description="先确认这次要看的因子范围和当前配置口径。">
@@ -88,7 +88,7 @@ export function FeaturesFactorDetailDrawer({
           </div>
         </DetailSection>
       </div>
-    </DetailDrawer>
+    </FullScreenModal>
   );
 }
 

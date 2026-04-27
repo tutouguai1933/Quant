@@ -1,13 +1,76 @@
 # 当前进度
 
-- 当前正在做：前端完整流程验证已完成，系统现已可用。
-- 上次停留位置：修复 WebSocket 和代理配置，完成端到端测试。
+- 当前正在做：并行开发优化任务 - 4个Agent后台运行
+- 上次停留位置：完成Live交易周期验证，启动并行开发
+- 最近完成（2026-04-27）：
+  - Live交易完整周期验证成功：卖出DOGE → 研究 → 买入 → 监控 → 卖出
+  - VPN节点切换验证：日本节点（IP 154.31.113.7）在白名单内
+  - Binance API认证成功，真实订单执行（订单ID 14260504060/14260506121）
+  - 服务器Freqtrade Live模式运行正常
+  - OpenClaw巡检正常，无异常动作
+  - 创建DEVELOPMENT_TODO.md任务清单
+  - 启动4个并行Agent：服务器同步、门控阈值、告警推送、风控熔断
 - 最近完成：
   - 修复 WebSocket URL：从 `/api/v1/ws` 改为 `/ws`，直接连接后端端口 9011
   - 修复 API 代理：使用 Docker 网关 IP `172.21.0.1:7890` 替代 `mihomo` hostname
   - 修复 Freqtrade API 端口：`listen_port` 从 9013 改为 8080（匹配 Docker 映射）
-  - 完成 Playwright 端到端测试：登录 → 研究 → 训练 → 评估 → 策略 → 任务，全部 7 项通过
+  - 完成 Playwright 端到端测试：登录 → 研究 → 训练 → 评估 → 策略 → 任务，全部通过
   - 验证 WebSocket 实时进度显示：训练进度正常更新
+  - 更新 ui-evaluation-decision-center.spec.cjs：匹配当前页面设计，候选总数、推荐原因、淘汰原因
+  - 更新 ui-main-flow.spec.cjs：匹配当前页面设计，策略中心、任务页、余额页
+  - 验证评估页数据：API 返回 candidate_count: 10, recommended_symbol: BTCUSDT
+  - 新增运行历史记录展示：ResearchRuntimePanel 现在显示 training/inference/pipeline 的最近运行次数和平均耗时
+
+# 系统状态快照（2026-04-27）
+
+## 服务地址
+| 服务 | 地址 | 状态 |
+|------|------|------|
+| 服务器API | http://39.106.11.65:9011 | ✅ |
+| 服务器Web | http://39.106.11.65:9012 | ✅ |
+| 服务器Freqtrade | http://39.106.11.65:9013 | ✅ Live模式 |
+| mihomo代理 | 127.0.0.1:7890 | ✅ 日本节点 |
+| 本地API | http://127.0.0.1:9011 | ✅ |
+
+## VPN配置
+- 当前节点：★ 日本¹
+- 出口IP：154.31.113.7（白名单内）
+- 白名单IP：39.106.11.65, 202.85.76.66, 154.31.113.7, 154.3.37.169
+- 切换命令：curl -X PUT http://mihomo:9090/proxies/BestSSR -d '{"name":"★ 日本¹"}'
+
+## Binance API
+- API Key: djuPgTW90bbowvm8lAYF5Vaa79ZZh7k6Z6Nvqa9mRzuraANnbUsd58QZpfn1e3MB
+- 认证状态：✅ 正常
+- 可交易：True
+
+## Freqtrade配置
+- dry_run: False（Live模式）
+- max_open_trades: 1
+- stoploss: -0.1
+- stake_amount: 6 USDT
+- pair_whitelist: DOGE/USDT
+- use_order_book: False（已修复）
+
+## 关键配置（api.env）
+- QUANT_ALLOW_LIVE_EXECUTION=false（需与实际同步）
+- QUANT_LIVE_ALLOWED_SYMBOLS=DOGEUSDT
+- QUANT_LIVE_MAX_STAKE_USDT=6
+- QUANT_LIVE_MAX_OPEN_TRADES=1
+- QUANT_QLIB_DRY_RUN_MIN_SCORE=0.50
+- QUANT_QLIB_DRY_RUN_MIN_SHARPE=0.3
+
+## 并行开发任务（Agent运行中）
+1. 服务器代码同步 - Agent ID: ad131818ea5616d96
+2. 门控阈值调整 - Agent ID: a2f78fbbba90df1fd
+3. 告警推送实现 - Agent ID: ac84206da9a288726
+4. 风控熔断机制 - Agent ID: a19375b32dff3e9f3
+
+## SSH连接服务器
+```bash
+sshpass -p "1933" ssh -o StrictHostKeyChecking=no djy@39.106.11.65 "命令"
+```
+
+---
 
 # 关键决定
 
@@ -142,6 +205,10 @@
     - `Openclaw` 安全动作模式设计已写入 `docs/2026-04-15-openclaw-safe-actions-design.md`
     - 当前推荐第一阶段只开放：`automation_run_cycle`、`automation_dry_run_only`、重启 `api/web/freqtrade`
     - 当前推荐新增统一快照接口和安全动作网关，避免 `Openclaw` 直接拼多个业务接口或自行猜业务文案
+  - 本轮测试更新：
+    - 更新 `ui-evaluation-decision-center.spec.cjs`：移除旧设计断言，匹配当前页面结构
+    - 更新 `ui-main-flow.spec.cjs`：策略中心、任务页、余额页断言匹配当前设计
+    - Playwright 测试 `ui-evaluation ui-main-flow` 共 `4` 条，通过 `4`
 
 # 下一步
 

@@ -26,6 +26,7 @@ import {
   listSignals,
   listStrategies,
 } from "../lib/api";
+import { useResearchRuntimeStatus, useAutomationStatus } from "../lib/use-realtime-status";
 
 export default function HomePage() {
   const searchParams = useSearchParams();
@@ -41,9 +42,13 @@ export default function HomePage() {
   const [orders, setOrders] = useState<Array<{ symbol?: string; status?: string; side?: string }>>([]);
   const [strategies, setStrategies] = useState<Array<{ status?: string }>>([]);
   const [riskEvents, setRiskEvents] = useState<Array<{ ruleName?: string }>>([]);
-  const [researchRuntime, setResearchRuntime] = useState(getResearchRuntimeStatusFallback());
+  const [initialResearchRuntime, setInitialResearchRuntime] = useState(getResearchRuntimeStatusFallback());
   const [evaluationWorkspace, setEvaluationWorkspace] = useState(getEvaluationWorkspaceFallback());
-  const [automationStatus, setAutomationStatus] = useState(getAutomationStatusFallback().item);
+  const [initialAutomationCycle, setInitialAutomationCycle] = useState<Record<string, unknown>>(getAutomationStatusFallback().item);
+
+  // 使用实时状态 hooks（WebSocket + 轮询降级）
+  const { status: researchRuntime } = useResearchRuntimeStatus(initialResearchRuntime);
+  const { cycle: automationCycle } = useAutomationStatus(initialAutomationCycle);
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -84,9 +89,9 @@ export default function HomePage() {
         if (ordersRes.status === "fulfilled") setOrders(ordersRes.value);
         if (strategiesRes.status === "fulfilled") setStrategies(strategiesRes.value);
         if (risksRes.status === "fulfilled") setRiskEvents(risksRes.value);
-        if (runtimeRes.status === "fulfilled") setResearchRuntime(runtimeRes.value);
+        if (runtimeRes.status === "fulfilled") setInitialResearchRuntime(runtimeRes.value);
         if (evalRes.status === "fulfilled") setEvaluationWorkspace(evalRes.value);
-        if (autoRes.status === "fulfilled") setAutomationStatus(autoRes.value);
+        if (autoRes.status === "fulfilled") setInitialAutomationCycle(autoRes.value);
         setIsLoading(false);
       })
       .catch(() => {
@@ -111,16 +116,16 @@ export default function HomePage() {
   const tasksHref = session.isAuthenticated ? "/tasks" : "/login?next=%2Ftasks";
 
   const currentRecommendationSymbol = evaluationWorkspace.overview.recommended_symbol || latestSignal?.symbol || "无推荐";
-  const arbitration = asRecord(automationStatus.arbitration);
+  const arbitration = asRecord(automationCycle.arbitration);
   const suggestedAction = asRecord(arbitration.suggested_action);
 
   const automationHandoff = buildAutomationHandoffSummary({
-    automation: automationStatus,
+    automation: automationCycle as Record<string, unknown>,
     tasksHref,
     fallbackTargetHref: readText(suggestedAction, "target_page", researchHref),
     fallbackTargetLabel: readText(suggestedAction, "label", "按当前建议继续"),
     fallbackHeadline: readText(arbitration, "headline", "当前还没有自动化仲裁结论"),
-    fallbackDetail: readText(arbitration, "detail", "先看研究、执行和任务状态，再决定下一步。"),
+    fallbackDetail: readText(arbitration, "detail", "查看研究、执行和任务状态。"),
   });
 
   const researchStatus = researchRuntime.status || "idle";
@@ -131,8 +136,10 @@ export default function HomePage() {
 
   const riskValue = latestRisk?.ruleName ?? (session.isAuthenticated ? "无风险" : "需登录");
 
-  const automationMode = automationStatus.mode || "manual";
-  const automationValue = automationStatus.paused ? "已暂停" : automationStatus.manualTakeover ? "人工接管" : automationMode;
+  const automationMode = (automationCycle.mode as string) || "manual";
+  const automationPaused = automationCycle.paused as boolean;
+  const automationManualTakeover = automationCycle.manualTakeover as boolean;
+  const automationValue = automationPaused ? "已暂停" : automationManualTakeover ? "人工接管" : automationMode;
 
   return (
     <AppShell
@@ -183,7 +190,7 @@ export default function HomePage() {
               {
                 label: "自动化",
                 value: automationValue,
-                status: automationStatus.paused || automationStatus.manualTakeover ? "waiting" : "active",
+                status: automationPaused || automationManualTakeover ? "waiting" : "active",
                 detail: automationHandoff.runtimeHeadline,
               },
             ]}
@@ -257,13 +264,13 @@ export default function HomePage() {
             </Card>
           </div>
 
-          {(latestRisk || automationStatus.alerts.length > 0) && (
+          {(latestRisk || ((automationCycle.alerts as Array<unknown>)?.length > 0)) && (
             <Card className="border-destructive/50 bg-destructive/5">
               <CardHeader>
                 <p className="eyebrow">风险与告警</p>
-                <CardTitle>{latestRisk ? latestRisk.ruleName : `${automationStatus.alerts.length} 个告警`}</CardTitle>
+                <CardTitle>{latestRisk ? latestRisk.ruleName : `${(automationCycle.alerts as Array<unknown>)?.length || 0} 个告警`}</CardTitle>
                 <CardDescription>
-                  {latestRisk ? `最近风险事件` : automationStatus.alerts[0]?.message || "需要关注"}
+                  {latestRisk ? `最近风险事件` : ((automationCycle.alerts as Array<Record<string, unknown>>)?.[0]?.message as string) || "需要关注"}
                 </CardDescription>
               </CardHeader>
               <CardContent>

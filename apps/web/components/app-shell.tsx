@@ -1,7 +1,9 @@
 /* 这个文件负责统一的控制面外壳和主导航。 */
+"use client";
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useWebSocket } from "../lib/websocket-context";
 
 import { FormSubmitButton } from "./form-submit-button";
 import { Badge } from "./ui/badge";
@@ -25,6 +27,7 @@ type NavItem = {
 
 const PRIMARY_NAV_ITEMS: NavItem[] = [
   { href: "/", label: "总览", protected: false, hint: "先看当前最该处理的事" },
+  { href: "/signals", label: "信号", protected: false, hint: "看候选排行和运行研究" },
   { href: "/features", label: "因子", protected: false, hint: "看因子体系和候选评分" },
   { href: "/research", label: "研究", protected: false, hint: "看当前研究状态和配置摘要" },
   { href: "/evaluation", label: "决策", protected: false, hint: "先确认该推进谁" },
@@ -43,13 +46,21 @@ const TOOL_NAV_ITEMS: NavItem[] = [
 const SUPPLEMENTAL_NAV_ITEMS: NavItem[] = [
   { href: "/data", label: "数据准备", protected: false, hint: "补看研究输入和准备状态" },
   { href: "/backtest", label: "回测验证", protected: false, hint: "补看回测成本和结果" },
-  { href: "/signals", label: "信号报告", protected: false, hint: "补看统一研究产物" },
 ];
 
 /* 渲染统一页面壳层。 */
 export function AppShell({ title, subtitle, currentPath, isAuthenticated, children }: AppShellProps) {
+  const { status: wsStatus } = useWebSocket();
+
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* WebSocket 连接状态横幅 */}
+      {wsStatus !== "connected" && (
+        <div className="fixed top-0 left-0 right-0 z-[9998] bg-amber-500/90 px-4 py-2 text-center text-sm text-white">
+          {wsStatus === "connecting" ? "实时推送正在连接..." : "实时推送已断开，正在重连..."}
+        </div>
+      )}
+
       <div className="mx-auto grid min-h-screen max-w-[1680px] grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="border-b border-border/60 bg-card/60 px-5 py-6 backdrop-blur lg:border-b-0 lg:border-r">
           <div className="rounded-2xl border border-border/70 bg-card/90 p-5 shadow-[0_20px_40px_rgba(2,6,23,0.28)]">

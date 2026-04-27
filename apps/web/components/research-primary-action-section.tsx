@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { DetailDrawer } from "./detail-drawer";
+import { FullScreenModal } from "./full-screen-modal";
 import { FormSubmitButton } from "./form-submit-button";
 import { SectionShell } from "./section-shell";
 import { SummaryCard } from "./summary-card";
@@ -66,7 +66,7 @@ export function ResearchPrimaryActionSection({
         detail={primaryActionDetail}
         actions={(
           <>
-            <DetailDrawer
+            <FullScreenModal
               triggerLabel="运行研究动作"
               title="运行研究动作"
               description="训练、推理和研究报告入口统一收在这里，避免研究页尾部再放一组动作卡。"
@@ -77,9 +77,9 @@ export function ResearchPrimaryActionSection({
                 <ResearchActionCard action="run_research_inference" label="研究推理" detail="把最新训练结果继续推进到候选和研究报告。" />
                 <ResearchLinkCard href={signalsHref} label="回到信号页看研究报告" detail="统一研究报告、候选排行榜和实验摘要继续从信号页回看。" />
               </div>
-            </DetailDrawer>
+            </FullScreenModal>
 
-            <DetailDrawer
+            <FullScreenModal
               triggerLabel="查看配置摘要"
               title="查看配置摘要"
               description="把当前研究真正采用的预设、模板、模型和切分比例收成一屏，不用翻完整表单。"
@@ -90,9 +90,9 @@ export function ResearchPrimaryActionSection({
                 <PrimaryDigest label="训练是否可启动" value={trainReadinessLabel} detail="先确认训练入口现在是否已准备好。" />
                 <PrimaryDigest label="推理是否可启动" value={inferReadinessLabel} detail="训练产物准备好后，再继续看推理是否可启动。" />
               </div>
-            </DetailDrawer>
+            </FullScreenModal>
 
-            <DetailDrawer
+            <FullScreenModal
               triggerLabel="查看研究说明"
               title="查看研究说明"
               description="模型、标签方式、触发基础和持有窗口的解释统一放在这里，默认不再铺满整个研究页。"
@@ -104,9 +104,9 @@ export function ResearchPrimaryActionSection({
                 <PrimaryDigest label="持有窗口" value="当前持有窗口说明" detail={holdingWindowExplanation} />
                 <PrimaryDigest label="当前产物" value={artifactHeadline} detail={artifactDetail} />
               </div>
-            </DetailDrawer>
+            </FullScreenModal>
 
-            <DetailDrawer
+            <FullScreenModal
               triggerLabel="查看研究链跳转"
               title="查看研究链跳转"
               description="研究、评估、回测、执行和任务承接入口统一收在这里。"
@@ -123,10 +123,10 @@ export function ResearchPrimaryActionSection({
                   <ToolLink href={tasksHref} label="去任务页看自动化" />
                 </div>
               </div>
-            </DetailDrawer>
+            </FullScreenModal>
           </>
         )}
-        footer="研究训练、研究推理和研究链跳转都已经下沉到抽屉；首屏只保留这一组研究动作。"
+        footer="研究训练、研究推理和研究链跳转都已经下沉到弹窗；首屏只保留这一组研究动作。"
       >
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <PrimaryDigest label="当前状态" value={researchStatus} detail={researchStatusDetail} />

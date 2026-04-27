@@ -335,9 +335,51 @@ class ResearchRuntimeService:
             state = self._read_state(self._status_path(config))
             history = dict(state.get("history") or {})
             duration_seconds = max(1, round(time.perf_counter() - started_at))
+
+            # 构建运行结果快照（仅在成功时收集）
+            result_snapshot = {}
+            if status == "succeeded":
+                latest_result = self._read_latest_result()
+                recommendation = self._read_recommendation()
+
+                # 从研究结果中提取关键信息
+                latest_training = dict(latest_result.get("latest_training") or {})
+                latest_inference = dict(latest_result.get("latest_inference") or {})
+                inference_context = dict(latest_inference.get("inference_context") or {})
+                input_summary = dict(inference_context.get("input_summary") or {})
+
+                # 提取候选排行
+                candidates = []
+                if "candidates" in latest_result:
+                    candidates_list = latest_result.get("candidates")
+                    if isinstance(candidates_list, list):
+                        candidates = [str(c.get("symbol", "")) if isinstance(c, dict) else str(c) for c in candidates_list[:5]]
+
+                result_snapshot = {
+                    "recommended_symbol": str(recommendation.get("symbol") or input_summary.get("recommended_symbol") or ""),
+                    "recommended_strategy_id": str(recommendation.get("strategy_id") or ""),
+                    "top_candidates": candidates,
+                    "model_version": str(latest_training.get("model_version") or ""),
+                    "research_template": str(latest_inference.get("research_template") or input_summary.get("research_template") or ""),
+                    "signal_count": int(latest_result.get("signal_count") or 0),
+                }
+
+            # 构建完整的运行记录
+            run_record = {
+                "started_at": str(state.get("started_at") or _utc_now()),
+                "finished_at": _utc_now(),
+                "duration_seconds": duration_seconds,
+                "status": status,
+                "message": message,
+                "result_snapshot": result_snapshot,
+            }
+
+            # 将运行记录添加到 history
             action_history = list(history.get(action) or [])
-            action_history.append(duration_seconds)
-            history[action] = action_history[-5:]
+            action_history.append(run_record)
+            # 保留最近 10 条记录
+            history[action] = action_history[-10:]
+
             next_action = "run_inference" if action == "training" and status == "succeeded" else "review_results"
             finished_at = _utc_now()
             completed = {
@@ -407,7 +449,7 @@ class ResearchRuntimeService:
         return getattr(config, "paths").runtime_root / "research_runtime_status.json"
 
     def _read_state(self, path: Path) -> dict[str, object]:
-        """读取状态文件。"""
+        """读取状态文件，并清理旧格式的历史记录。"""
 
         if not path.exists():
             return {
@@ -424,7 +466,30 @@ class ResearchRuntimeService:
                 "history": {},
             }
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            state = json.loads(path.read_text(encoding="utf-8"))
+
+            # 清理旧格式的 history 数据（纯数字格式，没有时间戳）
+            history = dict(state.get("history") or {})
+            cleaned_history: dict[str, list[dict[str, object]]] = {}
+            for action_key, records in history.items():
+                if not isinstance(records, list):
+                    continue
+                # 只保留新格式的记录（字典格式，有 started_at 和 finished_at）
+                valid_records = []
+                for record in records:
+                    if isinstance(record, dict):
+                        # 新格式：检查是否有时间戳
+                        if record.get("started_at") and record.get("finished_at"):
+                            valid_records.append(record)
+                if valid_records:
+                    cleaned_history[action_key] = valid_records
+
+            # 如果有清理，更新状态文件
+            if cleaned_history != history:
+                state["history"] = cleaned_history
+                self._write_state(path, state)
+
+            return state
         except json.JSONDecodeError:
             return {
                 "status": "attention_required",
@@ -454,8 +519,19 @@ class ResearchRuntimeService:
         history = dict(state.get("history") or {})
         estimates: dict[str, int] = {}
         for action in ("training", "inference", "pipeline"):
-            values = [float(item) for item in list(history.get(action) or []) if float(item) > 0]
-            estimates[action] = math.ceil(sum(values) / len(values)) if values else self._default_estimate(action)
+            records = list(history.get(action) or [])
+            # 从新的记录格式提取 duration_seconds
+            durations = []
+            for record in records:
+                if isinstance(record, dict):
+                    duration = record.get("duration_seconds")
+                    if isinstance(duration, (int, float)) and duration > 0:
+                        durations.append(float(duration))
+                elif isinstance(record, (int, float)):
+                    # 兼容旧格式
+                    durations.append(float(record))
+
+            estimates[action] = math.ceil(sum(durations) / len(durations)) if durations else self._default_estimate(action)
         return estimates
 
     @staticmethod

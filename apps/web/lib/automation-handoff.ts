@@ -18,7 +18,7 @@ export type AutomationHandoffSummary = {
 };
 
 type BuildAutomationHandoffSummaryOptions = {
-  automation: AutomationStatusModel;
+  automation: AutomationStatusModel | Record<string, unknown>;
   tasksHref: string;
   fallbackTargetHref: string;
   fallbackTargetLabel: string;

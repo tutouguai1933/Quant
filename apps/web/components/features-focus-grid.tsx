@@ -1,8 +1,8 @@
-/* 这个文件负责渲染因子页默认首屏的摘要卡，把分类、启用、有效性、冗余和总分解释统一收进详情抽屉。 */
+/* 这个文件负责渲染因子页默认首屏的摘要卡，把分类、启用、有效性、冗余和总分解释统一收进详情弹窗。 */
 
 import type { ReactNode } from "react";
 
-import { DetailDrawer } from "./detail-drawer";
+import { FullScreenModal } from "./full-screen-modal";
 import { SectionShell } from "./section-shell";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "./ui/card";
 
@@ -19,10 +19,10 @@ export type FeaturesFocusCard = {
   summary: string;
   detail: string;
   triggerLabel: string;
-  drawerTitle: string;
-  drawerDescription: string;
-  drawerContent: ReactNode;
-  drawerFooter?: ReactNode;
+  modalTitle: string;
+  modalDescription: string;
+  modalContent: ReactNode;
+  modalFooter?: ReactNode;
   digests: FeaturesFocusDigest[];
 };
 
@@ -57,14 +57,14 @@ export function FeaturesFocusGrid({ cards }: FeaturesFocusGridProps) {
               </div>
             </CardContent>
             <CardFooter className="border-t border-border/60 pt-4">
-              <DetailDrawer
+              <FullScreenModal
                 triggerLabel={card.triggerLabel}
-                title={card.drawerTitle}
-                description={card.drawerDescription}
-                footer={card.drawerFooter}
+                title={card.modalTitle}
+                description={card.modalDescription}
+                footer={card.modalFooter}
               >
-                {card.drawerContent}
-              </DetailDrawer>
+                {card.modalContent}
+              </FullScreenModal>
             </CardFooter>
           </Card>
         ))}

@@ -126,7 +126,7 @@ export default function SignalsPage() {
     fallbackTargetHref: formatText(automationSuggestedAction.target_page, evaluationHref),
     fallbackTargetLabel: formatText(automationSuggestedAction.label, "去评估页继续"),
     fallbackHeadline: formatText(automationArbitration.headline, "当前还没有自动化承接摘要"),
-    fallbackDetail: formatText(automationArbitration.detail, "先看评估和任务页，再决定是否继续推进。"),
+    fallbackDetail: formatText(automationArbitration.detail, "查看评估和任务页。"),
   });
   const inferenceGeneratedAt = formatText(
     latestInference["generated_at"],
@@ -170,9 +170,9 @@ export default function SignalsPage() {
       <FeedbackBanner feedback={feedback} />
 
       <PageHero
-        badge="研究终端"
-        title="先看候选，再看报告，不把研究信息一路往下堆。"
-        description="信号页现在只做两件事：左边给你候选和动作，右边给你统一研究报告和最近实验。"
+        badge="信号页"
+        title="候选排行与研究报告"
+        description=""
         aside={
           <div className="grid gap-2">
             <ActionForm action="run_pipeline" label="运行 Qlib 信号流水线" returnTo="/signals" />
@@ -208,8 +208,7 @@ export default function SignalsPage() {
                   <ScanSearch className="size-4 text-primary" />
                   <p className="eyebrow">自动化入口</p>
                 </div>
-                <CardTitle>先确认这一轮会不会继续往下跑</CardTitle>
-                <CardDescription>信号页只给你自动化摘要，真正的恢复建议、人工接管和降级处理统一回任务页。</CardDescription>
+                <CardTitle>自动化状态</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
