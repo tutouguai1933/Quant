@@ -172,21 +172,31 @@ docker compose up -d --build
      - MATCH,PROXY
    ```
 
-5. `infra/freqtrade/user_data/config.proxy.mihomo.json` - Freqtrade 代理配置
+5. `infra/freqtrade/user_data/config.proxy.json` - Freqtrade 代理配置（正确格式）
    ```json
    {
      "exchange": {
        "ccxt_config": {
-         "httpsProxy": null,
-         "aiohttp_proxy": "http://mihomo:7890"
+         "enableRateLimit": true,
+         "proxies": {
+           "http": "http://127.0.0.1:7890",
+           "https": "http://127.0.0.1:7890"
+         }
        },
        "ccxt_async_config": {
-         "httpsProxy": null,
-         "aiohttp_proxy": "http://mihomo:7890"
+         "enableRateLimit": true,
+         "aiohttp_proxy": "http://127.0.0.1:7890",
+         "proxies": {
+           "http": "http://127.0.0.1:7890",
+           "https": "http://127.0.0.1:7890"
+         }
        }
      }
    }
    ```
+
+   > **注意**：ccxt async 使用 `aiohttp_proxy` 和 `proxies` 字段，不使用 `httpsProxy`。
+   > 详细配置说明见：[docs/CONFIG_CHECKLIST.md](docs/CONFIG_CHECKLIST.md)
 
 ### 5.3 服务组件
 

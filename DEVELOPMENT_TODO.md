@@ -1,171 +1,158 @@
 # Quant 项目开发任务清单
 
-> 最后更新：2026-04-28
+> 最后更新：2026-04-29
 > 状态：所有核心任务已完成，系统可用
 
 ---
 
-## 一、高优先级任务（P0 - 立即需要）
+## 一、高优先级任务（P0 - 已完成）
 
-### 1. 服务器代码同步
-- **状态**：✅ 已完成（2026-04-28）
-- **方式**：GitHub push/pull + SCP
-- **最新Commit**：68b9e9f
+### 1. 服务器代码同步 ✅
+- **完成时间**：2026-04-28
+- **方式**：GitHub push/pull
+- **最新Commit**：8b66438
 
-### 2. VPN节点自动切换机制
-- **状态**：✅ 已完成（2026-04-27）
+### 2. VPN节点自动切换机制 ✅
+- **完成时间**：2026-04-27
 - **文件**：services/api/app/services/vpn_switch_service.py
 - **配置**：QUANT_VPN_WHITELIST_IPS, QUANT_VPN_HEALTH_CHECK_INTERVAL
 
-### 3. 研究到执行自动化
-- **状态**：✅ 已完成（2026-04-27）
+### 3. 研究到执行自动化 ✅
+- **完成时间**：2026-04-27
 - **文件**：services/api/app/services/auto_dispatch_service.py
 - **配置**：QUANT_AUTO_DISPATCH_ENABLED, QUANT_AUTO_DISPATCH_MIN_SCORE
 
----
-
-## 二、中优先级任务（P1 - 近期优化）
-
-### 4. 风控熔断机制
-- **状态**：✅ 已完成（2026-04-27）
+### 4. 风控熔断机制 ✅
+- **完成时间**：2026-04-27
 - **文件**：services/api/app/services/risk_guard_service.py
-- **配置**：api.env.example已添加
+- **配置**：QUANT_RISK_DAILY_MAX_LOSS_PCT
 
-### 5. 交易告警推送
-- **状态**：✅ 已完成（2026-04-27）
+### 5. 交易告警推送 ✅
+- **完成时间**：2026-04-27
 - **文件**：services/api/app/services/alert_push_service.py
 - **支持**：Telegram + Webhook推送
 
-### 6. 门控阈值调整
-- **状态**：✅ 已完成（2026-04-27）
-- **结果**：DOGEUSDT通过dry_run_gate
+### 6. 门控阈值调整 ✅
+- **完成时间**：2026-04-29
+- **结果**：MIN_ENTRY_SCORE 0.70→0.60
 
 ---
 
-## 三、低优先级任务（P2 - 长期优化）
+## 二、Phase 3/4/5 开发（已完成）
+
+### Phase 3 - 策略引擎增强 ✅
+| 功能 | 文件 | 状态 |
+|------|------|------|
+| 入场评分计算 | strategy_engine_service.py | ✅ |
+| RSI/MACD/成交量趋势 | indicator_service.py | ✅ |
+| 仓位动态计算 | strategy_engine_service.py | ✅ |
+| 止损追踪机制 | strategy_engine_service.py | ✅ |
+
+### Phase 4 - 模型辅助边界场景 ✅
+| 功能 | 文件 | 状态 |
+|------|------|------|
+| 边界场景检测 | model_suggestion_service.py | ✅ |
+| 模型API调用 | model_suggestion_service.py | ✅ |
+
+### Phase 5 - 运维扩展 ✅
+| 功能 | 文件 | 状态 |
+|------|------|------|
+| 性能监控 | performance_monitor_service.py | ✅ |
+| 回测验证 | backtest_validation_service.py | ✅ |
+| 多币种支持 | config_center_service.py | ✅ |
+| OpenClaw巡检 | openclaw_patrol_service.py | ✅ |
+
+---
+
+## 三、低优先级任务（P2 - 待开始）
 
 ### 7. 策略实现
 - **问题**：SampleStrategy无实际逻辑，交易决策随机
 - **状态**：待开始
-- **负责人**：-
 - **预估工时**：8小时
-- **依赖**：任务3（研究到执行自动化）
 - **验收标准**：
   - 实现基于研究结论的入场策略
   - 实现动态止损追踪
   - 实现盈亏比触发退出
   - 回测验证策略有效性
-- **可并行**：❌ 依赖研究自动化
 
 ### 8. 数据分析报表
 - **问题**：无历史数据分析，无法复盘优化
 - **状态**：待开始
-- **负责人**：-
 - **预估工时**：4小时
-- **依赖**：无
 - **验收标准**：
   - 每日/每周交易统计报表
   - 盈亏归因分析
   - 策略表现对比
-- **可并行**：✅ 与其他任务无依赖
 
 ### 9. 配置统一管理
 - **问题**：配置分散在api.env、多个JSON、docker-compose
 - **状态**：待开始
-- **负责人**：-
 - **预估工时**：2小时
-- **依赖**：无
 - **验收标准**：
   - 创建统一配置文件
   - 环境变量注入机制
   - 配置变更历史追踪
-- **可并行**：✅ 与其他任务无依赖
+
+### 10. Freqtrade Live模式
+- **问题**：ccxt async无法通过代理访问Binance私有API
+- **状态**：待研究
+- **预估工时**：4小时
+- **可能的解决方案**：
+  - 安装aiohttp-socks使用SOCKS5代理
+  - 使用其他代理方案
+  - 直接使用公网IP（需Binance白名单）
 
 ---
 
-## 四、并行开发分组
-
-### 组A - 基础设施优化
-| 任务 | 预估工时 | 状态 |
-|------|----------|------|
-| 服务器代码同步 | 30分钟 | ✅ 完成 |
-| VPN节点自动切换 | 2小时 | 待开始 |
-| 配置统一管理 | 2小时 | 待开始 |
-
-### 组B - 风控与告警
-| 任务 | 预估工时 | 状态 |
-|------|----------|------|
-| 风控熔断机制 | 3小时 | ✅ 完成 |
-| 交易告警推送 | 2小时 | ✅ 完成 |
-| 门控阈值调整 | 1小时 | ✅ 完成 |
-
-### 组C - 自动化流程
-| 任务 | 预估工时 | 状态 |
-|------|----------|------|
-| 研究到执行自动化 | 4小时 | ✅ 完成 |
-| VPN节点自动切换 | 2小时 | ✅ 完成 |
-
-### 组D - 策略与数据（依赖组C完成）
-| 任务 | 预估工时 | 状态 |
-|------|----------|------|
-| 策略实现 | 8小时 | 待开始 |
-| 数据分析报表 | 4小时 | 待开始 |
-
----
-
-## 五、Agent Team分工建议
-
-### Team 1 - 基础设施组
-- **任务**：组A任务
-- **Agent类型**：general-purpose
-- **预估完成时间**：2.5小时
-
-### Team 2 - 风控组
-- **任务**：组B任务
-- **Agent类型**：general-purpose
-- **预估完成时间**：3小时
-
-### Team 3 - 自动化组（待组A完成）
-- **任务**：组C任务
-- **Agent类型**：general-purpose
-- **预估完成时间**：4小时
-
----
-
-## 六、验收检查清单
+## 四、验收检查清单
 
 ### 每次开发完成后需验证：
 1. `pnpm build` 构建通过
-2. 后端测试通过
-3. Freqtrade Live模式运行正常
-4. VPN节点连接稳定
-5. Binance API可正常访问
+2. 后端测试通过 (`pytest services/api/tests/`)
+3. Freqtrade Dry-run模式运行正常
+4. VPN节点连接稳定（出口IP在白名单内）
+5. Binance API可正常访问（通过代理）
 6. WebSocket实时推送正常
 7. OpenClaw巡检正常
 
 ---
 
-## 七、当前系统状态快照
+## 五、关键配置参考
 
-### 服务状态（2026-04-27）
-| 服务 | 地址 | 状态 |
+> 详细配置请参考：[docs/CONFIG_CHECKLIST.md](docs/CONFIG_CHECKLIST.md)
+
+### 5.1 环境变量（api.env）
+```bash
+QUANT_RUNTIME_MODE=dry-run
+QUANT_ALLOW_LIVE_EXECUTION=false
+QUANT_LIVE_ALLOWED_SYMBOLS=DOGEUSDT
+QUANT_LIVE_MAX_STAKE_USDT=6
+QUANT_STRATEGY_MIN_ENTRY_SCORE=0.60
+QUANT_VPN_WHITELIST_IPS=154.31.113.7,154.3.37.169,202.85.76.66
+```
+
+### 5.2 Freqtrade配置文件
+| 文件 | 位置 |
+|------|------|
+| config.base.json | ~/Quant/infra/freqtrade/user_data/ |
+| config.deploy.json | ~/Quant/infra/freqtrade/user_data/ |
+| config.private.json | ~/Quant/infra/freqtrade/user_data/ |
+| config.proxy.json | ~/Quant/infra/freqtrade/user_data/ |
+
+---
+
+## 六、服务器状态
+
+### 服务端口
+| 服务 | 端口 | 状态 |
 |------|------|------|
-| API | http://39.106.11.65:9011 | ✅ 运行 |
-| Web | http://39.106.11.65:9012 | ✅ 运行 |
-| Freqtrade | http://39.106.11.65:9013 | ✅ Live模式 |
-| mihomo | 127.0.0.1:7890 | ✅ 日本节点 |
+| API | 9011 | ✅ |
+| Web | 9012 | ✅ |
+| Freqtrade | 9013 | ✅ Dry-run |
+| mihomo | 7890 | ✅ |
 
-### VPN状态
-- 当前节点：★ 日本¹
-- 出口IP：154.31.113.7（白名单内）
-
-### 交易状态
-- 总交易数：2
-- 累计盈亏：~0 USDT
-- 当前持仓：无
-
-### 配置状态
-- QUANT_ALLOW_LIVE_EXECUTION：false（需与实际同步）
-- QUANT_LIVE_ALLOWED_SYMBOLS：DOGEUSDT
-- QUANT_LIVE_MAX_STAKE_USDT：6
-- QUANT_LIVE_MAX_OPEN_TRADES：1
+### SSH连接
+```bash
+sshpass -p "1933" ssh -o StrictHostKeyChecking=no djy@39.106.11.65 "命令"
+```
