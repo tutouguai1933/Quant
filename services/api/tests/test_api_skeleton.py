@@ -3,7 +3,9 @@ from __future__ import annotations
 import sys
 import threading
 import unittest
+from decimal import Decimal
 from pathlib import Path
+from typing import Callable
 from unittest import mock
 
 
@@ -24,7 +26,9 @@ import services.api.app.services.auth_service as auth_service_module  # noqa: E4
 import services.api.app.services.execution_service as execution_service_module  # noqa: E402
 import services.api.app.services.risk_service as risk_service_module  # noqa: E402
 import services.api.app.services.signal_service as signal_service_module  # noqa: E402
+import services.api.app.services.risk_guard_service as risk_guard_module  # noqa: E402
 import services.api.app.services.strategy_dispatch_service as strategy_dispatch_module  # noqa: E402
+import services.api.app.services.strategy_engine_service as strategy_engine_module  # noqa: E402
 import services.api.app.services.strategy_catalog as strategy_catalog_module  # noqa: E402
 import services.api.app.services.strategy_workspace_service as strategy_workspace_module  # noqa: E402
 import services.api.app.services.sync_service as sync_service_module  # noqa: E402
@@ -71,6 +75,7 @@ from services.api.app.services.automation_workflow_service import AutomationWork
 from services.api.app.services.risk_service import RiskService  # noqa: E402
 from services.api.app.services.signal_service import SignalService  # noqa: E402
 from services.api.app.services.strategy_dispatch_service import StrategyDispatchService  # noqa: E402
+from services.api.app.services.strategy_engine_service import StrategyEngineService, EntryDecision  # noqa: E402
 from services.api.app.services.strategy_catalog import StrategyCatalogService  # noqa: E402
 from services.api.app.services.strategy_workspace_service import StrategyWorkspaceService  # noqa: E402
 from services.api.app.services.validation_workflow_service import ValidationWorkflowService  # noqa: E402
@@ -143,6 +148,7 @@ class ApiSkeletonTests(unittest.TestCase):
         strategy_dispatch_module.sync_service = sync_service_module.sync_service
         strategy_dispatch_module.risk_service = new_risk_service
         strategy_dispatch_module.execution_service = execution_service_module.execution_service
+        strategy_dispatch_module.strategy_engine_service = strategy_engine_module.strategy_engine_service
         new_strategy_dispatch_service = StrategyDispatchService()
         strategy_dispatch_module.strategy_dispatch_service = new_strategy_dispatch_service
 
@@ -170,6 +176,33 @@ class ApiSkeletonTests(unittest.TestCase):
     def _login_token() -> str:
         response = login(username="admin", password="1933")
         return str(response["data"]["item"]["token"])
+
+    @staticmethod
+    def _mock_allowed_entry_decision() -> tuple[Callable, Callable]:
+        """Mock strategy engine and risk guard to return allowed for tests."""
+        original_calculate = strategy_engine_module.strategy_engine_service.calculate_entry_score
+        strategy_engine_module.strategy_engine_service.calculate_entry_score = lambda **_: EntryDecision(
+            allowed=True,
+            score=Decimal("0.85"),
+            reason="Mocked: entry allowed for test",
+            confidence="high",
+            trend_confirmed=True,
+            research_aligned=True,
+            suggested_position_ratio=Decimal("0.25"),
+        )
+        strategy_dispatch_module.strategy_engine_service = strategy_engine_module.strategy_engine_service
+
+        original_risk_guard_check = risk_guard_module.risk_guard_service.check_all
+        risk_guard_module.risk_guard_service.check_all = lambda **_: {"passed": True, "checks": [], "summary": "mocked pass"}
+        strategy_dispatch_module.risk_guard_service = risk_guard_module.risk_guard_service
+
+        return original_calculate, original_risk_guard_check
+
+    @staticmethod
+    def _restore_entry_decision(original_calculate: Callable, original_risk_guard_check: Callable) -> None:
+        """Restore original strategy engine and risk guard."""
+        strategy_engine_module.strategy_engine_service.calculate_entry_score = original_calculate
+        risk_guard_module.risk_guard_service.check_all = original_risk_guard_check
 
     def test_main_app_exposes_router_collection(self) -> None:
         self.assertTrue(hasattr(app, "include_router"))
@@ -608,7 +641,12 @@ class ApiSkeletonTests(unittest.TestCase):
         token = self._login_token()
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
-        response = dispatch_latest_signal(1, token=token)
+
+        original_calculate, original_risk_guard = self._mock_allowed_entry_decision()
+        try:
+            response = dispatch_latest_signal(1, token=token)
+        finally:
+            self._restore_entry_decision(original_calculate, original_risk_guard)
 
         self.assertIsNone(response["error"])
         self.assertIn("order", response["data"]["item"])
@@ -643,6 +681,7 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
+        original_calculate, original_risk_guard = self._mock_allowed_entry_decision()
         original_run_custom_task = strategy_dispatch_module.task_scheduler.run_custom_task
         strategy_dispatch_module.task_scheduler.run_custom_task = lambda **_: {  # type: ignore[assignment]
             "id": 1,
@@ -653,6 +692,7 @@ class ApiSkeletonTests(unittest.TestCase):
         try:
             response = dispatch_latest_signal(1, token=token)
         finally:
+            self._restore_entry_decision(original_calculate, original_risk_guard)
             strategy_dispatch_module.task_scheduler.run_custom_task = original_run_custom_task  # type: ignore[assignment]
 
         self.assertEqual(response["error"]["code"], "risk_evaluation_failed")
@@ -664,6 +704,7 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
+        original_calculate, original_risk_guard = self._mock_allowed_entry_decision()
         original_run_custom_task = strategy_dispatch_module.task_scheduler.run_custom_task
         strategy_dispatch_module.task_scheduler.run_custom_task = lambda **_: {  # type: ignore[assignment]
             "id": 1,
@@ -672,10 +713,12 @@ class ApiSkeletonTests(unittest.TestCase):
         }
         try:
             failed_response = dispatch_latest_signal(1, token=token)
-        finally:
+            # Restore risk check mock for second call
             strategy_dispatch_module.task_scheduler.run_custom_task = original_run_custom_task  # type: ignore[assignment]
+            succeeded_response = dispatch_latest_signal(1, token=token)
+        finally:
+            self._restore_entry_decision(original_calculate, original_risk_guard)
 
-        succeeded_response = dispatch_latest_signal(1, token=token)
         self.assertEqual(failed_response["error"]["code"], "risk_evaluation_failed")
         self.assertIn("risk evaluation failed", failed_response["error"]["message"])
         self.assertIn(get_signal(1)["data"]["item"]["status"], {"dispatched", "synced"})
@@ -686,6 +729,7 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
+        original_calculate, original_risk_guard = self._mock_allowed_entry_decision()
         original_run_custom_task = strategy_dispatch_module.task_scheduler.run_custom_task
         strategy_dispatch_module.task_scheduler.run_custom_task = lambda **_: {  # type: ignore[assignment]
             "id": 1,
@@ -695,10 +739,12 @@ class ApiSkeletonTests(unittest.TestCase):
         }
         try:
             failed_response = dispatch_latest_signal(1, token=token)
-        finally:
+            # Restore risk check mock for second call
             strategy_dispatch_module.task_scheduler.run_custom_task = original_run_custom_task  # type: ignore[assignment]
+            succeeded_response = dispatch_latest_signal(1, token=token)
+        finally:
+            self._restore_entry_decision(original_calculate, original_risk_guard)
 
-        succeeded_response = dispatch_latest_signal(1, token=token)
         self.assertEqual(failed_response["error"]["code"], "risk_evaluation_failed")
         self.assertIn("risk decision missing status", failed_response["error"]["message"])
         self.assertIn(get_signal(1)["data"]["item"]["status"], {"dispatched", "synced"})
@@ -709,6 +755,7 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
+        original_calculate, original_risk_guard = self._mock_allowed_entry_decision()
         original_run_named_task = strategy_dispatch_module.task_scheduler.run_named_task
 
         def failing_sync(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -724,6 +771,7 @@ class ApiSkeletonTests(unittest.TestCase):
         try:
             response = dispatch_latest_signal(1, token=token)
         finally:
+            self._restore_entry_decision(original_calculate, original_risk_guard)
             strategy_dispatch_module.task_scheduler.run_named_task = original_run_named_task  # type: ignore[assignment]
 
         self.assertEqual(response["error"]["code"], "sync_failed")
@@ -735,8 +783,12 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
-        first_response = dispatch_latest_signal(1, token=token)
-        second_response = dispatch_latest_signal(1, token=token)
+        original_calculate, original_risk_guard = self._mock_allowed_entry_decision()
+        try:
+            first_response = dispatch_latest_signal(1, token=token)
+            second_response = dispatch_latest_signal(1, token=token)
+        finally:
+            self._restore_entry_decision(original_calculate, original_risk_guard)
 
         self.assertIsNone(first_response["error"])
         self.assertEqual(second_response["error"]["code"], "signal_not_ready")
@@ -747,6 +799,7 @@ class ApiSkeletonTests(unittest.TestCase):
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
+        original_calculate, original_risk_guard = self._mock_allowed_entry_decision()
         original_dispatch = strategy_dispatch_module.execution_service.dispatch_signal
         entered = threading.Event()
         release = threading.Event()
@@ -768,6 +821,7 @@ class ApiSkeletonTests(unittest.TestCase):
             release.set()
             thread.join(timeout=5)
         finally:
+            self._restore_entry_decision(original_calculate, original_risk_guard)
             strategy_dispatch_module.execution_service.dispatch_signal = original_dispatch  # type: ignore[assignment]
 
         self.assertEqual(call_count["value"], 1)
