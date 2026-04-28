@@ -7,11 +7,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.api.app.services.config_center_service import config_center_service
+from services.api.app.services.config_center_service import (
+    config_center_service,
+    detect_environment,
+    get_config,
+    get_config_section_values,
+    is_sensitive_key,
+    mask_sensitive_value,
+)
+from services.api.app.services.auth_service import auth_service
 
 
 try:
-    from fastapi import APIRouter, Body, Query
+    from fastapi import APIRouter, Body, Header, Query
 except ImportError:
     class APIRouter:  # pragma: no cover - lightweight local fallback
         def __init__(self, *args, **kwargs) -> None:
@@ -33,10 +41,18 @@ except ImportError:
                 return func
             return decorator
 
+        def put(self, *args, **kwargs):
+            def decorator(func):
+                return func
+            return decorator
+
     def Body(default=None):  # pragma: no cover - lightweight local fallback
         return default
 
     def Query(default=None, **kwargs):  # pragma: no cover - lightweight local fallback
+        return default
+
+    def Header(default: str = "") -> str:  # pragma: no cover - fallback stub
         return default
 
 
@@ -51,6 +67,15 @@ def _success(data: dict[str, Any] | list[Any], meta: dict[str, Any] | None = Non
 def _error(code: str, message: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
     """错误响应格式。"""
     return {"data": None, "error": {"code": code, "message": message}, "meta": meta or {}}
+
+
+def _unauthorized() -> dict[str, Any]:
+    """未授权响应格式。"""
+    return {
+        "data": None,
+        "error": {"code": "unauthorized", "message": "authentication required"},
+        "meta": {"source": "config-center"},
+    }
 
 
 @router.get("")
@@ -167,6 +192,8 @@ def update_config(
     value: str = "",
     operator: str = "system",
     comment: str = "",
+    token: str = "",
+    authorization: str = Header(""),
 ) -> dict[str, Any]:
     """更新单个配置项。
 
@@ -178,10 +205,19 @@ def update_config(
         value: 新值
         operator: 操作者
         comment: 变更说明
+        token: 认证令牌
+        authorization: Bearer 认证头
 
     Returns:
         更新结果
     """
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
     request = payload if isinstance(payload, dict) else {}
     resolved_key = str(request.get("key", key))
     resolved_value = str(request.get("value", value))
@@ -211,6 +247,8 @@ def batch_update_config(
     updates: dict[str, str] | None = None,
     operator: str = "system",
     comment: str = "",
+    token: str = "",
+    authorization: str = Header(""),
 ) -> dict[str, Any]:
     """批量更新配置项。
 
@@ -221,10 +259,19 @@ def batch_update_config(
         updates: 配置键值对
         operator: 操作者
         comment: 变更说明
+        token: 认证令牌
+        authorization: Bearer 认证头
 
     Returns:
         批量更新结果
     """
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
     request = payload if isinstance(payload, dict) else {}
     resolved_updates = request.get("updates", updates) or {}
     resolved_operator = str(request.get("operator", operator))
@@ -248,6 +295,8 @@ def batch_update_config(
 def delete_config(
     key: str,
     operator: str = Query("system", description="操作者"),
+    token: str = "",
+    authorization: str = Header(""),
 ) -> dict[str, Any]:
     """删除配置项。
 
@@ -256,10 +305,19 @@ def delete_config(
     Args:
         key: 配置键名
         operator: 操作者
+        token: 认证令牌
+        authorization: Bearer 认证头
 
     Returns:
         删除结果
     """
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
     try:
         result = config_center_service.delete_config(key=key, operator=operator)
         return _success(result, {"source": "config-center", "action": "delete"})
@@ -270,14 +328,28 @@ def delete_config(
 
 
 @router.post("/reload")
-def reload_config() -> dict[str, Any]:
+def reload_config(
+    token: str = "",
+    authorization: str = Header(""),
+) -> dict[str, Any]:
     """重新加载配置。
 
-    注意：配置更新后需要重启服务才能生效。
+    需要管理员权限。配置更新后需要重启服务才能生效。
+
+    Args:
+        token: 认证令牌
+        authorization: Bearer 认证头
 
     Returns:
         重载结果
     """
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
     try:
         result = config_center_service.reload_config()
         return _success(result, {"source": "config-center", "action": "reload"})
@@ -317,6 +389,8 @@ def update_pair_whitelist(
     stake_per_pair: str | None = None,
     operator: str = "system",
     comment: str = "",
+    token: str = "",
+    authorization: str = Header(""),
 ) -> dict[str, Any]:
     """更新交易对白名单配置。
 
@@ -330,10 +404,19 @@ def update_pair_whitelist(
         stake_per_pair: 仓位分配策略（equal/volatility/score）
         operator: 操作者
         comment: 变更说明
+        token: 认证令牌
+        authorization: Bearer 认证头
 
     Returns:
         更新结果和当前配置
     """
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
     request = payload if isinstance(payload, dict) else {}
 
     resolved_whitelist = request.get("whitelist", whitelist)
@@ -393,3 +476,96 @@ def get_pair_volatility_params(pair: str) -> dict[str, Any]:
         return _success(result, {"source": "config-center", "action": "get_pair_volatility"})
     except Exception as e:
         return _error("pair_volatility_error", f"获取交易对波动率参数失败: {e}", {"source": "config-center"})
+
+
+# ========== 统一配置访问接口 ==========
+
+
+@router.get("/environment")
+def get_environment() -> dict[str, Any]:
+    """获取当前运行环境信息。
+
+    Returns:
+        环境信息：
+        - environment: "server" 或 "local"
+        - is_docker: 是否在 Docker 容器中
+        - runtime_mode: 当前运行模式
+    """
+    try:
+        env = detect_environment()
+        runtime_mode = get_config("QUANT_RUNTIME_MODE", "dry-run", as_type="str")
+        return _success({
+            "environment": env,
+            "is_docker": env == "server",
+            "runtime_mode": runtime_mode,
+        }, {"source": "config-center", "action": "get_environment"})
+    except Exception as e:
+        return _error("environment_error", f"获取环境信息失败: {e}", {"source": "config-center"})
+
+
+@router.get("/value/{key}")
+def get_config_value(
+    key: str,
+    default: str = Query("", description="默认值"),
+    as_type: str = Query("str", description="返回类型 (str/int/float/decimal/bool/list)"),
+    include_secrets: bool = Query(False, description="是否包含敏感信息"),
+) -> dict[str, Any]:
+    """获取单个配置项的值。
+
+    Args:
+        key: 配置键名（如 QUANT_STRATEGY_MIN_ENTRY_SCORE）
+        default: 默认值（可选）
+        as_type: 返回类型 (str/int/float/decimal/bool/list)
+        include_secrets: 是否包含敏感信息（敏感信息默认脱敏）
+
+    Returns:
+        配置值
+    """
+    try:
+        value = get_config(key, default if default else None, as_type=as_type)
+
+        # 敏感信息脱敏
+        if not include_secrets and is_sensitive_key(key):
+            value = mask_sensitive_value(key, str(value) if value else None)
+
+        return _success({
+            "key": key,
+            "value": value,
+            "type": as_type,
+            "is_sensitive": is_sensitive_key(key),
+        }, {"source": "config-center", "action": "get_value"})
+    except Exception as e:
+        return _error("value_error", f"获取配置值失败: {e}", {"source": "config-center"})
+
+
+@router.get("/section/{section}/values")
+def get_section_values(
+    section: str,
+    include_secrets: bool = Query(False, description="是否包含敏感信息"),
+) -> dict[str, Any]:
+    """获取配置段的全部值（已自动解析类型）。
+
+    Args:
+        section: 配置段名称（如 strategy, vpn, risk 等）
+        include_secrets: 是否包含敏感信息
+
+    Returns:
+        配置段的全部键值对
+    """
+    try:
+        values = get_config_section_values(section)
+
+        # 敏感信息脱敏
+        if not include_secrets:
+            for key in values:
+                if is_sensitive_key(key) and values[key]:
+                    values[key] = "***REDACTED***"
+
+        return _success({
+            "section": section,
+            "values": values,
+        }, {"source": "config-center", "action": "get_section_values"})
+    except ValueError as e:
+        return _error("invalid_section", str(e), {"source": "config-center"})
+    except Exception as e:
+        return _error("section_error", f"获取配置段值失败: {e}", {"source": "config-center"})

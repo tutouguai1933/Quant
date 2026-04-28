@@ -19,7 +19,9 @@ import services.api.app.routes.tasks as tasks_route  # noqa: E402
 import services.api.app.services.signal_service as signal_service_module  # noqa: E402
 import services.api.app.services.execution_service as execution_service_module  # noqa: E402
 import services.api.app.services.risk_service as risk_service_module  # noqa: E402
+import services.api.app.services.risk_guard_service as risk_guard_module  # noqa: E402
 import services.api.app.services.sync_service as sync_service_module  # noqa: E402
+import services.api.app.services.strategy_engine_service as strategy_engine_module  # noqa: E402
 import services.api.app.services.strategy_dispatch_service as strategy_dispatch_module  # noqa: E402
 import services.api.app.tasks.scheduler as scheduler_module  # noqa: E402
 from services.api.app.adapters.freqtrade.client import freqtrade_client  # noqa: E402
@@ -40,8 +42,47 @@ from services.api.app.routes.tasks import confirm_automation_alert, clear_automa
 from services.api.app.services.auth_service import auth_service  # noqa: E402
 from services.api.app.services.automation_service import automation_service  # noqa: E402
 from services.api.app.services.risk_service import risk_service  # noqa: E402
+from services.api.app.services.risk_guard_service import risk_guard_service  # noqa: E402
 from services.api.app.services.signal_service import signal_service  # noqa: E402
 from services.api.app.tasks.scheduler import task_scheduler  # noqa: E402
+from services.api.app.services.strategy_engine_service import EntryDecision, strategy_engine_service  # noqa: E402
+from decimal import Decimal  # noqa: E402
+
+
+def _make_passing_entry_decision() -> EntryDecision:
+    """Create an EntryDecision that passes strategy engine validation."""
+    return EntryDecision(
+        allowed=True,
+        score=Decimal("0.75"),
+        reason="入场条件满足",
+        confidence="high",
+        trend_confirmed=True,
+        research_aligned=True,
+        suggested_position_ratio=Decimal("0.25"),
+        rsi_value=Decimal("45"),
+        rsi_signal="neutral",
+        macd_trend="bullish",
+        volume_signal="normal",
+        edge_case_detected=False,
+    )
+
+
+def _make_blocked_entry_decision() -> EntryDecision:
+    """Create an EntryDecision that fails strategy engine validation."""
+    return EntryDecision(
+        allowed=False,
+        score=Decimal("0.45"),
+        reason="综合评分低于入场阈值",
+        confidence="low",
+        trend_confirmed=False,
+        research_aligned=False,
+        suggested_position_ratio=Decimal("0"),
+        rsi_value=Decimal("70"),
+        rsi_signal="overbought",
+        macd_trend="bearish",
+        volume_signal="low",
+        edge_case_detected=False,
+    )
 
 
 class RiskAndTaskTests(unittest.TestCase):
@@ -51,6 +92,7 @@ class RiskAndTaskTests(unittest.TestCase):
         freqtrade_client.__init__()
         signal_service.__init__()
         risk_service.__init__()
+        risk_guard_service.__init__()
         task_scheduler.__init__()
         auth_route.auth_service = auth_service
         signals_route.signal_service = signal_service
@@ -99,18 +141,30 @@ class RiskAndTaskTests(unittest.TestCase):
         token = self._login_token()
         run_signal_pipeline("mock")
 
-        response = dispatch_latest_signal(1, token=token)
+        # Mock strategy engine to block at entry validation level
+        with patch.object(
+            strategy_engine_service,
+            "calculate_entry_score",
+            return_value=_make_blocked_entry_decision(),
+        ):
+            response = dispatch_latest_signal(1, token=token)
 
-        self.assertEqual(response["error"]["code"], "risk_blocked")
-        self.assertEqual(list_risk_events(token=token)["data"]["items"][0]["rule_name"], "strategy_status_guard")
-        self.assertEqual(get_signal(1)["data"]["item"]["status"], "rejected")
+        self.assertEqual(response["error"]["code"], "strategy_engine_blocked")
+        # Signal status remains "received" when strategy engine blocks before risk evaluation
+        self.assertEqual(get_signal(1)["data"]["item"]["status"], "received")
 
     def test_allowed_dispatch_runs_sync_and_marks_signal_synced(self) -> None:
         token = self._login_token()
         run_signal_pipeline("mock")
         start_strategy(1, token=token)
 
-        response = dispatch_latest_signal(1, token=token)
+        # Mock strategy engine to pass entry validation
+        with patch.object(
+            strategy_engine_service,
+            "calculate_entry_score",
+            return_value=_make_passing_entry_decision(),
+        ):
+            response = dispatch_latest_signal(1, token=token)
 
         self.assertIsNone(response["error"])
         self.assertEqual(response["data"]["risk_task"]["status"], "succeeded")
@@ -177,6 +231,10 @@ class RiskAndTaskTests(unittest.TestCase):
             "runtime": {"mode": "dry-run", "backend": "memory", "connection_status": "connected"},
         }
         with patch.object(
+            strategy_engine_service,
+            "calculate_entry_score",
+            return_value=_make_passing_entry_decision(),
+        ), patch.object(
             strategy_dispatch_module.execution_service,
             "dispatch_signal",
             return_value=fake_dispatch_result,
@@ -273,7 +331,7 @@ class RiskAndTaskTests(unittest.TestCase):
                 "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
             },
             clear=False,
-        ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
+        ), patch.object(strategy_engine_service, "calculate_entry_score", return_value=_make_passing_entry_decision()), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
             strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
@@ -329,7 +387,7 @@ class RiskAndTaskTests(unittest.TestCase):
                 "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
             },
             clear=False,
-        ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
+        ), patch.object(strategy_engine_service, "calculate_entry_score", return_value=_make_passing_entry_decision()), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
             strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
@@ -386,7 +444,7 @@ class RiskAndTaskTests(unittest.TestCase):
                 "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
             },
             clear=False,
-        ), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
+        ), patch.object(strategy_engine_service, "calculate_entry_score", return_value=_make_passing_entry_decision()), patch.object(sync_service_module, "account_sync_service", FakeAccountSyncService()), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
             strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result
@@ -448,7 +506,7 @@ class RiskAndTaskTests(unittest.TestCase):
                 "QUANT_LIVE_ALLOWED_SYMBOLS": "DOGEUSDT",
             },
             clear=False,
-        ), patch.object(sync_service_module, "account_sync_service", fake_account_sync_service), patch.object(
+        ), patch.object(strategy_engine_service, "calculate_entry_score", return_value=_make_passing_entry_decision()), patch.object(sync_service_module, "account_sync_service", fake_account_sync_service), patch.object(
             scheduler_module, "sync_service", sync_service_module.sync_service
         ), patch.object(
             strategy_dispatch_module.execution_service, "dispatch_signal", return_value=fake_dispatch_result

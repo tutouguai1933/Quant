@@ -99,7 +99,80 @@ CONFIG_SECTIONS = {
     "alert": {
         "description": "告警推送相关配置",
         "keys": [
-            # 预留告警配置
+            "QUANT_ALERT_TELEGRAM_TOKEN",
+            "QUANT_ALERT_TELEGRAM_CHAT_ID",
+            "QUANT_ALERT_WEBHOOK_URL",
+            "QUANT_ALERT_ENABLED",
+        ],
+    },
+    "vpn": {
+        "description": "VPN/代理切换相关配置",
+        "keys": [
+            "QUANT_MIHOMO_API_URL",
+            "QUANT_MIHOMO_PROXY_URL",
+            "QUANT_VPN_HEALTH_CHECK_URL",
+            "QUANT_VPN_HEALTH_CHECK_TIMEOUT",
+            "QUANT_VPN_HEALTH_CHECK_INTERVAL",
+            "QUANT_VPN_WHITELIST_IPS",
+            "QUANT_VPN_AVAILABLE_NODES",
+        ],
+    },
+    "strategy": {
+        "description": "策略引擎相关配置",
+        "keys": [
+            "QUANT_STRATEGY_MIN_ENTRY_SCORE",
+            "QUANT_STRATEGY_TRAILING_STOP_TRIGGER",
+            "QUANT_STRATEGY_TRAILING_STOP_DISTANCE",
+            "QUANT_STRATEGY_PROFIT_EXIT_RATIO",
+            "QUANT_STRATEGY_MAX_HOLDING_HOURS",
+            "QUANT_STRATEGY_BASE_POSITION_RATIO",
+            "QUANT_STRATEGY_MAX_POSITION_RATIO",
+            "QUANT_STRATEGY_VOLATILITY_SCALE_FACTOR",
+            "QUANT_RSI_OVERBUY_THRESHOLD",
+            "QUANT_RSI_OVERSELL_THRESHOLD",
+            "QUANT_RSI_PERIOD",
+            "QUANT_MACD_FAST_PERIOD",
+            "QUANT_MACD_SLOW_PERIOD",
+            "QUANT_MACD_SIGNAL_PERIOD",
+            "QUANT_VOLUME_TREND_PERIOD",
+        ],
+    },
+    "analytics": {
+        "description": "数据分析相关配置",
+        "keys": [
+            "QUANT_ANALYTICS_HISTORY_DAYS",
+        ],
+    },
+    "model_suggestion": {
+        "description": "模型建议相关配置",
+        "keys": [
+            "QUANT_MODEL_SUGGESTION_ENABLED",
+            "QUANT_MODEL_API_KEY",
+            "QUANT_MODEL_THRESHOLD_RANGE",
+            "QUANT_MODEL_PROVIDER",
+            "QUANT_MODEL_TIMEOUT_SECONDS",
+            "QUANT_MODEL_MAX_TOKENS",
+        ],
+    },
+    "performance": {
+        "description": "性能监控相关配置",
+        "keys": [
+            "QUANT_API_LATENCY_THRESHOLD_MS",
+            "QUANT_TRADE_LATENCY_THRESHOLD_MS",
+            "QUANT_PERFORMANCE_LOG_INTERVAL",
+            "QUANT_PERFORMANCE_MAX_RECORDS",
+            "QUANT_PERFORMANCE_ENABLE_ALERTS",
+        ],
+    },
+    "auto_dispatch": {
+        "description": "自动派发相关配置",
+        "keys": [
+            "QUANT_AUTO_DISPATCH_ENABLED",
+            "QUANT_AUTO_DISPATCH_INTERVAL",
+            "QUANT_AUTO_DISPATCH_MIN_SCORE",
+            "QUANT_AUTO_DISPATCH_MAX_DAILY",
+            "QUANT_AUTO_DISPATCH_REQUIRE_DRY_RUN_GATE",
+            "QUANT_AUTO_DISPATCH_REQUIRE_LIVE_GATE",
         ],
     },
     "research": {
@@ -141,6 +214,85 @@ CONFIG_SECTIONS = {
             "QUANT_STAKE_PER_PAIR",
         ],
     },
+}
+
+# 敏感字段列表（用于脱敏）
+SENSITIVE_KEYS = {
+    "BINANCE_API_KEY",
+    "BINANCE_API_SECRET",
+    "QUANT_ADMIN_PASSWORD",
+    "QUANT_FREQTRADE_API_PASSWORD",
+    "QUANT_ALERT_TELEGRAM_TOKEN",
+    "QUANT_MODEL_API_KEY",
+}
+
+# 默认值配置（用于配置缺失时的fallback）
+CONFIG_DEFAULTS: dict[str, str | int | float | Decimal] = {
+    # 网络配置
+    "QUANT_BINANCE_MARKET_BASE_URL": "https://api.binance.com",
+    "QUANT_BINANCE_ACCOUNT_BASE_URL": "https://api.binance.com",
+    "QUANT_BINANCE_TIMEOUT_SECONDS": 10,
+    # 交易配置
+    "QUANT_RUNTIME_MODE": "dry-run",
+    "QUANT_ALLOW_LIVE_EXECUTION": "false",
+    "QUANT_LIVE_MAX_STAKE_USDT": 6,
+    "QUANT_LIVE_MAX_OPEN_TRADES": 1,
+    "QUANT_FREQTRADE_API_TIMEOUT_SECONDS": 10,
+    # 风控配置
+    "QUANT_RISK_DAILY_MAX_LOSS_PCT": 3,
+    "QUANT_RISK_MAX_TRADES_PER_DAY": 5,
+    "QUANT_RISK_CRASH_THRESHOLD_PCT": 5,
+    # VPN配置
+    "QUANT_MIHOMO_API_URL": "http://mihomo:9090",
+    "QUANT_MIHOMO_PROXY_URL": "http://mihomo:7890",
+    "QUANT_VPN_HEALTH_CHECK_URL": "https://api.binance.com/api/v3/ping",
+    "QUANT_VPN_HEALTH_CHECK_TIMEOUT": 10.0,
+    "QUANT_VPN_HEALTH_CHECK_INTERVAL": 60,
+    # 策略配置
+    "QUANT_STRATEGY_MIN_ENTRY_SCORE": Decimal("0.7"),
+    "QUANT_STRATEGY_TRAILING_STOP_TRIGGER": Decimal("0.02"),
+    "QUANT_STRATEGY_TRAILING_STOP_DISTANCE": Decimal("0.01"),
+    "QUANT_STRATEGY_PROFIT_EXIT_RATIO": Decimal("0.05"),
+    "QUANT_STRATEGY_MAX_HOLDING_HOURS": 48,
+    "QUANT_STRATEGY_BASE_POSITION_RATIO": Decimal("0.25"),
+    "QUANT_STRATEGY_MAX_POSITION_RATIO": Decimal("0.50"),
+    "QUANT_STRATEGY_VOLATILITY_SCALE_FACTOR": Decimal("0.5"),
+    "QUANT_RSI_OVERBUY_THRESHOLD": Decimal("70"),
+    "QUANT_RSI_OVERSELL_THRESHOLD": Decimal("30"),
+    "QUANT_RSI_PERIOD": 14,
+    "QUANT_MACD_FAST_PERIOD": 12,
+    "QUANT_MACD_SLOW_PERIOD": 26,
+    "QUANT_MACD_SIGNAL_PERIOD": 9,
+    "QUANT_VOLUME_TREND_PERIOD": 20,
+    # Analytics配置
+    "QUANT_ANALYTICS_HISTORY_DAYS": 30,
+    # 模型建议配置
+    "QUANT_MODEL_SUGGESTION_ENABLED": "false",
+    "QUANT_MODEL_THRESHOLD_RANGE": Decimal("0.05"),
+    "QUANT_MODEL_PROVIDER": "anthropic",
+    "QUANT_MODEL_TIMEOUT_SECONDS": 30,
+    "QUANT_MODEL_MAX_TOKENS": 1024,
+    # 性能监控配置
+    "QUANT_API_LATENCY_THRESHOLD_MS": 500,
+    "QUANT_TRADE_LATENCY_THRESHOLD_MS": 2000,
+    "QUANT_PERFORMANCE_LOG_INTERVAL": 60,
+    "QUANT_PERFORMANCE_MAX_RECORDS": 1000,
+    "QUANT_PERFORMANCE_ENABLE_ALERTS": "true",
+    # 自动派发配置
+    "QUANT_AUTO_DISPATCH_ENABLED": "false",
+    "QUANT_AUTO_DISPATCH_INTERVAL": 300,
+    "QUANT_AUTO_DISPATCH_MIN_SCORE": Decimal("0.7"),
+    "QUANT_AUTO_DISPATCH_MAX_DAILY": 5,
+    "QUANT_AUTO_DISPATCH_REQUIRE_DRY_RUN_GATE": "true",
+    "QUANT_AUTO_DISPATCH_REQUIRE_LIVE_GATE": "false",
+    # 认证配置
+    "QUANT_ADMIN_USERNAME": "admin",
+    "QUANT_SESSION_TTL_SECONDS": 604800,
+    # 告警配置
+    "QUANT_ALERT_ENABLED": "true",
+    # 交易对配置
+    "QUANT_MAX_PAIRS": 5,
+    "QUANT_STAKE_PER_PAIR": "equal",
 }
 
 
@@ -311,15 +463,8 @@ class ConfigCenterService:
         result["sources"]["api.env"] = str(API_ENV_PATH)
 
         # 敏感字段脱敏
-        sensitive_keys = {
-            "BINANCE_API_KEY",
-            "BINANCE_API_SECRET",
-            "QUANT_ADMIN_PASSWORD",
-            "QUANT_FREQTRADE_API_PASSWORD",
-        }
-
         if not include_secrets:
-            for key in sensitive_keys:
+            for key in SENSITIVE_KEYS:
                 if key in env_config:
                     env_config[key] = "***REDACTED***"
 
@@ -373,15 +518,8 @@ class ConfigCenterService:
         env_config = self._read_env_file(API_ENV_PATH)
 
         # 敏感字段脱敏
-        sensitive_keys = {
-            "BINANCE_API_KEY",
-            "BINANCE_API_SECRET",
-            "QUANT_ADMIN_PASSWORD",
-            "QUANT_FREQTRADE_API_PASSWORD",
-        }
-
         if not include_secrets:
-            for key in sensitive_keys:
+            for key in SENSITIVE_KEYS:
                 if key in env_config:
                     env_config[key] = "***REDACTED***"
 
@@ -652,10 +790,10 @@ class ConfigCenterService:
                         })
                         result["valid"] = False
 
-        # 检查敏感配置是否为空
+        # 检查敏感配置是否为空（只检查交易相关的敏感配置）
         sensitive_empty = []
-        sensitive_keys = ["BINANCE_API_KEY", "BINANCE_API_SECRET"]
-        for key in sensitive_keys:
+        trade_sensitive_keys = ["BINANCE_API_KEY", "BINANCE_API_SECRET"]
+        for key in trade_sensitive_keys:
             if key not in env_config or not env_config[key]:
                 sensitive_empty.append(key)
 
@@ -740,12 +878,7 @@ class ConfigCenterService:
                     ],
                 },
             },
-            "sensitive_keys": [
-                "BINANCE_API_KEY",
-                "BINANCE_API_SECRET",
-                "QUANT_ADMIN_PASSWORD",
-                "QUANT_FREQTRADE_API_PASSWORD",
-            ],
+            "sensitive_keys": list(SENSITIVE_KEYS),
         }
 
     def reload_config(self) -> dict[str, Any]:
@@ -1044,3 +1177,173 @@ class ConfigCenterService:
 
 # 单例实例
 config_center_service = ConfigCenterService()
+
+
+# ========== 统一配置访问接口 ==========
+
+
+def detect_environment() -> str:
+    """检测当前运行环境。
+
+    Returns:
+        "server" - 在 Docker 容器或服务器环境运行
+        "local" - 在本地开发环境运行
+    """
+    # 检查是否在 Docker 容器中运行
+    if Path("/.dockerenv").exists():
+        return "server"
+
+    # 检查环境变量标识
+    env_mode = os.environ.get("QUANT_RUNTIME_ENV", "").strip().lower()
+    if env_mode in ("server", "production", "docker"):
+        return "server"
+    if env_mode in ("local", "development", "dev"):
+        return "local"
+
+    # 检查典型服务器路径特征
+    server_indicators = [
+        Path("/app").exists(),
+        Path("/freqtrade").exists(),
+        os.environ.get("QUANT_RUNTIME_MODE") == "live",
+    ]
+    if any(server_indicators):
+        return "server"
+
+    return "local"
+
+
+def get_config(
+    key: str,
+    default: str | int | float | Decimal | None = None,
+    *,
+    as_type: str = "str",
+) -> str | int | float | Decimal | bool | None:
+    """统一配置读取接口。
+
+    从以下优先级顺序读取配置：
+    1. 环境变量 os.environ (运行时最高优先级)
+    2. api.env 文件
+    3. CONFIG_DEFAULTS 默认值
+    4. 传入的 default 参数
+
+    Args:
+        key: 配置键名（如 QUANT_STRATEGY_MIN_ENTRY_SCORE）
+        default: 默认值
+        as_type: 返回类型 ("str", "int", "float", "decimal", "bool", "list")
+
+    Returns:
+        配置值，类型根据 as_type 参数决定
+    """
+    # 优先从环境变量读取（运行时最高优先级）
+    raw_value = os.environ.get(key, "")
+
+    # 如果环境变量为空，从 api.env 文件读取
+    if raw_value.strip() == "":
+        env_config = config_center_service._read_env_file(API_ENV_PATH)
+        raw_value = env_config.get(key, "")
+
+    # 如果还是空，使用 CONFIG_DEFAULTS
+    if raw_value.strip() == "":
+        default_value = CONFIG_DEFAULTS.get(key)
+        if default_value is not None:
+            raw_value = str(default_value)
+
+    # 最后使用传入的 default
+    if raw_value.strip() == "":
+        if default is not None:
+            raw_value = str(default)
+        else:
+            return None
+
+    # 类型转换
+    try:
+        if as_type == "str":
+            return raw_value.strip()
+        elif as_type == "int":
+            return int(raw_value.strip())
+        elif as_type == "float":
+            return float(raw_value.strip())
+        elif as_type == "decimal":
+            return Decimal(raw_value.strip())
+        elif as_type == "bool":
+            return raw_value.strip().lower() in ("true", "1", "yes", "on")
+        elif as_type == "list":
+            return [item.strip() for item in raw_value.split(",") if item.strip()]
+        else:
+            return raw_value.strip()
+    except (ValueError, InvalidOperation):
+        # 类型转换失败，返回 default 或 None
+        if default is not None:
+            return default
+        return None
+
+
+def get_config_section_values(section: str) -> dict[str, Any]:
+    """获取配置段的所有值（已解析类型）。
+
+    Args:
+        section: 配置段名称（如 "strategy", "vpn", "risk" 等）
+
+    Returns:
+        配置段的键值对字典
+    """
+    if section not in CONFIG_SECTIONS:
+        raise ValueError(f"配置段 '{section}' 不存在")
+
+    result: dict[str, Any] = {}
+    section_info = CONFIG_SECTIONS[section]
+
+    for key in section_info["keys"]:
+        # 根据键名推断类型
+        if key.endswith("_ENABLED") or key.endswith("_GATE"):
+            result[key] = get_config(key, as_type="bool")
+        elif key.endswith("_INTERVAL") or key.endswith("_SECONDS") or key.endswith("_MS") or key.endswith("_PERIOD") or key.endswith("_MAX_DAILY") or key.endswith("_MAX_RECORDS") or key.endswith("_HOURS") or key.endswith("_TTL_SECONDS") or key.endswith("_MAX_OPEN_TRADES") or key.endswith("_MAX_PAIRS") or key.endswith("_TOKENS"):
+            result[key] = get_config(key, as_type="int")
+        elif key.endswith("_PCT") or key.endswith("_RATIO") or key.endswith("_SCORE") or key.endswith("_THRESHOLD") or key.endswith("_RANGE") or key.endswith("_FACTOR") or key.endswith("_MULTIPLIER"):
+            result[key] = get_config(key, as_type="decimal")
+        elif key.endswith("_TIMEOUT"):
+            # _TIMEOUT 可能是整数或浮点数
+            raw = get_config(key)
+            if raw is not None:
+                try:
+                    if "." in str(raw):
+                        result[key] = float(raw)
+                    else:
+                        result[key] = int(raw)
+                except ValueError:
+                    result[key] = raw
+            else:
+                result[key] = None
+        elif key.endswith("_IPS") or key.endswith("_NODES") or key.endswith("_SYMBOLS") or key.endswith("_WHITELIST") or key.endswith("_BLACKLIST"):
+            result[key] = get_config(key, as_type="list")
+        else:
+            result[key] = get_config(key, as_type="str")
+
+    return result
+
+
+def is_sensitive_key(key: str) -> bool:
+    """检查配置键是否为敏感字段。
+
+    Args:
+        key: 配置键名
+
+    Returns:
+        是否为敏感字段
+    """
+    return key in SENSITIVE_KEYS
+
+
+def mask_sensitive_value(key: str, value: str | None) -> str | None:
+    """脱敏敏感配置值。
+
+    Args:
+        key: 配置键名
+        value: 配置值
+
+    Returns:
+        脱敏后的值或原值
+    """
+    if is_sensitive_key(key) and value:
+        return "***REDACTED***"
+    return value
