@@ -94,6 +94,47 @@ class OpenclawAuditService:
         matched = [r for r in self._records if r.get("action") == action]
         return list(reversed(matched))
 
+    def get_action_history_for_rate_limit(self, action: str) -> dict[str, Any]:
+        """获取动作执行历史，用于频率限制检查。
+
+        Args:
+            action: 动作名称
+
+        Returns:
+            动作历史摘要，包含 attempts、last_attempt_at 等字段
+        """
+        matched = [r for r in self._records if r.get("action") == action]
+
+        attempts = []
+        last_attempt_at = None
+
+        for record in matched:
+            executed_at = record.get("executed_at") or record.get("recorded_at")
+            attempts.append({
+                "executed_at": executed_at,
+                "success": record.get("success", False),
+            })
+
+            # 更新最后执行时间
+            if executed_at:
+                if last_attempt_at is None:
+                    last_attempt_at = executed_at
+                else:
+                    try:
+                        current_time = datetime.fromisoformat(executed_at.replace("Z", "+00:00"))
+                        last_time = datetime.fromisoformat(last_attempt_at.replace("Z", "+00:00"))
+                        if current_time > last_time:
+                            last_attempt_at = executed_at
+                    except (ValueError, TypeError):
+                        pass
+
+        return {
+            "action": action,
+            "attempts": attempts,
+            "last_attempt_at": last_attempt_at,
+            "total_count": len(attempts),
+        }
+
 
 # 默认实例
 openclaw_audit_service = OpenclawAuditService(

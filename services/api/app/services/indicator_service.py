@@ -237,3 +237,159 @@ def _unique_messages(messages: list[str]) -> list[str]:
         seen.add(message)
         unique.append(message)
     return unique
+
+
+def calculate_rsi(closes: list[Decimal], period: int = 14) -> Decimal:
+    """计算 RSI (相对强弱指标)。
+
+    Args:
+        closes: 收盘价序列
+        period: RSI 周期，默认14
+
+    Returns:
+        RSI 值 (0-100)
+    """
+    return _rsi(closes, period)
+
+
+def calculate_macd(
+    closes: list[Decimal],
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+) -> dict[str, Decimal | None]:
+    """计算 MACD (移动平均收敛/发散指标)。
+
+    Args:
+        closes: 收盘价序列
+        fast_period: 快线周期，默认12
+        slow_period: 慢线周期，默认26
+        signal_period: 信号线周期，默认9
+
+    Returns:
+        dict 包含 macd_line, signal_line, histogram
+    """
+    if len(closes) < slow_period + signal_period:
+        return {
+            "macd_line": None,
+            "signal_line": None,
+            "histogram": None,
+            "trend": "neutral",
+        }
+
+    # 计算 EMA 快线和慢线
+    ema_fast = _ema(closes, fast_period)
+    ema_slow = _ema(closes, slow_period)
+
+    if ema_fast is None or ema_slow is None:
+        return {
+            "macd_line": None,
+            "signal_line": None,
+            "histogram": None,
+            "trend": "neutral",
+        }
+
+    # MACD 线 = 快线 - 慢线
+    macd_line = ema_fast - ema_slow
+
+    # 计算信号线 (MACD 线的 EMA)
+    # 需要计算历史 MACD 值来得到信号线
+    macd_history: list[Decimal] = []
+    for i in range(slow_period, len(closes) + 1):
+        segment = closes[:i]
+        fast = _ema(segment, fast_period)
+        slow = _ema(segment, slow_period)
+        if fast is not None and slow is not None:
+            macd_history.append(fast - slow)
+
+    if len(macd_history) < signal_period:
+        signal_line = macd_line  # 退化为当前值
+    else:
+        signal_line = _ema(macd_history[-signal_period:], signal_period) or macd_line
+
+    # 柱状图 = MACD 线 - 信号线
+    histogram = macd_line - signal_line
+
+    # 判断趋势方向
+    if histogram > Decimal("0"):
+        trend = "bullish"
+    elif histogram < Decimal("0"):
+        trend = "bearish"
+    else:
+        trend = "neutral"
+
+    return {
+        "macd_line": macd_line,
+        "signal_line": signal_line,
+        "histogram": histogram,
+        "trend": trend,
+    }
+
+
+def calculate_volume_trend(
+    volumes: list[Decimal],
+    closes: list[Decimal],
+    period: int = 20,
+) -> dict[str, Decimal | str | None]:
+    """计算成交量趋势分析。
+
+    Args:
+        volumes: 成交量序列
+        closes: 收盘价序列
+        period: 均量周期，默认20
+
+    Returns:
+        dict 包含 volume_ratio, price_volume_alignment, trend_strength
+    """
+    if len(volumes) < period or len(closes) < period:
+        return {
+            "volume_ratio": None,
+            "price_volume_alignment": "unknown",
+            "trend_strength": Decimal("0"),
+        }
+
+    # 计算均量
+    avg_volume = _average(volumes[-period:], period)
+    current_volume = volumes[-1]
+
+    # 成交量比率
+    if avg_volume > Decimal("0"):
+        volume_ratio = current_volume / avg_volume
+    else:
+        volume_ratio = Decimal("1")
+
+    # 价格变化
+    current_close = closes[-1]
+    prev_close = closes[-2] if len(closes) >= 2 else closes[-1]
+    price_change = current_close - prev_close
+
+    # 量价配合分析
+    if volume_ratio > Decimal("1.2"):  # 成交量放大
+        if price_change > Decimal("0"):
+            alignment = "bullish_volume"  # 量价齐升
+            trend_strength = volume_ratio
+        elif price_change < Decimal("0"):
+            alignment = "bearish_volume"  # 量价齐跌
+            trend_strength = volume_ratio
+        else:
+            alignment = "high_volume_neutral"  # 放量横盘
+            trend_strength = Decimal("0.5") * volume_ratio
+    elif volume_ratio < Decimal("0.8"):  # 成交量萎缩
+        if price_change > Decimal("0"):
+            alignment = "low_volume_rise"  # 缩量上涨
+            trend_strength = Decimal("0.3")
+        elif price_change < Decimal("0"):
+            alignment = "low_volume_fall"  # 缩量下跌
+            trend_strength = Decimal("0.3")
+        else:
+            alignment = "low_volume_neutral"
+            trend_strength = Decimal("0")
+    else:
+        alignment = "normal_volume"
+        trend_strength = Decimal("0.5")
+
+    return {
+        "volume_ratio": volume_ratio,
+        "price_volume_alignment": alignment,
+        "trend_strength": trend_strength,
+    }

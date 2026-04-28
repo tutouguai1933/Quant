@@ -10,6 +10,7 @@ import json
 import os
 import re
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,37 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 API_ENV_PATH = REPO_ROOT / "infra" / "deploy" / "api.env"
 FREQTRADE_CONFIG_DIR = REPO_ROOT / "infra" / "freqtrade" / "user_data"
 CONFIG_HISTORY_PATH = REPO_ROOT / ".runtime" / "config_history.json"
+FREQTRADE_CONFIG_PATH = REPO_ROOT / "infra" / "freqtrade" / "user_data" / "config.deploy.json"
+
+# 交易对配置默认值
+DEFAULT_PAIR_WHITELIST = ["DOGE/USDT", "BTC/USDT", "ETH/USDT"]
+DEFAULT_PAIR_BLACKLIST: list[str] = []
+DEFAULT_MAX_PAIRS = 5
+DEFAULT_STAKE_PER_PAIR = "equal"  # equal, volatility, score
+
+# 币种波动率参数配置（用于策略引擎）
+PAIR_VOLATILITY_PARAMS = {
+    "BTC/USDT": {
+        "volatility_multiplier": Decimal("0.8"),  # BTC 波动较小
+        "stop_loss_multiplier": Decimal("1.0"),
+        "position_multiplier": Decimal("1.2"),  # 允许更大仓位
+    },
+    "ETH/USDT": {
+        "volatility_multiplier": Decimal("0.9"),
+        "stop_loss_multiplier": Decimal("1.0"),
+        "position_multiplier": Decimal("1.1"),
+    },
+    "DOGE/USDT": {
+        "volatility_multiplier": Decimal("1.3"),  # DOGE 波动较大
+        "stop_loss_multiplier": Decimal("1.2"),
+        "position_multiplier": Decimal("0.8"),  # 减小仓位
+    },
+    "SOL/USDT": {
+        "volatility_multiplier": Decimal("1.1"),
+        "stop_loss_multiplier": Decimal("1.1"),
+        "position_multiplier": Decimal("0.9"),
+    },
+}
 
 # 配置分组定义
 CONFIG_SECTIONS = {
@@ -98,6 +130,15 @@ CONFIG_SECTIONS = {
             "QUANT_BINANCE_MARKET_BASE_URL",
             "QUANT_BINANCE_ACCOUNT_BASE_URL",
             "QUANT_BINANCE_TIMEOUT_SECONDS",
+        ],
+    },
+    "pairs": {
+        "description": "交易对白名单配置",
+        "keys": [
+            "QUANT_PAIR_WHITELIST",
+            "QUANT_PAIR_BLACKLIST",
+            "QUANT_MAX_PAIRS",
+            "QUANT_STAKE_PER_PAIR",
         ],
     },
 }
@@ -721,6 +762,284 @@ class ConfigCenterService:
             "config_valid": self.validate_config()["valid"],
             "timestamp": datetime.now().isoformat(),
         }
+
+    # ========== 交易对白名单管理 ==========
+
+    def get_pair_whitelist(self) -> dict[str, Any]:
+        """获取交易对白名单配置。
+
+        Returns:
+            交易对白名单配置信息
+        """
+        env_config = self._read_env_file(API_ENV_PATH)
+
+        # 从环境变量读取白名单
+        whitelist_str = env_config.get("QUANT_PAIR_WHITELIST", "")
+        if whitelist_str:
+            whitelist = [p.strip() for p in whitelist_str.split(",") if p.strip()]
+        else:
+            # 从 Freqtrade 配置读取
+            freqtrade_config = self._read_json_config(FREQTRADE_CONFIG_PATH)
+            whitelist = freqtrade_config.get("exchange", {}).get("pair_whitelist", DEFAULT_PAIR_WHITELIST)
+
+        # 从环境变量读取黑名单
+        blacklist_str = env_config.get("QUANT_PAIR_BLACKLIST", "")
+        if blacklist_str:
+            blacklist = [p.strip() for p in blacklist_str.split(",") if p.strip()]
+        else:
+            freqtrade_config = self._read_json_config(FREQTRADE_CONFIG_PATH)
+            blacklist = freqtrade_config.get("exchange", {}).get("pair_blacklist", DEFAULT_PAIR_BLACKLIST)
+
+        # 其他配置
+        max_pairs = int(env_config.get("QUANT_MAX_PAIRS", str(DEFAULT_MAX_PAIRS)))
+        stake_per_pair = env_config.get("QUANT_STAKE_PER_PAIR", DEFAULT_STAKE_PER_PAIR)
+
+        return {
+            "whitelist": whitelist,
+            "blacklist": blacklist,
+            "max_pairs": max_pairs,
+            "stake_per_pair": stake_per_pair,
+            "volatility_params": PAIR_VOLATILITY_PARAMS,
+            "effective_whitelist": [p for p in whitelist if p not in blacklist][:max_pairs],
+            "sources": {
+                "env": str(API_ENV_PATH),
+                "freqtrade": str(FREQTRADE_CONFIG_PATH),
+            },
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    def update_pair_whitelist(
+        self,
+        whitelist: list[str] | None = None,
+        blacklist: list[str] | None = None,
+        max_pairs: int | None = None,
+        stake_per_pair: str | None = None,
+        operator: str = "system",
+        comment: str = "",
+    ) -> dict[str, Any]:
+        """更新交易对白名单配置。
+
+        Args:
+            whitelist: 新的白名单列表
+            blacklist: 新的黑名单列表
+            max_pairs: 最大交易对数量
+            stake_per_pair: 仓位分配策略
+            operator: 操作者
+            comment: 变更说明
+
+        Returns:
+            更新结果
+        """
+        env_config = self._read_env_file(API_ENV_PATH)
+        updates: dict[str, str] = {}
+        changes: list[dict[str, Any]] = []
+
+        # 更新白名单
+        if whitelist is not None:
+            # 验证交易对格式
+            validated_pairs = []
+            for pair in whitelist:
+                pair = pair.strip().upper()
+                # 标准化格式：BTCUSDT -> BTC/USDT
+                if "/" not in pair:
+                    if pair.endswith("USDT"):
+                        base = pair[:-4]
+                        pair = f"{base}/USDT"
+                validated_pairs.append(pair)
+
+            new_whitelist_str = ",".join(validated_pairs)
+            old_whitelist_str = env_config.get("QUANT_PAIR_WHITELIST", "")
+            updates["QUANT_PAIR_WHITELIST"] = new_whitelist_str
+            changes.append({
+                "key": "whitelist",
+                "old_value": old_whitelist_str.split(",") if old_whitelist_str else [],
+                "new_value": validated_pairs,
+            })
+
+            # 同步更新 Freqtrade 配置
+            self._update_freqtrade_pair_whitelist(validated_pairs)
+
+        # 更新黑名单
+        if blacklist is not None:
+            validated_blacklist = []
+            for pair in blacklist:
+                pair = pair.strip().upper()
+                if "/" not in pair:
+                    if pair.endswith("USDT"):
+                        base = pair[:-4]
+                        pair = f"{base}/USDT"
+                validated_blacklist.append(pair)
+
+            new_blacklist_str = ",".join(validated_blacklist)
+            old_blacklist_str = env_config.get("QUANT_PAIR_BLACKLIST", "")
+            updates["QUANT_PAIR_BLACKLIST"] = new_blacklist_str
+            changes.append({
+                "key": "blacklist",
+                "old_value": old_blacklist_str.split(",") if old_blacklist_str else [],
+                "new_value": validated_blacklist,
+            })
+
+        # 更新其他配置
+        if max_pairs is not None:
+            old_max_pairs = env_config.get("QUANT_MAX_PAIRS", str(DEFAULT_MAX_PAIRS))
+            updates["QUANT_MAX_PAIRS"] = str(max_pairs)
+            changes.append({
+                "key": "max_pairs",
+                "old_value": int(old_max_pairs) if old_max_pairs else DEFAULT_MAX_PAIRS,
+                "new_value": max_pairs,
+            })
+
+        if stake_per_pair is not None:
+            old_stake = env_config.get("QUANT_STAKE_PER_PAIR", DEFAULT_STAKE_PER_PAIR)
+            updates["QUANT_STAKE_PER_PAIR"] = stake_per_pair
+            changes.append({
+                "key": "stake_per_pair",
+                "old_value": old_stake,
+                "new_value": stake_per_pair,
+            })
+
+        # 写入环境变量
+        if updates:
+            self._write_env_file(API_ENV_PATH, updates)
+
+            # 记录历史
+            for change in changes:
+                self._record_history(
+                    action="update",
+                    key=f"pairs.{change['key']}",
+                    old_value=str(change["old_value"]),
+                    new_value=str(change["new_value"]),
+                    source="api.env",
+                    operator=operator,
+                )
+
+        return {
+            "updates": changes,
+            "current_config": self.get_pair_whitelist(),
+            "comment": comment,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    def _update_freqtrade_pair_whitelist(self, whitelist: list[str]) -> None:
+        """同步更新 Freqtrade 配置文件中的交易对白名单。
+
+        Args:
+            whitelist: 新的白名单列表
+        """
+        if not FREQTRADE_CONFIG_PATH.exists():
+            return
+
+        try:
+            config = self._read_json_config(FREQTRADE_CONFIG_PATH)
+            if "exchange" not in config:
+                config["exchange"] = {}
+            config["exchange"]["pair_whitelist"] = whitelist
+
+            # 写回配置文件
+            FREQTRADE_CONFIG_PATH.write_text(
+                json.dumps(config, ensure_ascii=False, indent=2),
+                encoding="utf-8"
+            )
+        except Exception as e:
+            # 配置文件更新失败不影响主流程
+            pass
+
+    def get_pair_volatility_params(self, pair: str) -> dict[str, Any]:
+        """获取特定交易对的波动率参数。
+
+        Args:
+            pair: 交易对名称
+
+        Returns:
+            该交易对的波动率参数
+        """
+        normalized_pair = pair.strip().upper()
+        if "/" not in normalized_pair:
+            if normalized_pair.endswith("USDT"):
+                base = normalized_pair[:-4]
+                normalized_pair = f"{base}/USDT"
+
+        params = PAIR_VOLATILITY_PARAMS.get(normalized_pair, {
+            "volatility_multiplier": Decimal("1.0"),
+            "stop_loss_multiplier": Decimal("1.0"),
+            "position_multiplier": Decimal("1.0"),
+        })
+
+        return {
+            "pair": normalized_pair,
+            "params": {
+                "volatility_multiplier": float(params["volatility_multiplier"]),
+                "stop_loss_multiplier": float(params["stop_loss_multiplier"]),
+                "position_multiplier": float(params["position_multiplier"]),
+            },
+            "is_custom": normalized_pair in PAIR_VOLATILITY_PARAMS,
+        }
+
+    def validate_pair_whitelist(self) -> dict[str, Any]:
+        """验证交易对白名单配置。
+
+        Returns:
+            验证结果
+        """
+        result: dict[str, Any] = {
+            "valid": True,
+            "errors": [],
+            "warnings": [],
+            "pairs_status": [],
+        }
+
+        pair_config = self.get_pair_whitelist()
+        whitelist = pair_config["whitelist"]
+        blacklist = pair_config["blacklist"]
+        max_pairs = pair_config["max_pairs"]
+
+        # 检查白名单数量
+        if len(whitelist) < 3:
+            result["warnings"].append({
+                "type": "insufficient_pairs",
+                "message": f"白名单交易对数量 ({len(whitelist)}) 较少，建议至少3个",
+                "current": len(whitelist),
+                "recommended": 3,
+            })
+
+        # 检查是否超过最大限制
+        if len(whitelist) > max_pairs:
+            result["warnings"].append({
+                "type": "exceed_max_pairs",
+                "message": f"白名单交易对数量 ({len(whitelist)}) 超过最大限制 ({max_pairs})",
+                "current": len(whitelist),
+                "max": max_pairs,
+            })
+
+        # 检查每个交易对的状态
+        for pair in whitelist:
+            pair_status = {
+                "pair": pair,
+                "in_blacklist": pair in blacklist,
+                "has_volatility_params": pair in PAIR_VOLATILITY_PARAMS,
+                "format_valid": "/" in pair and pair.endswith("/USDT"),
+            }
+            result["pairs_status"].append(pair_status)
+
+            if pair_status["in_blacklist"]:
+                result["warnings"].append({
+                    "type": "pair_in_blacklist",
+                    "message": f"交易对 {pair} 同时在白名单和黑名单中",
+                    "pair": pair,
+                })
+
+            if not pair_status["format_valid"]:
+                result["errors"].append({
+                    "type": "invalid_format",
+                    "message": f"交易对 {pair} 格式无效，应为 BASE/USDT 格式",
+                    "pair": pair,
+                })
+                result["valid"] = False
+
+        result["effective_count"] = len(pair_config["effective_whitelist"])
+        result["timestamp"] = datetime.now().isoformat()
+
+        return result
 
 
 # 单例实例

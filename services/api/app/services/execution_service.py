@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from decimal import Decimal
 from decimal import InvalidOperation
 from decimal import ROUND_CEILING
@@ -58,11 +59,34 @@ class ExecutionService:
         action = self.build_execution_action(signal_id, strategy_context_id=strategy_context_id)
         if runtime_mode == "live":
             self._guard_live_execution(action=action, settings=settings, runtime_snapshot=runtime_snapshot)
+
+        # 记录交易延迟
+        start_time = time.time()
         order = freqtrade_client.submit_execution_action(action)
+        duration_ms = (time.time() - start_time) * 1000
+
+        # 延迟导入以避免循环依赖
+        from services.api.app.services.performance_monitor_service import (
+            performance_monitor_service,
+        )
+
+        # 根据运行模式确定订单类型
+        order_type = f"signal_dispatch_{runtime_mode}"
+        performance_monitor_service.track_trade_latency(
+            order_type=order_type,
+            duration_ms=duration_ms,
+            metadata={
+                "signal_id": signal_id,
+                "action_type": action.get("action_type"),
+                "symbol": action.get("symbol"),
+            },
+        )
+
         return {
             "action": action,
             "order": order,
             "runtime": runtime_snapshot,
+            "execution_latency_ms": duration_ms,
         }
 
     @staticmethod

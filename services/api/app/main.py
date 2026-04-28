@@ -7,9 +7,10 @@ before the user approves dependency installation.
 from __future__ import annotations
 
 import asyncio
+import time
 
 try:
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request, Response
 except ImportError:
     class FastAPI:  # pragma: no cover - lightweight local fallback
         def __init__(self, *args, **kwargs) -> None:
@@ -20,9 +21,16 @@ except ImportError:
         def include_router(self, router) -> None:
             self.routers.append(router)
 
+    class Request:  # pragma: no cover
+        pass
+
+    class Response:  # pragma: no cover
+        pass
+
 
 from services.api.app.routes.accounts import router as accounts_router
 from services.api.app.routes.analytics import router as analytics_router
+from services.api.app.routes.backtest_validation import router as backtest_validation_router
 from services.api.app.routes.auth import router as auth_router
 from services.api.app.routes.backtest_workspace import router as backtest_workspace_router
 from services.api.app.routes.balances import router as balances_router
@@ -32,8 +40,10 @@ from services.api.app.routes.evaluation_workspace import router as evaluation_wo
 from services.api.app.routes.feature_workspace import router as feature_workspace_router
 from services.api.app.routes.health import router as health_router
 from services.api.app.routes.market import router as market_router
+from services.api.app.routes.model_suggestion import router as model_suggestion_router
 from services.api.app.routes.openclaw import router as openclaw_router
 from services.api.app.routes.orders import router as orders_router
+from services.api.app.routes.performance import router as performance_router
 from services.api.app.routes.positions import router as positions_router
 from services.api.app.routes.research_workspace import router as research_workspace_router
 from services.api.app.routes.risk_events import router as risk_events_router
@@ -96,6 +106,42 @@ app.include_router(websocket_router)
 app.routers.append(websocket_router)  # type: ignore[attr-defined]
 app.include_router(analytics_router)
 app.routers.append(analytics_router)  # type: ignore[attr-defined]
+app.include_router(performance_router)
+app.routers.append(performance_router)  # type: ignore[attr-defined]
+app.include_router(backtest_validation_router)
+app.routers.append(backtest_validation_router)  # type: ignore[attr-defined]
+app.include_router(model_suggestion_router)
+app.routers.append(model_suggestion_router)  # type: ignore[attr-defined]
+
+
+# 性能监控中间件
+@app.middleware("http")
+async def performance_monitor_middleware(request: Request, call_next) -> Response:
+    """自动追踪所有API请求的响应时间。"""
+    # 排除性能监控端点本身，避免递归
+    if request.url.path.startswith("/api/v1/performance"):
+        return await call_next(request)
+
+    start_time = time.time()
+    response = await call_next(request)
+    duration_ms = (time.time() - start_time) * 1000
+
+    # 延迟导入以避免循环依赖
+    from services.api.app.services.performance_monitor_service import (
+        performance_monitor_service,
+    )
+
+    # 记录API延迟
+    performance_monitor_service.track_api_latency(
+        endpoint=request.url.path,
+        duration_ms=duration_ms,
+        metadata={
+            "method": request.method,
+            "status_code": response.status_code,
+        },
+    )
+
+    return response
 
 
 @app.on_event("startup")

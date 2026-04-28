@@ -14,6 +14,10 @@ from services.api.app.services.openclaw_audit_service import OpenclawAuditServic
 from services.api.app.services.openclaw_restart_history_service import OpenclawRestartHistoryService, openclaw_restart_history_service
 from services.api.app.services.system_action_executor import SystemActionExecutor, system_action_executor
 from services.api.app.services.service_health_service import ServiceHealthService, service_health_service
+from services.api.app.services.vpn_switch_service import vpn_switch_service
+from services.api.app.services.alert_push_service import alert_push_service, AlertMessage, AlertEventType, AlertLevel
+from services.api.app.services.config_center_service import config_center_service
+from services.api.app.services.risk_guard_service import risk_guard_service
 
 
 class OpenclawActionService:
@@ -77,6 +81,29 @@ class OpenclawActionService:
                 "success": False,
                 "action": action,
                 "reason": reason,
+                "snapshot_id": snapshot_id,
+                "executed_at": executed_at,
+            }
+
+        # 验证频率限制
+        action_history = self._audit_service.get_action_history_for_rate_limit(action)
+        rate_limit_allowed, rate_limit_reason = openclaw_action_policy_service.validate_rate_limit(
+            action=action,
+            action_history=action_history,
+        )
+
+        if not rate_limit_allowed:
+            self._record_audit(
+                action=action,
+                snapshot_id=snapshot_id,
+                success=False,
+                reason=rate_limit_reason,
+                executed_at=executed_at,
+            )
+            return {
+                "success": False,
+                "action": action,
+                "reason": rate_limit_reason,
                 "snapshot_id": snapshot_id,
                 "executed_at": executed_at,
             }
@@ -167,6 +194,19 @@ class OpenclawActionService:
                 "success": True,
                 "message": f"已确认告警 {alert_id}",
             }
+
+        # 新增安全动作执行逻辑
+        if action == "vpn_switch_node":
+            return self._execute_vpn_switch_node(payload)
+
+        if action == "alert_test_push":
+            return self._execute_alert_test_push(payload)
+
+        if action == "config_backup":
+            return self._execute_config_backup(payload)
+
+        if action == "risk_guard_reset":
+            return self._execute_risk_guard_reset(payload)
 
         return {
             "success": False,
@@ -279,3 +319,264 @@ class OpenclawActionService:
                 "result": result,
             }),
         )
+
+    def _execute_vpn_switch_node(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """执行VPN节点健康切换。
+
+        Args:
+            payload: 动作参数，可包含：
+                - target_node: 目标节点名称（可选，不指定则自动选择）
+
+        Returns:
+            执行结果
+        """
+        import logging
+        logger = logging.getLogger("openclaw")
+
+        target_node = payload.get("target_node")
+
+        try:
+            # 先检查当前节点健康状态
+            health_result = vpn_switch_service.check_node_health_sync()
+
+            if target_node:
+                # 切换到指定节点
+                logger.info(f"VPN切换：手动指定目标节点 {target_node}")
+                switch_result = vpn_switch_service.switch_node_sync(target_node)
+            else:
+                # 自动切换到健康的白名单节点
+                logger.info("VPN切换：自动选择健康节点")
+                switch_result = vpn_switch_service.auto_switch_to_healthy_node_sync()
+
+            if switch_result.success:
+                logger.info(
+                    f"VPN节点切换成功: {switch_result.previous_node} -> {switch_result.current_node}, "
+                    f"出口IP: {switch_result.exit_ip} (白名单: {switch_result.is_whitelisted})"
+                )
+                return {
+                    "success": True,
+                    "message": f"VPN节点切换成功，当前节点: {switch_result.current_node}",
+                    "previous_node": switch_result.previous_node,
+                    "current_node": switch_result.current_node,
+                    "exit_ip": switch_result.exit_ip,
+                    "is_whitelisted": switch_result.is_whitelisted,
+                }
+            else:
+                logger.error(f"VPN节点切换失败: {switch_result.error_message}")
+                return {
+                    "success": False,
+                    "message": f"VPN节点切换失败: {switch_result.error_message}",
+                    "previous_node": switch_result.previous_node,
+                }
+
+        except Exception as e:
+            logger.exception(f"VPN节点切换异常: {e}")
+            return {
+                "success": False,
+                "message": f"VPN节点切换异常: {e}",
+            }
+
+    def _execute_alert_test_push(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """执行测试告警推送。
+
+        Args:
+            payload: 动作参数，可包含：
+                - test_message: 测试消息内容（可选）
+                - test_level: 测试告警级别（可选，默认info）
+
+        Returns:
+            执行结果
+        """
+        import logging
+        logger = logging.getLogger("openclaw")
+
+        test_message = payload.get("test_message", "OpenClaw 告警推送测试")
+        test_level_str = payload.get("test_level", "info")
+
+        # 转换告警级别
+        level_map = {
+            "info": AlertLevel.INFO,
+            "warning": AlertLevel.WARNING,
+            "error": AlertLevel.ERROR,
+        }
+        test_level = level_map.get(test_level_str, AlertLevel.INFO)
+
+        try:
+            # 创建测试告警消息
+            test_alert = AlertMessage(
+                event_type=AlertEventType.SYSTEM_ERROR,
+                level=test_level,
+                title="OpenClaw 告警测试",
+                message=test_message,
+                details={
+                    "source": "openclaw_test",
+                    "test_level": test_level_str,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+
+            # 推送告警
+            push_result = alert_push_service.push_sync(test_alert)
+
+            logger.info(f"告警测试推送结果: {push_result}")
+
+            telegram_status = push_result.get("telegram", {}).get("status", "unknown")
+            webhook_status = push_result.get("webhook", {}).get("status", "unknown")
+
+            # 至少一个推送成功就算成功
+            success = telegram_status == "success" or webhook_status == "success"
+
+            if success:
+                return {
+                    "success": True,
+                    "message": "告警测试推送成功",
+                    "telegram_status": telegram_status,
+                    "webhook_status": webhook_status,
+                    "detail": push_result,
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"告警测试推送失败: Telegram={telegram_status}, Webhook={webhook_status}",
+                    "detail": push_result,
+                }
+
+        except Exception as e:
+            logger.exception(f"告警测试推送异常: {e}")
+            return {
+                "success": False,
+                "message": f"告警测试推送异常: {e}",
+            }
+
+    def _execute_config_backup(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """执行配置备份（只读取，不修改）。
+
+        Args:
+            payload: 动作参数，可包含：
+                - include_sections: 要备份的配置段列表（可选）
+
+        Returns:
+            执行结果
+        """
+        import logging
+        import json
+        from pathlib import Path
+
+        logger = logging.getLogger("openclaw")
+
+        include_sections = payload.get("include_sections")
+
+        try:
+            # 获取所有配置（不包含敏感信息）
+            config_data = config_center_service.get_all_config(include_secrets=False)
+
+            # 如果指定了配置段，只返回指定部分
+            if include_sections:
+                filtered_config = {
+                    "sections": {},
+                    "sources": config_data.get("sources", {}),
+                }
+                for section in include_sections:
+                    if section in config_data.get("sections", {}):
+                        filtered_config["sections"][section] = config_data["sections"][section]
+                config_data = filtered_config
+
+            # 保存备份到文件
+            backup_dir = Path(".runtime/config_backups")
+            backup_dir.mkdir(parents=True, exist_ok=True)
+
+            backup_time = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            backup_file = backup_dir / f"config_backup_{backup_time}.json"
+
+            with open(backup_file, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"配置备份成功，保存到: {backup_file}")
+
+            # 验证配置完整性
+            validation_result = config_center_service.validate_config()
+
+            return {
+                "success": True,
+                "message": f"配置备份成功，保存到: {backup_file}",
+                "backup_file": str(backup_file),
+                "config_valid": validation_result.get("valid", False),
+                "validation_warnings": validation_result.get("warnings", []),
+                "timestamp": backup_time,
+            }
+
+        except Exception as e:
+            logger.exception(f"配置备份异常: {e}")
+            return {
+                "success": False,
+                "message": f"配置备份异常: {e}",
+            }
+
+    def _execute_risk_guard_reset(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """执行风控熔断重置（高风险，需确认）。
+
+        Args:
+            payload: 动作参数，必须包含：
+                - confirmation: 二次确认字符串 "CONFIRM_RISK_GUARD_RESET"
+
+        Returns:
+            执行结果
+        """
+        import logging
+
+        logger = logging.getLogger("openclaw")
+
+        # 检查二次确认
+        confirmation = payload.get("confirmation", "")
+        if confirmation != "CONFIRM_RISK_GUARD_RESET":
+            return {
+                "success": False,
+                "message": "缺少二次确认，需要传入 confirmation='CONFIRM_RISK_GUARD_RESET'",
+            }
+
+        try:
+            # 检查当前熔断状态
+            circuit_breaker_state = risk_guard_service.get_circuit_breaker_state()
+
+            if not circuit_breaker_state.get("triggered", False):
+                return {
+                    "success": False,
+                    "message": "风控熔断未触发，无需重置",
+                    "circuit_breaker_state": circuit_breaker_state,
+                }
+
+            # 记录重置前的状态
+            logger.warning(
+                f"准备重置风控熔断，触发原因: {circuit_breaker_state.get('trigger_reason', 'unknown')}"
+            )
+
+            # 执行重置
+            reset_result = risk_guard_service.reset_circuit_breaker()
+
+            logger.info(f"风控熔断重置结果: {reset_result}")
+
+            return {
+                "success": reset_result.get("status") == "reset",
+                "message": reset_result.get("message", "风控熔断重置完成"),
+                "previous_state": circuit_breaker_state,
+                "current_state": reset_result.get("circuit_breaker_state", {}),
+            }
+
+        except Exception as e:
+            logger.exception(f"风控熔断重置异常: {e}")
+            return {
+                "success": False,
+                "message": f"风控熔断重置异常: {e}",
+            }

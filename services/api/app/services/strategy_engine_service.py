@@ -5,6 +5,10 @@
 - 仓位大小计算（基于score和波动率）
 - 动态止损追踪
 - 退出条件检查（盈亏比、时间、反向信号）
+
+支持多币种交易：
+- 不同币种有不同的波动率参数配置
+- 从配置中心获取交易对白名单
 """
 
 from __future__ import annotations
@@ -14,11 +18,13 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Callable
+from typing import Any, Callable
 
 from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.core.settings import Settings
+from services.api.app.services.indicator_service import calculate_macd, calculate_rsi, calculate_volume_trend
 from services.api.app.services.market_service import MarketService
+from services.api.app.services.model_suggestion_service import model_suggestion_service
 from services.api.app.services.research_service import research_service
 
 logger = logging.getLogger(__name__)
@@ -48,8 +54,55 @@ def _read_env_int(key: str, default: int) -> int:
         return default
 
 
+# 币种波动率参数配置（用于多币种差异化策略）
+PAIR_VOLATILITY_PARAMS: dict[str, dict[str, Decimal]] = {
+    "BTC/USDT": {
+        "volatility_multiplier": Decimal("0.8"),  # BTC 波动相对较小
+        "stop_loss_multiplier": Decimal("1.0"),
+        "position_multiplier": Decimal("1.2"),  # 允许更大仓位
+    },
+    "ETH/USDT": {
+        "volatility_multiplier": Decimal("0.9"),
+        "stop_loss_multiplier": Decimal("1.0"),
+        "position_multiplier": Decimal("1.1"),
+    },
+    "DOGE/USDT": {
+        "volatility_multiplier": Decimal("1.3"),  # DOGE 波动较大
+        "stop_loss_multiplier": Decimal("1.2"),
+        "position_multiplier": Decimal("0.8"),  # 减小仓位
+    },
+    "SOL/USDT": {
+        "volatility_multiplier": Decimal("1.1"),
+        "stop_loss_multiplier": Decimal("1.1"),
+        "position_multiplier": Decimal("0.9"),
+    },
+}
+
+
+def get_pair_volatility_params(pair: str) -> dict[str, Decimal]:
+    """获取特定交易对的波动率参数。
+
+    Args:
+        pair: 交易对名称
+
+    Returns:
+        该交易对的波动率参数配置
+    """
+    normalized_pair = pair.strip().upper()
+    if "/" not in normalized_pair:
+        if normalized_pair.endswith("USDT"):
+            base = normalized_pair[:-4]
+            normalized_pair = f"{base}/USDT"
+
+    return PAIR_VOLATILITY_PARAMS.get(normalized_pair, {
+        "volatility_multiplier": Decimal("1.0"),
+        "stop_loss_multiplier": Decimal("1.0"),
+        "position_multiplier": Decimal("1.0"),
+    })
+
+
 # 策略配置常量
-MIN_ENTRY_SCORE = _read_env_decimal("QUANT_STRATEGY_MIN_ENTRY_SCORE", Decimal("0.70"))
+MIN_ENTRY_SCORE = _read_env_decimal("QUANT_STRATEGY_MIN_ENTRY_SCORE", Decimal("0.60"))
 TRAILING_STOP_TRIGGER = _read_env_decimal("QUANT_STRATEGY_TRAILING_STOP_TRIGGER", Decimal("0.02"))
 TRAILING_STOP_DISTANCE = _read_env_decimal("QUANT_STRATEGY_TRAILING_STOP_DISTANCE", Decimal("0.01"))
 PROFIT_EXIT_RATIO = _read_env_decimal("QUANT_STRATEGY_PROFIT_EXIT_RATIO", Decimal("0.05"))
@@ -57,6 +110,15 @@ MAX_HOLDING_HOURS = _read_env_int("QUANT_STRATEGY_MAX_HOLDING_HOURS", 48)
 BASE_POSITION_RATIO = _read_env_decimal("QUANT_STRATEGY_BASE_POSITION_RATIO", Decimal("0.25"))
 MAX_POSITION_RATIO = _read_env_decimal("QUANT_STRATEGY_MAX_POSITION_RATIO", Decimal("0.50"))
 VOLATILITY_SCALE_FACTOR = _read_env_decimal("QUANT_STRATEGY_VOLATILITY_SCALE_FACTOR", Decimal("0.5"))
+
+# 技术指标配置常量
+RSI_OVERBUY_THRESHOLD = _read_env_decimal("QUANT_RSI_OVERBUY_THRESHOLD", Decimal("70"))
+RSI_OVERSELL_THRESHOLD = _read_env_decimal("QUANT_RSI_OVERSELL_THRESHOLD", Decimal("30"))
+RSI_PERIOD = _read_env_int("QUANT_RSI_PERIOD", 14)
+MACD_FAST_PERIOD = _read_env_int("QUANT_MACD_FAST_PERIOD", 12)
+MACD_SLOW_PERIOD = _read_env_int("QUANT_MACD_SLOW_PERIOD", 26)
+MACD_SIGNAL_PERIOD = _read_env_int("QUANT_MACD_SIGNAL_PERIOD", 9)
+VOLUME_TREND_PERIOD = _read_env_int("QUANT_VOLUME_TREND_PERIOD", 20)
 
 
 @dataclass(slots=True)
@@ -103,6 +165,14 @@ class EntryDecision:
     trend_confirmed: bool
     research_aligned: bool
     suggested_position_ratio: Decimal
+    rsi_value: Decimal | None = None
+    rsi_signal: str = "neutral"
+    macd_trend: str = "neutral"
+    volume_signal: str = "neutral"
+    edge_case_detected: bool = False
+    model_suggestion_id: str | None = None
+    model_suggestion_action: str | None = None
+    model_suggestion_reasoning: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """把入场决策转成字典。"""
@@ -114,6 +184,14 @@ class EntryDecision:
             "trend_confirmed": self.trend_confirmed,
             "research_aligned": self.research_aligned,
             "suggested_position_ratio": str(self.suggested_position_ratio),
+            "rsi_value": str(self.rsi_value) if self.rsi_value is not None else None,
+            "rsi_signal": self.rsi_signal,
+            "macd_trend": self.macd_trend,
+            "volume_signal": self.volume_signal,
+            "edge_case_detected": self.edge_case_detected,
+            "model_suggestion_id": self.model_suggestion_id,
+            "model_suggestion_action": self.model_suggestion_action,
+            "model_suggestion_reasoning": self.model_suggestion_reasoning,
         }
 
 
@@ -188,8 +266,9 @@ class StrategyEngineService:
 
         综合考虑：
         1. 研究层 score（主要依据）
-        2. 趋势确认（EMA状态）
+        2. 趋势确认（EMA状态 + RSI/MACD/成交量）
         3. 波动率评估
+        4. 技术指标信号（RSI、MACD、成交量）
         """
         normalized_symbol = symbol.strip().upper()
         normalized_side = signal_side.strip().lower()
@@ -202,10 +281,24 @@ class StrategyEngineService:
         # 如果传入信号评分，使用它；否则使用研究评分
         effective_score = signal_score if signal_score is not None else research_score
 
-        # 检查趋势确认
-        trend_confirmed = self._check_trend_confirmation(
+        # 计算技术指标
+        indicators = self._calculate_technical_indicators(
             symbol=normalized_symbol,
             side=normalized_side,
+        )
+        rsi_value = indicators.get("rsi_value")
+        rsi_signal = str(indicators.get("rsi_signal", "neutral"))
+        macd_trend = str(indicators.get("macd_trend", "neutral"))
+        volume_signal = str(indicators.get("volume_signal", "neutral"))
+
+        # 检查趋势确认（结合EMA、RSI、MACD、成交量）
+        trend_confirmed = self._check_trend_confirmation_with_indicators(
+            symbol=normalized_symbol,
+            side=normalized_side,
+            rsi_value=rsi_value,
+            rsi_signal=rsi_signal,
+            macd_trend=macd_trend,
+            volume_signal=volume_signal,
         )
 
         # 检查研究信号是否与交易方向一致
@@ -215,11 +308,14 @@ class StrategyEngineService:
             research_score=research_score,
         )
 
-        # 计算综合评分
-        combined_score = self._calculate_combined_score(
+        # 计算综合评分（加入技术指标权重）
+        combined_score = self._calculate_combined_score_with_indicators(
             research_score=effective_score,
             trend_confirmed=trend_confirmed,
             research_aligned=research_aligned,
+            rsi_signal=rsi_signal,
+            macd_trend=macd_trend,
+            volume_signal=volume_signal,
         )
 
         # 计算建议仓位比例
@@ -229,20 +325,87 @@ class StrategyEngineService:
             volatility=volatility,
         )
 
+        # 边界场景检测和模型建议
+        edge_case_detected = False
+        model_suggestion_id = None
+        model_suggestion_action = None
+        model_suggestion_reasoning = None
+
+        # 检测边界场景：评分在阈值附近或信号矛盾
+        edge_analysis = model_suggestion_service.analyze_edge_case(
+            score=combined_score,
+            threshold=MIN_ENTRY_SCORE,
+        )
+
+        if edge_analysis.is_edge_case or (not trend_confirmed and research_aligned):
+            edge_case_detected = True
+            logger.info(
+                "检测到边界场景: %s, score=%.4f, threshold=%.4f, trend_confirmed=%s, rsi=%s, macd=%s, vol=%s",
+                normalized_symbol,
+                float(combined_score),
+                float(MIN_ENTRY_SCORE),
+                trend_confirmed,
+                rsi_signal,
+                macd_trend,
+                volume_signal,
+            )
+
+            # 准备上下文数据
+            context_data = {
+                "symbol": normalized_symbol,
+                "score": float(combined_score),
+                "threshold": float(MIN_ENTRY_SCORE),
+                "action_type": "entry",
+                "side": normalized_side,
+                "trend_confirmed": trend_confirmed,
+                "research_aligned": research_aligned,
+                "volatility": float(volatility),
+                "market_signals": {
+                    "research_score": float(effective_score),
+                    "research_signal": research_signal,
+                    "rsi_value": float(rsi_value) if rsi_value is not None else None,
+                    "rsi_signal": rsi_signal,
+                    "macd_trend": macd_trend,
+                    "volume_signal": volume_signal,
+                },
+                "conflicting_signals": [],
+            }
+
+            if not trend_confirmed:
+                context_data["conflicting_signals"].append({
+                    "type": "trend_mismatch",
+                    "description": f"价格趋势未确认 (RSI={rsi_signal}, MACD={macd_trend}, VOL={volume_signal})",
+                })
+
+            # 获取模型建议
+            suggestion = model_suggestion_service.get_model_suggestion(context_data)
+            if suggestion is not None:
+                model_suggestion_id = suggestion.suggestion_id
+                model_suggestion_action = suggestion.action
+                model_suggestion_reasoning = suggestion.reasoning
+
+                logger.info(
+                    "模型建议: id=%s, action=%s, confidence=%s, reasoning=%s",
+                    suggestion.suggestion_id,
+                    suggestion.action,
+                    suggestion.confidence,
+                    suggestion.reasoning,
+                )
+
         # 判断是否允许入场
         allowed = combined_score >= MIN_ENTRY_SCORE
         if not allowed:
             reason = f"综合评分 {combined_score:.4f} 未达到入场阈值 {MIN_ENTRY_SCORE:.4f}"
             confidence = "low"
         elif not trend_confirmed:
-            reason = "趋势未确认，建议观望"
+            reason = f"趋势未确认 (RSI={rsi_signal}, MACD={macd_trend}, VOL={volume_signal})"
             confidence = "medium"
             allowed = False
         elif not research_aligned:
             reason = "研究信号与交易方向不一致"
             confidence = "low"
         else:
-            reason = "入场条件满足"
+            reason = f"入场条件满足 (RSI={rsi_signal}, MACD={macd_trend}, VOL={volume_signal})"
             confidence = "high"
 
         return EntryDecision(
@@ -253,6 +416,14 @@ class StrategyEngineService:
             trend_confirmed=trend_confirmed,
             research_aligned=research_aligned,
             suggested_position_ratio=suggested_position,
+            rsi_value=rsi_value,
+            rsi_signal=rsi_signal,
+            macd_trend=macd_trend,
+            volume_signal=volume_signal,
+            edge_case_detected=edge_case_detected,
+            model_suggestion_id=model_suggestion_id,
+            model_suggestion_action=model_suggestion_action,
+            model_suggestion_reasoning=model_suggestion_reasoning,
         )
 
     def calculate_position_size(
@@ -265,19 +436,40 @@ class StrategyEngineService:
         """计算仓位大小。
 
         基于评分和波动率动态调整仓位。
+        支持不同币种的差异化参数配置。
         """
+        normalized_symbol = symbol.strip().upper()
         if volatility is None:
-            volatility = self._estimate_volatility(symbol=symbol.strip().upper())
+            volatility = self._estimate_volatility(symbol=normalized_symbol)
 
-        return self._calculate_position_size(score=score, volatility=volatility)
+        # 获取币种特定的波动率参数
+        pair_params = get_pair_volatility_params(normalized_symbol)
+        pair_position_multiplier = pair_params["position_multiplier"]
+        pair_volatility_multiplier = pair_params["volatility_multiplier"]
+
+        return self._calculate_position_size(
+            score=score,
+            volatility=volatility,
+            pair_position_multiplier=pair_position_multiplier,
+            pair_volatility_multiplier=pair_volatility_multiplier,
+        )
 
     def _calculate_position_size(
         self,
         *,
         score: Decimal,
         volatility: Decimal,
+        pair_position_multiplier: Decimal = Decimal("1.0"),
+        pair_volatility_multiplier: Decimal = Decimal("1.0"),
     ) -> Decimal:
-        """内部仓位计算逻辑。"""
+        """内部仓位计算逻辑。
+
+        Args:
+            score: 评分
+            volatility: 波动率
+            pair_position_multiplier: 币种特定的仓位乘数
+            pair_volatility_multiplier: 币种特定的波动率乘数
+        """
         # 基础仓位比例
         base_position = BASE_POSITION_RATIO
 
@@ -292,17 +484,20 @@ class StrategyEngineService:
             score_multiplier = Decimal("1.5")
 
         # 根据波动率调整仓位（高波动降仓，低波动加仓）
-        if volatility > Decimal("0.05"):  # 5%以上波动率
+        # 应用币种特定的波动率乘数
+        adjusted_volatility = volatility * pair_volatility_multiplier
+
+        if adjusted_volatility > Decimal("0.05"):  # 5%以上波动率
             volatility_multiplier = Decimal("0.6")
-        elif volatility > Decimal("0.03"):  # 3-5%波动率
+        elif adjusted_volatility > Decimal("0.03"):  # 3-5%波动率
             volatility_multiplier = Decimal("0.8")
-        elif volatility < Decimal("0.01"):  # 1%以下波动率
+        elif adjusted_volatility < Decimal("0.01"):  # 1%以下波动率
             volatility_multiplier = Decimal("1.2")
         else:
             volatility_multiplier = Decimal("1.0")
 
-        # 最终仓位
-        final_position = base_position * score_multiplier * volatility_multiplier
+        # 最终仓位（应用币种特定的仓位乘数）
+        final_position = base_position * score_multiplier * volatility_multiplier * pair_position_multiplier
         final_position = min(final_position, MAX_POSITION_RATIO)
         final_position = max(final_position, Decimal("0"))
 
@@ -576,6 +771,7 @@ class StrategyEngineService:
         """计算动态止损比例。
 
         根据评分和波动率调整止损距离。
+        支持不同币种的差异化参数配置。
         """
         normalized_symbol = symbol.strip().upper()
 
@@ -585,6 +781,11 @@ class StrategyEngineService:
 
         if volatility is None:
             volatility = self._estimate_volatility(symbol=normalized_symbol)
+
+        # 获取币种特定的波动率参数
+        pair_params = get_pair_volatility_params(normalized_symbol)
+        pair_stop_loss_multiplier = pair_params["stop_loss_multiplier"]
+        pair_volatility_multiplier = pair_params["volatility_multiplier"]
 
         # 基础止损比例
         base_stop = self._stop_loss_pct
@@ -597,15 +798,17 @@ class StrategyEngineService:
         else:
             stop_multiplier = Decimal("0.8")  # 收紧止损
 
-        # 高波动需要更宽止损
-        if volatility > Decimal("0.05"):
+        # 高波动需要更宽止损（应用币种特定的波动率乘数）
+        adjusted_volatility = volatility * pair_volatility_multiplier
+        if adjusted_volatility > Decimal("0.05"):
             volatility_multiplier = Decimal("1.3")
-        elif volatility > Decimal("0.03"):
+        elif adjusted_volatility > Decimal("0.03"):
             volatility_multiplier = Decimal("1.1")
         else:
             volatility_multiplier = Decimal("1.0")
 
-        final_stop = base_stop * stop_multiplier * volatility_multiplier
+        # 最终止损（应用币种特定的止损乘数）
+        final_stop = base_stop * stop_multiplier * volatility_multiplier * pair_stop_loss_multiplier
         final_stop = min(final_stop, Decimal("0.20"))  # 最大20%止损
         final_stop = max(final_stop, Decimal("0.05"))  # 最小5%止损
 
@@ -734,14 +937,14 @@ class StrategyEngineService:
         research_aligned: bool,
     ) -> Decimal:
         """计算综合评分。"""
-        # 研究评分权重 70%，趋势确认权重 30%
-        base_score = research_score * Decimal("0.70")
+        # 研究评分权重 80%，趋势确认权重 20%
+        base_score = research_score * Decimal("0.80")
 
         # 趋势确认加成
-        trend_bonus = Decimal("0.30") if trend_confirmed else Decimal("0")
+        trend_bonus = Decimal("0.20") if trend_confirmed else Decimal("0")
 
         # 研究一致加成
-        alignment_bonus = Decimal("0.10") if research_aligned else Decimal("0")
+        alignment_bonus = Decimal("0.05") if research_aligned else Decimal("0")
 
         combined = base_score + trend_bonus + alignment_bonus
         return min(combined, Decimal("1.0"))
@@ -845,6 +1048,236 @@ class StrategyEngineService:
             ema = value * k + ema * (Decimal("1") - k)
 
         return ema
+
+    def _calculate_technical_indicators(
+        self,
+        *,
+        symbol: str,
+        side: str,
+    ) -> dict[str, Decimal | str | None]:
+        """计算技术指标（RSI、MACD、成交量趋势）。"""
+        result: dict[str, Decimal | str | None] = {
+            "rsi_value": None,
+            "rsi_signal": "neutral",
+            "macd_trend": "neutral",
+            "volume_signal": "neutral",
+        }
+
+        try:
+            # 获取足够的K线数据用于计算技术指标
+            chart = self._market_reader.get_symbol_chart(
+                symbol=symbol,
+                interval="4h",
+                limit=100,  # 需要足够的数据来计算MACD
+            )
+            candles = list(chart.get("items", []))
+
+            if len(candles) < 35:  # MACD需要至少26+9的数据
+                logger.warning("技术指标计算: %s 数据不足 (%d根)", symbol, len(candles))
+                return result
+
+            # 解析收盘价和成交量
+            closes: list[Decimal] = []
+            volumes: list[Decimal] = []
+            for c in candles:
+                close = self._parse_decimal(c.get("close"))
+                volume = self._parse_decimal(c.get("volume"))
+                if close is not None:
+                    closes.append(close)
+                if volume is not None:
+                    volumes.append(volume)
+
+            if len(closes) < 35:
+                return result
+
+            # 计算RSI
+            rsi_value = calculate_rsi(closes, RSI_PERIOD)
+            result["rsi_value"] = rsi_value
+
+            # RSI信号判断
+            if side == "long":
+                # 做多时，RSI在超卖区域为买入信号，超买区域为风险
+                if rsi_value < RSI_OVERSELL_THRESHOLD:
+                    result["rsi_signal"] = "oversold_buy"  # 超卖，买入机会
+                elif rsi_value > RSI_OVERBUY_THRESHOLD:
+                    result["rsi_signal"] = "overbought_risk"  # 超买，风险警告
+                else:
+                    result["rsi_signal"] = "neutral"
+            else:
+                # 做空时，RSI在超买区域为卖出信号，超卖区域为风险
+                if rsi_value > RSI_OVERBUY_THRESHOLD:
+                    result["rsi_signal"] = "overbought_sell"  # 超买，卖出机会
+                elif rsi_value < RSI_OVERSELL_THRESHOLD:
+                    result["rsi_signal"] = "oversold_risk"  # 超卖，风险警告
+                else:
+                    result["rsi_signal"] = "neutral"
+
+            # 计算MACD
+            macd_result = calculate_macd(
+                closes,
+                MACD_FAST_PERIOD,
+                MACD_SLOW_PERIOD,
+                MACD_SIGNAL_PERIOD,
+            )
+            result["macd_trend"] = str(macd_result.get("trend", "neutral"))
+
+            # 计算成交量趋势
+            if len(volumes) >= VOLUME_TREND_PERIOD:
+                volume_result = calculate_volume_trend(
+                    volumes,
+                    closes,
+                    VOLUME_TREND_PERIOD,
+                )
+                result["volume_signal"] = str(volume_result.get("price_volume_alignment", "neutral"))
+            else:
+                result["volume_signal"] = "neutral"
+
+            logger.debug(
+                "技术指标: %s RSI=%.2f(%s) MACD=%s VOL=%s",
+                symbol,
+                float(rsi_value),
+                result["rsi_signal"],
+                result["macd_trend"],
+                result["volume_signal"],
+            )
+
+            return result
+
+        except Exception as exc:
+            logger.warning("技术指标计算失败: %s - %s", symbol, exc)
+            return result
+
+    def _check_trend_confirmation_with_indicators(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        rsi_value: Decimal | None,
+        rsi_signal: str,
+        macd_trend: str,
+        volume_signal: str,
+    ) -> bool:
+        """结合技术指标检查趋势确认。
+
+        综合考虑：
+        1. EMA趋势（基础）
+        2. RSI是否在合理区间
+        3. MACD趋势方向
+        4. 成交量是否配合
+
+        Returns:
+            True 如果趋势确认
+        """
+        # 首先检查基础EMA趋势
+        ema_confirmed = self._check_trend_confirmation(symbol=symbol, side=side)
+
+        # 如果EMA趋势未确认，直接返回False
+        if not ema_confirmed:
+            return False
+
+        # 计算技术指标得分
+        indicator_score = 0
+        total_indicators = 3
+
+        # RSI信号检查
+        if rsi_value is not None:
+            if side == "long":
+                # 做多时，RSI不在超买区域（>70）为正面信号
+                if rsi_signal in ("oversold_buy", "neutral"):
+                    indicator_score += 1
+                elif rsi_signal == "overbought_risk":
+                    # RSI超买时，趋势可能不稳固
+                    indicator_score += 0
+            else:
+                # 做空时，RSI不在超卖区域（<30）为正面信号
+                if rsi_signal in ("overbought_sell", "neutral"):
+                    indicator_score += 1
+                elif rsi_signal == "oversold_risk":
+                    indicator_score += 0
+        else:
+            indicator_score += 0.5  # 数据不足，给中性分
+
+        # MACD趋势检查
+        if side == "long":
+            if macd_trend == "bullish":
+                indicator_score += 1
+            elif macd_trend == "neutral":
+                indicator_score += 0.5
+            else:
+                indicator_score += 0
+        else:
+            if macd_trend == "bearish":
+                indicator_score += 1
+            elif macd_trend == "neutral":
+                indicator_score += 0.5
+            else:
+                indicator_score += 0
+
+        # 成交量检查
+        if volume_signal in ("bullish_volume", "bearish_volume"):
+            # 量价配合
+            if side == "long" and volume_signal == "bullish_volume":
+                indicator_score += 1
+            elif side == "short" and volume_signal == "bearish_volume":
+                indicator_score += 1
+            else:
+                # 量价背离
+                indicator_score += 0.3
+        elif volume_signal == "normal_volume":
+            indicator_score += 0.5
+        else:
+            indicator_score += 0.5
+
+        # 计算综合指标得分比例
+        indicator_ratio = indicator_score / total_indicators
+
+        # 需要至少2/3的指标支持才能确认趋势
+        # 即 indicator_ratio >= 0.67
+        return indicator_ratio >= Decimal("0.67")
+
+    def _calculate_combined_score_with_indicators(
+        self,
+        *,
+        research_score: Decimal,
+        trend_confirmed: bool,
+        research_aligned: bool,
+        rsi_signal: str,
+        macd_trend: str,
+        volume_signal: str,
+    ) -> Decimal:
+        """计算综合评分，加入技术指标权重。"""
+        # 研究评分权重 60%
+        base_score = research_score * Decimal("0.60")
+
+        # 趋势确认权重 20%
+        trend_bonus = Decimal("0.20") if trend_confirmed else Decimal("0")
+
+        # 研究一致权重 5%
+        alignment_bonus = Decimal("0.05") if research_aligned else Decimal("0")
+
+        # 技术指标权重 15%（分散到RSI、MACD、成交量各5%）
+        indicator_bonus = Decimal("0")
+
+        # RSI加分（5%）
+        if rsi_signal in ("oversold_buy", "overbought_sell"):
+            indicator_bonus += Decimal("0.05")
+        elif rsi_signal == "neutral":
+            indicator_bonus += Decimal("0.02")
+
+        # MACD加分（5%）
+        if macd_trend == "bullish" or macd_trend == "bearish":
+            indicator_bonus += Decimal("0.05")
+        elif macd_trend == "neutral":
+            indicator_bonus += Decimal("0.02")
+
+        # 成交量加分（5%）
+        if volume_signal in ("bullish_volume", "bearish_volume"):
+            indicator_bonus += Decimal("0.05")
+        elif volume_signal in ("normal_volume", "neutral"):
+            indicator_bonus += Decimal("0.02")
+
+        combined = base_score + trend_bonus + alignment_bonus + indicator_bonus
+        return min(combined, Decimal("1.0"))
 
 
 # 单例实例

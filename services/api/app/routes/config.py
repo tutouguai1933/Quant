@@ -283,3 +283,113 @@ def reload_config() -> dict[str, Any]:
         return _success(result, {"source": "config-center", "action": "reload"})
     except Exception as e:
         return _error("reload_error", f"重载配置失败: {e}", {"source": "config-center"})
+
+
+# ========== 交易对白名单管理 API ==========
+
+
+@router.get("/pairs")
+def get_pair_whitelist() -> dict[str, Any]:
+    """获取交易对白名单配置。
+
+    Returns:
+        交易对白名单配置信息，包含：
+        - whitelist: 白名单列表
+        - blacklist: 黑名单列表
+        - max_pairs: 最大交易对数量
+        - stake_per_pair: 仓位分配策略
+        - volatility_params: 各币种波动率参数
+        - effective_whitelist: 实际生效的白名单（排除黑名单后）
+    """
+    try:
+        result = config_center_service.get_pair_whitelist()
+        return _success(result, {"source": "config-center", "action": "get_pairs"})
+    except Exception as e:
+        return _error("pairs_error", f"获取交易对配置失败: {e}", {"source": "config-center"})
+
+
+@router.put("/pairs")
+def update_pair_whitelist(
+    payload: dict[str, Any] | None = Body(None),
+    whitelist: list[str] | None = None,
+    blacklist: list[str] | None = None,
+    max_pairs: int | None = None,
+    stake_per_pair: str | None = None,
+    operator: str = "system",
+    comment: str = "",
+) -> dict[str, Any]:
+    """更新交易对白名单配置。
+
+    需要管理员权限。
+
+    Args:
+        payload: 请求体
+        whitelist: 新的白名单列表，例如 ["BTC/USDT", "ETH/USDT", "DOGE/USDT"]
+        blacklist: 新的黑名单列表
+        max_pairs: 最大交易对数量（默认5）
+        stake_per_pair: 仓位分配策略（equal/volatility/score）
+        operator: 操作者
+        comment: 变更说明
+
+    Returns:
+        更新结果和当前配置
+    """
+    request = payload if isinstance(payload, dict) else {}
+
+    resolved_whitelist = request.get("whitelist", whitelist)
+    resolved_blacklist = request.get("blacklist", blacklist)
+    resolved_max_pairs = request.get("max_pairs", max_pairs)
+    resolved_stake_per_pair = request.get("stake_per_pair", stake_per_pair)
+    resolved_operator = str(request.get("operator", operator))
+    resolved_comment = str(request.get("comment", comment))
+
+    try:
+        result = config_center_service.update_pair_whitelist(
+            whitelist=resolved_whitelist,
+            blacklist=resolved_blacklist,
+            max_pairs=resolved_max_pairs,
+            stake_per_pair=resolved_stake_per_pair,
+            operator=resolved_operator,
+            comment=resolved_comment,
+        )
+        return _success(result, {"source": "config-center", "action": "update_pairs"})
+    except Exception as e:
+        return _error("pairs_update_error", f"更新交易对配置失败: {e}", {"source": "config-center"})
+
+
+@router.get("/pairs/validate")
+def validate_pair_whitelist() -> dict[str, Any]:
+    """验证交易对白名单配置。
+
+    Returns:
+        验证结果，包含：
+        - valid: 是否有效
+        - errors: 错误列表
+        - warnings: 警告列表
+        - pairs_status: 各交易对的状态详情
+    """
+    try:
+        result = config_center_service.validate_pair_whitelist()
+        return _success(result, {"source": "config-center", "action": "validate_pairs"})
+    except Exception as e:
+        return _error("pairs_validation_error", f"验证交易对配置失败: {e}", {"source": "config-center"})
+
+
+@router.get("/pairs/{pair}/volatility")
+def get_pair_volatility_params(pair: str) -> dict[str, Any]:
+    """获取特定交易对的波动率参数。
+
+    Args:
+        pair: 交易对名称（如 BTC/USDT 或 BTCUSDT）
+
+    Returns:
+        该交易对的波动率参数配置：
+        - volatility_multiplier: 波动率乘数
+        - stop_loss_multiplier: 止损乘数
+        - position_multiplier: 仓位乘数
+    """
+    try:
+        result = config_center_service.get_pair_volatility_params(pair)
+        return _success(result, {"source": "config-center", "action": "get_pair_volatility"})
+    except Exception as e:
+        return _error("pair_volatility_error", f"获取交易对波动率参数失败: {e}", {"source": "config-center"})
