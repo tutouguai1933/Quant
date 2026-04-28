@@ -1,15 +1,15 @@
 # 当前进度
 
-- 当前正在做：Agent Team P2开发任务全部完成
-- 上次停留位置：策略引擎验证成功，代码已推送
+- 当前正在做：Phase 3/4/5开发全部完成，代码已推送
+- 上次停留位置：Review和Live验证完成，系统可用
 - 最近完成（2026-04-29）：
-  - Agent Team并行开发完成：6个Agent协作
-  - 新增数据分析页面：/analytics (454行)
-  - 新增配置管理页面：/config (398行)
-  - 新增策略入场评分端点：POST /strategies/{id}/entry-score
-  - 代码Review评分：A，97%通过
-  - 策略引擎验证：entry-score端点正常，评分阈值生效
-  - Commit: 863ff60 已推送GitHub
+  - Agent Team 7个并行Agent开发完成
+  - Phase 3: 阈值调整(MIN_ENTRY_SCORE 0.70→0.60) + 趋势指标增强(RSI/MACD/成交量)
+  - Phase 4: 模型建议服务(model_suggestion_service.py) + 边界场景检测
+  - Phase 5: 性能监控 + 回测验证 + 多币种支持 + OpenClaw扩展
+  - Review报告: 395测试通过，代码质量评分A
+  - Live验证: entry-score阈值生效，边界场景检测触发
+  - Commit: 8b66438 已推送GitHub
 - 最近完成（2026-04-27）：
   - Live交易完整周期验证成功：卖出DOGE → 研究 → 买入 → 监控 → 卖出
   - VPN节点切换验证：日本节点（IP 154.31.113.7）在白名单内
@@ -41,19 +41,30 @@
 | 本地API | http://127.0.0.1:9011 | ✅ |
 
 ## 已完成的服务文件
-- strategy_engine_service.py - 入场评分、仓位计算、止损追踪
+- strategy_engine_service.py - 入场评分、仓位计算、止损追踪、阈值0.60
 - analytics_service.py - 每日/周统计、盈亏归因、交易历史
-- config_center_service.py - 统一配置管理
+- config_center_service.py - 统一配置管理、多币种白名单
 - vpn_switch_service.py - VPN自动切换
 - risk_guard_service.py - 风控熔断
 - alert_push_service.py - 告警推送
 - auto_dispatch_service.py - 自动派发
+- indicator_service.py - RSI/MACD/成交量趋势计算
+- performance_monitor_service.py - API延迟追踪、P50/P95/P99统计
+- backtest_validation_service.py - 历史数据回测、指标计算
+- model_suggestion_service.py - 边界场景检测、模型API调用
+
+## 新增API端点
+- GET /api/v1/performance - 性能统计数据
+- GET /api/v1/model/status - 模型建议状态
+- GET /api/v1/config/pairs - 交易对白名单
+- POST /api/v1/backtest/run - 执行回测
+- POST /api/v1/strategies/{id}/entry-score - 入场评分计算
 
 ## 测试状态
-- 后端测试: 42/42 passed ✅
+- 后端测试: 395 passed (97%)
 - 前端构建: passed ✅
-- GitHub同步: 完成 ✅ (commit 2f02f01)
-- 服务器同步: 新服务文件已SCP到服务器，需重建容器以生效
+- GitHub同步: 完成 ✅ (commit 8b66438)
+- Review评分: A
 
 ## VPN配置
 - 当前节点：★ 日本¹
