@@ -4188,3 +4188,261 @@ export async function executeOpenclawAction(
     };
   }
 }
+
+/* Analytics API Types and Functions */
+
+export type AnalyticsServiceStatus = {
+  status: string;
+  history_days: number;
+  trade_count: number;
+  last_sync_at: string | null;
+};
+
+export type AnalyticsDailySummary = {
+  date: string;
+  trade_count: number;
+  buy_count: number;
+  sell_count: number;
+  total_pnl: string;
+  win_count: number;
+  loss_count: number;
+  win_rate: string;
+  avg_pnl: string;
+  max_profit: string;
+  max_loss: string;
+  symbols: string[];
+};
+
+export type AnalyticsWeeklySummary = {
+  week_start: string;
+  week_end: string;
+  trade_count: number;
+  total_pnl: string;
+  win_count: number;
+  loss_count: number;
+  win_rate: string;
+  daily_breakdown: Array<Record<string, unknown>>;
+  best_day: string;
+  worst_day: string;
+};
+
+export type AnalyticsPnlAttribution = {
+  by_symbol: Record<string, { symbol: string; trade_count: number; total_pnl: string; buy_count: number; sell_count: number }>;
+  by_strategy: Record<string, { strategy_id: number | null; strategy_name: string; trade_count: number; total_pnl: string }>;
+  by_time_period: Record<string, { period: string; trade_count: number; total_pnl: string }>;
+  top_profit_symbols: Array<{ symbol: string; total_pnl: string }>;
+  top_loss_symbols: Array<{ symbol: string; total_pnl: string }>;
+};
+
+export type AnalyticsStrategyPerformance = {
+  strategy_id: number | null;
+  strategy_name: string;
+  trade_count: number;
+  total_pnl: string;
+  win_rate: string;
+  avg_pnl: string;
+  max_profit: string;
+  max_loss: string;
+  sharpe_ratio: string | null;
+};
+
+export type AnalyticsTradeRecord = {
+  trade_id: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+  price: string;
+  pnl: string;
+  executed_at: string;
+  strategy_id: number | null;
+  signal_id: number | null;
+  source: string;
+};
+
+export async function getAnalyticsStatus(signal?: AbortSignal): Promise<ApiEnvelope<{ status: AnalyticsServiceStatus }>> {
+  return fetchJson<{ status: AnalyticsServiceStatus }>("/api/v1/analytics", undefined, signal);
+}
+
+export async function getAnalyticsDailySummary(
+  date?: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ summary: AnalyticsDailySummary }>> {
+  const path = date ? `/api/v1/analytics/daily?date=${encodeURIComponent(date)}` : "/api/v1/analytics/daily";
+  return fetchJson<{ summary: AnalyticsDailySummary }>(path, undefined, signal);
+}
+
+export async function getAnalyticsWeeklySummary(
+  weekStart?: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ summary: AnalyticsWeeklySummary }>> {
+  const path = weekStart ? `/api/v1/analytics/weekly?week_start=${encodeURIComponent(weekStart)}` : "/api/v1/analytics/weekly";
+  return fetchJson<{ summary: AnalyticsWeeklySummary }>(path, undefined, signal);
+}
+
+export async function getAnalyticsPnlAttribution(
+  days?: number,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ attribution: AnalyticsPnlAttribution }>> {
+  const path = days ? `/api/v1/analytics/attribution?days=${days}` : "/api/v1/analytics/attribution";
+  return fetchJson<{ attribution: AnalyticsPnlAttribution }>(path, undefined, signal);
+}
+
+export async function getAnalyticsStrategyPerformance(
+  strategyId?: number,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ performances: AnalyticsStrategyPerformance[] }>> {
+  const path = strategyId ? `/api/v1/analytics/performance?strategy_id=${strategyId}` : "/api/v1/analytics/performance";
+  return fetchJson<{ performances: AnalyticsStrategyPerformance[] }>(path, undefined, signal);
+}
+
+export async function getAnalyticsTradeHistory(
+  params?: {
+    limit?: number;
+    symbol?: string;
+    side?: string;
+    strategy_id?: number;
+    start_date?: string;
+    end_date?: string;
+  },
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ trades: AnalyticsTradeRecord[]; count: number }>> {
+  const queryParams = new URLSearchParams();
+  if (params?.limit) queryParams.set("limit", String(params.limit));
+  if (params?.symbol) queryParams.set("symbol", params.symbol);
+  if (params?.side) queryParams.set("side", params.side);
+  if (params?.strategy_id) queryParams.set("strategy_id", String(params.strategy_id));
+  if (params?.start_date) queryParams.set("start_date", params.start_date);
+  if (params?.end_date) queryParams.set("end_date", params.end_date);
+  const queryString = queryParams.toString();
+  const path = queryString ? `/api/v1/analytics/history?${queryString}` : "/api/v1/analytics/history";
+  return fetchJson<{ trades: AnalyticsTradeRecord[]; count: number }>(path, undefined, signal);
+}
+
+export function getAnalyticsStatusFallback(): AnalyticsServiceStatus {
+  return {
+    status: "ready",
+    history_days: 30,
+    trade_count: 0,
+    last_sync_at: null,
+  };
+}
+
+export function getAnalyticsDailySummaryFallback(): AnalyticsDailySummary {
+  return {
+    date: new Date().toISOString().split("T")[0],
+    trade_count: 0,
+    buy_count: 0,
+    sell_count: 0,
+    total_pnl: "0",
+    win_count: 0,
+    loss_count: 0,
+    win_rate: "0",
+    avg_pnl: "0",
+    max_profit: "0",
+    max_loss: "0",
+    symbols: [],
+  };
+}
+
+export function getAnalyticsWeeklySummaryFallback(): AnalyticsWeeklySummary {
+  const today = new Date();
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay());
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  return {
+    week_start: weekStart.toISOString().split("T")[0],
+    week_end: weekEnd.toISOString().split("T")[0],
+    trade_count: 0,
+    total_pnl: "0",
+    win_count: 0,
+    loss_count: 0,
+    win_rate: "0",
+    daily_breakdown: [],
+    best_day: "",
+    worst_day: "",
+  };
+}
+
+/* Entry Score API Types and Functions */
+
+export type EntryDecisionModel = {
+  allowed: boolean;
+  score: string;
+  reason: string;
+  confidence: string;
+  trend_confirmed: boolean;
+  research_aligned: boolean;
+  suggested_position_ratio: string;
+};
+
+export async function calculateEntryScore(
+  strategyId: number,
+  symbol: string,
+  signalSide: string = "long",
+  signalScore?: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ entry_decision: EntryDecisionModel }>> {
+  try {
+    const params = new URLSearchParams();
+    params.set("symbol", symbol);
+    params.set("signal_side", signalSide);
+    if (signalScore) {
+      params.set("signal_score", signalScore);
+    }
+    const url = await resolveControlPlaneUrl(`/api/v1/strategies/${strategyId}/entry-score?${params.toString()}`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      signal,
+    });
+
+    if (!response.ok) {
+      return {
+        data: { entry_decision: { allowed: false, score: "0", reason: "API 请求失败", confidence: "low", trend_confirmed: false, research_aligned: false, suggested_position_ratio: "0" } },
+        error: {
+          code: `http_${response.status}`,
+          message: `API 请求失败: ${response.statusText}`,
+        },
+        meta: { status: response.status },
+      };
+    }
+
+    const json = (await response.json()) as ApiEnvelope<{ entry_decision: EntryDecisionModel }>;
+    return json;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        data: { entry_decision: { allowed: false, score: "0", reason: "请求超时", confidence: "low", trend_confirmed: false, research_aligned: false, suggested_position_ratio: "0" } },
+        error: {
+          code: "request_timeout",
+          message: "请求超时",
+        },
+        meta: { aborted: true },
+      };
+    }
+    return {
+      data: { entry_decision: { allowed: false, score: "0", reason: error instanceof Error ? error.message : "网络连接失败", confidence: "low", trend_confirmed: false, research_aligned: false, suggested_position_ratio: "0" } },
+      error: {
+        code: "network_error",
+        message: error instanceof Error ? error.message : "网络连接失败",
+      },
+      meta: {},
+    };
+  }
+}
+
+export function getEntryDecisionFallback(): EntryDecisionModel {
+  return {
+    allowed: false,
+    score: "0",
+    reason: "暂无入场评分数据",
+    confidence: "low",
+    trend_confirmed: false,
+    research_aligned: false,
+    suggested_position_ratio: "0",
+  };
+}
