@@ -28,16 +28,31 @@
   - 验证评估页数据：API 返回 candidate_count: 10, recommended_symbol: BTCUSDT
   - 新增运行历史记录展示：ResearchRuntimePanel 现在显示 training/inference/pipeline 的最近运行次数和平均耗时
 
-# 系统状态快照（2026-04-27）
+# 系统状态快照（2026-04-28）
 
 ## 服务地址
 | 服务 | 地址 | 状态 |
 |------|------|------|
-| 服务器API | http://39.106.11.65:9011 | ✅ |
-| 服务器Web | http://39.106.11.65:9012 | ✅ |
-| 服务器Freqtrade | http://39.106.11.65:9013 | ✅ Live模式 |
+| 服务器API | http://39.106.11.65:9011 | ✅ 运行中 |
+| 服务器Web | http://39.106.11.65:9012 | ✅ 运行中 |
+| 服务器Freqtrade | http://39.106.11.65:9013 | ⚠️ 重启中 |
 | mihomo代理 | 127.0.0.1:7890 | ✅ 日本节点 |
 | 本地API | http://127.0.0.1:9011 | ✅ |
+
+## 已完成的服务文件
+- strategy_engine_service.py - 入场评分、仓位计算、止损追踪
+- analytics_service.py - 每日/周统计、盈亏归因、交易历史
+- config_center_service.py - 统一配置管理
+- vpn_switch_service.py - VPN自动切换
+- risk_guard_service.py - 风控熔断
+- alert_push_service.py - 告警推送
+- auto_dispatch_service.py - 自动派发
+
+## 测试状态
+- 后端测试: 42/42 passed ✅
+- 前端构建: passed ✅
+- GitHub同步: 完成 ✅ (commit 2f02f01)
+- 服务器同步: 新服务文件已SCP到服务器，需重建容器以生效
 
 ## VPN配置
 - 当前节点：★ 日本¹
