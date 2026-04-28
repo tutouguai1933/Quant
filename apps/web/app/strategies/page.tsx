@@ -18,10 +18,13 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
 import { readFeedback } from "../../lib/feedback";
 import {
+  calculateEntryScore,
   getAutomationStatus,
   getAutomationStatusFallback,
+  getEntryDecisionFallback,
   getStrategyWorkspace,
   getStrategyWorkspaceFallback,
+  type EntryDecisionModel,
   type StrategyWorkspaceCard,
 } from "../../lib/api";
 
@@ -37,6 +40,9 @@ export default function StrategiesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [workspace, setWorkspace] = useState(getStrategyWorkspaceFallback());
   const [automation, setAutomation] = useState(getAutomationStatusFallback().item);
+  const [entryScoreSymbol, setEntryScoreSymbol] = useState<string>("");
+  const [entryScoreResult, setEntryScoreResult] = useState<EntryDecisionModel>(getEntryDecisionFallback());
+  const [entryScoreLoading, setEntryScoreLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -86,6 +92,31 @@ export default function StrategiesPage() {
       controller.abort();
     };
   }, [session.token]);
+
+  const handleCalculateEntryScore = async () => {
+    if (!entryScoreSymbol.trim()) return;
+    setEntryScoreLoading(true);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const result = await calculateEntryScore(1, entryScoreSymbol.trim(), "long", undefined, controller.signal);
+      clearTimeout(timeoutId);
+      if (result.error) {
+        setEntryScoreResult({
+          ...getEntryDecisionFallback(),
+          reason: result.error.message || "计算入场评分失败",
+        });
+      } else {
+        setEntryScoreResult(result.data.entry_decision);
+      }
+    } catch (error) {
+      setEntryScoreResult({
+        ...getEntryDecisionFallback(),
+        reason: error instanceof Error ? error.message : "网络连接失败",
+      });
+    }
+    setEntryScoreLoading(false);
+  };
 
   const arbitration = asRecord(automation.arbitration);
   const arbitrationSuggestedAction = asRecord(arbitration.suggested_action);
@@ -278,6 +309,61 @@ export default function StrategiesPage() {
 
           <Card>
             <CardHeader>
+              <p className="eyebrow">入场评分</p>
+              <CardTitle>入场评分计算</CardTitle>
+              <CardDescription>输入交易标的，计算入场评分、建议仓位和入场建议。</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={entryScoreSymbol}
+                  onChange={(e) => setEntryScoreSymbol(e.target.value.toUpperCase())}
+                  placeholder="输入 Symbol（如 BTCUSDT）"
+                  className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <Button
+                  variant="terminal"
+                  size="sm"
+                  disabled={!entryScoreSymbol.trim() || entryScoreLoading}
+                  onClick={handleCalculateEntryScore}
+                >
+                  {entryScoreLoading ? "计算中..." : "计算入场评分"}
+                </Button>
+              </div>
+              {entryScoreResult.score !== "0" && (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <EntryScoreDigest
+                    label="入场评分"
+                    value={formatScore(entryScoreResult.score)}
+                    detail={`置信度: ${entryScoreResult.confidence}`}
+                    status={entryScoreResult.allowed ? "success" : "warning"}
+                  />
+                  <EntryScoreDigest
+                    label="入场建议"
+                    value={entryScoreResult.allowed ? "允许入场" : "不建议入场"}
+                    detail={entryScoreResult.reason}
+                    status={entryScoreResult.allowed ? "success" : "warning"}
+                  />
+                  <EntryScoreDigest
+                    label="建议仓位"
+                    value={`${formatRatio(entryScoreResult.suggested_position_ratio)}%`}
+                    detail="基于评分和波动率计算"
+                    status={entryScoreResult.suggested_position_ratio !== "0" ? "success" : "waiting"}
+                  />
+                  <EntryScoreDigest
+                    label="趋势确认"
+                    value={entryScoreResult.trend_confirmed ? "已确认" : "未确认"}
+                    detail={entryScoreResult.research_aligned ? "研究信号一致" : "研究信号不一致"}
+                    status={entryScoreResult.trend_confirmed ? "success" : "waiting"}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <p className="eyebrow">最近数据</p>
               <CardTitle>信号与执行摘要</CardTitle>
               <CardDescription>展示最近 3 条信号和执行结果。</CardDescription>
@@ -429,4 +515,42 @@ function formatPreferredStrategy(value: StrategyWorkspaceCard["research_cockpit"
     return "趋势回调";
   }
   return "继续观察";
+}
+
+function formatScore(value: string): string {
+  const score = parseFloat(value);
+  if (isNaN(score)) return "暂无评分";
+  return `${(score * 100).toFixed(1)}分`;
+}
+
+function formatRatio(value: string): string {
+  const ratio = parseFloat(value);
+  if (isNaN(ratio)) return "0";
+  return `${(ratio * 100).toFixed(0)}`;
+}
+
+function EntryScoreDigest({
+  label,
+  value,
+  detail,
+  status,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  status: "success" | "warning" | "waiting" | "error";
+}) {
+  const statusColorMap = {
+    success: "text-green-600 dark:text-green-400",
+    warning: "text-yellow-600 dark:text-yellow-400",
+    waiting: "text-muted-foreground",
+    error: "text-red-600 dark:text-red-400",
+  };
+  return (
+    <div className="rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/70 p-4">
+      <p className="eyebrow">{label}</p>
+      <p className={`mt-2 text-sm font-semibold leading-6 ${statusColorMap[status]}`}>{value}</p>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+    </div>
+  );
 }

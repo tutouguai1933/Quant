@@ -91,3 +91,102 @@ class StrategyCatalogRouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EntryScoreRouteTests(unittest.TestCase):
+    """Tests for the /api/v1/strategies/{id}/entry-score endpoint."""
+
+    def setUp(self) -> None:
+        self._reset_singletons()
+        self._strategy_engine_backup = strategies_route.strategy_engine_service
+
+    def tearDown(self) -> None:
+        strategies_route.strategy_engine_service = self._strategy_engine_backup
+
+    @staticmethod
+    def _reset_singletons() -> None:
+        new_auth_service = AuthService()
+        auth_service_module.auth_service = new_auth_service
+        auth_route.auth_service = new_auth_service
+        strategies_route.auth_service = new_auth_service
+
+        new_strategy_catalog_service = StrategyCatalogService()
+        strategy_catalog_module.strategy_catalog_service = new_strategy_catalog_service
+        strategies_route.strategy_catalog_service = new_strategy_catalog_service
+
+    @staticmethod
+    def _login_token() -> str:
+        response = login(username="admin", password="1933")
+        return str(response["data"]["item"]["token"])
+
+    def test_entry_score_route_requires_symbol(self) -> None:
+        """Entry score endpoint requires symbol parameter."""
+        token = self._login_token()
+        response = strategies_route.calculate_entry_score(
+            strategy_id=1,
+            symbol="",
+            token=token,
+        )
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["data"])
+        self.assertEqual(response["error"]["code"], "invalid_request")
+        self.assertIn("symbol", response["error"]["message"])
+
+    def test_entry_score_route_requires_login(self) -> None:
+        """Entry score endpoint requires authentication."""
+        response = strategies_route.calculate_entry_score(
+            strategy_id=1,
+            symbol="BTCUSDT",
+        )
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertEqual(response["error"]["code"], "unauthorized")
+
+    def test_entry_score_route_returns_entry_decision(self) -> None:
+        """Entry score endpoint returns entry decision with expected fields."""
+        token = self._login_token()
+        strategies_route.strategy_engine_service = _FakeStrategyEngineService()
+
+        response = strategies_route.calculate_entry_score(
+            strategy_id=1,
+            symbol="BTCUSDT",
+            signal_side="long",
+            token=token,
+        )
+
+        self.assertEqual(set(response.keys()), {"data", "error", "meta"})
+        self.assertIsNone(response["error"])
+        self.assertIn("entry_decision", response["data"])
+        entry_decision = response["data"]["entry_decision"]
+        self.assertIn("allowed", entry_decision)
+        self.assertIn("score", entry_decision)
+        self.assertIn("reason", entry_decision)
+        self.assertIn("confidence", entry_decision)
+        self.assertIn("trend_confirmed", entry_decision)
+        self.assertIn("research_aligned", entry_decision)
+        self.assertIn("suggested_position_ratio", entry_decision)
+
+
+class _FakeStrategyEngineService:
+    """Fake strategy engine service for testing."""
+
+    def calculate_entry_score(
+        self,
+        symbol: str,
+        *,
+        signal_side: str = "long",
+        signal_score: object = None,
+    ) -> object:
+        from services.api.app.services.strategy_engine_service import EntryDecision
+        from decimal import Decimal
+
+        return EntryDecision(
+            allowed=True,
+            score=Decimal("0.75"),
+            reason="入场条件满足",
+            confidence="high",
+            trend_confirmed=True,
+            research_aligned=True,
+            suggested_position_ratio=Decimal("0.25"),
+        )

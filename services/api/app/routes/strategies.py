@@ -7,6 +7,7 @@ from services.api.app.services.automation_workflow_service import automation_wor
 from services.api.app.services.auth_service import auth_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
 from services.api.app.services.strategy_dispatch_service import strategy_dispatch_service
+from services.api.app.services.strategy_engine_service import strategy_engine_service
 from services.api.app.services.strategy_workspace_service import strategy_workspace_service
 from services.api.app.services.sync_service import sync_service
 
@@ -236,5 +237,62 @@ def dispatch_latest_signal(strategy_id: int, token: str = "", authorization: str
             "action": "dispatch-latest-signal",
             "source": "control-plane-api",
             "truth_source": "freqtrade",
+        },
+    )
+
+
+@router.post("/{strategy_id}/entry-score")
+def calculate_entry_score(
+    strategy_id: int,
+    symbol: str = "",
+    signal_side: str = "long",
+    signal_score: str = "",
+    token: str = "",
+    authorization: str = Header(""),
+) -> dict:
+    """计算入场评分。
+
+    返回入场决策，包括：
+    - allowed: 是否允许入场
+    - score: 综合评分
+    - reason: 原因说明
+    - confidence: 置信度
+    - trend_confirmed: 趋势是否确认
+    - research_aligned: 研究信号是否一致
+    - suggested_position_ratio: 建议仓位比例
+    """
+    try:
+        auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    except PermissionError:
+        return _unauthorized()
+
+    if not symbol or not symbol.strip():
+        return {
+            "data": None,
+            "error": {"code": "invalid_request", "message": "symbol 参数必须提供"},
+            "meta": {"strategy_id": strategy_id, "source": "control-plane-api"},
+        }
+
+    from decimal import Decimal
+
+    parsed_score = None
+    if signal_score and signal_score.strip():
+        try:
+            parsed_score = Decimal(signal_score.strip())
+        except Exception:
+            parsed_score = None
+
+    entry_decision = strategy_engine_service.calculate_entry_score(
+        symbol=symbol.strip(),
+        signal_side=signal_side.strip().lower() if signal_side else "long",
+        signal_score=parsed_score,
+    )
+
+    return _success(
+        {"entry_decision": entry_decision.to_dict()},
+        {
+            "strategy_id": strategy_id,
+            "symbol": symbol.strip(),
+            "source": "strategy-engine-service",
         },
     )
