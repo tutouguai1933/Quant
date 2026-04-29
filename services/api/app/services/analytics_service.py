@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -19,6 +18,7 @@ from typing import Any
 from services.api.app.core.settings import Settings
 from services.api.app.services.sync_service import sync_service
 from services.api.app.services.signal_service import signal_service
+from services.api.app.services.config_center_service import get_config
 
 
 def utc_now() -> datetime:
@@ -206,12 +206,10 @@ class AnalyticsService:
 
     def _load_history_days(self) -> int:
         """读取历史天数配置。"""
-        raw = os.getenv("QUANT_ANALYTICS_HISTORY_DAYS", "30").strip()
-        try:
-            days = int(raw)
-            return max(1, min(days, 365))
-        except ValueError:
+        days = get_config("QUANT_ANALYTICS_HISTORY_DAYS", default=30, as_type="int")
+        if days is None:
             return 30
+        return max(1, min(days, 365))
 
     @property
     def history_days(self) -> int:

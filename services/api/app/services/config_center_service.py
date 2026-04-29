@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import fcntl
+import time
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +18,10 @@ from typing import Any
 
 # 项目根目录
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+# 文件锁超时配置（秒）
+FILE_LOCK_TIMEOUT = 10.0
+FILE_LOCK_RETRY_INTERVAL = 0.1
 
 # 配置文件路径
 API_ENV_PATH = REPO_ROOT / "infra" / "deploy" / "api.env"
@@ -337,45 +343,117 @@ class ConfigCenterService:
 
         return result
 
+    def _get_lock_file_path(self, path: Path) -> Path:
+        """获取锁文件路径。
+
+        Args:
+            path: 原文件路径
+
+        Returns:
+            锁文件路径
+        """
+        return path.parent / f"{path.name}.lock"
+
+    def _acquire_file_lock(self, file_obj: Any, timeout: float = FILE_LOCK_TIMEOUT) -> bool:
+        """获取文件排他锁。
+
+        Args:
+            file_obj: 文件对象
+            timeout: 获取锁的超时时间（秒）
+
+        Returns:
+            是否成功获取锁
+
+        Raises:
+            TimeoutError: 获取锁超时
+        """
+        start_time = time.time()
+        while True:
+            try:
+                # 尝试非阻塞获取排他锁
+                fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return True
+            except (IOError, OSError):
+                # 锁被其他进程持有
+                elapsed = time.time() - start_time
+                if elapsed >= timeout:
+                    raise TimeoutError(
+                        f"获取文件锁超时 ({timeout}秒)，可能有其他进程正在写入"
+                    )
+                time.sleep(FILE_LOCK_RETRY_INTERVAL)
+
+    def _release_file_lock(self, file_obj: Any) -> None:
+        """释放文件锁。
+
+        Args:
+            file_obj: 文件对象
+        """
+        try:
+            fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+        except (IOError, OSError):
+            # 释放锁失败时忽略，文件关闭时会自动释放
+            pass
+
     def _write_env_file(self, path: Path, config: dict[str, str]) -> None:
-        """写入环境变量文件。
+        """写入环境变量文件（带文件锁保护）。
+
+        使用单独的锁文件保护整个读-修改-写过程，确保原子性。
 
         Args:
             path: 环境变量文件路径
             config: 配置键值对
+
+        Raises:
+            TimeoutError: 获取文件锁超时
         """
-        # 读取现有内容以保留注释和格式
-        existing_lines: list[str] = []
-        if path.exists():
-            existing_lines = path.read_text(encoding="utf-8").splitlines()
+        lock_file_path = self._get_lock_file_path(path)
 
-        # 构建更新后的内容
-        updated_keys: set[str] = set()
-        new_lines: list[str] = []
+        # 确保锁文件存在
+        lock_file_path.parent.mkdir(parents=True, exist_ok=True)
+        if not lock_file_path.exists():
+            lock_file_path.touch()
 
-        for line in existing_lines:
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                new_lines.append(line)
-                continue
+        # 使用锁文件保护整个读-修改-写过程
+        with open(lock_file_path, "r", encoding="utf-8") as lock_file:
+            self._acquire_file_lock(lock_file)
+            try:
+                # 在锁保护下读取现有内容
+                existing_lines: list[str] = []
+                if path.exists():
+                    existing_lines = path.read_text(encoding="utf-8").splitlines()
 
-            if "=" in stripped:
-                key, _, _ = stripped.partition("=")
-                key = key.strip()
-                if key in config:
-                    new_lines.append(f"{key}={config[key]}")
-                    updated_keys.add(key)
-                else:
-                    new_lines.append(line)
-            else:
-                new_lines.append(line)
+                # 构建更新后的内容
+                updated_keys: set[str] = set()
+                new_lines: list[str] = []
 
-        # 添加新配置
-        for key, value in config.items():
-            if key not in updated_keys:
-                new_lines.append(f"{key}={value}")
+                for line in existing_lines:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        new_lines.append(line)
+                        continue
 
-        path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+                    if "=" in stripped:
+                        key, _, _ = stripped.partition("=")
+                        key = key.strip()
+                        if key in config:
+                            new_lines.append(f"{key}={config[key]}")
+                            updated_keys.add(key)
+                        else:
+                            new_lines.append(line)
+                    else:
+                        new_lines.append(line)
+
+                # 添加新配置
+                for key, value in config.items():
+                    if key not in updated_keys:
+                        new_lines.append(f"{key}={value}")
+
+                content = "\n".join(new_lines) + "\n"
+
+                # 写入文件
+                path.write_text(content, encoding="utf-8")
+            finally:
+                self._release_file_lock(lock_file)
 
     def _read_json_config(self, path: Path) -> dict[str, Any]:
         """读取 JSON 配置文件。

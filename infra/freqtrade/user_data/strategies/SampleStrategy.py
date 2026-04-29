@@ -15,9 +15,8 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from logging import getLogger
 from typing import Optional
 
@@ -25,57 +24,44 @@ from pandas import DataFrame
 import pandas as pd
 import numpy as np
 
+try:
+    import requests
+except ImportError:
+    requests = None  # pragma: no cover - fallback when requests not installed
+
 from freqtrade.strategy import IStrategy, merge_informative_pair
+from user_data.config_helper import get_config
 
 logger = getLogger(__name__)
 
 
-def _read_env_decimal(key: str, default: float) -> float:
-    """从环境变量读取浮点配置。"""
-    raw = os.environ.get(key)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        return float(Decimal(raw.strip()))
-    except (InvalidOperation, ValueError):
-        logger.warning("配置 %s=%s 解析失败，使用默认值 %s", key, raw, default)
-        return default
-
-
-def _read_env_int(key: str, default: int) -> int:
-    """从环境变量读取整数配置。"""
-    raw = os.environ.get(key)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        return int(raw.strip())
-    except ValueError:
-        logger.warning("配置 %s=%s 解析失败，使用默认值 %s", key, raw, default)
-        return default
-
-
-# 策略配置参数（从环境变量读取）
-MIN_ENTRY_SCORE = _read_env_decimal("QUANT_STRATEGY_MIN_ENTRY_SCORE", 0.60)
-TRAILING_STOP_TRIGGER = _read_env_decimal("QUANT_STRATEGY_TRAILING_STOP_TRIGGER", 0.02)
-TRAILING_STOP_DISTANCE = _read_env_decimal("QUANT_STRATEGY_TRAILING_STOP_DISTANCE", 0.01)
-PROFIT_EXIT_RATIO = _read_env_decimal("QUANT_STRATEGY_PROFIT_EXIT_RATIO", 0.05)
-MAX_HOLDING_HOURS = _read_env_int("QUANT_STRATEGY_MAX_HOLDING_HOURS", 48)
+# 策略配置参数（使用统一配置接口）
+MIN_ENTRY_SCORE = float(get_config("QUANT_STRATEGY_MIN_ENTRY_SCORE", default=Decimal("0.60"), as_type="decimal"))
+TRAILING_STOP_TRIGGER = float(get_config("QUANT_STRATEGY_TRAILING_STOP_TRIGGER", default=Decimal("0.02"), as_type="decimal"))
+TRAILING_STOP_DISTANCE = float(get_config("QUANT_STRATEGY_TRAILING_STOP_DISTANCE", default=Decimal("0.01"), as_type="decimal"))
+PROFIT_EXIT_RATIO = float(get_config("QUANT_STRATEGY_PROFIT_EXIT_RATIO", default=Decimal("0.05"), as_type="decimal"))
+MAX_HOLDING_HOURS = get_config("QUANT_STRATEGY_MAX_HOLDING_HOURS", default=48, as_type="int")
 
 # 技术指标参数
-RSI_PERIOD = _read_env_int("QUANT_RSI_PERIOD", 14)
-RSI_OVERBUY_THRESHOLD = _read_env_decimal("QUANT_RSI_OVERBUY_THRESHOLD", 70)
-RSI_OVERSELL_THRESHOLD = _read_env_decimal("QUANT_RSI_OVERSELL_THRESHOLD", 30)
-MACD_FAST_PERIOD = _read_env_int("QUANT_MACD_FAST_PERIOD", 12)
-MACD_SLOW_PERIOD = _read_env_int("QUANT_MACD_SLOW_PERIOD", 26)
-MACD_SIGNAL_PERIOD = _read_env_int("QUANT_MACD_SIGNAL_PERIOD", 9)
-EMA_FAST_PERIOD = _read_env_int("QUANT_EMA_FAST_PERIOD", 20)
-EMA_SLOW_PERIOD = _read_env_int("QUANT_EMA_SLOW_PERIOD", 55)
-VOLUME_TREND_PERIOD = _read_env_int("QUANT_VOLUME_TREND_PERIOD", 20)
+RSI_PERIOD = get_config("QUANT_RSI_PERIOD", default=14, as_type="int")
+RSI_OVERBUY_THRESHOLD = float(get_config("QUANT_RSI_OVERBUY_THRESHOLD", default=Decimal("70"), as_type="decimal"))
+RSI_OVERSELL_THRESHOLD = float(get_config("QUANT_RSI_OVERSELL_THRESHOLD", default=Decimal("30"), as_type="decimal"))
+MACD_FAST_PERIOD = get_config("QUANT_MACD_FAST_PERIOD", default=12, as_type="int")
+MACD_SLOW_PERIOD = get_config("QUANT_MACD_SLOW_PERIOD", default=26, as_type="int")
+MACD_SIGNAL_PERIOD = get_config("QUANT_MACD_SIGNAL_PERIOD", default=9, as_type="int")
+EMA_FAST_PERIOD = get_config("QUANT_EMA_FAST_PERIOD", default=20, as_type="int")
+EMA_SLOW_PERIOD = get_config("QUANT_EMA_SLOW_PERIOD", default=55, as_type="int")
+VOLUME_TREND_PERIOD = get_config("QUANT_VOLUME_TREND_PERIOD", default=20, as_type="int")
 
-# 权重配置
-RESEARCH_SCORE_WEIGHT = 0.60
-TREND_CONFIRM_WEIGHT = 0.20
-INDICATOR_WEIGHT = 0.20
+# 权重配置（用于本地计算的综合评分）
+TREND_CONFIRM_WEIGHT = 0.20  # 趋势确认权重
+INDICATOR_WEIGHT = 0.20  # 技术指标权重
+
+# 研究评分 API 配置
+QUANT_API_BASE_URL = get_config("QUANT_API_BASE_URL", default="http://127.0.0.1:9011", as_type="str")
+RESEARCH_API_TIMEOUT = get_config("QUANT_RESEARCH_API_TIMEOUT", default=5, as_type="int")
+# 综合评分权重：研究评分权重 0.4，本地评分权重 0.6（当 API 可用时）
+RESEARCH_SCORE_FALLBACK_WEIGHT = 0.40
 
 
 class SampleStrategy(IStrategy):
@@ -93,6 +79,89 @@ class SampleStrategy(IStrategy):
 
     # 持仓追踪（用于移动止损和时间限制）
     _position_tracker: dict[str, dict] = {}
+
+    # 研究评分缓存（避免重复调用 API）
+    _research_score_cache: dict[str, dict] = {}
+    _cache_timestamp: Optional[datetime] = None
+    _cache_ttl_seconds: int = 300  # 5分钟缓存
+
+    def _fetch_research_score(self, symbol: str) -> Optional[float]:
+        """从研究 API 获取币种评分。
+
+        Args:
+            symbol: 币种符号（如 ETHUSDT）
+
+        Returns:
+            评分（0.0-1.0），API 不可用时返回 None
+        """
+        if requests is None:
+            logger.debug("requests 库未安装，跳过研究评分获取")
+            return None
+
+        # 检查缓存是否有效
+        now = datetime.now(timezone.utc)
+        if (
+            self._cache_timestamp
+            and (now - self._cache_timestamp).total_seconds() < self._cache_ttl_seconds
+            and symbol in self._research_score_cache
+        ):
+            return self._research_score_cache[symbol].get("score")
+
+        try:
+            api_url = f"{QUANT_API_BASE_URL}/api/v1/evaluation/workspace"
+            logger.debug("调用研究评分 API: %s", api_url)
+
+            response = requests.get(api_url, timeout=RESEARCH_API_TIMEOUT)
+            response.raise_for_status()
+
+            data = response.json()
+            if not data or data.get("error"):
+                logger.warning("研究 API 返回错误: %s", data.get("error"))
+                return None
+
+            workspace = data.get("data", {}).get("item", {})
+            if workspace.get("status") != "ready":
+                logger.debug("研究评估状态非 ready: %s", workspace.get("status"))
+                return None
+
+            # 更新缓存
+            self._cache_timestamp = now
+            leaderboard = workspace.get("leaderboard", [])
+
+            for entry in leaderboard:
+                entry_symbol = entry.get("symbol", "")
+                # 处理可能的符号格式差异（ETHUSDT vs ETH/USDT）
+                normalized_symbol = entry_symbol.replace("/", "")
+                self._research_score_cache[normalized_symbol] = {
+                    "score": float(entry.get("score", 0)),
+                    "next_action": entry.get("next_action", ""),
+                    "recommendation_reason": entry.get("recommendation_reason", ""),
+                }
+
+            # 返回请求的币种评分
+            normalized_request = symbol.replace("/", "")
+            if normalized_request in self._research_score_cache:
+                cached = self._research_score_cache[normalized_request]
+                logger.info(
+                    "研究评分获取成功: %s, score=%.4f, action=%s",
+                    symbol,
+                    cached.get("score", 0),
+                    cached.get("next_action", ""),
+                )
+                return cached.get("score")
+
+            logger.debug("币种 %s 未在研究排行榜中", symbol)
+            return None
+
+        except requests.exceptions.Timeout:
+            logger.warning("研究 API 请求超时 (%d秒)", RESEARCH_API_TIMEOUT)
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.warning("研究 API 请求失败: %s", str(e))
+            return None
+        except (KeyError, ValueError, TypeError) as e:
+            logger.warning("研究 API 响应解析失败: %s", str(e))
+            return None
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """计算技术指标：RSI、MACD、EMA、成交量趋势。"""
@@ -140,8 +209,8 @@ class SampleStrategy(IStrategy):
             dataframe["price_change"],
         )
 
-        # 计算综合评分
-        dataframe["entry_score"] = self._calculate_entry_score(dataframe)
+        # 计算综合评分（传入 metadata 以获取币种信息）
+        dataframe["entry_score"] = self._calculate_entry_score(dataframe, metadata)
 
         # RSI 信号
         dataframe["rsi_signal"] = self._calculate_rsi_signal(dataframe["rsi"])
@@ -487,13 +556,23 @@ class SampleStrategy(IStrategy):
         # 需要至少3项确认
         return confirmation_score >= 3
 
-    def _calculate_entry_score(self, dataframe: DataFrame) -> pd.Series:
-        """计算综合入场评分。"""
+    def _calculate_entry_score(self, dataframe: DataFrame, metadata: dict = None) -> pd.Series:
+        """计算综合入场评分。
+
+        评分公式：
+        - 有研究评分时：基础评分 * 0.6 + 研究评分 * 0.4
+        - 无研究评分时：使用纯本地计算（fallback）
+        """
         if len(dataframe) < 2:
             return pd.Series(0.0, index=dataframe.index)
 
-        # 基础评分（假设研究评分，这里用技术指标模拟）
-        # 实际应该从 API 获取研究评分
+        # 获取研究评分（从 metadata 中获取币种信息）
+        research_score = None
+        if metadata:
+            pair = metadata.get("pair", "")
+            # 标准化币种符号（去掉斜杠）
+            symbol = pair.replace("/", "").replace(":", "")
+            research_score = self._fetch_research_score(symbol)
 
         # 趋势评分：EMA 金叉
         trend_score = 0.0
@@ -521,9 +600,29 @@ class SampleStrategy(IStrategy):
 
         indicator_score = (rsi_score + macd_score + volume_score) / 3 * INDICATOR_WEIGHT
 
-        # 综合评分
-        base_score = 0.50  # 基础评分
-        total_score = base_score + trend_score + indicator_score
+        # 本地计算的基础评分
+        base_score = 0.50
+        local_score = base_score + trend_score + indicator_score
+
+        # 综合评分：有研究评分时加权融合
+        if research_score is not None:
+            # 研究评分权重 0.4，本地权重 0.6
+            total_score = local_score * 0.6 + research_score * RESEARCH_SCORE_FALLBACK_WEIGHT
+            logger.info(
+                "综合评分计算: %s, 本地=%.4f, 研究=%.4f, 综合=%.4f",
+                metadata.get("pair", "unknown") if metadata else "unknown",
+                local_score.iloc[-1] if len(local_score) > 0 else 0,
+                research_score,
+                total_score.iloc[-1] if len(total_score) > 0 else 0,
+            )
+        else:
+            # API 不可用时使用纯本地计算
+            total_score = local_score
+            logger.debug(
+                "研究评分不可用，使用本地评分: %s, score=%.4f",
+                metadata.get("pair", "unknown") if metadata else "unknown",
+                total_score.iloc[-1] if len(total_score) > 0 else 0,
+            )
 
         # 限制在 0-1 之间
         return total_score.clip(0.0, 1.0)

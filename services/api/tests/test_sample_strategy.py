@@ -348,3 +348,121 @@ class TestMultiPairSupport:
         # 未配置币种使用默认值
         unknown_params = get_pair_volatility_params("UNKNOWN/USDT")
         assert unknown_params["volatility_multiplier"] == Decimal("1.0")
+
+
+class TestResearchScoreIntegration:
+    """测试研究评分集成功能。
+
+    注意：策略文件在 Freqtrade 容器中运行，需要 pandas、numpy、freqtrade 等依赖。
+    主机环境的测试主要验证静态内容，完整功能测试应在容器中运行。
+    """
+
+    def test_research_score_api_url_configuration(self):
+        """验证研究 API URL 配置。"""
+        import os
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证 API URL 配置存在
+        assert "QUANT_API_BASE_URL" in content
+        assert "/api/v1/evaluation/workspace" in content
+        # 验证超时配置
+        assert "RESEARCH_API_TIMEOUT" in content
+        # 验证权重配置
+        assert "RESEARCH_SCORE_FALLBACK_WEIGHT" in content
+
+    def test_research_score_method_exists(self):
+        """验证研究评分获取方法存在。"""
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证方法定义存在
+        assert "def _fetch_research_score" in content
+        assert "def _calculate_entry_score" in content
+        # 验证综合评分逻辑
+        assert "research_score * RESEARCH_SCORE_FALLBACK_WEIGHT" in content
+        # 验证 fallback 处理
+        assert "API 不可用时使用纯本地计算" in content
+
+    def test_research_score_cache_configuration(self):
+        """验证评分缓存配置。"""
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证缓存配置
+        assert "_research_score_cache" in content
+        assert "_cache_timestamp" in content
+        assert "_cache_ttl_seconds" in content
+
+    def test_calculate_entry_score_accepts_metadata(self):
+        """验证 _calculate_entry_score 接受 metadata 参数。"""
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证方法签名
+        assert "def _calculate_entry_score(self, dataframe: DataFrame, metadata: dict = None)" in content
+        # 验证 metadata 用于获取币种信息
+        assert "pair = metadata.get(\"pair\", \"\")" in content
+
+    def test_requests_import_with_fallback(self):
+        """验证 requests 导入有 fallback 处理。"""
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证 requests 导入有 fallback
+        assert "try:" in content
+        assert "import requests" in content
+        assert "except ImportError:" in content
+        assert "requests = None" in content
+
+    def test_fetch_research_score_handles_timeout(self):
+        """验证超时处理逻辑。"""
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证超时异常处理
+        assert "requests.exceptions.Timeout" in content
+        assert "return None" in content
+
+    def test_fetch_research_score_handles_api_error(self):
+        """验证 API 错误处理逻辑。"""
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证请求异常处理
+        assert "requests.exceptions.RequestException" in content
+        # 验证响应解析异常处理
+        assert "(KeyError, ValueError, TypeError)" in content
+
+    def test_symbol_normalization(self):
+        """验证币种符号标准化逻辑。"""
+        from pathlib import Path
+
+        strategy_path = Path(__file__).resolve().parents[3] / "infra" / "freqtrade" / "user_data" / "strategies"
+        strategy_file = strategy_path / "SampleStrategy.py"
+
+        content = strategy_file.read_text(encoding="utf-8")
+        # 验证符号标准化处理（去除斜杠）
+        assert "normalized_symbol = entry_symbol.replace(\"/\", \"\")" in content
+        assert "normalized_request = symbol.replace(\"/\", \"\")" in content
