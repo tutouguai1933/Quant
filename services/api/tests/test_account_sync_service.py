@@ -103,11 +103,14 @@ class FakeBalanceMarketClient:
             rows = [item for item in rows if item["symbol"] in requested]
         return {"symbols": rows}
 
-    def get_tickers(self) -> list[dict[str, object]]:
-        return [
+    def get_tickers(self, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+        all_tickers = [
             {"symbol": "BTCUSDT", "lastPrice": "86000.00000000"},
             {"symbol": "DOGEUSDT", "lastPrice": "0.09056000"},
         ]
+        if symbols:
+            return [t for t in all_tickers if t["symbol"] in symbols]
+        return all_tickers
 
 
 class ExplodingAccountSyncService:

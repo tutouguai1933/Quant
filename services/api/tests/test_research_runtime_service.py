@@ -235,7 +235,14 @@ class ResearchRuntimeServiceTests(unittest.TestCase):
         service.start_training()
         snapshot_path = self.runtime_root / "research_runtime_status.json"
         payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
-        payload["history"]["training"] = [12.5]
+        # 使用新格式历史记录（包含时间戳和 duration_seconds）
+        payload["history"]["training"] = [
+            {
+                "started_at": "2026-04-06T10:00:00+00:00",
+                "finished_at": "2026-04-06T10:00:12+00:00",
+                "duration_seconds": 12.5
+            }
+        ]
         snapshot_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
         status = service.get_status()

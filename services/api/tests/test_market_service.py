@@ -40,7 +40,9 @@ class FakeMarketClient:
         self.last_limit: int | None = None
         self.requests: list[tuple[str, str, int]] = []
 
-    def get_tickers(self) -> list[dict[str, object]]:
+    def get_tickers(self, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
+        if symbols:
+            return [t for t in self.tickers if t.get("symbol") in symbols]
         return list(self.tickers)
 
     def get_klines(self, symbol: str, interval: str = "4h", limit: int = 200) -> list[list[object]]:
