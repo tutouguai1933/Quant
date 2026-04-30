@@ -15,6 +15,7 @@ from services.api.app.services.strategy_engine import apply_research_soft_gate  
 from services.api.app.services.strategy_engine import evaluate_trend_breakout  # noqa: E402
 from services.api.app.services.strategy_engine import evaluate_trend_pullback  # noqa: E402
 import services.api.app.services.strategy_catalog as strategy_catalog_module  # noqa: E402
+import services.api.app.services.strategy_engine as strategy_engine_module  # noqa: E402
 
 
 class StrategyEngineTests(unittest.TestCase):
@@ -23,18 +24,24 @@ class StrategyEngineTests(unittest.TestCase):
         self._strategy_catalog_route_backup = signals_route.strategy_catalog_service
         self._strategy_catalog_backup = strategy_catalog_module.strategy_catalog_service
         self._research_service_backup = signals_route.research_service
+        self._apply_scoring_gate_backup = strategy_engine_module.apply_scoring_gate
         self.market_service = _FakeMarketService()
         signals_route.market_service = self.market_service
         self.strategy_catalog_service = _FakeStrategyCatalogService()
         strategy_catalog_module.strategy_catalog_service = self.strategy_catalog_service
         signals_route.strategy_catalog_service = self.strategy_catalog_service
         signals_route.research_service = _FakeNeutralResearchService()
+        # Mock scoring gate to pass threshold in route tests
+        strategy_engine_module.apply_scoring_gate = _fake_apply_scoring_gate_pass
+        signals_route.apply_scoring_gate = _fake_apply_scoring_gate_pass
 
     def tearDown(self) -> None:
         signals_route.market_service = self._market_service_backup
         signals_route.strategy_catalog_service = self._strategy_catalog_route_backup
         strategy_catalog_module.strategy_catalog_service = self._strategy_catalog_backup
         signals_route.research_service = self._research_service_backup
+        strategy_engine_module.apply_scoring_gate = self._apply_scoring_gate_backup
+        signals_route.apply_scoring_gate = self._apply_scoring_gate_backup
 
     def test_evaluate_trend_breakout_breaks_above_recent_high(self) -> None:
         result = evaluate_trend_breakout(
@@ -556,6 +563,26 @@ class _FakeBearishResearchService:
             "model_version": "qlib-minimal-test",
             "explanation": "bearish",
         }
+
+
+def _fake_apply_scoring_gate_pass(
+    result: dict[str, object],
+    symbol: str,
+    market_data: dict | None = None,
+) -> dict[str, object]:
+    """Fake scoring gate that always passes threshold."""
+    gated_result = dict(result)
+    decision = str(gated_result.get("decision", "watch"))
+    gated_result["scoring_gate"] = {
+        "status": "test_mock_passed",
+        "total_score": 0.85,
+        "threshold": 0.60,
+        "passed": True,
+        "factors": [],
+    }
+    if decision == "signal":
+        gated_result["confidence"] = "high"
+    return gated_result
 
 
 if __name__ == "__main__":
