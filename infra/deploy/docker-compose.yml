@@ -61,10 +61,13 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,api,web,freqtrade,mihomo
+      QUANT_PATROL_AUTO_START: "false"
     env_file:
       - ${QUANT_API_ENV_FILE:-./api.env}
     depends_on:

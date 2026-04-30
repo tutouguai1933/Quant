@@ -32,7 +32,7 @@ class ScheduledPatrolService:
         self._last_run_result: dict[str, Any] | None = None
         self._total_runs: int = 0
         self._failed_runs: int = 0
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def start_schedule(self, interval_minutes: int = 60) -> dict[str, Any]:
         """启动定时巡检。
