@@ -31,6 +31,7 @@ except ImportError:
 
 from services.api.app.routes.accounts import router as accounts_router
 from services.api.app.routes.analytics import router as analytics_router
+from services.api.app.routes.backtest_charts import router as backtest_charts_router
 from services.api.app.routes.backtest_validation import router as backtest_validation_router
 from services.api.app.routes.auth import router as auth_router
 from services.api.app.routes.backtest_workspace import router as backtest_workspace_router
@@ -57,6 +58,10 @@ from services.api.app.routes.strategies import router as strategies_router
 from services.api.app.routes.tasks import router as tasks_router
 from services.api.app.routes.websocket import router as websocket_router
 from services.api.app.routes.workbench_config import router as workbench_config_router
+from services.api.app.routes.feishu import router as feishu_router
+from services.api.app.routes.alert_management import router as alert_management_router
+from services.api.app.routes.factor_analysis import router as factor_analysis_router
+from services.api.app.routes.report import router as report_router
 from services.api.app.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -127,6 +132,16 @@ app.include_router(stoploss_router)
 app.routers.append(stoploss_router)  # type: ignore[attr-defined]
 app.include_router(scoring_router)
 app.routers.append(scoring_router)  # type: ignore[attr-defined]
+app.include_router(backtest_charts_router)
+app.routers.append(backtest_charts_router)  # type: ignore[attr-defined]
+app.include_router(feishu_router)
+app.routers.append(feishu_router)  # type: ignore[attr-defined]
+app.include_router(alert_management_router)
+app.routers.append(alert_management_router)  # type: ignore[attr-defined]
+app.include_router(factor_analysis_router)
+app.routers.append(factor_analysis_router)  # type: ignore[attr-defined]
+app.include_router(report_router)
+app.routers.append(report_router)  # type: ignore[attr-defined]
 
 
 # 性能监控中间件

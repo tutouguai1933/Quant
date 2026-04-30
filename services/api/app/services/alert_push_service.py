@@ -140,6 +140,7 @@ class AlertPushService:
         self._config = config or AlertConfig.from_env()
         self._http_client: httpx.AsyncClient | None = None
         self._sync_client: httpx.Client | None = None
+        self._feishu_service: FeishuPushService | None = None
 
     @property
     def config(self) -> AlertConfig:
@@ -150,6 +151,13 @@ class AlertPushService:
     def enabled(self) -> bool:
         """返回是否启用推送。"""
         return self._config.enabled
+
+    def _get_feishu_service(self) -> FeishuPushService:
+        """获取飞书推送服务实例。"""
+        if self._feishu_service is None:
+            from services.api.app.services.feishu_push_service import feishu_push_service
+            self._feishu_service = feishu_push_service
+        return self._feishu_service
 
     def _get_sync_client(self) -> httpx.Client:
         """获取同步 HTTP 客户端。"""
@@ -173,6 +181,7 @@ class AlertPushService:
             "alert": alert.to_webhook_payload(),
             "telegram": None,
             "webhook": None,
+            "feishu": None,
         }
 
         if self._config.has_telegram():
@@ -180,6 +189,9 @@ class AlertPushService:
 
         if self._config.has_webhook():
             results["webhook"] = self._push_webhook_sync(alert)
+
+        # 推送到飞书
+        results["feishu"] = self._push_feishu_sync(alert)
 
         return results
 
@@ -193,6 +205,7 @@ class AlertPushService:
             "alert": alert.to_webhook_payload(),
             "telegram": None,
             "webhook": None,
+            "feishu": None,
         }
 
         if self._config.has_telegram():
@@ -200,6 +213,9 @@ class AlertPushService:
 
         if self._config.has_webhook():
             results["webhook"] = await self._push_webhook_async(alert)
+
+        # 推送到飞书
+        results["feishu"] = await self._push_feishu_async(alert)
 
         return results
 
@@ -313,6 +329,88 @@ class AlertPushService:
             return {"status": "error", "message": str(e)}
         except Exception as e:
             logger.exception("Webhook 告警推送异常: %s", e)
+            return {"status": "error", "message": str(e)}
+
+    def _push_feishu_sync(self, alert: AlertMessage) -> dict[str, Any]:
+        """同步推送到飞书。"""
+        try:
+            feishu_service = self._get_feishu_service()
+            if not feishu_service.enabled:
+                return {"status": "skipped", "message": "飞书推送未配置或已禁用"}
+
+            from services.api.app.services.feishu_push_service import (
+                FeishuAlertLevel,
+                AlertCardMessage,
+            )
+
+            # 映射告警级别
+            level_map = {
+                AlertLevel.INFO: FeishuAlertLevel.INFO,
+                AlertLevel.WARNING: FeishuAlertLevel.WARNING,
+                AlertLevel.ERROR: FeishuAlertLevel.ERROR,
+                AlertLevel.CRITICAL: FeishuAlertLevel.CRITICAL,
+            }
+            feishu_level = level_map.get(alert.level, FeishuAlertLevel.INFO)
+
+            feishu_alert = AlertCardMessage(
+                level=feishu_level,
+                title=alert.title,
+                message=alert.message,
+                details=alert.details,
+                timestamp=alert.timestamp,
+            )
+
+            success = feishu_service.send_alert(feishu_alert)
+            if success:
+                logger.info("飞书告警推送成功: %s", alert.title)
+                return {"status": "success"}
+            else:
+                logger.warning("飞书告警推送失败: %s", alert.title)
+                return {"status": "error", "message": "飞书推送失败"}
+
+        except Exception as e:
+            logger.exception("飞书告警推送异常: %s", e)
+            return {"status": "error", "message": str(e)}
+
+    async def _push_feishu_async(self, alert: AlertMessage) -> dict[str, Any]:
+        """异步推送到飞书。"""
+        try:
+            feishu_service = self._get_feishu_service()
+            if not feishu_service.enabled:
+                return {"status": "skipped", "message": "飞书推送未配置或已禁用"}
+
+            from services.api.app.services.feishu_push_service import (
+                FeishuAlertLevel,
+                AlertCardMessage,
+            )
+
+            # 映射告警级别
+            level_map = {
+                AlertLevel.INFO: FeishuAlertLevel.INFO,
+                AlertLevel.WARNING: FeishuAlertLevel.WARNING,
+                AlertLevel.ERROR: FeishuAlertLevel.ERROR,
+                AlertLevel.CRITICAL: FeishuAlertLevel.CRITICAL,
+            }
+            feishu_level = level_map.get(alert.level, FeishuAlertLevel.INFO)
+
+            feishu_alert = AlertCardMessage(
+                level=feishu_level,
+                title=alert.title,
+                message=alert.message,
+                details=alert.details,
+                timestamp=alert.timestamp,
+            )
+
+            success = await feishu_service.send_alert_async(feishu_alert)
+            if success:
+                logger.info("飞书告警推送成功: %s", alert.title)
+                return {"status": "success"}
+            else:
+                logger.warning("飞书告警推送失败: %s", alert.title)
+                return {"status": "error", "message": "飞书推送失败"}
+
+        except Exception as e:
+            logger.exception("飞书告警推送异常: %s", e)
             return {"status": "error", "message": str(e)}
 
     def close(self) -> None:

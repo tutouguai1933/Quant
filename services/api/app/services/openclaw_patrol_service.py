@@ -26,6 +26,11 @@ from services.api.app.services.openclaw_action_service import OpenclawActionServ
 from services.api.app.services.openclaw_action_policy_service import openclaw_action_policy_service
 from services.api.app.services.service_health_service import ServiceHealthService, service_health_service
 from services.api.app.services.vpn_switch_service import vpn_switch_service, NodeHealthStatus
+from services.api.app.services.feishu_push_service import (
+    feishu_push_service,
+    FeishuAlertLevel,
+    AlertCardMessage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +192,10 @@ class OpenclawPatrolService:
                 self._records = self._records[-self.MAX_PATROL_RECORDS:]
             self._save()
 
+        # 推送巡检结果到飞书（仅当有动作执行或状态异常时）
+        if actions_taken or patrol_status != "normal":
+            self._push_patrol_result_to_feishu(patrol_record)
+
         return {
             "patrolled": True,
             "patrol_type": patrol_type,
@@ -196,6 +205,76 @@ class OpenclawPatrolService:
             "actions_taken": actions_taken,
             "snapshot_id": snapshot_id,
         }
+
+    def _push_patrol_result_to_feishu(self, patrol_record: dict[str, Any]) -> None:
+        """推送巡检结果到飞书。
+
+        Args:
+            patrol_record: 巡检记录
+        """
+        try:
+            if not feishu_push_service.enabled:
+                return
+
+            patrol_status = str(patrol_record.get("status", "normal"))
+            patrol_type = str(patrol_record.get("patrol_type", "full"))
+            patrol_message = str(patrol_record.get("message", ""))
+            actions_taken = list(patrol_record.get("actions_taken", []))
+
+            # 根据状态确定告警级别
+            level_map = {
+                "normal": FeishuAlertLevel.INFO,
+                "action_taken": FeishuAlertLevel.WARNING,
+                "throttled": FeishuAlertLevel.WARNING,
+                "vpn_switched": FeishuAlertLevel.WARNING,
+                "vpn_switch_failed": FeishuAlertLevel.ERROR,
+                "vpn_throttled": FeishuAlertLevel.WARNING,
+                "vpn_error": FeishuAlertLevel.ERROR,
+            }
+            feishu_level = level_map.get(patrol_status, FeishuAlertLevel.INFO)
+
+            # 构建详情
+            details = {
+                "巡检类型": patrol_type,
+                "状态": patrol_status,
+                "动作数": len(actions_taken),
+            }
+            if actions_taken:
+                action_names = [str(a.get("action", "unknown")) for a in actions_taken[:3]]
+                details["执行动作"] = ", ".join(action_names)
+
+            # 构建消息
+            title = "系统巡检结果"
+            if patrol_status == "normal":
+                title = "巡检正常"
+            elif actions_taken:
+                title = "巡检执行动作"
+            elif patrol_status.startswith("vpn"):
+                title = "VPN巡检结果"
+
+            message = patrol_message
+            if not message:
+                if actions_taken:
+                    message = f"巡检执行了 {len(actions_taken)} 个动作"
+                else:
+                    message = "巡检完成，状态正常"
+
+            alert = AlertCardMessage(
+                level=feishu_level,
+                title=title,
+                message=message,
+                details=details,
+                timestamp=str(patrol_record.get("executed_at", "")),
+            )
+
+            success = feishu_push_service.send_alert(alert)
+            if success:
+                logger.info("巡检结果已推送到飞书")
+            else:
+                logger.warning("巡检结果推送飞书失败")
+
+        except Exception as e:
+            logger.warning("推送巡检结果到飞书异常: %s", e)
 
     def _check_service_health(self, snapshot: dict) -> dict[str, Any]:
         """检查服务健康状态。
