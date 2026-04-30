@@ -39,6 +39,7 @@ from services.api.app.routes.balances import router as balances_router
 from services.api.app.routes.config import router as config_router
 from services.api.app.routes.data_workspace import router as data_workspace_router
 from services.api.app.routes.evaluation_workspace import router as evaluation_workspace_router
+from services.api.app.routes.exchange import router as exchange_router
 from services.api.app.routes.feature_workspace import router as feature_workspace_router
 from services.api.app.routes.health import router as health_router
 from services.api.app.routes.market import router as market_router
@@ -62,6 +63,8 @@ from services.api.app.routes.feishu import router as feishu_router
 from services.api.app.routes.alert_management import router as alert_management_router
 from services.api.app.routes.factor_analysis import router as factor_analysis_router
 from services.api.app.routes.report import router as report_router
+from services.api.app.routes.strategy_tuning import router as strategy_tuning_router
+from services.api.app.routes.position_management import router as position_management_router
 from services.api.app.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -142,6 +145,12 @@ app.include_router(factor_analysis_router)
 app.routers.append(factor_analysis_router)  # type: ignore[attr-defined]
 app.include_router(report_router)
 app.routers.append(report_router)  # type: ignore[attr-defined]
+app.include_router(strategy_tuning_router)
+app.routers.append(strategy_tuning_router)  # type: ignore[attr-defined]
+app.include_router(position_management_router)
+app.routers.append(position_management_router)  # type: ignore[attr-defined]
+app.include_router(exchange_router)
+app.routers.append(exchange_router)  # type: ignore[attr-defined]
 
 
 # 性能监控中间件

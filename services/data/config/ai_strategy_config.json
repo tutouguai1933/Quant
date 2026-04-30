@@ -1,0 +1,98 @@
+{
+  "training": {
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "epochs": 100,
+    "validation_split": 0.2,
+    "early_stopping_patience": 10,
+    "exploration_rate": 0.1,
+    "exploration_decay": 0.995
+  },
+  "model": {
+    "type": "ppo",
+    "hidden_layers": [128, 64],
+    "activation": "relu",
+    "dropout": 0.1
+  },
+  "reward": {
+    "pnl_weight": 0.40,
+    "risk_weight": 0.30,
+    "execution_weight": 0.20,
+    "consistency_weight": 0.10
+  },
+  "adaptive_params": {
+    "transition_speed": 0.1,
+    "min_observation_bars": 20,
+    "regime_detection_window": 50,
+    "custom_params": {}
+  },
+  "evaluation": {
+    "min_trades_daily": 3,
+    "min_trades_weekly": 10,
+    "min_trades_monthly": 30,
+    "health_threshold": 60.0,
+    "risk_free_rate": 0.02,
+    "trading_days_per_year": 252
+  },
+  "fallback": {
+    "enabled": true,
+    "fallback_strategy": "trend_breakout",
+    "max_rl_trades_pct": 0.3,
+    "fallback_thresholds": {
+      "win_rate": 0.45,
+      "max_drawdown": 0.20,
+      "sharpe_ratio": 0.5,
+      "health_score": 50.0
+    }
+  },
+  "regime_params": {
+    "trending_up": {
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.08,
+      "entry_threshold": 0.65,
+      "position_size_pct": 0.8,
+      "lookback_bars": 30,
+      "breakout_buffer_pct": 0.5
+    },
+    "trending_down": {
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.08,
+      "entry_threshold": 0.65,
+      "position_size_pct": 0.6,
+      "lookback_bars": 30,
+      "breakout_buffer_pct": 0.5
+    },
+    "ranging": {
+      "stop_loss_pct": 0.02,
+      "take_profit_pct": 0.03,
+      "entry_threshold": 0.70,
+      "position_size_pct": 0.5,
+      "lookback_bars": 20,
+      "breakout_buffer_pct": 1.0
+    },
+    "volatile": {
+      "stop_loss_pct": 0.04,
+      "take_profit_pct": 0.06,
+      "entry_threshold": 0.75,
+      "position_size_pct": 0.3,
+      "lookback_bars": 15,
+      "breakout_buffer_pct": 1.5
+    },
+    "quiet": {
+      "stop_loss_pct": 0.02,
+      "take_profit_pct": 0.04,
+      "entry_threshold": 0.60,
+      "position_size_pct": 0.6,
+      "lookback_bars": 40,
+      "breakout_buffer_pct": 0.3
+    },
+    "transition": {
+      "stop_loss_pct": 0.03,
+      "take_profit_pct": 0.05,
+      "entry_threshold": 0.70,
+      "position_size_pct": 0.4,
+      "lookback_bars": 25,
+      "breakout_buffer_pct": 0.8
+    }
+  }
+}

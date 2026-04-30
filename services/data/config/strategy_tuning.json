@@ -1,0 +1,173 @@
+{
+  "version": "1.0",
+  "tuning_status": "ready",
+  "last_updated": "2026-04-30T20:43:40.732558+00:00",
+  "parameters": {
+    "min_entry_score": {
+      "current": 0.7,
+      "recommended": 0.65,
+      "reason": "降低阈值以增加入场机会，结合趋势确认过滤低质量信号",
+      "range": {
+        "min": 0.55,
+        "max": 0.8
+      }
+    },
+    "factor_weights": {
+      "current": {
+        "rsi": 2.0,
+        "macd": 0.5,
+        "volume": 0.8,
+        "volatility": 0.6,
+        "trend": 1.2,
+        "momentum": 0.8
+      },
+      "recommended": {
+        "rsi": 1.5,
+        "macd": 1.0,
+        "volume": 1.0,
+        "volatility": 0.8,
+        "trend": 1.5,
+        "momentum": 1.0
+      },
+      "reason": "平衡RSI权重，增强MACD和成交量权重，提升趋势因子重要性"
+    },
+    "stoploss": {
+      "current": {
+        "base_stoploss": -0.1,
+        "min_stoploss": -0.05,
+        "max_stoploss": -0.15,
+        "atr_multiplier": 2.0,
+        "high_volatility_threshold": 1.5,
+        "low_volatility_threshold": 0.7
+      },
+      "recommended": {
+        "base_stoploss": -0.08,
+        "min_stoploss": -0.04,
+        "max_stoploss": -0.12,
+        "atr_multiplier": 2.5,
+        "high_volatility_threshold": 1.8,
+        "low_volatility_threshold": 0.6
+      },
+      "reason": "收紧基础止损，增大ATR倍数适应波动，调整波动阈值区间"
+    },
+    "trailing_stop": {
+      "current": {
+        "trigger": 0.02,
+        "distance": 0.01
+      },
+      "recommended": {
+        "trigger": 0.03,
+        "distance": 0.015
+      },
+      "reason": "提高触发阈值避免过早激活，增加追踪距离保护利润"
+    },
+    "profit_exit": {
+      "current": {
+        "ratio": 0.05,
+        "max_holding_hours": 48
+      },
+      "recommended": {
+        "ratio": 0.06,
+        "max_holding_hours": 36
+      },
+      "reason": "提高盈利目标，缩短持仓时间限制，降低隔夜风险"
+    }
+  },
+  "market_condition_adjustments": {
+    "high_volatility": {
+      "min_entry_score_adjustment": 0.05,
+      "stoploss_adjustment": 0.02,
+      "description": "高波动市场提高入场门槛，放宽止损空间"
+    },
+    "low_volatility": {
+      "min_entry_score_adjustment": -0.05,
+      "stoploss_adjustment": -0.01,
+      "description": "低波动市场降低入场门槛，收紧止损"
+    },
+    "trending": {
+      "trend_weight_multiplier": 1.3,
+      "momentum_weight_multiplier": 1.2,
+      "description": "趋势市场增加趋势和动量因子权重"
+    },
+    "ranging": {
+      "rsi_weight_multiplier": 1.2,
+      "volume_weight_multiplier": 0.8,
+      "description": "震荡市场增加RSI权重，降低成交量权重"
+    }
+  },
+  "backtest_validation": {
+    "required_metrics": {
+      "win_rate": 0.55,
+      "profit_factor": 1.5,
+      "max_drawdown": 0.15,
+      "sharpe_ratio": 1.0
+    },
+    "validation_period_days": 30
+  },
+  "applied_history": [
+    {
+      "timestamp": "2026-04-30T20:35:37.357976+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-04-30T20:36:03.143694+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-04-30T20:36:47.016584+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-04-30T20:43:40.724041+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    }
+  ]
+}

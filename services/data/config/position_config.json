@@ -1,0 +1,24 @@
+{
+  "max_drawdown_pct": 15,
+  "position_risk_pct": 2,
+  "max_position_count": 4,
+  "base_capital": 10000,
+  "risk_levels": {
+    "low": {
+      "multiplier": 0.5,
+      "max_positions": 4
+    },
+    "medium": {
+      "multiplier": 1.0,
+      "max_positions": 3
+    },
+    "high": {
+      "multiplier": 0.25,
+      "max_positions": 2
+    }
+  },
+  "kelly_enabled": false,
+  "kelly_fraction": 0.5,
+  "trading_paused_on_drawdown": true,
+  "drawdown_alert_threshold": 10
+}

@@ -1,0 +1,64 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'quant-monitor'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'prometheus'
+
+  # Quant API service
+  - job_name: 'quant-api'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['host.docker.internal:9011']
+        labels:
+          service: 'api'
+          container: 'quant-api'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'quant-api'
+
+  # cAdvisor for Docker container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+
+  # Node exporter for system metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+
+  # Freqtrade metrics (if available)
+  - job_name: 'freqtrade'
+    metrics_path: '/api/v1/metrics'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          service: 'freqtrade'
+          container: 'quant-freqtrade'
+    basic_auth:
+      username: 'freqtrader'
+      password: 'freqtrade123'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'freqtrade'
