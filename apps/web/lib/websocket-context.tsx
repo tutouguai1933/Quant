@@ -52,7 +52,27 @@ function getWebSocketUrl(): string {
   const apiHost = process.env.NEXT_PUBLIC_API_HOST || window.location.hostname;
   const wsHost = `${apiHost}:${apiPort}`;
 
-  return `${protocol}//${wsHost}/ws`;
+  // 从 cookie 获取认证 token
+  const token = getAuthToken();
+
+  // 构建带 token 的 URL
+  const baseUrl = `${protocol}//${wsHost}/ws`;
+  return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
+}
+
+// 从 cookie 获取认证 token
+function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+
+  // 从 cookie 中读取 quant_admin_token
+  const cookies = document.cookie.split(";");
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split("=");
+    if (name === "quant_admin_token" && value) {
+      return value;
+    }
+  }
+  return null;
 }
 
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {

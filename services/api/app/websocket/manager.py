@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ class ConnectionManager:
         self._loop: asyncio.AbstractEventLoop | None = None
         # 每个连接的最后心跳时间
         self._last_ping_time: dict[WebSocket, float] = {}
+        # 线程锁保护订阅映射
+        self._lock = threading.Lock()
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """设置事件循环引用，用于从同步代码调度异步推送。"""
@@ -52,12 +55,14 @@ class ConnectionManager:
 
     async def subscribe(self, websocket: WebSocket, channel: str) -> None:
         """订阅指定通道。"""
-        self._channel_subscribers[channel].add(websocket)
+        with self._lock:
+            self._channel_subscribers[channel].add(websocket)
         logger.info(f"连接已订阅通道: {channel}")
 
     async def unsubscribe(self, websocket: WebSocket, channel: str) -> None:
         """取消订阅指定通道。"""
-        self._channel_subscribers[channel].discard(websocket)
+        with self._lock:
+            self._channel_subscribers[channel].discard(websocket)
         logger.info(f"连接已取消订阅通道: {channel}")
 
     async def broadcast_to_channel(self, channel: str, message: dict[str, Any]) -> None:

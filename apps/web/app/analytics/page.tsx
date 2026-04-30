@@ -33,6 +33,15 @@ import {
   AnalyticsStrategyPerformance,
   AnalyticsTradeRecord,
 } from "../../lib/api";
+import {
+  PnlCurveChart,
+  StrategyPerformanceChart,
+  StrategyWinRateChart,
+  TradeTimelineChart,
+  TradePnlDistribution,
+  SymbolAttributionPieChart,
+  StrategyAttributionPieChart,
+} from "../../components/charts";
 
 export default function AnalyticsPage() {
   const searchParams = useSearchParams();
@@ -226,6 +235,26 @@ export default function AnalyticsPage() {
             </Card>
           </div>
 
+          {/* 盈亏曲线图 */}
+            <Card className="bg-card/90">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <TrendingUp className="size-4 text-primary" />
+                  <p className="eyebrow">趋势分析</p>
+                </div>
+                <CardTitle>盈亏曲线图</CardTitle>
+                <CardDescription>
+                  每日盈亏变化趋势和累计盈亏曲线
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PnlCurveChart
+                  data={buildPnlChartData(weeklySummary, tradeHistory)}
+                  title="本周盈亏趋势"
+                />
+              </CardContent>
+            </Card>
+
           {/* 盈亏归因分析 */}
           <Card className="bg-card/90">
             <CardHeader>
@@ -243,6 +272,7 @@ export default function AnalyticsPage() {
                 <TabsList>
                   <TabsTrigger value="symbol">按标的</TabsTrigger>
                   <TabsTrigger value="strategy">按策略</TabsTrigger>
+                  <TabsTrigger value="chart">图表视图</TabsTrigger>
                   <TabsTrigger value="top">最佳/最差</TabsTrigger>
                 </TabsList>
 
@@ -278,6 +308,23 @@ export default function AnalyticsPage() {
                     emptyTitle="暂无归因数据"
                     emptyDetail="等待交易记录"
                   />
+                </TabsContent>
+
+                <TabsContent value="chart" className="mt-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <SymbolAttributionPieChart
+                      data={symbolAttributionList.map((item) => ({
+                        symbol: item.symbol,
+                        total_pnl: item.total_pnl,
+                      }))}
+                    />
+                    <StrategyAttributionPieChart
+                      data={strategyAttributionList.map((item) => ({
+                        strategy_name: item.strategy_name,
+                        total_pnl: item.total_pnl,
+                      }))}
+                    />
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="top" className="mt-4">
@@ -346,22 +393,40 @@ export default function AnalyticsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <DataTable
-                columns={["策略", "交易数", "总盈亏", "胜率", "平均盈亏", "Sharpe"]}
-                rows={strategyPerformances.map((item) => ({
-                  id: String(item.strategy_id || "unknown"),
-                  cells: [
-                    item.strategy_name,
-                    String(item.trade_count),
-                    <PnlValue key={String(item.strategy_id)} value={item.total_pnl} />,
-                    formatPercent(item.win_rate),
-                    formatPnl(item.avg_pnl),
-                    item.sharpe_ratio ? formatDecimal(item.sharpe_ratio) : "N/A",
-                  ],
-                }))}
-                emptyTitle="暂无策略表现数据"
-                emptyDetail="等待交易记录"
-              />
+              <Tabs defaultValue="table">
+                <TabsList>
+                  <TabsTrigger value="table">数据表格</TabsTrigger>
+                  <TabsTrigger value="chart">盈亏图表</TabsTrigger>
+                  <TabsTrigger value="winrate">胜率图表</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="table" className="mt-4">
+                  <DataTable
+                    columns={["策略", "交易数", "总盈亏", "胜率", "平均盈亏", "Sharpe"]}
+                    rows={strategyPerformances.map((item) => ({
+                      id: String(item.strategy_id || "unknown"),
+                      cells: [
+                        item.strategy_name,
+                        String(item.trade_count),
+                        <PnlValue key={String(item.strategy_id)} value={item.total_pnl} />,
+                        formatPercent(item.win_rate),
+                        formatPnl(item.avg_pnl),
+                        item.sharpe_ratio ? formatDecimal(item.sharpe_ratio) : "N/A",
+                      ],
+                    }))}
+                    emptyTitle="暂无策略表现数据"
+                    emptyDetail="等待交易记录"
+                  />
+                </TabsContent>
+
+                <TabsContent value="chart" className="mt-4">
+                  <StrategyPerformanceChart data={strategyPerformances} />
+                </TabsContent>
+
+                <TabsContent value="winrate" className="mt-4">
+                  <StrategyWinRateChart data={strategyPerformances} />
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
@@ -378,22 +443,40 @@ export default function AnalyticsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <DataTable
-                columns={["时间", "标的", "方向", "数量", "价格", "盈亏"]}
-                rows={tradeHistory.map((item) => ({
-                  id: item.trade_id,
-                  cells: [
-                    formatTime(item.executed_at),
-                    item.symbol,
-                    <StatusBadge key={item.trade_id} value={item.side} />,
-                    item.quantity,
-                    item.price,
-                    <PnlValue key={item.trade_id} value={item.pnl} />,
-                  ],
-                }))}
-                emptyTitle="暂无交易历史"
-                emptyDetail="等待交易执行"
-              />
+              <Tabs defaultValue="table">
+                <TabsList>
+                  <TabsTrigger value="table">交易列表</TabsTrigger>
+                  <TabsTrigger value="timeline">时间线图</TabsTrigger>
+                  <TabsTrigger value="distribution">盈亏分布</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="table" className="mt-4">
+                  <DataTable
+                    columns={["时间", "标的", "方向", "数量", "价格", "盈亏"]}
+                    rows={tradeHistory.map((item) => ({
+                      id: item.trade_id,
+                      cells: [
+                        formatTime(item.executed_at),
+                        item.symbol,
+                        <StatusBadge key={item.trade_id} value={item.side} />,
+                        item.quantity,
+                        item.price,
+                        <PnlValue key={item.trade_id} value={item.pnl} />,
+                      ],
+                    }))}
+                    emptyTitle="暂无交易历史"
+                    emptyDetail="等待交易执行"
+                  />
+                </TabsContent>
+
+                <TabsContent value="timeline" className="mt-4">
+                  <TradeTimelineChart data={tradeHistory} />
+                </TabsContent>
+
+                <TabsContent value="distribution" className="mt-4">
+                  <TradePnlDistribution data={tradeHistory} />
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>
@@ -451,4 +534,33 @@ function formatTime(value: string): string {
   } catch {
     return value;
   }
+}
+
+function buildPnlChartData(
+  weekly: AnalyticsWeeklySummary,
+  trades: AnalyticsTradeRecord[]
+): Array<{ date: string; pnl: number }> {
+  // Try to use daily_breakdown from weekly summary first
+  if (weekly.daily_breakdown && weekly.daily_breakdown.length > 0) {
+    return weekly.daily_breakdown.map((day: Record<string, unknown>) => ({
+      date: String(day.period || day.date || ""),
+      pnl: parseFloat(String(day.total_pnl || 0)) || 0,
+    }));
+  }
+
+  // Fallback: aggregate from trade history by date
+  if (trades.length === 0) {
+    return [];
+  }
+
+  const byDate: Record<string, number> = {};
+  trades.forEach((trade) => {
+    const dateStr = new Date(trade.executed_at).toISOString().split("T")[0];
+    const pnlValue = parseFloat(trade.pnl) || 0;
+    byDate[dateStr] = (byDate[dateStr] || 0) + pnlValue;
+  });
+
+  return Object.entries(byDate)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, pnl]) => ({ date, pnl }));
 }

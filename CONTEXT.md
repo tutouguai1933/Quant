@@ -1,29 +1,29 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-04-29
+> 最后更新：2026-04-30
 
 ---
 
 ## 当前进度
 
-**状态**：P3 开发完成，系统可用
+**状态**：P5 开发完成，系统可用
 
-**最近完成（2026-04-29）**：
-- **P3 开发**：
+**最近完成（2026-04-30）**：
+- **P5 开发**：
+  - WebSocket实时推送：替换HTTP轮询，支持多通道订阅
+  - 前端图表可视化：4个图表组件（盈亏曲线、策略对比、时间线、归因饼图）
+  - 实盘代理方案：CCXT async代理配置文档和测试脚本
+  - 安全修复：WebSocket认证保护、通道白名单验证、线程锁保护
+- **P4 开发（2026-04-30）**：
+  - 测试修复：7个预存测试问题全部解决（464 passed）
+  - 多币种扩展：Freqtrade 配置 BTC/ETH/SOL/DOGE 四币种
+  - 依赖修复：安装缺失的 httpx 模块
+- **P3 开发（2026-04-29）**：
   - 配置迁移：SampleStrategy/analytics_service 使用 get_config() 统一接口
   - 文件锁保护：config_center_service 并发写入安全（4个测试通过）
   - 研究评分集成：入场决策读取 API 评分（本地*0.6 + 研究*0.4）
   - 创建 config_helper.py：Freqtrade 容器独立配置接口
-- **P2 开发**：
-  - 策略实现：SampleStrategy → 真实策略（25个测试通过）
-  - 数据分析报表：5个新API端点
-  - 配置统一管理：get_config()统一接口
-  - 安全修复：配置更新接口认证保护
-- **联调验证修复**：
-  - MIN_ENTRY_SCORE：0.7 → 0.60
-  - Freqtrade dry_run：false → true
-  - 服务器代码同步：6 commits 已合并
-- 测试通过率：486/493 (98.6%)
+- 测试通过率：464 passed (100%)
 
 ---
 
@@ -49,9 +49,9 @@
 | 项目 | 值 |
 |------|------|
 | 模式 | dry_run=true |
-| 交易对 | DOGE/USDT |
+| 交易对 | BTC/USDT, ETH/USDT, SOL/USDT, DOGE/USDT |
 | stake_amount | 6 USDT |
-| max_open_trades | 1 |
+| max_open_trades | 4 |
 | stoploss | -0.1 |
 | API端口 | 9013 |
 | 状态 | RUNNING |
@@ -119,27 +119,36 @@
 | /api/v1/strategies/{id}/entry-score | POST | 入场评分 |
 | /api/v1/patrol | GET | 定时巡检状态 |
 
+### WebSocket端点（P5新增）
+
+| 端点 | 功能 | 认证 |
+|------|------|------|
+| /ws | 主WebSocket端点，支持多通道订阅 | Token参数 |
+| /ws/research_runtime | 研究运行时状态专用通道 | Token参数 |
+| /ws/automation | 自动化状态专用通道 | Token参数 |
+
 ---
 
 ## 测试状态
 
 | 类别 | 结果 |
 |------|------|
-| 后端测试 | 445 passed (98.4%) |
+| 后端测试 | 464 passed (100%) |
 | 策略测试 | 17 passed (100%) |
 | 数据分析测试 | 25 passed (100%) |
 | 前端构建 | passed |
-| Review评分 | B+ |
+| WebSocket功能 | verified |
 
-**剩余7个失败测试为预存问题**，不影响P2功能。
+所有测试通过，系统稳定可用。
 
 ---
 
-## 待完成任务（P3 - 可选优化）
+## 下一步可选任务
 
-1. **统一配置接口迁移**：让 SampleStrategy 和 AnalyticsService 使用 get_config()
-2. **并发写入文件锁**：config_center_service 写入保护
-3. **策略研究评分集成**：从 API 获取研究评分到策略入场决策
+1. **Live模式测试**：使用代理方案进行实盘验证
+2. **WebSocket单元测试**：补充WebSocket测试文件
+3. **多策略模板**：支持不同策略模板切换
+4. **风控增强**：动态风控参数调整
 
 ---
 
@@ -160,6 +169,7 @@
 - **部署手册**：[docs/deployment-handbook.md](docs/deployment-handbook.md)
 - **开发手册**：[docs/developer-handbook.md](docs/developer-handbook.md)
 - **OpenClaw设计**：[docs/2026-04-15-openclaw-safe-actions-design.md](docs/2026-04-15-openclaw-safe-actions-design.md)
+- **CCXT代理方案**：[docs/ccxt-async-proxy-solution.md](docs/ccxt-async-proxy-solution.md) - P5新增
 
 ---
 
@@ -177,4 +187,5 @@ sshpass -p "1933" ssh -o StrictHostKeyChecking=no djy@39.106.11.65 "命令"
 - 真实联调：运行研究训练观察候选排序
 - 因子调整：修改因子权重观察推荐币变化
 - 回测验证：检查训练结果中的回测指标
-- Live模式：研究解决ccxt async代理问题
+- **Live模式测试**：使用代理方案进行实盘验证（见 docs/ccxt-async-proxy-solution.md）
+- WebSocket推送：已完成，支持实时状态更新

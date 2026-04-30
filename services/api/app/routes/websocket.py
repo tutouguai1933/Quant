@@ -7,25 +7,43 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from services.api.app.websocket.manager import connection_manager
 from services.api.app.websocket.channels import (
     CHANNEL_RESEARCH_RUNTIME,
     CHANNEL_AUTOMATION_STATUS,
     CHANNEL_SYSTEM_HEALTH,
+    is_valid_channel,
 )
 from services.api.app.services.automation_service import automation_service
 from services.api.app.services.research_runtime_service import research_runtime_service
+from services.api.app.services.auth_service import auth_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
 
 
+async def _verify_ws_token(token: str) -> bool:
+    """验证WebSocket连接的token。"""
+    if not token:
+        return False
+    session = auth_service.get_session(token)
+    return session is not None and session.get("scope") == "control_plane"
+
+
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
+async def websocket_endpoint(
+    websocket: WebSocket,
+    token: str = Query(default="", description="认证令牌"),
+) -> None:
     """主 WebSocket 端点，支持多通道订阅。"""
+
+    # 认证验证
+    if not await _verify_ws_token(token):
+        await websocket.close(code=1008, reason="unauthorized")
+        return
 
     async with connection_manager.managed_connection(websocket):
         try:
@@ -37,6 +55,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     message = json.loads(raw_message)
                     action = message.get("action", "")
                     channel = message.get("channel", "")
+
+                    # 通道白名单验证
+                    if channel and not is_valid_channel(channel):
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": f"invalid channel: {channel}",
+                        }, ensure_ascii=False))
+                        continue
 
                     if action == "subscribe" and channel:
                         await connection_manager.subscribe(websocket, channel)
@@ -60,6 +86,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
                 except json.JSONDecodeError:
                     logger.warning(f"无效的 WebSocket 消息: {raw_message}")
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "invalid JSON format",
+                    }, ensure_ascii=False))
 
         except WebSocketDisconnect:
             logger.info("客户端主动断开连接")
@@ -90,8 +120,16 @@ async def _send_initial_state(websocket: WebSocket, channel: str) -> None:
 
 
 @router.websocket("/ws/research_runtime")
-async def research_runtime_websocket(websocket: WebSocket) -> None:
+async def research_runtime_websocket(
+    websocket: WebSocket,
+    token: str = Query(default="", description="认证令牌"),
+) -> None:
     """研究运行时状态专用 WebSocket 端点（简化版）。"""
+
+    # 认证验证
+    if not await _verify_ws_token(token):
+        await websocket.close(code=1008, reason="unauthorized")
+        return
 
     await connection_manager.connect(websocket)
     await connection_manager.subscribe(websocket, CHANNEL_RESEARCH_RUNTIME)
@@ -119,8 +157,16 @@ async def research_runtime_websocket(websocket: WebSocket) -> None:
 
 
 @router.websocket("/ws/automation")
-async def automation_websocket(websocket: WebSocket) -> None:
+async def automation_websocket(
+    websocket: WebSocket,
+    token: str = Query(default="", description="认证令牌"),
+) -> None:
     """自动化状态专用 WebSocket 端点（简化版）。"""
+
+    # 认证验证
+    if not await _verify_ws_token(token):
+        await websocket.close(code=1008, reason="unauthorized")
+        return
 
     await connection_manager.connect(websocket)
     await connection_manager.subscribe(websocket, CHANNEL_AUTOMATION_STATUS)
