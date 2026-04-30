@@ -6,19 +6,23 @@
 
 ## 当前进度
 
-**状态**：P6 运维自动化部署完成，系统全面可用
+**状态**：P7 策略增强完成，系统功能完善
 
 **最近完成（2026-05-01）**：
+- **P7 策略增强（Agent Team并行开发）**：
+  - 多策略模板：StrategyBase基类、TrendStrategy(均线)、GridStrategy(网格)
+  - 动态止损：VolatilityService(ATR/标准差)、DynamicStoplossService
+  - 入场评分：多因子加权(RSI/MACD/成交量/波动率)
+  - 新增68个测试全部通过
 - **P6 运维自动化部署**：
-  - 健康监控：Docker容器状态监控正常工作（需安装docker-cli）
+  - 健康监控：Docker容器状态监控正常工作
   - 定时巡检：修复RLock死锁问题，patrol端点正常
   - 国内镜像：apt/pip阿里云镜像加速配置
-  - 挖矿清理：root清理恶意文件和服务
 - **P5 开发（2026-04-30）**：
   - WebSocket实时推送：Token认证、通道白名单
   - 前端图表可视化：4个图表组件
   - Live模式切换：真实交易激活
-- **测试**：488 passed (100%)
+- **测试**：570 passed (新增68个)
 
 ---
 
@@ -139,6 +143,26 @@ docker logs quant-freqtrade | grep "Not enough amount"
 
 ## 后续开发规划
 
+### P7 - 策略增强（2026-05-01完成）
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| 多策略模板 | StrategyBase、TrendStrategy、GridStrategy | ✅ 完成 |
+| 动态止损 | ATR/标准差波动率、自动调整止损比例 | ✅ 完成 |
+| 入场评分优化 | 多因子加权评分(RSI/MACD/Volume/Volatility) | ✅ 完成 |
+
+**新增API端点**：
+- GET/POST /api/v1/strategy/* - 策略管理
+- GET/POST /api/v1/stoploss/* - 止损配置
+- GET/POST /api/v1/scoring/* - 评分模型
+
+**新增前端组件**：
+- strategy-selector.tsx - 策略选择器
+- stoploss-config.tsx - 止损配置面板
+- scoring-display.tsx - 评分仪表盘
+
+**测试结果**：68 passed (策略24 + 止损20 + 评分24)
+
 ### P6 - 运维自动化（2026-05-01部署完成）
 
 | 任务 | 说明 | 状态 |
@@ -152,8 +176,6 @@ docker logs quant-freqtrade | grep "Not enough amount"
 - GET /api/v1/health - 健康状态
 - POST /api/v1/patrol/start/stop - 巡检控制
 - GET /api/v1/logs/status - 日志大小
-
-**测试结果**：488 passed (100%)
 
 ### P7 - 策略增强（可选）
 
@@ -174,10 +196,10 @@ docker logs quant-freqtrade | grep "Not enough amount"
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ (运维自动化部署完成)
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ (策略增强完成)
 ```
 
-核心开发阶段P1-P6全部完成，系统已具备自动化运维能力。
+核心开发阶段P1-P7全部完成，系统已具备完整的策略管理、风控和评分能力。
 
 ---
 
