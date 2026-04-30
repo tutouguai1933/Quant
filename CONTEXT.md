@@ -6,23 +6,27 @@
 
 ## 当前进度
 
-**状态**：P7 策略增强完成，系统功能完善
+**状态**：P8数据分析 + P9飞书联动监控告警完成
 
 **最近完成（2026-05-01）**：
-- **P7 策略增强（Agent Team并行开发）**：
-  - 多策略模板：StrategyBase基类、TrendStrategy(均线)、GridStrategy(网格)
-  - 动态止损：VolatilityService(ATR/标准差)、DynamicStoplossService
-  - 入场评分：多因子加权(RSI/MACD/成交量/波动率)
-  - 新增68个测试全部通过
+- **P8 数据分析（Agent Team并行开发）**：
+  - 回测可视化：收益曲线、统计指标、交易分布图表
+  - 因子分析：因子贡献度、相关性矩阵、有效性评分
+  - 交易报告：日报/周报自动生成（Markdown格式）
+  - 新增API：9个端点
+- **P9 飞书联动监控告警**：
+  - 飞书推送：FeishuPushService消息卡片格式
+  - OpenClaw联动：巡检结果、VPN状态自动推送飞书
+  - 告警升级：INFO→WARNING→ERROR→CRITICAL自动升级
+  - 自动恢复：Docker容器异常自动重启、告警静默机制
+- **P7 策略增强**：
+  - 多策略模板：StrategyBase、TrendStrategy、GridStrategy
+  - 动态止损：ATR/标准差波动率计算
+  - 入场评分：多因子加权评分模型
 - **P6 运维自动化部署**：
   - 健康监控：Docker容器状态监控正常工作
-  - 定时巡检：修复RLock死锁问题，patrol端点正常
-  - 国内镜像：apt/pip阿里云镜像加速配置
-- **P5 开发（2026-04-30）**：
-  - WebSocket实时推送：Token认证、通道白名单
-  - 前端图表可视化：4个图表组件
-  - Live模式切换：真实交易激活
-- **测试**：570 passed (新增68个)
+  - 定时巡检：修复RLock死锁问题
+- **测试**：579 passed
 
 ---
 
@@ -143,6 +147,45 @@ docker logs quant-freqtrade | grep "Not enough amount"
 
 ## 后续开发规划
 
+### P8 - 数据分析（2026-05-01完成）
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| 回测可视化 | 收益曲线、统计指标、交易分布图表 | ✅ 完成 |
+| 因子分析 | 因子贡献度、相关性矩阵、有效性评分 | ✅ 完成 |
+| 交易报告 | 日报/周报自动生成，Markdown格式 | ✅ 完成 |
+
+**新增API端点**：
+- GET /api/v1/backtest/{id}/charts - 回测图表
+- GET /api/v1/factor/analysis - 因子分析
+- GET /api/v1/report/daily/weekly - 交易报告
+
+**新增前端组件**：
+- backtest-charts.tsx - 回测图表
+- factor-analysis-panel.tsx - 因子分析面板
+- report-viewer.tsx - 报告查看器
+
+### P9 - 飞书联动监控告警（2026-05-01完成）
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| 飞书推送集成 | FeishuPushService，消息卡片格式 | ✅ 完成 |
+| OpenClaw飞书联动 | 巡检结果、VPN状态自动推送 | ✅ 完成 |
+| 告警升级机制 | INFO→WARNING→ERROR→CRITICAL | ✅ 完成 |
+| 自动恢复 | Docker容器异常自动重启 | ✅ 完成 |
+
+**新增API端点**：
+- POST /api/v1/feishu/test - 测试推送
+- GET /api/v1/alert/level - 告警级别
+- POST /api/v1/alert/recovery/manual - 手动恢复
+
+**新增前端组件**：
+- alert-management-panel.tsx - 告警管理面板
+
+**飞书配置**：
+- FEISHU_WEBHOOK_URL - 飞书机器人Webhook URL
+- FEISHU_PUSH_ENABLED - 是否启用推送
+
 ### P7 - 策略增强（2026-05-01完成）
 
 | 任务 | 说明 | 状态 |
@@ -196,10 +239,10 @@ docker logs quant-freqtrade | grep "Not enough amount"
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ (策略增强完成)
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅
 ```
 
-核心开发阶段P1-P7全部完成，系统已具备完整的策略管理、风控和评分能力。
+核心开发阶段P1-P9全部完成，系统已具备完整的策略管理、数据分析、飞书联动监控告警能力。
 
 ---
 
