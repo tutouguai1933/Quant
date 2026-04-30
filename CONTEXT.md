@@ -48,13 +48,14 @@
 ### Freqtrade状态
 | 项目 | 值 |
 |------|------|
-| 模式 | dry_run=true |
+| 模式 | **live** (真实交易) |
 | 交易对 | BTC/USDT, ETH/USDT, SOL/USDT, DOGE/USDT |
 | stake_amount | 6 USDT |
 | max_open_trades | 4 |
 | stoploss | -0.1 |
 | API端口 | 9013 |
 | 状态 | RUNNING |
+| 代理 | mihomo 127.0.0.1:7890 |
 
 ---
 
