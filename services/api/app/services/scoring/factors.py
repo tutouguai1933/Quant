@@ -85,8 +85,9 @@ class RSIFactor(FactorBase):
             return None
 
     def to_dict(self) -> dict[str, Any]:
+        base_dict = FactorBase.to_dict(self)
         return {
-            **super().to_dict(),
+            **base_dict,
             "oversold_threshold": self.oversold_threshold,
             "overbought_threshold": self.overbought_threshold,
         }
@@ -198,8 +199,9 @@ class VolumeFactor(FactorBase):
             return None
 
     def to_dict(self) -> dict[str, Any]:
+        base_dict = FactorBase.to_dict(self)
         return {
-            **super().to_dict(),
+            **base_dict,
             "volume_ratio_high": self.volume_ratio_high,
             "volume_ratio_low": self.volume_ratio_low,
         }
@@ -249,8 +251,9 @@ class VolatilityFactor(FactorBase):
             return None
 
     def to_dict(self) -> dict[str, Any]:
+        base_dict = FactorBase.to_dict(self)
         return {
-            **super().to_dict(),
+            **base_dict,
             "optimal_range_low": self.optimal_range_low,
             "optimal_range_high": self.optimal_range_high,
         }
