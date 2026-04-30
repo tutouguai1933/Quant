@@ -6,9 +6,17 @@
 
 ## 当前进度
 
-**状态**：P8数据分析 + P9飞书联动监控告警完成
+**状态**：P8数据分析 + P9飞书联动监控告警 + WebSocket实时推送完成
 
 **最近完成（2026-05-01）**：
+- **WebSocket实时推送**：
+  - 后端WebSocket基础设施：ConnectionManager、通道订阅、广播推送
+  - 状态变更推送桥接：push_bridge同步到异步桥接
+  - 前端WebSocket Context：自动重连、降级轮询
+  - 实时状态Hooks：useResearchRuntimeStatus、useAutomationStatus
+- **测试修复**：
+  - mock scoring gate修复策略引擎测试
+  - 全部580测试通过
 - **P8 数据分析（Agent Team并行开发）**：
   - 回测可视化：收益曲线、统计指标、交易分布图表
   - 因子分析：因子贡献度、相关性矩阵、有效性评分
@@ -26,7 +34,7 @@
 - **P6 运维自动化部署**：
   - 健康监控：Docker容器状态监控正常工作
   - 定时巡检：修复RLock死锁问题
-- **测试**：579 passed
+- **测试**：580 passed
 
 ---
 
@@ -239,10 +247,10 @@ docker logs quant-freqtrade | grep "Not enough amount"
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅
 ```
 
-核心开发阶段P1-P9全部完成，系统已具备完整的策略管理、数据分析、飞书联动监控告警能力。
+核心开发阶段P1-P9全部完成，WebSocket实时推送已集成，系统已具备完整的策略管理、数据分析、飞书联动监控告警、实时状态推送能力。
 
 ---
 
