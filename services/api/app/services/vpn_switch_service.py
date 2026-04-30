@@ -185,10 +185,10 @@ class VPNSwitchService:
         Args:
             use_proxy: 是否使用代理
         """
-        proxies = self._config.mihomo_proxy_url if use_proxy else None
+        proxy = self._config.mihomo_proxy_url if use_proxy else None
         return httpx.Client(
             timeout=self._config.health_check_timeout,
-            proxies=proxies,
+            proxy=proxy,
         )
 
     async def _get_async_client(self, use_proxy: bool = True) -> httpx.AsyncClient:
@@ -197,10 +197,10 @@ class VPNSwitchService:
         Args:
             use_proxy: 是否使用代理
         """
-        proxies = self._config.mihomo_proxy_url if use_proxy else None
+        proxy = self._config.mihomo_proxy_url if use_proxy else None
         return httpx.AsyncClient(
             timeout=self._config.health_check_timeout,
-            proxies=proxies,
+            proxy=proxy,
         )
 
     def check_node_health_sync(self) -> NodeHealthResult:
