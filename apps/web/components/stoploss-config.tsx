@@ -365,14 +365,14 @@ function PositionStoplossItem({ position }: { position: PositionState }) {
       ? "text-green-500"
       : "text-amber-500";
 
-  const volatilityIcon = isHighVolatility ? TrendingUp : isLowVolatility ? TrendingDown : TrendingUp;
+  const VolatilityIcon = isHighVolatility ? TrendingUp : isLowVolatility ? TrendingDown : TrendingUp;
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
       <div className="flex items-center justify-between mb-2">
         <span className="font-medium text-foreground">{position.symbol}</span>
         <div className="flex items-center gap-2">
-          <volatilityIcon className={`size-3 ${volatilityColor}`} />
+          <VolatilityIcon className={`size-3 ${volatilityColor}`} />
           <span className={`text-sm ${volatilityColor}`}>{volatilityFactor.toFixed(2)}</span>
         </div>
       </div>

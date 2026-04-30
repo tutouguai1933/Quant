@@ -1,13 +1,12 @@
 /* 因子分析面板组件，展示因子贡献分析、相关性矩阵和有效性评估。 */
 "use client";
 
-import { Activity, BarChart3, CorrelationIcon as Correlation, TrendingUp, AlertTriangle, CheckCircle, Settings } from "lucide-react";
+import { Activity, BarChart3, GitBranch as Correlation, TrendingUp, AlertTriangle, CheckCircle, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 type FactorContribution = {
   factor_name: string;
@@ -139,16 +138,15 @@ export function FactorAnalysisPanel() {
               <CardTitle className="text-base">因子分析</CardTitle>
             </div>
             <div className="flex items-center gap-2">
-              <Select value={strategyId} onValueChange={setStrategyId}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="选择策略" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">默认策略</SelectItem>
-                  <SelectItem value="btc">BTC策略</SelectItem>
-                  <SelectItem value="eth">ETH策略</SelectItem>
-                </SelectContent>
-              </Select>
+              <select
+                value={strategyId}
+                onChange={(e) => setStrategyId(e.target.value)}
+                className="flex h-9 w-[140px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="default">默认策略</option>
+                <option value="btc">BTC策略</option>
+                <option value="eth">ETH策略</option>
+              </select>
               <Button variant="outline" size="sm" onClick={fetchAnalysis}>
                 刷新
               </Button>
@@ -289,16 +287,15 @@ export function FactorAnalysisPanel() {
               <Activity className="size-4 text-primary" />
               <CardTitle className="text-base">因子有效性</CardTitle>
             </div>
-            <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger className="w-[100px]">
-                <SelectValue placeholder="周期" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7d">7天</SelectItem>
-                <SelectItem value="30d">30天</SelectItem>
-                <SelectItem value="90d">90天</SelectItem>
-              </SelectContent>
-            </Select>
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="flex h-9 w-[100px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="7d">7天</option>
+              <option value="30d">30天</option>
+              <option value="90d">90天</option>
+            </select>
           </div>
         </CardHeader>
         <CardContent className="pt-2">

@@ -75,7 +75,7 @@ export function ScoringDisplay({ result, onRefresh, onConfigChange, showConfig =
           </div>
           <div className="flex items-center gap-2">
             {onRefresh && (
-              <Button variant="ghost" size="icon" className="size-8" onClick={onRefresh}>
+              <Button variant="ghost" size="sm" className="size-8 p-0" onClick={onRefresh}>
                 <RefreshCw className="size-4" />
               </Button>
             )}
