@@ -45,6 +45,7 @@ const TOOL_NAV_ITEMS: NavItem[] = [
 
 const SUPPLEMENTAL_NAV_ITEMS: NavItem[] = [
   { href: "/analytics", label: "数据分析", protected: false, hint: "看交易统计和策略表现" },
+  { href: "/ops", label: "运维监控", protected: true, hint: "查看服务健康状态和告警" },
   { href: "/data", label: "数据准备", protected: false, hint: "补看研究输入和准备状态" },
   { href: "/backtest", label: "回测验证", protected: false, hint: "补看回测成本和结果" },
   { href: "/config", label: "配置中心", protected: true, hint: "查看和管理系统配置项" },

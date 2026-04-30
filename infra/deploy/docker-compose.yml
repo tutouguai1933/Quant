@@ -4,6 +4,11 @@ services:
     container_name: ${QUANT_MIHOMO_CONTAINER_NAME:-quant-mihomo}
     restart: unless-stopped
     network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     volumes:
       - ../mihomo:/root/.config/mihomo
     command:
@@ -25,6 +30,11 @@ services:
     container_name: ${QUANT_OPENCLAW_CONTAINER_NAME:-quant-openclaw}
     restart: unless-stopped
     network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       QUANT_API_BASE_URL: http://127.0.0.1:9011/api/v1
       HEALTH_CHECK_INTERVAL: ${QUANT_OPENCLAW_HEALTH_INTERVAL:-60}
@@ -46,6 +56,11 @@ services:
     container_name: ${QUANT_API_CONTAINER_NAME:-quant-api}
     restart: unless-stopped
     network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
@@ -69,6 +84,11 @@ services:
     container_name: ${QUANT_WEB_CONTAINER_NAME:-quant-web}
     restart: unless-stopped
     network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       QUANT_API_BASE_URL: http://127.0.0.1:9011/api/v1
     depends_on:
@@ -85,6 +105,11 @@ services:
     container_name: ${QUANT_FREQTRADE_CONTAINER_NAME:-quant-freqtrade}
     restart: unless-stopped
     network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890

@@ -7,6 +7,7 @@ before the user approves dependency installation.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 try:
@@ -43,6 +44,7 @@ from services.api.app.routes.market import router as market_router
 from services.api.app.routes.model_suggestion import router as model_suggestion_router
 from services.api.app.routes.openclaw import router as openclaw_router
 from services.api.app.routes.orders import router as orders_router
+from services.api.app.routes.patrol import router as patrol_router
 from services.api.app.routes.performance import router as performance_router
 from services.api.app.routes.positions import router as positions_router
 from services.api.app.routes.research_workspace import router as research_workspace_router
@@ -53,6 +55,8 @@ from services.api.app.routes.tasks import router as tasks_router
 from services.api.app.routes.websocket import router as websocket_router
 from services.api.app.routes.workbench_config import router as workbench_config_router
 from services.api.app.websocket.manager import connection_manager
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -112,6 +116,8 @@ app.include_router(backtest_validation_router)
 app.routers.append(backtest_validation_router)  # type: ignore[attr-defined]
 app.include_router(model_suggestion_router)
 app.routers.append(model_suggestion_router)  # type: ignore[attr-defined]
+app.include_router(patrol_router)
+app.routers.append(patrol_router)  # type: ignore[attr-defined]
 
 
 # 性能监控中间件
@@ -146,6 +152,37 @@ async def performance_monitor_middleware(request: Request, call_next) -> Respons
 
 @app.on_event("startup")
 async def setup_event_loop() -> None:
-    """在 FastAPI 启动时设置事件循环引用，用于 WebSocket 推送。"""
+    """在 FastAPI 启动时设置事件循环引用，用于 WebSocket 推送，并启动健康监控。"""
     loop = asyncio.get_running_loop()
     connection_manager.set_loop(loop)
+
+    # 启动健康监控服务
+    from services.api.app.services.health_monitor_service import health_monitor_service
+    health_monitor_service.start_monitoring(interval_seconds=60)
+    logger.info("健康监控服务已启动")
+
+    # 启动定时巡检（可通过环境变量 QUANT_PATROL_AUTO_START 控制）
+    import os
+    auto_start = os.getenv("QUANT_PATROL_AUTO_START", "true").lower() == "true"
+    interval_minutes = int(os.getenv("QUANT_PATROL_INTERVAL_MINUTES", "60"))
+
+    if auto_start:
+        from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
+        result = scheduled_patrol_service.start_schedule(interval_minutes=interval_minutes)
+        if result.get("success"):
+            logger.info("定时巡检已自动启动: interval=%d 分钟", interval_minutes)
+        else:
+            logger.warning("定时巡检自动启动失败: %s", result.get("message"))
+
+
+@app.on_event("shutdown")
+async def shutdown_event_loop() -> None:
+    """在 FastAPI 关闭时停止健康监控和定时巡检。"""
+    from services.api.app.services.health_monitor_service import health_monitor_service
+    health_monitor_service.stop_monitoring()
+    logger.info("健康监控服务已停止")
+
+    # 停止定时巡检
+    from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
+    scheduled_patrol_service.stop_schedule()
+    logger.info("定时巡检已停止")

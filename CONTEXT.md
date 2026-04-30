@@ -129,14 +129,21 @@ docker logs quant-freqtrade | grep "Not enough amount"
 
 ## 后续开发规划
 
-### P6 - 运维自动化（2026-04-30启动）
+### P6 - 运维自动化（2026-04-30完成）
 
 | 任务 | 说明 | 状态 |
 |------|------|------|
-| 健康监控告警 | 服务异常时推送通知(Telegram/钉钉) | 🔄 开发中 |
-| 定时巡检触发 | cron定期调用openclaw_patrol | 待开发 |
-| 日志轮转清理 | 防止日志文件过大 | 待开发 |
-| 前端运维面板 | 展示服务健康状态 | 待开发 |
+| 健康监控告警 | Docker容器状态监控，异常推送 | ✅ 完成 |
+| 定时巡检触发 | threading.Timer调度巡检 | ✅ 完成 |
+| 日志轮转清理 | RotatingFileHandler + docker日志限制 | ✅ 完成 |
+| 前端运维面板 | /ops页面展示服务状态 | ✅ 完成 |
+
+**新增API端点**：
+- GET /api/v1/health - 健康状态
+- POST /api/v1/patrol/start/stop - 巡检控制
+- GET /api/v1/logs/status - 日志大小
+
+**测试结果**：488 passed (100%)
 
 ### P7 - 策略增强（可选）
 
@@ -157,10 +164,10 @@ docker logs quant-freqtrade | grep "Not enough amount"
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 🔄 (运维自动化)
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ (运维自动化完成)
 ```
 
-核心开发阶段P1-P5已完成，系统已运行Live模式。
+核心开发阶段P1-P6全部完成，系统已具备自动化运维能力。
 
 ---
 
