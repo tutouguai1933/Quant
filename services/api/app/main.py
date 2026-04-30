@@ -45,10 +45,13 @@ from services.api.app.routes.model_suggestion import router as model_suggestion_
 from services.api.app.routes.openclaw import router as openclaw_router
 from services.api.app.routes.orders import router as orders_router
 from services.api.app.routes.patrol import router as patrol_router
+from services.api.app.routes.stoploss import router as stoploss_router
+from services.api.app.routes.scoring import router as scoring_router
 from services.api.app.routes.performance import router as performance_router
 from services.api.app.routes.positions import router as positions_router
 from services.api.app.routes.research_workspace import router as research_workspace_router
 from services.api.app.routes.risk_events import router as risk_events_router
+from services.api.app.routes.strategy import router as strategy_router
 from services.api.app.routes.signals import router as signals_router
 from services.api.app.routes.strategies import router as strategies_router
 from services.api.app.routes.tasks import router as tasks_router
@@ -98,6 +101,8 @@ app.include_router(orders_router)
 app.routers.append(orders_router)  # type: ignore[attr-defined]
 app.include_router(strategies_router)
 app.routers.append(strategies_router)  # type: ignore[attr-defined]
+app.include_router(strategy_router)
+app.routers.append(strategy_router)  # type: ignore[attr-defined]
 app.include_router(signals_router)
 app.routers.append(signals_router)  # type: ignore[attr-defined]
 app.include_router(tasks_router)
@@ -118,6 +123,10 @@ app.include_router(model_suggestion_router)
 app.routers.append(model_suggestion_router)  # type: ignore[attr-defined]
 app.include_router(patrol_router)
 app.routers.append(patrol_router)  # type: ignore[attr-defined]
+app.include_router(stoploss_router)
+app.routers.append(stoploss_router)  # type: ignore[attr-defined]
+app.include_router(scoring_router)
+app.routers.append(scoring_router)  # type: ignore[attr-defined]
 
 
 # 性能监控中间件

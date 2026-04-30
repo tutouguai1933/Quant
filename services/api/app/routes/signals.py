@@ -8,6 +8,7 @@ from services.api.app.services.auth_service import auth_service
 from services.api.app.services.strategy_engine import apply_research_soft_gate
 from services.api.app.services.strategy_engine import evaluate_trend_breakout
 from services.api.app.services.strategy_engine import evaluate_trend_pullback
+from services.api.app.services.strategy_engine import apply_scoring_gate, prepare_market_data_for_scoring
 from services.api.app.services.market_service import MarketService
 from services.api.app.services.research_runtime_service import research_runtime_service
 from services.api.app.services.research_service import research_service
@@ -419,6 +420,10 @@ def run_strategy(payload: dict[str, object]) -> dict:
             **{extra_param_key: extra_param_value},
         )
     result = apply_research_soft_gate(result, research_service.get_symbol_research(normalized_symbol))
+
+    # 应用评分门控：评分>=阈值才触发买入
+    market_data = prepare_market_data_for_scoring(items)
+    result = apply_scoring_gate(result, normalized_symbol, market_data)
 
     return _success(
         {"item": result},
