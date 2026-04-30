@@ -1,193 +1,123 @@
-"""WebSocket 路由端点。"""
+"""WebSocket route for real-time status push."""
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+import uuid
+from typing import Any
 
 from services.api.app.websocket.manager import connection_manager
-from services.api.app.websocket.channels import (
-    CHANNEL_RESEARCH_RUNTIME,
-    CHANNEL_AUTOMATION_STATUS,
-    CHANNEL_SYSTEM_HEALTH,
-    is_valid_channel,
-)
-from services.api.app.services.automation_service import automation_service
-from services.api.app.services.research_runtime_service import research_runtime_service
-from services.api.app.services.auth_service import auth_service
+from services.api.app.websocket.channels import ALL_CHANNELS
 
 logger = logging.getLogger(__name__)
+
+
+try:
+    from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+except ImportError:
+    # Lightweight fallback for testing
+    class APIRouter:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    class WebSocket:
+        def __init__(self) -> None:
+            pass
+
+        async def accept(self) -> None:
+            pass
+
+        async def receive_text(self) -> str:
+            return ""
+
+        async def send_text(self, text: str) -> None:
+            pass
+
+    class WebSocketDisconnect(Exception):
+        pass
+
 
 router = APIRouter(tags=["websocket"])
 
 
-async def _verify_ws_token(token: str) -> bool:
-    """验证WebSocket连接的token。"""
-    if not token:
-        return False
-    session = auth_service.get_session(token)
-    return session is not None and session.get("scope") == "control_plane"
-
-
-@router.websocket("/ws")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    token: str = Query(default="", description="认证令牌"),
-) -> None:
-    """主 WebSocket 端点，支持多通道订阅。"""
-
-    # 认证验证
-    if not await _verify_ws_token(token):
-        await websocket.close(code=1008, reason="unauthorized")
-        return
-
-    async with connection_manager.managed_connection(websocket):
-        try:
-            while True:
-                # 接收客户端消息（订阅/取消订阅请求）
-                raw_message = await websocket.receive_text()
-
-                try:
-                    message = json.loads(raw_message)
-                    action = message.get("action", "")
-                    channel = message.get("channel", "")
-
-                    # 通道白名单验证
-                    if channel and not is_valid_channel(channel):
-                        await websocket.send_text(json.dumps({
-                            "type": "error",
-                            "message": f"invalid channel: {channel}",
-                        }, ensure_ascii=False))
-                        continue
-
-                    if action == "subscribe" and channel:
-                        await connection_manager.subscribe(websocket, channel)
-                        # 订阅后立即发送当前状态
-                        await _send_initial_state(websocket, channel)
-                        await websocket.send_text(json.dumps({
-                            "type": "subscribed",
-                            "channel": channel,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }, ensure_ascii=False))
-
-                    elif action == "unsubscribe" and channel:
-                        await connection_manager.unsubscribe(websocket, channel)
-                        await websocket.send_text(json.dumps({
-                            "type": "unsubscribed",
-                            "channel": channel,
-                        }, ensure_ascii=False))
-
-                    elif action == "ping":
-                        await websocket.send_text(json.dumps({"type": "pong"}, ensure_ascii=False))
-
-                except json.JSONDecodeError:
-                    logger.warning(f"无效的 WebSocket 消息: {raw_message}")
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": "invalid JSON format",
-                    }, ensure_ascii=False))
-
-        except WebSocketDisconnect:
-            logger.info("客户端主动断开连接")
-        except Exception as exc:
-            logger.error(f"WebSocket 异常: {exc}")
-
-
-async def _send_initial_state(websocket: WebSocket, channel: str) -> None:
-    """订阅后发送当前状态。"""
-
-    if channel == CHANNEL_RESEARCH_RUNTIME:
-        status = research_runtime_service.get_status()
-        await websocket.send_text(json.dumps({
-            "channel": channel,
-            "type": "initial",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "data": status,
-        }, ensure_ascii=False))
-
-    elif channel == CHANNEL_AUTOMATION_STATUS:
-        status = automation_service.get_status()
-        await websocket.send_text(json.dumps({
-            "channel": channel,
-            "type": "initial",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "data": status,
-        }, ensure_ascii=False))
-
-
-@router.websocket("/ws/research_runtime")
-async def research_runtime_websocket(
-    websocket: WebSocket,
-    token: str = Query(default="", description="认证令牌"),
-) -> None:
-    """研究运行时状态专用 WebSocket 端点（简化版）。"""
-
-    # 认证验证
-    if not await _verify_ws_token(token):
-        await websocket.close(code=1008, reason="unauthorized")
-        return
-
-    await connection_manager.connect(websocket)
-    await connection_manager.subscribe(websocket, CHANNEL_RESEARCH_RUNTIME)
-
-    # 发送当前状态
-    status = research_runtime_service.get_status()
-    await websocket.send_text(json.dumps({
-        "channel": CHANNEL_RESEARCH_RUNTIME,
-        "type": "initial",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "data": status,
-    }, ensure_ascii=False))
+@router.websocket("/api/v1/ws")
+async def websocket_endpoint(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time status updates."""
+    await websocket.accept()
+    connection_id = str(uuid.uuid4())
+    connection_manager.connect(websocket, connection_id)
 
     try:
+        # Send connection established message
+        await connection_manager.send_to_connection(connection_id, {
+            "type": "connected",
+            "connection_id": connection_id,
+            "available_channels": ALL_CHANNELS,
+        })
+
         while True:
-            # 保持连接，等待服务端推送
-            data = await websocket.receive_text()
-            if data == "ping":
-                await websocket.send_text("pong")
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                await handle_message(connection_id, websocket, message)
+            except json.JSONDecodeError:
+                await connection_manager.send_to_connection(connection_id, {
+                    "type": "error",
+                    "message": "Invalid JSON format",
+                })
     except WebSocketDisconnect:
-        pass
-    finally:
-        await connection_manager.unsubscribe(websocket, CHANNEL_RESEARCH_RUNTIME)
-        await connection_manager.disconnect(websocket)
+        connection_manager.disconnect(connection_id)
+        logger.info("WebSocket client disconnected: %s", connection_id)
+    except Exception as e:
+        logger.error("WebSocket error for %s: %s", connection_id, e)
+        connection_manager.disconnect(connection_id)
 
 
-@router.websocket("/ws/automation")
-async def automation_websocket(
-    websocket: WebSocket,
-    token: str = Query(default="", description="认证令牌"),
-) -> None:
-    """自动化状态专用 WebSocket 端点（简化版）。"""
+async def handle_message(connection_id: str, websocket: WebSocket, message: dict[str, Any]) -> None:
+    """Handle incoming WebSocket message."""
+    msg_type = message.get("type", "")
 
-    # 认证验证
-    if not await _verify_ws_token(token):
-        await websocket.close(code=1008, reason="unauthorized")
-        return
+    if msg_type == "subscribe":
+        channel = message.get("channel", "")
+        if connection_manager.subscribe(connection_id, channel):
+            await connection_manager.send_to_connection(connection_id, {
+                "type": "subscribed",
+                "channel": channel,
+                "success": True,
+            })
+        else:
+            await connection_manager.send_to_connection(connection_id, {
+                "type": "subscribed",
+                "channel": channel,
+                "success": False,
+                "error": "Invalid channel or connection",
+            })
 
-    await connection_manager.connect(websocket)
-    await connection_manager.subscribe(websocket, CHANNEL_AUTOMATION_STATUS)
+    elif msg_type == "unsubscribe":
+        channel = message.get("channel", "")
+        connection_manager.unsubscribe(connection_id, channel)
+        await connection_manager.send_to_connection(connection_id, {
+            "type": "unsubscribed",
+            "channel": channel,
+        })
 
-    # 发送当前状态
-    status = automation_service.get_status()
-    await websocket.send_text(json.dumps({
-        "channel": CHANNEL_AUTOMATION_STATUS,
-        "type": "initial",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "data": status,
-    }, ensure_ascii=False))
+    elif msg_type == "ping":
+        await connection_manager.send_to_connection(connection_id, {
+            "type": "pong",
+        })
 
-    try:
-        while True:
-            # 保持连接，等待服务端推送
-            data = await websocket.receive_text()
-            if data == "ping":
-                await websocket.send_text("pong")
-    except WebSocketDisconnect:
-        pass
-    finally:
-        await connection_manager.unsubscribe(websocket, CHANNEL_AUTOMATION_STATUS)
-        await connection_manager.disconnect(websocket)
+    elif msg_type == "get_status":
+        await connection_manager.send_to_connection(connection_id, {
+            "type": "status",
+            "connection_count": connection_manager.get_connection_count(),
+            "subscribed_channels": list(
+                connection_manager._connections.get(connection_id, {}).channels
+            ) if connection_id in connection_manager._connections else [],
+        })
+
+    else:
+        await connection_manager.send_to_connection(connection_id, {
+            "type": "error",
+            "message": f"Unknown message type: {msg_type}",
+        })

@@ -1,4 +1,4 @@
-"""WebSocket 连接管理器，负责管理所有活跃连接和通道订阅。"""
+"""WebSocket connection manager for real-time status push."""
 
 from __future__ import annotations
 
@@ -6,153 +6,145 @@ import asyncio
 import json
 import logging
 import threading
-from collections import defaultdict
-from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
-
-from fastapi import WebSocket, WebSocketDisconnect
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class WebSocketConnection:
+    """WebSocket connection info."""
+    websocket: Any
+    channels: set[str] = field(default_factory=set)
+    connected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ConnectionManager:
-    """管理 WebSocket 连接和通道订阅。"""
+    """WebSocket connection manager with channel subscription support."""
 
     def __init__(self) -> None:
-        # 存储所有活跃连接
-        self._active_connections: list[WebSocket] = []
-        # 通道订阅映射：channel_name -> set[WebSocket]
-        self._channel_subscribers: dict[str, set[WebSocket]] = defaultdict(set)
-        # 异步事件循环引用（从同步服务调用时使用）
+        self._connections: dict[str, WebSocketConnection] = {}
+        self._lock = threading.RLock()
         self._loop: asyncio.AbstractEventLoop | None = None
-        # 每个连接的最后心跳时间
-        self._last_ping_time: dict[WebSocket, float] = {}
-        # 线程锁保护订阅映射
-        self._lock = threading.Lock()
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
-        """设置事件循环引用，用于从同步代码调度异步推送。"""
+        """Set the main event loop for async operations from sync context."""
         self._loop = loop
 
-    async def connect(self, websocket: WebSocket) -> None:
-        """接受新连接并注册到活跃列表。"""
-        await websocket.accept()
-        self._active_connections.append(websocket)
-        self._last_ping_time[websocket] = asyncio.get_event_loop().time()
-        logger.info(f"WebSocket 连接已建立，当前活跃连接数: {len(self._active_connections)}")
-
-    async def disconnect(self, websocket: WebSocket) -> None:
-        """移除连接并清理所有订阅。"""
-        if websocket in self._active_connections:
-            self._active_connections.remove(websocket)
-        self._last_ping_time.pop(websocket, None)
-        # 清理所有通道订阅
-        for channel_subscribers in self._channel_subscribers.values():
-            channel_subscribers.discard(websocket)
-        logger.info(f"WebSocket 连接已断开，当前活跃连接数: {len(self._active_connections)}")
-
-    async def subscribe(self, websocket: WebSocket, channel: str) -> None:
-        """订阅指定通道。"""
+    def connect(self, websocket: Any, connection_id: str) -> None:
+        """Register a new WebSocket connection."""
         with self._lock:
-            self._channel_subscribers[channel].add(websocket)
-        logger.info(f"连接已订阅通道: {channel}")
+            self._connections[connection_id] = WebSocketConnection(
+                websocket=websocket,
+                channels=set(),
+            )
+            logger.info("WebSocket connected: %s", connection_id)
 
-    async def unsubscribe(self, websocket: WebSocket, channel: str) -> None:
-        """取消订阅指定通道。"""
+    def disconnect(self, connection_id: str) -> None:
+        """Remove a WebSocket connection."""
         with self._lock:
-            self._channel_subscribers[channel].discard(websocket)
-        logger.info(f"连接已取消订阅通道: {channel}")
+            if connection_id in self._connections:
+                del self._connections[connection_id]
+                logger.info("WebSocket disconnected: %s", connection_id)
 
-    async def broadcast_to_channel(self, channel: str, message: dict[str, Any]) -> None:
-        """向指定通道的所有订阅者广播消息。"""
-        subscribers = self._channel_subscribers.get(channel, set())
-        if not subscribers:
-            return
+    def subscribe(self, connection_id: str, channel: str) -> bool:
+        """Subscribe a connection to a channel."""
+        from services.api.app.websocket.channels import ALL_CHANNELS
 
-        payload = json.dumps({
-            "channel": channel,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "data": message,
-        }, ensure_ascii=False)
+        if channel not in ALL_CHANNELS:
+            logger.warning("Unknown channel: %s", channel)
+            return False
 
-        disconnected: list[WebSocket] = []
-        for websocket in subscribers:
-            try:
-                await websocket.send_text(payload)
-            except Exception as exc:
-                logger.warning(f"推送消息失败: {exc}")
-                disconnected.append(websocket)
+        with self._lock:
+            conn = self._connections.get(connection_id)
+            if conn is None:
+                logger.warning("Connection not found: %s", connection_id)
+                return False
+            conn.channels.add(channel)
+            logger.info("Subscribed %s to channel: %s", connection_id, channel)
+            return True
 
-        # 清理断开的连接
-        for ws in disconnected:
-            await self.disconnect(ws)
-
-    async def broadcast_to_all(self, message: dict[str, Any]) -> None:
-        """向所有活跃连接广播消息。"""
-        if not self._active_connections:
-            return
-
-        payload = json.dumps({
-            "channel": "broadcast",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "data": message,
-        }, ensure_ascii=False)
-
-        disconnected: list[WebSocket] = []
-        for websocket in self._active_connections:
-            try:
-                await websocket.send_text(payload)
-            except Exception as exc:
-                logger.warning(f"推送消息失败: {exc}")
-                disconnected.append(websocket)
-
-        for ws in disconnected:
-            await self.disconnect(ws)
+    def unsubscribe(self, connection_id: str, channel: str) -> bool:
+        """Unsubscribe a connection from a channel."""
+        with self._lock:
+            conn = self._connections.get(connection_id)
+            if conn is None:
+                return False
+            if channel in conn.channels:
+                conn.channels.remove(channel)
+                logger.info("Unsubscribed %s from channel: %s", connection_id, channel)
+            return True
 
     def schedule_push(self, channel: str, message: dict[str, Any]) -> None:
-        """从同步代码调度异步推送（线程安全）。"""
+        """Schedule an async broadcast from sync context."""
         if self._loop is None:
-            logger.warning("事件循环未设置，无法调度推送")
+            logger.warning("Event loop not set, cannot push")
             return
 
-        # 使用 call_soon_threadsafe 在主事件循环中调度推送
         asyncio.run_coroutine_threadsafe(
             self.broadcast_to_channel(channel, message),
-            self._loop
+            self._loop,
         )
 
-    def update_ping_time(self, websocket: WebSocket) -> None:
-        """更新连接的心跳时间。"""
-        self._last_ping_time[websocket] = asyncio.get_event_loop().time()
+    async def broadcast_to_channel(self, channel: str, message: dict[str, Any]) -> None:
+        """Broadcast message to all connections subscribed to a channel."""
+        with self._lock:
+            connections_to_notify = [
+                (conn_id, conn)
+                for conn_id, conn in self._connections.items()
+                if channel in conn.channels
+            ]
 
-    async def check_stale_connections(self, timeout_seconds: float = 60.0) -> None:
-        """检查并断开超过指定时间无心跳的连接。"""
-        current_time = asyncio.get_event_loop().time()
-        stale_connections: list[WebSocket] = []
+        if not connections_to_notify:
+            logger.debug("No connections subscribed to channel: %s", channel)
+            return
 
-        for websocket, last_ping in list(self._last_ping_time.items()):
-            if current_time - last_ping > timeout_seconds:
-                stale_connections.append(websocket)
+        message_json = json.dumps({
+            "channel": channel,
+            "data": message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
 
-        for ws in stale_connections:
-            logger.warning(f"连接超时无心跳，主动断开: {id(ws)}")
+        for conn_id, conn in connections_to_notify:
             try:
-                await ws.close()
-            except Exception:
-                pass
-            await self.disconnect(ws)
+                await conn.websocket.send_text(message_json)
+                logger.debug("Pushed to %s on channel %s", conn_id, channel)
+            except Exception as e:
+                logger.warning("Failed to push to %s: %s", conn_id, e)
 
-    @asynccontextmanager
-    async def managed_connection(self, websocket: WebSocket):
-        """连接生命周期管理上下文。"""
-        await self.connect(websocket)
+    async def send_to_connection(self, connection_id: str, message: dict[str, Any]) -> bool:
+        """Send message to a specific connection."""
+        with self._lock:
+            conn = self._connections.get(connection_id)
+
+        if conn is None:
+            logger.warning("Connection not found: %s", connection_id)
+            return False
+
         try:
-            yield websocket
-        finally:
-            await self.disconnect(websocket)
+            message_json = json.dumps(message)
+            await conn.websocket.send_text(message_json)
+            return True
+        except Exception as e:
+            logger.warning("Failed to send to %s: %s", connection_id, e)
+            return False
+
+    def get_connection_count(self) -> int:
+        """Get total number of connections."""
+        with self._lock:
+            return len(self._connections)
+
+    def get_channel_subscribers(self, channel: str) -> list[str]:
+        """Get list of connection IDs subscribed to a channel."""
+        with self._lock:
+            return [
+                conn_id
+                for conn_id, conn in self._connections.items()
+                if channel in conn.channels
+            ]
 
 
-# 全局单例
+# Global connection manager instance
 connection_manager = ConnectionManager()

@@ -1,0 +1,19 @@
+{
+  "min_entry_score": 0.7,
+  "factor_weights": {
+    "rsi": 2.0,
+    "macd": 0.5,
+    "volume": 0.8,
+    "volatility": 0.6,
+    "trend": 1.2,
+    "momentum": 0.8
+  },
+  "enabled_factors": [
+    "rsi",
+    "macd",
+    "volume",
+    "volatility",
+    "trend",
+    "momentum"
+  ]
+}
