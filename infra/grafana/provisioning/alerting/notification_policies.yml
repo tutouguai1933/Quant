@@ -1,30 +1,9 @@
 apiVersion: 1
 
 policies:
-  - receiver: Feishu Webhook
+  - receiver: feishu_webhook
     group_by:
       - alertname
     group_wait: 30s
     group_interval: 5m
     repeat_interval: 4h
-    routes:
-      - receiver: Feishu Webhook
-        match:
-          alertname: Win Rate Alert
-        group_wait: 10s
-        group_interval: 1m
-        repeat_interval: 1h
-
-      - receiver: Feishu Webhook
-        match:
-          alertname: Max Drawdown Alert
-        group_wait: 10s
-        group_interval: 1m
-        repeat_interval: 30m
-
-      - receiver: Feishu Webhook
-        match:
-          alertname: Container Health Alert
-        group_wait: 10s
-        group_interval: 1m
-        repeat_interval: 30m
