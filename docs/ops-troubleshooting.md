@@ -208,7 +208,38 @@ netstat -tunlp | grep ESTABLISHED
 
 ## 6. 飞书推送问题
 
-### 6.1 飞书疯狂发送告警
+### 6.1 飞书疯狂发送"容器已停止"告警
+
+**现象**：飞书机器人持续发送"容器已停止: quant-api"等告警，但实际容器都在运行
+
+**根本原因**：API容器没有挂载Docker socket，无法连接Docker daemon检查容器状态
+
+**排查命令**：
+```bash
+# 测试health端点，看是否有Docker连接错误
+curl -s http://127.0.0.1:9011/api/v1/health | jq '.data.containers'
+
+# 如果看到 "Cannot connect to the Docker daemon" 说明缺少socket挂载
+```
+
+**解决**：重建API容器添加Docker socket挂载
+```bash
+docker stop quant-api && docker rm quant-api
+docker run -d --name quant-api \
+  --network host --restart unless-stopped \
+  --env-file /home/djy/Quant/infra/deploy/api.env \
+  -v /home/djy/Quant:/home/djy/Quant \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  deploy-api:latest
+```
+
+验证：
+```bash
+curl -s http://127.0.0.1:9011/api/v1/health | jq '.data.summary'
+# 应该显示 exited: 0, healthy: 5
+```
+
+### 6.2 飞书疯狂发送告警（OpenClaw超时）
 
 **现象**：飞书机器人持续发送"容器已停止"告警
 
