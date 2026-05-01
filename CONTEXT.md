@@ -6,13 +6,13 @@
 
 ## 当前进度
 
-**状态**：P11并行开发完成 ✅
+**状态**：运维能力完善中
 
 **最近完成（2026-05-01）**：
-- **P11并行开发（3方向同步实现）**：
-  - **P11-1 Grafana监控栈验证**：Prometheus(9091) + Grafana(3000) + Dashboard已加载
-  - **P11-2 AI策略训练数据收集API**：4个端点 + 34测试通过
-  - **P11-3 回测验证和策略优化API**：4个端点 + 15测试通过
+- **mihomo代理修复**：日本节点(JP1/JP2)成功连接Binance API
+- **Grafana告警规则加载**：5条规则（胜率/回撤/错误率/容器健康/容器宕机）
+- **飞书配置添加**：api.env添加FEISHU配置（Webhook URL待填写）
+- **Freqtrade代理修复**：代理配置从172.21.0.1改为127.0.0.1
 - **P10并行开发（5方向同步实现）**：
   - **P10-1 策略调优接口**：7个API端点、23个测试、参数热更新
   - **P10-2 Grafana监控**：18面板仪表盘、Prometheus配置、数据采集
@@ -257,43 +257,19 @@ docker logs quant-freqtrade | grep "Not enough amount"
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅ → P11 ✅
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅ → P11 ✅ → P12 ✅ → 运维完善 🔶
 ```
 
-核心开发阶段P1-P11全部完成，WebSocket实时推送已集成，系统已具备完整的策略管理、数据分析、飞书联动监控告警、实时状态推送、Grafana可视化监控、多交易所支持、仓位管理、AI策略研究框架、训练数据收集、回测验证能力。
+核心开发阶段P1-P12全部完成，系统已具备完整的策略管理、数据分析、飞书联动监控告警、实时状态推送、Grafana可视化监控、多交易所支持、仓位管理、AI策略研究框架能力。
 
----
+**运维能力达成：90%**
 
-## P11 - 并行开发完成（2026-05-01）
+### 待用户操作
 
-| 方向 | 说明 | 状态 |
-|------|------|------|
-| P11-1 Grafana监控验证 | Prometheus(9091)+Grafana(3000)+Dashboard | ✅ 完成 |
-| P11-2 AI训练数据收集 | 状态向量提取、样本收集、数据导出 | ✅ 34测试 |
-| P11-3 回测验证API | 回测执行、参数验证、优化建议 | ✅ 15测试 |
-
-**新增文件（3个）**：
-- `services/api/app/routes/ai_training.py` - AI训练数据收集路由
-- `services/api/tests/test_ai_training.py` - AI训练测试
-- `services/api/app/routes/backtest_validation.py` - 回测验证路由
-- `services/api/tests/test_backtest_validation.py` - 回测验证测试
-
-**API端点**：
-- POST /api/v1/ai/training/collect - 收集状态样本
-- GET /api/v1/ai/training/samples - 获取样本列表
-- POST /api/v1/ai/training/export - 导出数据集
-- DELETE /api/v1/ai/training/clear - 清空样本
-- POST /api/v1/backtest/run - 执行回测
-- GET /api/v1/backtest/result/{id} - 获取结果
-- POST /api/v1/backtest/validate - 验证参数
-- GET /api/v1/backtest/optimization - 优化建议
-
-**Grafana访问**：
-- URL: http://39.106.11.65:3000
-- 用户: admin / admin123
-- Dashboard: Quant Trading Overview (18面板)
-
-**测试结果**：706 passed（新增49测试）
+| 问题 | 解决方案 |
+|------|----------|
+| Freqtrade API密钥错误 | 在Binance添加代理出口IP `45.95.212.82` 到白名单 |
+| 飞书告警推送 | 配置飞书机器人Webhook URL（参考 docs/feishu-webhook-setup.md）|
 
 ---
 
