@@ -1,0 +1,156 @@
+apiVersion: 1
+
+groups:
+  - name: trading_alerts
+    uid: trading_alerts_group
+    folder: Trading
+    interval: 1m
+    rules:
+      - uid: alert_win_rate
+        title: "Win Rate Alert"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: win_rate
+              refId: A
+              type: query
+              instant: true
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: lastNotNull
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              type: threshold
+              refId: C
+              expression: B
+              conditions:
+                - evaluator:
+                    params:
+                      - 50
+                    type: lt
+                  operator:
+                    type: and
+                  type: query
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Win rate dropped below 50%: {{ $value }}%"
+          summary: "Trading win rate is too low"
+
+      - uid: alert_max_drawdown
+        title: "Max Drawdown Alert"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max_drawdown_pct
+              refId: A
+              type: query
+              instant: true
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: lastNotNull
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              type: threshold
+              refId: C
+              expression: B
+              conditions:
+                - evaluator:
+                    params:
+                      - 10
+                    type: gt
+                  operator:
+                    type: and
+                  type: query
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Max drawdown exceeded 10%: {{ $value }}%"
+          summary: "Strategy drawdown is too high"
+
+  - name: system_alerts
+    uid: system_alerts_group
+    folder: System
+    interval: 30s
+    rules:
+      - uid: alert_container_health
+        title: "Container Health Alert"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: engine_daemon_health_checks_failed_total
+              refId: A
+              type: query
+              instant: true
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: lastNotNull
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              type: threshold
+              refId: C
+              expression: B
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  type: query
+        noDataState: OK
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          description: "Unhealthy containers detected"
+          summary: "Container health check failed"

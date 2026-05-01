@@ -1,0 +1,11 @@
+apiVersion: 1
+
+contactPoints:
+  - name: Feishu Webhook
+    uid: feishu_webhook
+    type: webhook
+    settings:
+      url: http://placeholder.feishu.webhook.example
+      httpMethod: POST
+    disableResolveMessage: false
+    sendResolved: true
