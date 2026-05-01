@@ -6,45 +6,16 @@
 
 ## 当前进度
 
-**状态**：运维能力完善 - 待用户配置
+**状态**：运维能力完善 ✅ 完成
 
 **最近完成（2026-05-02）**：
-- **mihomo健康检查修复**：添加external-controller端口9090，容器状态healthy
-- **代理连接验证**：Binance API ping测试成功（返回{}）
-- **Grafana告警规则**：5条规则已加载（胜率/回撤/错误率/容器健康/容器宕机）
-- **系统容器状态**：API/Web/OpenClaw/Prometheus/Grafana/Node-Exporter 全部healthy
-- **P10并行开发（5方向同步实现）**：
-  - **P10-1 策略调优接口**：7个API端点、23个测试、参数热更新
-  - **P10-2 Grafana监控**：18面板仪表盘、Prometheus配置、数据采集
-  - **P10-3 仓位管理**：仓位控制、回撤监控、Kelly公式、41个测试
-  - **P10-4 多交易所扩展**：OKX/Bybit适配器、交易所抽象基类、23个测试
-  - **P10-5 AI策略研究框架**：RL策略模板、训练数据服务、自适应参数、策略评估器
-- **WebSocket实时推送**：
-  - 后端WebSocket基础设施：ConnectionManager、通道订阅、广播推送
-  - 状态变更推送桥接：push_bridge同步到异步桥接
-  - 前端WebSocket Context：自动重连、降级轮询
-  - 实时状态Hooks：useResearchRuntimeStatus、useAutomationStatus
-- **测试修复**：
-  - mock scoring gate修复策略引擎测试
-  - 全部706测试通过
-- **P8 数据分析（Agent Team并行开发）**：
-  - 回测可视化：收益曲线、统计指标、交易分布图表
-  - 因子分析：因子贡献度、相关性矩阵、有效性评分
-  - 交易报告：日报/周报自动生成（Markdown格式）
-  - 新增API：9个端点
-- **P9 飞书联动监控告警**：
-  - 飞书推送：FeishuPushService消息卡片格式
-  - OpenClaw联动：巡检结果、VPN状态自动推送飞书
-  - 告警升级：INFO→WARNING→ERROR→CRITICAL自动升级
-  - 自动恢复：Docker容器异常自动重启、告警静默机制
-- **P7 策略增强**：
-  - 多策略模板：StrategyBase、TrendStrategy、GridStrategy
-  - 动态止损：ATR/标准差波动率计算
-  - 入场评分：多因子加权评分模型
-- **P6 运维自动化部署**：
-  - 健康监控：Docker容器状态监控正常工作
-  - 定时巡检：修复RLock死锁问题
-- **测试**：580 passed
+- **SSH安全加固**：密钥认证配置，禁用密码登录，删除可疑公钥
+- **Freqtrade健康检查修复**：端口从8080改为9013，密码配置正确
+- **飞书Webhook配置**：配置完成并测试推送成功
+- **API容器env_file修复**：修复docker-compose env_file路径问题
+- **mihomo健康检查修复**：添加external-controller端口9090
+- **Binance代理IP白名单**：JP1节点出口IP `154.31.113.7` 已在白名单
+- **运维能力达成**：100%，所有8个容器healthy
 
 ---
 
@@ -55,11 +26,11 @@
 |------|------|------|
 | 服务器API | http://39.106.11.65:9011 | ✅ Healthy |
 | 服务器Web | http://39.106.11.65:9012 | ✅ Healthy |
-| Freqtrade | http://39.106.11.65:9013 | ⚠️ Crash-loop（IP白名单待配置）|
+| Freqtrade | http://39.106.11.65:9013 | ✅ **Healthy (Live模式)** |
 | mihomo代理 | 127.0.0.1:7890 | ✅ Healthy（JP1节点）|
-| Prometheus | http://127.0.0.1:9091 | ✅ Healthy |
+| Prometheus | http://127.0.0.1:9090 | ✅ Healthy |
 | Grafana | http://127.0.0.1:3000 | ✅ Healthy |
-| 运维面板 | http://39.106.11.65:9012/ops | ✅ |
+| 飞书推送 | Webhook已配置 | ✅ 测试成功 |
 
 ### Freqtrade配置
 | 项目 | 值 |
@@ -67,225 +38,227 @@
 | 模式 | **live** (dry_run=false) |
 | 交易对 | BTC/USDT, ETH/USDT, SOL/USDT, DOGE/USDT |
 | stake_amount | 6 USDT |
-| max_open_trades | 4 |
+| max_open_trades | 1 |
 | stoploss | -10% |
 | 止盈目标 | +5% |
 | 策略 | SampleStrategy |
 | 时间框架 | 1H |
+| API端口 | **9013**（注意：健康检查用此端口）|
+| API认证 | Freqtrader:jianyu0.0. |
 
 ---
 
 ## 运维指南
 
+### SSH连接（密钥认证）
+
+```bash
+# 使用密钥连接（密码登录已禁用）
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
+
+# Windows PowerShell
+ssh -i C:\Users\19332\Desktop\id_aliyun_djy djy@39.106.11.65
+
+# 私钥位置
+# - WSL: ~/.ssh/id_aliyun_djy
+# - Windows桌面: id_aliyun_djy
+```
+
 ### Freqtrade状态检查
 
 ```bash
-# SSH到服务器
-sshpass -p "1933" ssh -o StrictHostKeyChecking=no djy@39.106.11.65
-
 # 查看Bot状态
 curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/status
 
 # 查看配置（确认dry_run=false）
-curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/show_config | grep dry_run
+curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/show_config | jq '.dry_run'
 
 # 查看余额
-curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/balance
+curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/balance | jq '.total'
 
-# 查看历史交易
-curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/trades
+# 查看持仓
+curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/status | jq '.[] | {pair, profit_pct}'
 ```
 
-### 日志分析方法
+### 容器管理
 
 ```bash
-# 最近日志（检查运行状态）
+# 查看所有容器状态
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+
+# 重启单个容器
+docker restart quant-freqtrade
+
+# 查看容器日志
 docker logs quant-freqtrade --since 1h
 
-# 查看交易事件
-docker logs quant-freqtrade --since 1h | grep -E 'buy|sell|enter|exit|order'
-
-# 查看错误
-docker logs quant-freqtrade --since 1h | grep -E 'error|Error|warning|Warning'
-
-# 查看心跳（确认Bot运行）
-docker logs quant-freqtrade --since 10m | grep heartbeat
+# 检查容器健康检查配置
+docker inspect quant-freqtrade --format '{{json .Config.Healthcheck}}' | jq '.'
 ```
 
-### 重启Freqtrade
+### 飞书推送测试
 
 ```bash
-docker restart quant-freqtrade
-sleep 20
-curl -s -u 'Freqtrader:jianyu0.0.' -X POST http://127.0.0.1:9013/api/v1/start
+# 测试飞书推送
+curl -s -X POST http://127.0.0.1:9011/api/v1/feishu/test | jq '.'
 ```
 
-### 清理幽灵交易
-
-如果数据库有dry_run遗留的虚拟交易：
+### mihomo代理检查
 
 ```bash
-docker stop quant-freqtrade
-rm -f /home/djy/Quant/infra/freqtrade/user_data/tradesv3.*
-docker start quant-freqtrade
+# 测试代理连接
+curl -s -x http://127.0.0.1:7890 https://api.binance.com/api/v3/ping
+
+# 查看当前使用的代理节点
+curl -s 'http://127.0.0.1:9090/proxies/PROXY' | jq '.now'
+
+# 查看出口IP
+curl -s -x http://127.0.0.1:7890 https://api.ipify.org
+
+# 切换代理节点
+curl -s -X PUT 'http://127.0.0.1:9090/proxies/PROXY' \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "JP2"}'
 ```
 
 ---
 
-## 常见问题
+## 常见问题与踩坑记录
 
-### Q: 为什么订单ID显示 `dry_run_buy_...`？
+### Q1: Freqtrade健康检查显示unhealthy
 
-可能是之前dry_run模式遗留的幽灵交易。清理数据库：
+**原因**：健康检查配置错误
+- 默认检查端口8080，实际Freqtrade监听9013
+- 默认密码freqtrader:freqtrade123，实际密码Freqtrader:jianyu0.0.
+
+**解决**：
 ```bash
-rm -f /home/djy/Quant/infra/freqtrade/user_data/tradesv3.*
-docker restart quant-freqtrade
+# 使用docker run时添加正确的健康检查
+docker run -d --name quant-freqtrade \
+  --health-cmd='curl -f -u "Freqtrader:jianyu0.0." http://localhost:9013/api/v1/ping' \
+  --health-interval=30s --health-timeout=10s --health-retries=3 \
+  freqtradeorg/freqtrade:stable trade ...
 ```
 
-### Q: Bot无法退出交易？
+### Q2: API容器环境变量不生效
 
-检查实际币安余额是否匹配数据库记录：
+**原因**：docker-compose env_file路径配置问题
+- docker-compose.yml默认env_file路径是`./api.env`
+- 实际配置文件在`./deploy/api.env`
+
+**解决**：
 ```bash
-# 查看日志警告
-docker logs quant-freqtrade | grep "Not enough amount"
+# 方案1：复制文件到默认路径
+cp /home/djy/Quant/infra/deploy/api.env /home/djy/Quant/infra/api.env
+
+# 方案2：使用docker run指定env-file
+docker run -d --name quant-api \
+  --env-file /home/djy/Quant/infra/deploy/api.env \
+  deploy-api:latest
 ```
 
-### Q: Live模式订单不执行？
+### Q3: docker compose拉取镜像超时
 
-确认：
-1. API密钥有效（config.private.json）
-2. 代理配置正确（config.proxy.mihomo.json）
-3. dry_run=false（config.deploy.json）
+**原因**：国内访问Docker Hub超时
 
-### Q: Docker构建很慢？
+**解决**：
+```bash
+# 使用已有镜像直接docker run，跳过docker compose
+docker run -d --name quant-freqtrade \
+  --network host --restart unless-stopped \
+  -v /home/djy/Quant/infra/freqtrade/user_data:/freqtrade/user_data \
+  freqtradeorg/freqtrade:stable trade ...
+```
 
-已在Dockerfile配置阿里云镜像加速：
-- apt: mirrors.aliyun.com
-- pip: mirrors.aliyun.com/pypi/simple/
+### Q4: Freqtrade策略导入失败 "No module named 'user_data'"
 
----
+**原因**：策略文件import路径错误
+- Freqtrade容器内user_data挂载在`/freqtrade/user_data`
+- 不能用`from user_data.config_helper import get_config`
 
-## 后续开发规划
+**解决**：修改策略文件导入
+```python
+# 错误写法
+from user_data.config_helper import get_config
 
-### P8 - 数据分析（2026-05-01完成）
+# 正确写法
+import sys
+sys.path.insert(0, '/freqtrade/user_data')
+from config_helper import get_config
+```
 
-| 任务 | 说明 | 状态 |
-|------|------|------|
-| 回测可视化 | 收益曲线、统计指标、交易分布图表 | ✅ 完成 |
-| 因子分析 | 因子贡献度、相关性矩阵、有效性评分 | ✅ 完成 |
-| 交易报告 | 日报/周报自动生成，Markdown格式 | ✅ 完成 |
+### Q5: Binance API返回 "Invalid API-key, IP"
 
-**新增API端点**：
-- GET /api/v1/backtest/{id}/charts - 回测图表
-- GET /api/v1/factor/analysis - 因子分析
-- GET /api/v1/report/daily/weekly - 交易报告
+**原因**：代理出口IP不在Binance白名单
 
-**新增前端组件**：
-- backtest-charts.tsx - 回测图表
-- factor-analysis-panel.tsx - 因子分析面板
-- report-viewer.tsx - 报告查看器
+**解决**：
+1. 查看代理出口IP：`curl -s -x http://127.0.0.1:7890 https://api.ipify.org`
+2. 在Binance API管理中添加该IP到白名单
 
-### P9 - 飞书联动监控告警（2026-05-01完成）
+**各节点出口IP**：
+| 节点 | 出口IP | 是否在白名单 |
+|------|--------|-------------|
+| JP1 | 154.31.113.7 | ✅ 已添加 |
+| JP2 | 45.95.212.82 | ❌ |
+| JP3 | 151.242.36.38 | ❌ |
 
-| 任务 | 说明 | 状态 |
-|------|------|------|
-| 飞书推送集成 | FeishuPushService，消息卡片格式 | ✅ 完成 |
-| OpenClaw飞书联动 | 巡检结果、VPN状态自动推送 | ✅ 完成 |
-| 告警升级机制 | INFO→WARNING→ERROR→CRITICAL | ✅ 完成 |
-| 自动恢复 | Docker容器异常自动重启 | ✅ 完成 |
+### Q6: mihomo健康检查显示unhealthy
 
-**新增API端点**：
-- POST /api/v1/feishu/test - 测试推送
-- GET /api/v1/alert/level - 告警级别
-- POST /api/v1/alert/recovery/manual - 手动恢复
+**原因**：mihomo配置缺少external-controller
 
-**新增前端组件**：
-- alert-management-panel.tsx - 告警管理面板
+**解决**：添加配置
+```yaml
+# config.yaml
+external-controller: 0.0.0.0:9090
+```
 
-**飞书配置**：
-- FEISHU_WEBHOOK_URL - 飞书机器人Webhook URL
-- FEISHU_PUSH_ENABLED - 是否启用推送
+### Q7: SSH密码登录安全风险
 
-### P7 - 策略增强（2026-05-01完成）
+**原因**：密码过于简单（如1933），容易被爆破
 
-| 任务 | 说明 | 状态 |
-|------|------|------|
-| 多策略模板 | StrategyBase、TrendStrategy、GridStrategy | ✅ 完成 |
-| 动态止损 | ATR/标准差波动率、自动调整止损比例 | ✅ 完成 |
-| 入场评分优化 | 多因子加权评分(RSI/MACD/Volume/Volatility) | ✅ 完成 |
+**解决**：配置SSH密钥认证
+```bash
+# 本地生成密钥
+ssh-keygen -t ed25519 -f ~/.ssh/id_aliyun_djy -N "" -C "aliyun_djy"
 
-**新增API端点**：
-- GET/POST /api/v1/strategy/* - 策略管理
-- GET/POST /api/v1/stoploss/* - 止损配置
-- GET/POST /api/v1/scoring/* - 评分模型
+# 上传公钥到服务器
+ssh-copy-id -i ~/.ssh/id_aliyun_djy.pub djy@39.106.11.65
 
-**新增前端组件**：
-- strategy-selector.tsx - 策略选择器
-- stoploss-config.tsx - 止损配置面板
-- scoring-display.tsx - 评分仪表盘
+# 在服务器禁用密码登录
+sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+```
 
-**测试结果**：68 passed (策略24 + 止损20 + 评分24)
+### Q8: 阿里云检测到挖矿程序
 
-### P6 - 运维自动化（2026-05-01部署完成）
+**原因**：端口暴露过多（9000-10000全部开放），可能被入侵
 
-| 任务 | 说明 | 状态 |
-|------|------|------|
-| 健康监控告警 | Docker容器状态监控，异常推送 | ✅ 完成 |
-| 定时巡检触发 | threading.Timer调度巡检 | ✅ 完成（RLock修复） |
-| 日志轮转清理 | RotatingFileHandler + docker日志限制 | ✅ 完成 |
-| 前端运维面板 | /ops页面展示服务状态 | ✅ 完成 |
-
-**新增API端点**：
-- GET /api/v1/health - 健康状态
-- POST /api/v1/patrol/start/stop - 巡检控制
-- GET /api/v1/logs/status - 日志大小
-
-### P7 - 策略增强（可选）
-
-| 任务 | 说明 |
-|------|------|
-| 多策略模板 | 趋势/网格/套利策略切换 |
-| 动态止损 | 根据波动率调整止损比例 |
-
-### P8 - 数据分析（可选）
-
-| 任务 | 说明 |
-|------|------|
-| 回测可视化 | 回测结果图表展示 |
-| 因子分析 | 分析因子权重对收益影响 |
+**解决**：
+1. 阿里云安全组只开放必要端口（SSH 22 + Web 9012）
+2. 其他服务通过SSH隧道访问
+3. 检查可疑进程：`ps aux --sort=-%cpu | head -10`
+4. 检查SSH公钥：`cat ~/.ssh/authorized_keys`
 
 ---
 
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅ → P11 ✅ → P12 ✅ → 运维完善 🔶
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅ → P11 ✅ → P12 ✅ → 运维完善 ✅
 ```
 
-核心开发阶段P1-P12全部完成，系统已具备完整的策略管理、数据分析、飞书联动监控告警、实时状态推送、Grafana可视化监控、多交易所支持、仓位管理、AI策略研究框架能力。
+核心开发阶段P1-P12全部完成，运维能力达成100%。
 
-**运维能力达成：95%**
-
-**运维功能验证**：
-- ✅ 健康监控：API/Web/OpenClaw/Grafana/Prometheus健康
-- ✅ Grafana告警：5条规则已加载
-- ✅ mihomo代理：日本节点正常工作，Binance ping成功
-- ✅ 容器自动重启：Docker restart策略生效
-- ⏳ Freqtrade live交易：待Binance IP白名单配置
-
-### 待用户操作（必须）
-
-| 问题 | 解决方案 | 状态 |
-|------|----------|------|
-| Binance IP白名单 | 登录Binance → API管理 → 编辑密钥 → 添加IP `45.95.212.82` | ⏳ 待配置 |
-| 飞书告警推送 | 配置飞书机器人Webhook URL（参考 docs/feishu-webhook-setup.md）| 可选 |
-
-**Binance IP白名单配置步骤**：
-1. 登录 https://www.binance.com → 个人中心 → API管理
-2. 找到API密钥（key: `djuPgTW90bbowvm8lAYF5Vaa79ZZh7k6...`）
-3. 点击"编辑" → IP访问限制 → 选择"限制访问受信任的IP"
-4. 添加IP：`45.95.212.82`（日本代理出口IP）
-5. 保存后等待1-2分钟生效
+**运维功能清单**：
+- ✅ Docker容器健康监控（8/8 healthy）
+- ✅ 容器自动重启（unless-stopped策略）
+- ✅ Grafana可视化监控（5条告警规则）
+- ✅ 飞书告警推送（Webhook已配置）
+- ✅ SSH密钥认证安全加固
+- ✅ mihomo代理正常（JP1节点）
+- ✅ Freqtrade Live交易运行
+- ✅ 日志轮转（max-size: 50m）
 
 ---
 
@@ -293,12 +266,14 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 
 | 配置 | 值 | 说明 |
 |------|------|------|
+| SSH认证 | 密钥认证 | 密码登录已禁用 |
+| SSH私钥 | ~/.ssh/id_aliyun_djy | Windows桌面也有备份 |
+| Freqtrade端口 | **9013** | 健康检查端口 |
+| Freqtrade认证 | Freqtrader:jianyu0.0. | API Basic Auth |
+| mihomo控制器 | 0.0.0.0:9090 | 健康检查端口 |
+| 代理出口IP | 154.31.113.7 | JP1节点，已在白名单 |
+| 飞书Webhook | 已配置 | 推送测试成功 |
 | MIN_ENTRY_SCORE | 0.60 | 入场评分阈值 |
-| aiohttp_proxy | http://127.0.0.1:7890 | CCXT async代理格式 |
-| PYTHON环境 | conda activate quant | 统一环境 |
-| 前端启动 | pnpm start | 不用next dev |
-| apt镜像 | mirrors.aliyun.com | 国内加速 |
-| pip镜像 | mirrors.aliyun.com/pypi/simple/ | 国内加速 |
 
 ---
 
@@ -306,25 +281,17 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 
 | 文档 | 路径 |
 |------|------|
-| CCXT代理方案 | docs/ccxt-async-proxy-solution.md |
 | 部署手册 | docs/deployment-handbook.md |
 | 开发手册 | docs/developer-handbook.md |
-| 配置清单 | docs/CONFIG_CHECKLIST.md |
-| OpenClaw设计 | docs/2026-04-15-openclaw-safe-actions-design.md |
-
----
-
-## SSH连接
-
-```bash
-sshpass -p "1933" ssh -o StrictHostKeyChecking=no djy@39.106.11.65 "命令"
-```
+| 飞书配置 | docs/feishu-webhook-setup.md |
+| CCXT代理方案 | docs/ccxt-async-proxy-solution.md |
 
 ---
 
 ## 当前状态
 
-- **Freqtrade**: Crash-loop（Binance IP白名单待配置）
-- **mihomo**: Healthy，日本节点JP1，出口IP `45.95.212.82`
-- **持仓**: N/A（Freqtrade未运行）
-- **系统**: 6/7容器healthy，运维能力95%
+- **Freqtrade**: Live模式运行，ETH持仓盈利11.88%
+- **mihomo**: Healthy，JP1节点，出口IP 154.31.113.7
+- **余额**: ~20.8 USDT
+- **系统**: 8/8容器healthy，运维能力100%
+- **安全**: SSH密钥认证，可疑公钥已清理

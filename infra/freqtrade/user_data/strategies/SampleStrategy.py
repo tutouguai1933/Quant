@@ -30,7 +30,11 @@ except ImportError:
     requests = None  # pragma: no cover - fallback when requests not installed
 
 from freqtrade.strategy import IStrategy, merge_informative_pair
-from user_data.config_helper import get_config
+
+# Fix import path for Docker container - user_data is mounted at /freqtrade/user_data
+import sys
+sys.path.insert(0, '/freqtrade/user_data')
+from config_helper import get_config
 
 logger = getLogger(__name__)
 
