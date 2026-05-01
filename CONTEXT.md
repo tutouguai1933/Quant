@@ -15,6 +15,10 @@
 - **API容器env_file修复**：修复docker-compose env_file路径问题
 - **mihomo健康检查修复**：添加external-controller端口9090
 - **Binance代理IP白名单**：JP1节点出口IP `154.31.113.7` 已在白名单
+- **飞书告警问题修复**：
+  - API容器缺少Docker socket导致误报容器停止
+  - OpenClaw超时从30秒增加到60秒
+  - API延迟阈值从500ms提高到60秒
 - **运维能力达成**：100%，所有8个容器healthy
 
 ---
@@ -240,6 +244,51 @@ sudo systemctl restart ssh
 3. 检查可疑进程：`ps aux --sort=-%cpu | head -10`
 4. 检查SSH公钥：`cat ~/.ssh/authorized_keys`
 
+### Q9: 飞书疯狂发送"容器已停止"告警
+
+**现象**：飞书机器人持续发送"容器已停止"告警，但实际容器都在运行
+
+**原因**：API容器没有挂载Docker socket，无法连接Docker daemon检查容器状态
+
+**排查**：
+```bash
+curl -s http://127.0.0.1:9011/api/v1/health | jq '.data.containers'
+# 如果看到 "Cannot connect to the Docker daemon" 说明缺少socket挂载
+```
+
+**解决**：重建API容器添加Docker socket挂载
+```bash
+docker run -d --name quant-api \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --env-file /home/djy/Quant/infra/deploy/api.env \
+  deploy-api:latest
+```
+
+### Q10: 飞书发送"API响应超时"告警
+
+**现象**：飞书持续发送"patrol端点响应时间超过阈值500ms"
+
+**原因**：patrol端点检查VPN节点健康需要约32秒，默认阈值500ms太低
+
+**解决**：通过环境变量提高阈值
+```bash
+# 在api.env中添加
+QUANT_API_LATENCY_THRESHOLD_MS=60000   # 60秒
+QUANT_TRADE_LATENCY_THRESHOLD_MS=5000  # 5秒
+```
+
+### Q11: OpenClaw巡检超时
+
+**现象**：OpenClaw日志显示"Patrol timeout after 30s"
+
+**原因**：VPN健康检查导致patrol响应时间长（约32秒），默认超时30秒太短
+
+**解决**：修改openclaw_scheduler.py超时配置
+```python
+# 从30秒改为60秒
+response = requests.post(url, timeout=60)
+```
+
 ---
 
 ## 开发阶段里程碑
@@ -274,6 +323,9 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 | 代理出口IP | 154.31.113.7 | JP1节点，已在白名单 |
 | 飞书Webhook | 已配置 | 推送测试成功 |
 | MIN_ENTRY_SCORE | 0.60 | 入场评分阈值 |
+| API延迟阈值 | **60000ms** | patrol端点不触发告警 |
+| OpenClaw超时 | **60秒** | 从30秒增加 |
+| Docker socket | **必须挂载** | API容器检查容器状态 |
 
 ---
 
