@@ -239,7 +239,33 @@ curl -s http://127.0.0.1:9011/api/v1/health | jq '.data.summary'
 # 应该显示 exited: 0, healthy: 5
 ```
 
-### 6.2 飞书疯狂发送告警（OpenClaw超时）
+### 6.3 API响应超时告警（patrol端点）
+
+**现象**：飞书持续发送"API端点 /api/v1/openclaw/patrol 响应时间超过阈值500ms"
+
+**原因**：
+- patrol端点检查VPN节点健康需要约32秒
+- 默认API延迟阈值是500ms，远低于patrol实际响应时间
+
+**解决**：通过环境变量提高阈值
+```bash
+# 在api.env中添加
+QUANT_API_LATENCY_THRESHOLD_MS=60000   # 60秒，patrol不会触发
+QUANT_TRADE_LATENCY_THRESHOLD_MS=5000  # 5秒，交易端点阈值
+
+# 重启API容器
+docker restart quant-api
+```
+
+**验证配置生效**：
+```bash
+docker exec quant-api env | grep LATENCY
+# QUANT_API_LATENCY_THRESHOLD_MS=60000
+```
+
+---
+
+## 7. 飞书推送显示"Webhook URL未配置"
 
 **现象**：飞书机器人持续发送"容器已停止"告警
 
