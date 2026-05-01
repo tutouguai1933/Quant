@@ -6,9 +6,13 @@
 
 ## 当前进度
 
-**状态**：P10并行开发完成 ✅
+**状态**：P11并行开发完成 ✅
 
 **最近完成（2026-05-01）**：
+- **P11并行开发（3方向同步实现）**：
+  - **P11-1 Grafana监控栈验证**：Prometheus(9091) + Grafana(3000) + Dashboard已加载
+  - **P11-2 AI策略训练数据收集API**：4个端点 + 34测试通过
+  - **P11-3 回测验证和策略优化API**：4个端点 + 15测试通过
 - **P10并行开发（5方向同步实现）**：
   - **P10-1 策略调优接口**：7个API端点、23个测试、参数热更新
   - **P10-2 Grafana监控**：18面板仪表盘、Prometheus配置、数据采集
@@ -22,7 +26,7 @@
   - 实时状态Hooks：useResearchRuntimeStatus、useAutomationStatus
 - **测试修复**：
   - mock scoring gate修复策略引擎测试
-  - 全部657测试通过
+  - 全部706测试通过
 - **P8 数据分析（Agent Team并行开发）**：
   - 回测可视化：收益曲线、统计指标、交易分布图表
   - 因子分析：因子贡献度、相关性矩阵、有效性评分
@@ -253,36 +257,43 @@ docker logs quant-freqtrade | grep "Not enough amount"
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅ → P11 ✅
 ```
 
-核心开发阶段P1-P10全部完成，WebSocket实时推送已集成，系统已具备完整的策略管理、数据分析、飞书联动监控告警、实时状态推送、Grafana可视化监控、多交易所支持、仓位管理、AI策略研究框架能力。
+核心开发阶段P1-P11全部完成，WebSocket实时推送已集成，系统已具备完整的策略管理、数据分析、飞书联动监控告警、实时状态推送、Grafana可视化监控、多交易所支持、仓位管理、AI策略研究框架、训练数据收集、回测验证能力。
 
 ---
 
-## P10 - 并行开发完成（2026-05-01）
+## P11 - 并行开发完成（2026-05-01）
 
 | 方向 | 说明 | 状态 |
 |------|------|------|
-| P10-1 策略调优 | 策略参数热更新、调优配置持久化 | ✅ 23测试 |
-| P10-2 Grafana监控 | Prometheus指标采集、18面板仪表盘 | ✅ 完成 |
-| P10-3 仓位管理 | Kelly公式仓位计算、回撤监控 | ✅ 41测试 |
-| P10-4 多交易所 | OKX/Bybit适配器、交易所抽象基类 | ✅ 23测试 |
-| P10-5 AI策略框架 | RL策略模板、训练数据服务、策略评估 | ✅ 完成 |
+| P11-1 Grafana监控验证 | Prometheus(9091)+Grafana(3000)+Dashboard | ✅ 完成 |
+| P11-2 AI训练数据收集 | 状态向量提取、样本收集、数据导出 | ✅ 34测试 |
+| P11-3 回测验证API | 回测执行、参数验证、优化建议 | ✅ 15测试 |
 
-**新增文件（29个）**：
-- `services/data/config/strategy_tuning.json` - 调优配置
-- `services/api/app/routes/strategy_tuning.py` - 7个API端点
-- `infra/grafana/dashboards/quant-overview.json` - 18面板仪表盘
-- `infra/prometheus/prometheus.yml` - Prometheus配置
-- `services/api/app/services/position_management_service.py` - 仓位管理
-- `services/api/app/services/exchange/base.py` - 交易所基类
-- `services/api/app/services/exchange/okx.py` - OKX适配器
-- `services/api/app/services/exchange/bybit.py` - Bybit适配器
-- `docs/ai-strategy-design.md` - AI策略设计文档
-- `services/api/app/services/ai/*.py` - AI策略服务模块
+**新增文件（3个）**：
+- `services/api/app/routes/ai_training.py` - AI训练数据收集路由
+- `services/api/tests/test_ai_training.py` - AI训练测试
+- `services/api/app/routes/backtest_validation.py` - 回测验证路由
+- `services/api/tests/test_backtest_validation.py` - 回测验证测试
 
-**测试结果**：657 passed（新增87测试）
+**API端点**：
+- POST /api/v1/ai/training/collect - 收集状态样本
+- GET /api/v1/ai/training/samples - 获取样本列表
+- POST /api/v1/ai/training/export - 导出数据集
+- DELETE /api/v1/ai/training/clear - 清空样本
+- POST /api/v1/backtest/run - 执行回测
+- GET /api/v1/backtest/result/{id} - 获取结果
+- POST /api/v1/backtest/validate - 验证参数
+- GET /api/v1/backtest/optimization - 优化建议
+
+**Grafana访问**：
+- URL: http://39.106.11.65:3000
+- 用户: admin / admin123
+- Dashboard: Quant Trading Overview (18面板)
+
+**测试结果**：706 passed（新增49测试）
 
 ---
 
