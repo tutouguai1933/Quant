@@ -1,18 +1,18 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-05-01
+> 最后更新：2026-05-02
 
 ---
 
 ## 当前进度
 
-**状态**：运维能力完善中
+**状态**：运维能力完善 - 待用户配置
 
-**最近完成（2026-05-01）**：
-- **mihomo代理修复**：日本节点(JP1/JP2)成功连接Binance API
-- **Grafana告警规则加载**：5条规则（胜率/回撤/错误率/容器健康/容器宕机）
-- **飞书配置添加**：api.env添加FEISHU配置（Webhook URL待填写）
-- **Freqtrade代理修复**：代理配置从172.21.0.1改为127.0.0.1
+**最近完成（2026-05-02）**：
+- **mihomo健康检查修复**：添加external-controller端口9090，容器状态healthy
+- **代理连接验证**：Binance API ping测试成功（返回{}）
+- **Grafana告警规则**：5条规则已加载（胜率/回撤/错误率/容器健康/容器宕机）
+- **系统容器状态**：API/Web/OpenClaw/Prometheus/Grafana/Node-Exporter 全部healthy
 - **P10并行开发（5方向同步实现）**：
   - **P10-1 策略调优接口**：7个API端点、23个测试、参数热更新
   - **P10-2 Grafana监控**：18面板仪表盘、Prometheus配置、数据采集
@@ -53,10 +53,12 @@
 ### 服务状态
 | 服务 | 地址 | 状态 |
 |------|------|------|
-| 服务器API | http://39.106.11.65:9011 | ✅ |
-| 服务器Web | http://39.106.11.65:9012 | ✅ |
-| Freqtrade | http://39.106.11.65:9013 | ✅ **Live模式** |
-| mihomo代理 | 127.0.0.1:7890 | ✅ 日本节点 |
+| 服务器API | http://39.106.11.65:9011 | ✅ Healthy |
+| 服务器Web | http://39.106.11.65:9012 | ✅ Healthy |
+| Freqtrade | http://39.106.11.65:9013 | ⚠️ Crash-loop（IP白名单待配置）|
+| mihomo代理 | 127.0.0.1:7890 | ✅ Healthy（JP1节点）|
+| Prometheus | http://127.0.0.1:9091 | ✅ Healthy |
+| Grafana | http://127.0.0.1:3000 | ✅ Healthy |
 | 运维面板 | http://39.106.11.65:9012/ops | ✅ |
 
 ### Freqtrade配置
@@ -262,14 +264,28 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 
 核心开发阶段P1-P12全部完成，系统已具备完整的策略管理、数据分析、飞书联动监控告警、实时状态推送、Grafana可视化监控、多交易所支持、仓位管理、AI策略研究框架能力。
 
-**运维能力达成：90%**
+**运维能力达成：95%**
 
-### 待用户操作
+**运维功能验证**：
+- ✅ 健康监控：API/Web/OpenClaw/Grafana/Prometheus健康
+- ✅ Grafana告警：5条规则已加载
+- ✅ mihomo代理：日本节点正常工作，Binance ping成功
+- ✅ 容器自动重启：Docker restart策略生效
+- ⏳ Freqtrade live交易：待Binance IP白名单配置
 
-| 问题 | 解决方案 |
-|------|----------|
-| Freqtrade API密钥错误 | 在Binance添加代理出口IP `45.95.212.82` 到白名单 |
-| 飞书告警推送 | 配置飞书机器人Webhook URL（参考 docs/feishu-webhook-setup.md）|
+### 待用户操作（必须）
+
+| 问题 | 解决方案 | 状态 |
+|------|----------|------|
+| Binance IP白名单 | 登录Binance → API管理 → 编辑密钥 → 添加IP `45.95.212.82` | ⏳ 待配置 |
+| 飞书告警推送 | 配置飞书机器人Webhook URL（参考 docs/feishu-webhook-setup.md）| 可选 |
+
+**Binance IP白名单配置步骤**：
+1. 登录 https://www.binance.com → 个人中心 → API管理
+2. 找到API密钥（key: `djuPgTW90bbowvm8lAYF5Vaa79ZZh7k6...`）
+3. 点击"编辑" → IP访问限制 → 选择"限制访问受信任的IP"
+4. 添加IP：`45.95.212.82`（日本代理出口IP）
+5. 保存后等待1-2分钟生效
 
 ---
 
@@ -308,8 +324,7 @@ sshpass -p "1933" ssh -o StrictHostKeyChecking=no djy@39.106.11.65 "命令"
 
 ## 当前状态
 
-- **Freqtrade**: Live模式运行，等待入场信号
-- **持仓**: 0/4（空仓）
-- **可用资金**: ~14 USDT
-- **系统**: 稳定运行
-- **挖矿木马**: 已清理
+- **Freqtrade**: Crash-loop（Binance IP白名单待配置）
+- **mihomo**: Healthy，日本节点JP1，出口IP `45.95.212.82`
+- **持仓**: N/A（Freqtrade未运行）
+- **系统**: 6/7容器healthy，运维能力95%
