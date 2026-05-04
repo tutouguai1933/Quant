@@ -5,13 +5,24 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 
-import { getMarketChart, type MarketChartData, type ResearchCandidateItem } from "../lib/api";
+import {
+  getMarketChart,
+  getRsiHistory,
+  getTradeHistory,
+  type MarketChartData,
+  type ResearchCandidateItem,
+  type RsiHistoryData,
+  type TradeHistoryData,
+} from "../lib/api";
+import { DataTable } from "./data-table";
 import { MultiTimeframeSummary } from "./multi-timeframe-summary";
 import { ResearchSidecard } from "./research-sidecard";
 import { StatusBadge } from "./status-badge";
 import { TradingChartPanel } from "./trading-chart-panel";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Skeleton } from "./ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 
 
 type MarketSymbolWorkspaceProps = {
@@ -27,12 +38,55 @@ export function MarketSymbolWorkspace({ symbol, initialData, candidate }: Market
   const [chartData, setChartData] = useState(initialData);
   const [pendingInterval, setPendingInterval] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [activeTab, setActiveTab] = useState("chart");
+  const [rsiHistory, setRsiHistory] = useState<RsiHistoryData | null>(null);
+  const [rsiLoading, setRsiLoading] = useState(false);
+  const [rsiError, setRsiError] = useState<string | null>(null);
+  const [tradeHistory, setTradeHistory] = useState<TradeHistoryData | null>(null);
+  const [tradeLoading, setTradeLoading] = useState(false);
+  const [tradeError, setTradeError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
     setChartData(initialData);
     chartCache.set(`${symbol}:${initialData.active_interval}`, initialData);
   }, [initialData, symbol]);
+
+  // Fetch RSI history when tab is activated
+  useEffect(() => {
+    if (activeTab !== "rsi" || rsiHistory !== null || rsiLoading) return;
+
+    setRsiLoading(true);
+    setRsiError(null);
+    getRsiHistory(symbol, chartData.active_interval)
+      .then((response) => {
+        if (response.error) {
+          setRsiError(response.error.message || "获取RSI历史失败");
+        } else {
+          setRsiHistory(response.data);
+        }
+      })
+      .catch(() => setRsiError("获取RSI历史失败，请稍后重试"))
+      .finally(() => setRsiLoading(false));
+  }, [activeTab, symbol, chartData.active_interval, rsiHistory, rsiLoading]);
+
+  // Fetch trade history when tab is activated
+  useEffect(() => {
+    if (activeTab !== "trades" || tradeHistory !== null || tradeLoading) return;
+
+    setTradeLoading(true);
+    setTradeError(null);
+    getTradeHistory(symbol, 50)
+      .then((response) => {
+        if (response.error) {
+          setTradeError(response.error.message || "获取交易历史失败");
+        } else {
+          setTradeHistory(response.data);
+        }
+      })
+      .catch(() => setTradeError("获取交易历史失败，请稍后重试"))
+      .finally(() => setTradeLoading(false));
+  }, [activeTab, symbol, tradeHistory, tradeLoading]);
 
   function handleIntervalSelect(nextInterval: string) {
     if (nextInterval === chartData.active_interval) {
@@ -78,51 +132,77 @@ export function MarketSymbolWorkspace({ symbol, initialData, candidate }: Market
         if (requestIdRef.current === requestId) {
           setPendingInterval("");
         }
-      }
-      );
+      });
   }
 
   const freqtradeReadiness = chartData.freqtrade_readiness;
 
   return (
-    <section className="space-y-5">
-      <TradingChartPanel
-        symbol={symbol}
-        interval={chartData.active_interval}
-        supportedIntervals={chartData.supported_intervals}
-        onSelectInterval={handleIntervalSelect}
-        pendingInterval={pendingInterval}
-        items={chartData.items}
-        overlays={chartData.overlays}
-        markers={chartData.markers}
-      />
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
+      <TabsList>
+        <TabsTrigger value="chart">图表</TabsTrigger>
+        <TabsTrigger value="rsi">RSI历史</TabsTrigger>
+        <TabsTrigger value="trades">交易历史</TabsTrigger>
+      </TabsList>
 
-      {errorMessage ? (
-        <section className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5">
-          <p className="eyebrow">切换反馈</p>
-          <h3 className="text-lg font-semibold">图表没有切过去</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
+      <TabsContent value="chart" className="space-y-5">
+        <TradingChartPanel
+          symbol={symbol}
+          interval={chartData.active_interval}
+          supportedIntervals={chartData.supported_intervals}
+          onSelectInterval={handleIntervalSelect}
+          pendingInterval={pendingInterval}
+          items={chartData.items}
+          overlays={chartData.overlays}
+          markers={chartData.markers}
+        />
+
+        {errorMessage ? (
+          <section className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5">
+            <p className="eyebrow">切换反馈</p>
+            <h3 className="text-lg font-semibold">图表没有切过去</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
+          </section>
+        ) : null}
+
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_340px] lg:items-start">
+          <div className="space-y-5">
+            <MultiTimeframeSummary items={chartData.multi_timeframe_summary} />
+          </div>
+
+          <div className="grid gap-4 lg:sticky lg:top-6">
+            <ResearchSidecard cockpit={chartData.research_cockpit} nextStep={chartData.strategy_context.next_step} />
+            <CompactDecisionCard
+              symbol={symbol}
+              candidate={candidate}
+              entryHint={chartData.research_cockpit.entry_hint}
+              stopHint={chartData.research_cockpit.stop_hint}
+              nextStep={chartData.strategy_context.next_step}
+              freqtradeReadiness={freqtradeReadiness}
+            />
+          </div>
         </section>
-      ) : null}
+      </TabsContent>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_340px] lg:items-start">
-        <div className="space-y-5">
-          <MultiTimeframeSummary items={chartData.multi_timeframe_summary} />
-        </div>
+      <TabsContent value="rsi">
+        <RsiHistoryTabContent
+          data={rsiHistory}
+          loading={rsiLoading}
+          error={rsiError}
+          symbol={symbol}
+          interval={chartData.active_interval}
+        />
+      </TabsContent>
 
-        <div className="grid gap-4 lg:sticky lg:top-6">
-          <ResearchSidecard cockpit={chartData.research_cockpit} nextStep={chartData.strategy_context.next_step} />
-          <CompactDecisionCard
-            symbol={symbol}
-            candidate={candidate}
-            entryHint={chartData.research_cockpit.entry_hint}
-            stopHint={chartData.research_cockpit.stop_hint}
-            nextStep={chartData.strategy_context.next_step}
-            freqtradeReadiness={freqtradeReadiness}
-          />
-        </div>
-      </section>
-    </section>
+      <TabsContent value="trades">
+        <TradeHistoryTabContent
+          data={tradeHistory}
+          loading={tradeLoading}
+          error={tradeError}
+          symbol={symbol}
+        />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -233,4 +313,207 @@ function syncIntervalToAddressBar(symbol: string, interval: string) {
 function formatText(value: unknown, fallback: string): string {
   const text = String(value ?? "").trim();
   return text.length > 0 ? text : fallback;
+}
+
+/* RSI历史Tab内容组件 */
+function RsiHistoryTabContent({
+  data,
+  loading,
+  error,
+  symbol,
+  interval,
+}: {
+  data: RsiHistoryData | null;
+  loading: boolean;
+  error: string | null;
+  symbol: string;
+  interval: string;
+}) {
+  if (loading) {
+    return (
+      <Card className="bg-card/80">
+        <CardHeader>
+          <CardTitle>加载中...</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-32 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="bg-card/80">
+        <CardHeader>
+          <p className="eyebrow">错误</p>
+          <CardTitle>获取数据失败</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{error}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const rows = data?.items?.map((item) => ({
+    id: String(item.timestamp),
+    cells: [
+      item.time,
+      item.rsi_value,
+      <StatusBadge key="state" value={item.state} />,
+      <RsiSignalBadge key="signal" value={item.signal} />,
+    ],
+  })) ?? [];
+
+  return (
+    <section className="space-y-4">
+      <Card className="bg-card/80">
+        <CardHeader>
+          <p className="eyebrow">技术指标</p>
+          <CardTitle>{symbol} RSI 历史记录</CardTitle>
+          <CardDescription>
+            当前周期: {interval} | 共 {data?.total ?? 0} 条记录 | RSI(14)序列，超买区域(&gt;=70)和超卖区域(&lt;=30)标记。
+          </CardDescription>
+        </CardHeader>
+      </Card>
+      <DataTable
+        columns={["时间", "RSI值", "状态", "信号"]}
+        rows={rows}
+        emptyTitle="暂无RSI历史"
+        emptyDetail={`当前 ${symbol} 在 ${interval} 周期下暂无足够数据计算RSI序列（需要至少15根K线）。`}
+        emptyEyebrow="数据不足"
+      />
+    </section>
+  );
+}
+
+/* RSI信号Badge组件 */
+function RsiSignalBadge({ value }: { value: string }) {
+  const labelMap: Record<string, string> = {
+    potential_buy: "潜在买入",
+    potential_sell: "潜在卖出",
+    hold: "观望",
+  };
+
+  const variantMap: Record<string, "success" | "danger" | "accent"> = {
+    potential_buy: "success",
+    potential_sell: "danger",
+    hold: "accent",
+  };
+
+  return <StatusBadge value={labelMap[value] ?? value} />;
+}
+
+/* 交易历史Tab内容组件 */
+function TradeHistoryTabContent({
+  data,
+  loading,
+  error,
+  symbol,
+}: {
+  data: TradeHistoryData | null;
+  loading: boolean;
+  error: string | null;
+  symbol: string;
+}) {
+  if (loading) {
+    return (
+      <Card className="bg-card/80">
+        <CardHeader>
+          <CardTitle>加载中...</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-32 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="bg-card/80">
+        <CardHeader>
+          <p className="eyebrow">错误</p>
+          <CardTitle>获取数据失败</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{error}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const rows = data?.items?.map((item) => ({
+    id: String(item.trade_id),
+    cells: [
+      formatTradeTime(item.entry_time),
+      <StatusBadge key="side" value={item.side === "buy" ? "aligned" : "attention"} />,
+      item.entry_price,
+      item.exit_price ?? "未平仓",
+      <PnlBadge key="pnl" value={item.pnl_percent} />,
+      formatHoldingDuration(item.holding_duration_seconds),
+      item.stop_loss_reason ?? "-",
+    ],
+  })) ?? [];
+
+  return (
+    <section className="space-y-4">
+      <Card className="bg-card/80">
+        <CardHeader>
+          <p className="eyebrow">执行记录</p>
+          <CardTitle>{symbol} 交易历史</CardTitle>
+          <CardDescription>
+            共 {data?.total_returned ?? 0} 条记录 | 显示入场价、出场价、盈亏和止损原因。
+          </CardDescription>
+        </CardHeader>
+      </Card>
+      <DataTable
+        columns={["入场时间", "方向", "入场价", "出场价", "盈亏%", "持仓时长", "止损原因"]}
+        rows={rows}
+        emptyTitle="暂无交易记录"
+        emptyDetail={`当前 ${symbol} 暂无已记录的交易历史。`}
+        emptyEyebrow="无交易"
+      />
+    </section>
+  );
+}
+
+/* 盈亏Badge组件 */
+function PnlBadge({ value }: { value: string }) {
+  const num = parseFloat(value);
+  const isPositive = num > 0;
+  const isNegative = num < 0;
+
+  const label = isPositive ? `+${value}%` : `${value}%`;
+  const variant = isPositive ? "success" : isNegative ? "danger" : "accent";
+
+  return <StatusBadge value={label} />;
+}
+
+/* 格式化交易时间 */
+function formatTradeTime(isoString: string): string {
+  try {
+    const dt = new Date(isoString);
+    return dt.toLocaleString("zh-CN", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+/* 格式化持仓时长 */
+function formatHoldingDuration(seconds: number | null): string {
+  if (seconds === null) return "-";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }

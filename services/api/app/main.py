@@ -42,7 +42,7 @@ from services.api.app.routes.evaluation_workspace import router as evaluation_wo
 from services.api.app.routes.exchange import router as exchange_router
 from services.api.app.routes.feature_workspace import router as feature_workspace_router
 from services.api.app.routes.health import router as health_router
-from services.api.app.routes.market import router as market_router
+from services.api.app.routes.market import router as market_router, alias_router as quotes_router
 from services.api.app.routes.model_suggestion import router as model_suggestion_router
 from services.api.app.routes.openclaw import router as openclaw_router
 from services.api.app.routes.orders import router as orders_router
@@ -66,6 +66,7 @@ from services.api.app.routes.report import router as report_router
 from services.api.app.routes.strategy_tuning import router as strategy_tuning_router
 from services.api.app.routes.position_management import router as position_management_router
 from services.api.app.routes.ai_training import router as ai_training_router
+from services.api.app.routes.trade_log import router as trade_log_router
 from services.api.app.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,8 @@ app.include_router(research_workspace_router)
 app.routers.append(research_workspace_router)  # type: ignore[attr-defined]
 app.include_router(market_router)
 app.routers.append(market_router)  # type: ignore[attr-defined]
+app.include_router(quotes_router)
+app.routers.append(quotes_router)  # type: ignore[attr-defined]
 app.include_router(positions_router)
 app.routers.append(positions_router)  # type: ignore[attr-defined]
 app.include_router(orders_router)
@@ -120,7 +123,7 @@ app.include_router(risk_events_router)
 app.routers.append(risk_events_router)  # type: ignore[attr-defined]
 app.include_router(openclaw_router)
 app.routers.append(openclaw_router)  # type: ignore[attr-defined]
-app.include_router(websocket_router)
+app.include_router(websocket_router, prefix="/api/v1")
 app.routers.append(websocket_router)  # type: ignore[attr-defined]
 app.include_router(analytics_router)
 app.routers.append(analytics_router)  # type: ignore[attr-defined]
@@ -154,6 +157,8 @@ app.include_router(exchange_router)
 app.routers.append(exchange_router)  # type: ignore[attr-defined]
 app.include_router(ai_training_router)
 app.routers.append(ai_training_router)  # type: ignore[attr-defined]
+app.include_router(trade_log_router)
+app.routers.append(trade_log_router)  # type: ignore[attr-defined]
 
 
 # 性能监控中间件
@@ -161,7 +166,8 @@ app.routers.append(ai_training_router)  # type: ignore[attr-defined]
 async def performance_monitor_middleware(request: Request, call_next) -> Response:
     """自动追踪所有API请求的响应时间。"""
     # 排除性能监控端点本身，避免递归
-    if request.url.path.startswith("/api/v1/performance"):
+    # 排除 WebSocket 端点，WebSocket 使用协议升级，不应被 HTTP 中间件追踪
+    if request.url.path.startswith("/api/v1/performance") or request.url.path.startswith("/api/v1/ws"):
         return await call_next(request)
 
     start_time = time.time()
@@ -210,6 +216,16 @@ async def setup_event_loop() -> None:
         else:
             logger.warning("定时巡检自动启动失败: %s", result.get("message"))
 
+    # 启动定时报告生成（可通过环境变量 QUANT_SCHEDULED_REPORTS_AUTO_START 控制）
+    reports_auto_start = os.getenv("QUANT_SCHEDULED_REPORTS_AUTO_START", "false").lower() == "true"
+    if reports_auto_start:
+        from services.api.app.services.report_service import report_service
+        result = report_service.start_scheduled_reports()
+        if result.get("success"):
+            logger.info("定时报告生成已自动启动: 每日6:00 UTC日报, 每周一6:00 UTC周报")
+        else:
+            logger.warning("定时报告生成自动启动失败: %s", result.get("message"))
+
 
 @app.on_event("shutdown")
 async def shutdown_event_loop() -> None:
@@ -222,3 +238,8 @@ async def shutdown_event_loop() -> None:
     from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
     scheduled_patrol_service.stop_schedule()
     logger.info("定时巡检已停止")
+
+    # 停止定时报告生成
+    from services.api.app.services.report_service import report_service
+    report_service.stop_scheduled_reports()
+    logger.info("定时报告生成已停止")

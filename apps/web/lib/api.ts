@@ -910,6 +910,43 @@ export type MarketChartData = {
   };
 };
 
+export type RsiHistoryItem = {
+  timestamp: number;
+  time: string;
+  rsi_value: string;
+  state: "overbought" | "oversold" | "neutral";
+  signal: "potential_buy" | "potential_sell" | "hold";
+  close_price: string;
+};
+
+export type RsiHistoryData = {
+  items: RsiHistoryItem[];
+  symbol: string;
+  interval: string;
+  total: number;
+};
+
+export type TradeHistoryItem = {
+  trade_id: number;
+  symbol: string;
+  side: string;
+  entry_price: string;
+  exit_price: string | null;
+  entry_time: string;
+  exit_time: string | null;
+  pnl_percent: string;
+  stop_loss_reason: string | null;
+  holding_duration_seconds: number | null;
+  strategy_name: string | null;
+};
+
+export type TradeHistoryData = {
+  items: TradeHistoryItem[];
+  total_returned: number;
+  symbol_filter: string | null;
+  side_filter: string | null;
+};
+
 export type LoginPageModel = {
   notes: string[];
   defaultUsername: string;
@@ -2320,6 +2357,115 @@ export async function getMarketChart(symbol: string, interval?: string): Promise
       freqtrade_readiness: normalizeFreqtradeReadiness(data.freqtrade_readiness),
     },
   };
+}
+
+export async function getRsiHistory(
+  symbol: string,
+  interval?: string,
+  limit?: number
+): Promise<ApiEnvelope<RsiHistoryData>> {
+  const params = new URLSearchParams();
+  if (interval) params.set("interval", interval);
+  if (limit) params.set("limit", String(limit));
+
+  const queryString = params.toString();
+  const path = queryString
+    ? `/market/${encodeURIComponent(symbol)}/rsi-history?${queryString}`
+    : `/market/${encodeURIComponent(symbol)}/rsi-history`;
+
+  const response = await fetchJson<RsiHistoryData>(path);
+  if (response.error) {
+    return response as ApiEnvelope<RsiHistoryData>;
+  }
+
+  const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
+  return {
+    ...response,
+    data: {
+      items: normalizeRsiHistoryItems(data.items),
+      symbol: String(data.symbol ?? symbol.toUpperCase()),
+      interval: String(data.interval ?? "4h"),
+      total: Number(data.total ?? 0),
+    },
+  };
+}
+
+export async function getTradeHistory(
+  symbol?: string,
+  limit?: number,
+  signal?: AbortSignal
+): Promise<ApiEnvelope<TradeHistoryData>> {
+  const params = new URLSearchParams();
+  if (symbol) params.set("symbol", symbol.toUpperCase());
+  if (limit) params.set("limit", String(limit ?? 50));
+
+  const queryString = params.toString();
+  const path = queryString ? `/trade-log/history?${queryString}` : `/trade-log/history`;
+
+  const response = await fetchJson<TradeHistoryData>(path, undefined, signal);
+  if (response.error) {
+    return response as ApiEnvelope<TradeHistoryData>;
+  }
+
+  const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
+  return {
+    ...response,
+    data: {
+      items: normalizeTradeHistoryItems(data.items),
+      total_returned: Number(data.total_returned ?? 0),
+      symbol_filter: data.symbol_filter ? String(data.symbol_filter) : null,
+      side_filter: data.side_filter ? String(data.side_filter) : null,
+    },
+  };
+}
+
+function normalizeRsiHistoryItems(items: unknown): RsiHistoryItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    const row = isPlainObject(item) ? item : {};
+    return {
+      timestamp: Number(row.timestamp ?? 0),
+      time: String(row.time ?? ""),
+      rsi_value: String(row.rsi_value ?? ""),
+      state: normalizeRsiState(row.state),
+      signal: normalizeRsiSignal(row.signal),
+      close_price: String(row.close_price ?? ""),
+    };
+  });
+}
+
+function normalizeRsiState(value: unknown): RsiHistoryItem["state"] {
+  const raw = String(value ?? "").toLowerCase();
+  if (raw === "overbought") return "overbought";
+  if (raw === "oversold") return "oversold";
+  return "neutral";
+}
+
+function normalizeRsiSignal(value: unknown): RsiHistoryItem["signal"] {
+  const raw = String(value ?? "").toLowerCase();
+  if (raw === "potential_buy") return "potential_buy";
+  if (raw === "potential_sell") return "potential_sell";
+  return "hold";
+}
+
+function normalizeTradeHistoryItems(items: unknown): TradeHistoryItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    const row = isPlainObject(item) ? item : {};
+    return {
+      trade_id: Number(row.trade_id ?? 0),
+      symbol: String(row.symbol ?? ""),
+      side: String(row.side ?? ""),
+      entry_price: String(row.entry_price ?? ""),
+      exit_price: row.exit_price ? String(row.exit_price) : null,
+      entry_time: String(row.entry_time ?? ""),
+      exit_time: row.exit_time ? String(row.exit_time) : null,
+      pnl_percent: String(row.pnl_percent ?? "0"),
+      stop_loss_reason: row.stop_loss_reason ? String(row.stop_loss_reason) : null,
+      holding_duration_seconds: row.holding_duration_seconds ? Number(row.holding_duration_seconds) : null,
+      strategy_name: row.strategy_name ? String(row.strategy_name) : null,
+    };
+  });
 }
 
 export function getDashboardSummary(): DashboardSummary {
