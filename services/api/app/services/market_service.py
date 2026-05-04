@@ -51,11 +51,16 @@ class MarketService:
         self._research_reader = research_reader or _NullResearchReader()
 
     def list_market_snapshots(self, symbols: tuple[str, ...]) -> list[dict[str, object]]:
-        """只返回配置白名单里的市场快照。"""
+        """只返回配置白名单里的市场快照（不含策略评估，避免批量K线请求阻塞）。"""
 
         allowed_symbols = {symbol.strip().upper() for symbol in symbols if symbol.strip()}
         catalog_whitelist = tuple(self._catalog_service.get_whitelist())
-        effective_symbols = allowed_symbols & {symbol.strip().upper() for symbol in catalog_whitelist if symbol.strip()}
+        # 白名单格式可能是 BTC/USDT，需要转换为 BTCUSDT
+        catalog_symbols_normalized = {symbol.strip().upper().replace("/", "") for symbol in catalog_whitelist if symbol.strip()}
+        effective_symbols = allowed_symbols & catalog_symbols_normalized
+        # 如果 allowed_symbols 为空，使用 catalog_whitelist 转换后的结果
+        if not effective_symbols and catalog_symbols_normalized:
+            effective_symbols = catalog_symbols_normalized
         rows = self._client.get_tickers(tuple(effective_symbols) if effective_symbols else None)
         snapshots: list[dict[str, object]] = []
         for row in rows:
@@ -63,15 +68,16 @@ class MarketService:
             if normalized_symbol not in effective_symbols:
                 continue
             snapshot = normalize_market_snapshot(row)
-            snapshot.update(self._build_market_strategy_summary(normalized_symbol, catalog_whitelist))
+            # 只保留基础白名单标记，策略评估移到单币详情页
+            snapshot["is_whitelisted"] = normalized_symbol in catalog_symbols_normalized
+            snapshot["recommended_strategy"] = "none"
+            snapshot["trend_state"] = "neutral"
+            snapshot["strategy_summary"] = {}
             snapshot["research_brief"] = build_market_research_brief(
                 symbol=normalized_symbol,
-                recommended_strategy=str(snapshot.get("recommended_strategy", "none")),
-                evaluation=_resolve_primary_evaluation(
-                    str(snapshot.get("recommended_strategy", "none")),
-                    dict(snapshot.get("strategy_summary") or {}),
-                ),
-                research_summary=self._get_symbol_research(normalized_symbol),
+                recommended_strategy="none",
+                evaluation={},
+                research_summary=None,
             )
             snapshots.append(snapshot)
         return snapshots
