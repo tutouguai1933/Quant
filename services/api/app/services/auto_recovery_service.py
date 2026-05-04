@@ -142,10 +142,11 @@ class AutoRecoveryService:
         """
         now = datetime.now(timezone.utc).isoformat()
 
+        # 先获取容器状态
         success, output = self._run_docker_command([
             "inspect",
             "--format",
-            "{{.State.Status}}|{{.State.Health.Status}}|{{.Id}}",
+            "{{.State.Status}}|{{.Id}}",
             service_name,
         ])
 
@@ -162,9 +163,18 @@ class AutoRecoveryService:
         try:
             parts = output.split("|")
             status = parts[0] if len(parts) > 0 else "unknown"
-            health = parts[1] if len(parts) > 1 else "none"
-            container_id = parts[2][:12] if len(parts) > 2 else ""
+            container_id = parts[1][:12] if len(parts) > 1 else ""
 
+            # 单独获取健康状态（可能不存在）
+            health_success, health_output = self._run_docker_command([
+                "inspect",
+                "--format",
+                "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",
+                service_name,
+            ])
+            health = health_output if health_success else "none"
+
+            # 容器运行中且健康状态为healthy或none(无健康检查配置)视为健康
             is_healthy = status == "running" and health in ("healthy", "none")
 
             return {

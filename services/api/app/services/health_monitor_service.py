@@ -138,11 +138,11 @@ class HealthMonitorService:
         """
         now = datetime.now(timezone.utc).isoformat()
 
-        # 使用docker inspect获取容器详细信息
+        # 先获取容器状态（Health属性可能不存在）
         success, output = self._run_docker_command([
             "inspect",
             "--format",
-            "{{.State.Status}}|{{.State.Health.Status}}|{{.Id}}|{{.Config.Image}}",
+            "{{.State.Status}}|{{.Id}}|{{.Config.Image}}",
             container_name,
         ])
 
@@ -158,11 +158,19 @@ class HealthMonitorService:
         try:
             parts = output.split("|")
             status_str = parts[0] if len(parts) > 0 else ""
-            health_str = parts[1] if len(parts) > 1 else ""
-            container_id = parts[2] if len(parts) > 2 else ""
-            image = parts[3] if len(parts) > 3 else ""
+            container_id = parts[1] if len(parts) > 1 else ""
+            image = parts[2] if len(parts) > 2 else ""
 
             status = ContainerStatus(status_str) if status_str in [s.value for s in ContainerStatus] else ContainerStatus.UNKNOWN
+
+            # 单独获取健康状态（可能不存在）
+            health_success, health_output = self._run_docker_command([
+                "inspect",
+                "--format",
+                "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",
+                container_name,
+            ])
+            health_str = health_output if health_success else "none"
             health = HealthStatus(health_str) if health_str in [h.value for h in HealthStatus] else HealthStatus.NONE
 
             return ContainerInfo(
