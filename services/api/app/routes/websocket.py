@@ -41,7 +41,7 @@ except ImportError:
 router = APIRouter(tags=["websocket"])
 
 
-@router.websocket("/api/v1/ws")
+@router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time status updates."""
     await websocket.accept()
