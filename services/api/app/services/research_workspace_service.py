@@ -5,7 +5,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from services.api.app.services.research_service import research_service
+from services.api.app.services.terminal_view_helpers import (
+    build_parameter_field,
+    build_parameter_group,
+    build_terminal_page,
+    metric_card,
+    terminal_state,
+)
+from services.api.app.services.terminal_series_service import terminal_series_service
 from services.api.app.services.workbench_config_service import workbench_config_service
 
 
@@ -183,6 +193,14 @@ class ResearchWorkspaceService:
                 train_ratio=str(configured_research.get("train_split_ratio", "0.6")),
                 validation_ratio=str(configured_research.get("validation_split_ratio", "0.2")),
                 test_ratio=str(configured_research.get("test_split_ratio", "0.2")),
+            ),
+            "terminal": self._build_terminal_view(
+                report=report,
+                controls=controls,
+                sample_window=sample_window,
+                overview=overview,
+                configured_research=configured_research,
+                status=status,
             ),
         }
 
@@ -506,6 +524,321 @@ class ResearchWorkspaceService:
             key=normalized_key,
             fallback_label=normalized_key,
         )
+
+    def _build_terminal_view(
+        self,
+        *,
+        report: dict[str, object],
+        controls: dict[str, object],
+        sample_window: dict[str, object],
+        overview: dict[str, object],
+        configured_research: dict[str, object],
+        status: str,
+    ) -> dict[str, object]:
+        """构建终端视图数据结构。"""
+
+        # 构建页面信息
+        page = build_terminal_page(
+            route="/research",
+            breadcrumb="研究 / 模型训练",
+            title="模型训练",
+            subtitle="LightGBM 因子模型训练与产物管理",
+        )
+
+        # 构建指标卡
+        metrics = self._build_terminal_metrics(
+            sample_window=sample_window,
+            overview=overview,
+        )
+
+        # 构建参数分组
+        parameter_groups = self._build_terminal_parameter_groups(
+            controls=controls,
+            configured_research=configured_research,
+        )
+
+        # 构建图表
+        charts = self._build_terminal_charts(report=report)
+
+        # 构建表格
+        tables = self._build_terminal_tables(
+            sample_window=sample_window,
+            report=report,
+        )
+
+        # 构建状态
+        states = self._build_terminal_states(
+            status=status,
+            report=report,
+        )
+
+        return {
+            "page": page,
+            "parameters": {
+                "groups": parameter_groups,
+            },
+            "metrics": metrics,
+            "charts": charts,
+            "tables": tables,
+            "states": states,
+        }
+
+    def _build_terminal_metrics(
+        self,
+        *,
+        sample_window: dict[str, object],
+        overview: dict[str, object],
+    ) -> list[dict[str, object]]:
+        """构建终端视图指标卡。"""
+
+        training_window = dict(sample_window.get("training") or {})
+        validation_window = dict(sample_window.get("validation") or {})
+        backtest_window = dict(sample_window.get("backtest") or {})
+
+        return [
+            metric_card(
+                key="training_rows",
+                label="训练样本",
+                value=training_window.get("count", 0) or 0,
+                format="integer",
+                tone="neutral",
+            ),
+            metric_card(
+                key="validation_rows",
+                label="验证样本",
+                value=validation_window.get("count", 0) or 0,
+                format="integer",
+                tone="neutral",
+            ),
+            metric_card(
+                key="testing_rows",
+                label="测试样本",
+                value=backtest_window.get("count", 0) or 0,
+                format="integer",
+                tone="neutral",
+            ),
+            metric_card(
+                key="candidate_count",
+                label="候选数量",
+                value=overview.get("candidate_count", 0) or 0,
+                format="integer",
+                tone="success" if int(overview.get("candidate_count", 0) or 0) > 0 else "neutral",
+            ),
+        ]
+
+    def _build_terminal_parameter_groups(
+        self,
+        *,
+        controls: dict[str, object],
+        configured_research: dict[str, object],
+    ) -> list[dict[str, object]]:
+        """从 controls 构建参数分组。"""
+
+        groups = []
+
+        # 研究参数组
+        research_fields = [
+            build_parameter_field(
+                key="model_key",
+                label="模型类型",
+                value=configured_research.get("model_key", ""),
+                control="select",
+                readonly=True,
+            ),
+            build_parameter_field(
+                key="label_mode",
+                label="标签模式",
+                value=configured_research.get("label_mode", ""),
+                control="select",
+                readonly=True,
+            ),
+            build_parameter_field(
+                key="holding_window_label",
+                label="持仓窗口",
+                value=configured_research.get("holding_window_label", ""),
+                control="select",
+                readonly=True,
+            ),
+        ]
+        groups.append(build_parameter_group(title="研究参数", fields=research_fields))
+
+        # 标签参数组
+        label_fields = [
+            build_parameter_field(
+                key="label_target_pct",
+                label="目标收益",
+                value=configured_research.get("label_target_pct", ""),
+                unit="%",
+                control="number",
+                readonly=True,
+            ),
+            build_parameter_field(
+                key="label_stop_pct",
+                label="止损阈值",
+                value=configured_research.get("label_stop_pct", ""),
+                unit="%",
+                control="number",
+                readonly=True,
+            ),
+            build_parameter_field(
+                key="min_holding_days",
+                label="最小持仓",
+                value=configured_research.get("min_holding_days", ""),
+                unit="天",
+                control="number",
+                readonly=True,
+            ),
+            build_parameter_field(
+                key="max_holding_days",
+                label="最大持仓",
+                value=configured_research.get("max_holding_days", ""),
+                unit="天",
+                control="number",
+                readonly=True,
+            ),
+        ]
+        groups.append(build_parameter_group(title="标签参数", fields=label_fields))
+
+        # 切分比例组
+        split_fields = [
+            build_parameter_field(
+                key="train_split_ratio",
+                label="训练比例",
+                value=configured_research.get("train_split_ratio", "0.6"),
+                control="number",
+                readonly=True,
+            ),
+            build_parameter_field(
+                key="validation_split_ratio",
+                label="验证比例",
+                value=configured_research.get("validation_split_ratio", "0.2"),
+                control="number",
+                readonly=True,
+            ),
+            build_parameter_field(
+                key="test_split_ratio",
+                label="测试比例",
+                value=configured_research.get("test_split_ratio", "0.2"),
+                control="number",
+                readonly=True,
+            ),
+        ]
+        groups.append(build_parameter_group(title="数据切分", fields=split_fields))
+
+        return groups
+
+    def _build_terminal_charts(
+        self,
+        *,
+        report: dict[str, object],
+    ) -> dict[str, object]:
+        """构建终端视图图表。"""
+
+        return {
+            "training_curve": terminal_series_service.build_training_curve(report),
+            "feature_importance": terminal_series_service.build_feature_importance(report),
+        }
+
+    def _build_terminal_tables(
+        self,
+        *,
+        sample_window: dict[str, object],
+        report: dict[str, object],
+    ) -> dict[str, object]:
+        """构建终端视图表格。"""
+
+        # 样本窗口表格
+        sample_windows = self._build_sample_windows_table(sample_window)
+
+        # 最近训练运行表格
+        experiments = dict(report.get("experiments") or {})
+        recent_runs = list(experiments.get("recent_runs") or [])
+        recent_training_runs = self._build_recent_runs_table(recent_runs)
+
+        return {
+            "sample_windows": sample_windows,
+            "recent_training_runs": recent_training_runs,
+        }
+
+    def _build_sample_windows_table(
+        self,
+        sample_window: dict[str, object],
+    ) -> list[dict[str, object]]:
+        """构建样本窗口表格数据。"""
+
+        rows = []
+        for window_name in ["training", "validation", "backtest"]:
+            window = dict(sample_window.get(window_name) or {})
+            if window:
+                rows.append({
+                    "name": window_name,
+                    "count": int(window.get("count", 0) or 0),
+                    "start": str(window.get("start", "") or ""),
+                    "end": str(window.get("end", "") or ""),
+                })
+        return rows
+
+    def _build_recent_runs_table(
+        self,
+        recent_runs: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        """构建最近训练运行表格数据。"""
+
+        rows = []
+        for item in recent_runs[:5]:  # 最多显示 5 条
+            if isinstance(item, dict):
+                rows.append({
+                    "run_id": str(item.get("run_id", "") or ""),
+                    "status": str(item.get("status", "") or ""),
+                    "generated_at": str(item.get("generated_at", "") or ""),
+                    "model_version": str(item.get("model_version", "") or ""),
+                })
+        return rows
+
+    def _build_terminal_states(
+        self,
+        *,
+        status: str,
+        report: dict[str, object],
+    ) -> dict[str, object]:
+        """构建终端视图状态。"""
+
+        # 确定数据质量
+        latest_training = dict(report.get("latest_training") or {})
+        training_metrics = dict(latest_training.get("training_metrics") or {})
+        training_curve = list(training_metrics.get("training_curve") or [])
+        feature_importance = list(training_metrics.get("feature_importance") or [])
+
+        has_training_data = bool(training_curve)
+        has_feature_data = bool(feature_importance)
+
+        if has_training_data and has_feature_data:
+            data_quality = "real"
+        elif has_training_data or has_feature_data:
+            data_quality = "partial"
+        else:
+            data_quality = "empty"
+
+        # 收集警告
+        warnings = []
+        if not has_training_data:
+            warnings.append("training_curve_missing")
+        if not has_feature_data:
+            warnings.append("feature_importance_missing")
+
+        # 映射状态
+        terminal_status = "empty"
+        if status == "ready":
+            if latest_training:
+                terminal_status = "ready"
+            else:
+                terminal_status = "running"
+
+        return {
+            "status": terminal_status,
+            "data_quality": data_quality,
+            "warnings": warnings,
+        }
 
 
 research_workspace_service = ResearchWorkspaceService()

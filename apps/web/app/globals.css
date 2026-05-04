@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./terminal-theme.css";
 
 @theme inline {
   --font-sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;

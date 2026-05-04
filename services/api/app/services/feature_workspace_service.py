@@ -8,6 +8,12 @@ from __future__ import annotations
 from copy import deepcopy
 
 from services.api.app.services.research_service import research_service
+from services.api.app.services.terminal_view_helpers import (
+    build_terminal_page,
+    metric_card,
+    terminal_state,
+)
+from services.api.app.services.terminal_series_service import terminal_series_service
 from services.api.app.services.workbench_config_service import workbench_config_service
 from services.worker.qlib_features import FEATURE_PROTOCOL
 
@@ -93,6 +99,37 @@ class FeatureWorkspaceService:
             configured_auxiliary_factors=configured_auxiliary_factors,
         )
 
+        # 构建 terminal 视图
+        terminal = self._build_terminal_view(
+            report=report,
+            overview={
+                "factor_count": len(factors),
+                "primary_count": len(protocol_primary),
+                "auxiliary_count": len(protocol_auxiliary),
+                "feature_version": str(
+                    training_context.get("feature_version")
+                    or factor_protocol.get("version")
+                    or "v1"
+                ),
+                "category_count": len(categories),
+                "enabled_count": len(configured_primary_factors) + len(configured_auxiliary_factors),
+            },
+            effectiveness_summary=effectiveness_summary,
+            factors=[
+                {
+                    "name": str(item.get("name", "")),
+                    "category": str(item.get("category", "")),
+                    "role": str(item.get("role", "")),
+                    "description": str(item.get("description", "")),
+                }
+                for item in factors
+                if isinstance(item, dict)
+            ],
+            redundancy_summary=redundancy_summary,
+            categories=categories,
+            selection_matrix=self._build_selection_matrix(factors=factors, configured_features=configured_features),
+        )
+
         return {
             "status": status,
             "backend": str(report.get("backend", "qlib-fallback") or "qlib-fallback"),
@@ -168,6 +205,7 @@ class FeatureWorkspaceService:
             "effectiveness_summary": effectiveness_summary,
             "redundancy_summary": redundancy_summary,
             "score_story": score_story,
+            "terminal": terminal,
         }
 
     def _read_factory_report(self) -> dict[str, object]:
@@ -572,6 +610,167 @@ class FeatureWorkspaceService:
             return float(value)
         except (ValueError, TypeError):
             return 1.0
+
+    def _build_terminal_view(
+        self,
+        *,
+        report: dict[str, object],
+        overview: dict[str, object],
+        effectiveness_summary: dict[str, object],
+        factors: list[dict[str, str]],
+        redundancy_summary: dict[str, object],
+        categories: dict[str, list[str]],
+        selection_matrix: list[dict[str, str]],
+    ) -> dict[str, object]:
+        """构建终端视图，包含因子研究和因子知识库两个子视图。"""
+
+        # 构建 research 视图
+        research = self._build_terminal_research(
+            report=report,
+            overview=overview,
+            effectiveness_summary=effectiveness_summary,
+            factors=factors,
+            redundancy_summary=redundancy_summary,
+        )
+
+        # 构建 knowledge 视图
+        knowledge = self._build_terminal_knowledge(
+            overview=overview,
+            categories=categories,
+            factors=factors,
+            selection_matrix=selection_matrix,
+        )
+
+        return {
+            "research": research,
+            "knowledge": knowledge,
+        }
+
+    def _build_terminal_research(
+        self,
+        *,
+        report: dict[str, object],
+        overview: dict[str, object],
+        effectiveness_summary: dict[str, object],
+        factors: list[dict[str, str]],
+        redundancy_summary: dict[str, object],
+    ) -> dict[str, object]:
+        """构建因子研究终端视图。"""
+
+        # 页面信息
+        page = build_terminal_page(
+            route="/features",
+            breadcrumb="数据与知识 / 因子研究",
+            title="因子研究",
+            subtitle="因子 IC、分组收益与冗余检查",
+        )
+
+        # 指标卡：从 overview 和 effectiveness_summary 提取
+        metrics = [
+            metric_card("factor_count", "因子数量", overview.get("factor_count", 0), format="integer"),
+            metric_card("primary_count", "主因子", overview.get("primary_count", 0), format="integer"),
+            metric_card("auxiliary_count", "辅助因子", overview.get("auxiliary_count", 0), format="integer"),
+            metric_card("mean_ic", "平均 IC", "0", format="decimal"),
+            metric_card("icir", "ICIR", "0", format="decimal"),
+            metric_card("effective_factor_count", "有效因子", overview.get("enabled_count", 0), format="integer"),
+        ]
+
+        # 图表：使用 terminal_series_service
+        ic_series = terminal_series_service.build_factor_ic_series(report)
+        cumulative_ic = terminal_series_service.build_factor_ic_series(report)  # 同一数据源，前端区分
+        quantile_nav = terminal_series_service.build_factor_quantile_nav(report)
+
+        charts = {
+            "ic_series": ic_series,
+            "cumulative_ic": cumulative_ic,
+            "quantile_nav": quantile_nav,
+        }
+
+        # 表格：从 factors 和 redundancy_summary 构造
+        factor_rows = [
+            {
+                "name": factor.get("name", ""),
+                "category": factor.get("category", ""),
+                "role": factor.get("role", ""),
+                "ic": "0.00",
+                "rank_ic": "0.00",
+            }
+            for factor in factors
+        ]
+
+        # 冗余表格
+        redundancy_rows = []
+        overlap_groups = list(redundancy_summary.get("overlap_groups") or [])
+        for group in overlap_groups:
+            redundancy_rows.append({
+                "label": group.get("label", ""),
+                "factor_count": len(group.get("factors", [])),
+                "detail": group.get("detail", ""),
+            })
+
+        # 相关性表格（暂为空）
+        correlation_rows: list[dict[str, object]] = []
+
+        tables = {
+            "factor_rows": factor_rows,
+            "correlation_rows": correlation_rows,
+            "redundancy_rows": redundancy_rows,
+        }
+
+        return {
+            "page": page,
+            "metrics": metrics,
+            "charts": charts,
+            "tables": tables,
+        }
+
+    def _build_terminal_knowledge(
+        self,
+        *,
+        overview: dict[str, object],
+        categories: dict[str, list[str]],
+        factors: list[dict[str, str]],
+        selection_matrix: list[dict[str, str]],
+    ) -> dict[str, object]:
+        """构建因子知识库终端视图。"""
+
+        # 指标卡
+        metrics = [
+            metric_card("factor_count", "因子总数", overview.get("factor_count", 0), format="integer"),
+            metric_card("category_count", "分类数量", overview.get("category_count", 0), format="integer"),
+            metric_card("enabled_count", "已启用", overview.get("enabled_count", 0), format="integer"),
+            metric_card("feature_version", "协议版本", overview.get("feature_version", "v1"), format="text"),
+        ]
+
+        # 筛选器：从 categories 构造
+        filters = [
+            {"key": category, "label": category, "count": len(items)}
+            for category, items in categories.items()
+        ]
+
+        # 因子卡片：从 factors 和 selection_matrix 构造
+        factor_cards = []
+        selection_map = {row.get("name", ""): row for row in selection_matrix}
+        for factor in factors:
+            name = factor.get("name", "")
+            selection_info = selection_map.get(name, {})
+            factor_cards.append({
+                "name": name,
+                "category": factor.get("category", ""),
+                "role": factor.get("role", ""),
+                "current_role": selection_info.get("current_role", "未启用"),
+                "description": factor.get("description", ""),
+            })
+
+        # 因子详情（暂为空列表）
+        factor_details: list[dict[str, object]] = []
+
+        return {
+            "metrics": metrics,
+            "filters": filters,
+            "factor_cards": factor_cards,
+            "factor_details": factor_details,
+        }
 
     @staticmethod
     def _build_timeframe_summary(timeframe_profiles: dict[str, dict[str, object]]) -> str:

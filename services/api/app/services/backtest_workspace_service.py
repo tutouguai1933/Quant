@@ -5,7 +5,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from services.api.app.services.research_service import research_service
+from services.api.app.services.terminal_view_helpers import (
+    build_terminal_page,
+    metric_card,
+    terminal_state,
+)
+from services.api.app.services.terminal_series_service import terminal_series_service
 from services.api.app.services.workbench_config_service import workbench_config_service
 
 
@@ -50,6 +58,18 @@ class BacktestWorkspaceService:
         status = str(report.get("status", "unavailable") or "unavailable")
         if training_backtest or leaderboard:
             status = "ready"
+
+        # 构建 terminal 视图字段
+        terminal = self._build_terminal_view(
+            report=report,
+            metrics=metrics,
+            status=status,
+            leaderboard=leaderboard,
+            configured_thresholds=configured_thresholds,
+            validation=validation,
+            training_context=training_context,
+            training_backtest=training_backtest,
+        )
 
         return {
             "status": status,
@@ -151,6 +171,125 @@ class BacktestWorkspaceService:
                 }
                 for item in leaderboard
             ],
+            "terminal": terminal,
+        }
+
+    def _build_terminal_view(
+        self,
+        *,
+        report: dict[str, object],
+        metrics: dict[str, object],
+        status: str,
+        leaderboard: list[dict[str, object]],
+        configured_thresholds: dict[str, object],
+        validation: dict[str, object],
+        training_context: dict[str, object],
+        training_backtest: dict[str, object],
+    ) -> dict[str, object]:
+        """构建 terminal 视图字段。"""
+
+        # 构建页面信息
+        page = build_terminal_page(
+            route="/backtest",
+            breadcrumb="研究 / 回测训练",
+            title="回测训练",
+            subtitle="训练样本回测、成本口径与闸门检查",
+            updated_at=datetime.utcnow().isoformat() + "+00:00",
+        )
+
+        # 构建指标卡
+        metrics_cards = [
+            metric_card(
+                key="total_return_pct",
+                label="累计收益",
+                value=metrics.get("total_return_pct", "0"),
+                format="percent",
+                tone="profit_loss",
+            ),
+            metric_card(
+                key="max_drawdown_pct",
+                label="最大回撤",
+                value=metrics.get("max_drawdown_pct", "0"),
+                format="percent",
+                tone="risk",
+            ),
+            metric_card(
+                key="sharpe",
+                label="夏普比率",
+                value=metrics.get("sharpe", "0"),
+                format="decimal",
+            ),
+            metric_card(
+                key="win_rate",
+                label="胜率",
+                value=metrics.get("win_rate", "0"),
+                format="percent_ratio",
+            ),
+            metric_card(
+                key="turnover",
+                label="换手率",
+                value=metrics.get("turnover", "0"),
+                format="percent_ratio",
+            ),
+            metric_card(
+                key="sample_count",
+                label="样本数",
+                value=metrics.get("sample_count", "0"),
+                format="integer",
+            ),
+        ]
+
+        # 构建图表 - 使用 terminal_series_service
+        performance_series = terminal_series_service.build_backtest_performance_series(
+            report, backtest_id="latest"
+        )
+
+        charts = {
+            "performance": performance_series,
+        }
+
+        # 构建表格 - 复用现有 leaderboard 和 stage_assessment
+        tables = {
+            "leaderboard": [
+                {
+                    "symbol": item["symbol"],
+                    "strategy_template": item["strategy_template"],
+                    "backtest": {
+                        str(name): str(value)
+                        for name, value in dict(item.get("backtest") or {}).items()
+                    },
+                }
+                for item in leaderboard
+            ],
+            "stage_assessment": self._build_stage_assessment(
+                metrics=metrics,
+                validation=validation,
+                sample_window=dict(training_context.get("sample_window") or {}),
+                thresholds=configured_thresholds,
+            ),
+        }
+
+        # 构建状态
+        data_quality = "empty"
+        warnings = []
+        if training_backtest or leaderboard:
+            data_quality = "real"
+        if not performance_series.get("series"):
+            data_quality = "partial"
+            warnings.append("backtest_series_missing")
+
+        states = terminal_state(
+            status=status,
+            data_quality=data_quality,
+            warnings=warnings,
+        )
+
+        return {
+            "page": page,
+            "metrics": metrics_cards,
+            "charts": charts,
+            "tables": tables,
+            "states": states,
         }
 
     def _read_factory_report(self) -> dict[str, object]:

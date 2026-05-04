@@ -33,24 +33,44 @@ class BacktestChartService:
             "distribution": distribution,
         }
 
-    def generate_profit_curve(self, backtest_id: str) -> list[dict[str, object]]:
+    def generate_profit_curve(self, backtest_id: str) -> dict[str, object]:
         """生成收益曲线数据。
 
-        backtest_id可以是:
-        - "latest" 或 "" -> 使用最新训练结果
-        - symbol (如 "BTCUSDT") -> 从候选中查找
+        Args:
+            backtest_id: 回测ID，可以是:
+                - "latest" 或 "" -> 使用最新训练结果
+                - symbol (如 "BTCUSDT") -> 从候选中查找
+
+        Returns:
+            包含 series 和 meta 的字典:
+            - 有数据时: {"series": [...], "meta": {"data_quality": "real"}}
+            - 无数据时: {"series": [], "meta": {"data_quality": "empty", "warnings": ["backtest_series_missing"]}}
         """
         report = self._result_provider()
         backtest_data = self._resolve_backtest_data(report, backtest_id)
 
+        # 没有回测数据时返回空数组和警告
         if not backtest_data:
-            return self._generate_demo_curve()
+            return {
+                "series": [],
+                "meta": {
+                    "data_quality": "empty",
+                    "warnings": ["backtest_series_missing"],
+                },
+            }
 
         metrics = dict(backtest_data.get("metrics") or {})
         total_return = self._parse_float(metrics.get("total_return_pct"))
 
+        # 收益率为0时也返回空数组（无真实交易序列）
         if total_return == 0:
-            return self._generate_demo_curve()
+            return {
+                "series": [],
+                "meta": {
+                    "data_quality": "empty",
+                    "warnings": ["backtest_series_missing"],
+                },
+            }
 
         training_context = dict(report.get("latest_training") or {}).get("training_context") or {}
         sample_window = dict(training_context.get("sample_window") or {})
@@ -59,19 +79,35 @@ class BacktestChartService:
         start_date = str(train_window.get("start_date", "2026-01-01") or "2026-01-01")
         end_date = str(train_window.get("end_date", "2026-01-31") or "2026-01-31")
 
-        return self._build_profit_curve(
+        series = self._build_profit_curve(
             start_date=start_date,
             end_date=end_date,
             total_return=total_return,
         )
 
+        return {
+            "series": series,
+            "meta": {
+                "data_quality": "real",
+                "warnings": [],
+            },
+        }
+
     def calculate_statistics(self, backtest_id: str) -> dict[str, object]:
-        """计算统计指标。"""
+        """计算统计指标。
+
+        Args:
+            backtest_id: 回测ID
+
+        Returns:
+            有数据时返回统计指标字典，无数据时返回空字典 {}
+        """
         report = self._result_provider()
         backtest_data = self._resolve_backtest_data(report, backtest_id)
 
+        # 没有回测数据时返回空统计
         if not backtest_data:
-            return self._get_demo_statistics()
+            return {}
 
         metrics = dict(backtest_data.get("metrics") or {})
 
@@ -87,19 +123,28 @@ class BacktestChartService:
         }
 
     def generate_trade_distribution(self, backtest_id: str) -> dict[str, object]:
-        """生成交易分布数据。"""
+        """生成交易分布数据。
+
+        Args:
+            backtest_id: 回测ID
+
+        Returns:
+            有数据时返回分布数据，无数据时返回空字典 {}
+        """
         report = self._result_provider()
         backtest_data = self._resolve_backtest_data(report, backtest_id)
 
+        # 没有回测数据时返回空分布
         if not backtest_data:
-            return self._get_demo_distribution()
+            return {}
 
         metrics = dict(backtest_data.get("metrics") or {})
         win_rate = self._parse_float(metrics.get("win_rate"))
         turnover = self._parse_float(metrics.get("turnover"))
 
+        # 关键指标为0时返回空分布
         if win_rate == 0 or turnover == 0:
-            return self._get_demo_distribution()
+            return {}
 
         total_trades = int(turnover * 100)
         wins = int(total_trades * win_rate)
@@ -176,7 +221,7 @@ class BacktestChartService:
         return curve
 
     def _generate_demo_curve(self) -> list[dict[str, object]]:
-        """生成演示曲线数据。"""
+        """生成演示曲线数据（内部实现，不再对外使用）。"""
         from datetime import datetime, timedelta
 
         start = datetime(2026, 1, 1)
@@ -197,7 +242,7 @@ class BacktestChartService:
         return curve
 
     def _get_demo_statistics(self) -> dict[str, object]:
-        """获取演示统计数据。"""
+        """获取演示统计数据（内部实现，不再对外使用）。"""
         return {
             "total_return": 15.0,
             "gross_return": 16.5,
@@ -210,7 +255,7 @@ class BacktestChartService:
         }
 
     def _get_demo_distribution(self) -> dict[str, object]:
-        """获取演示分布数据。"""
+        """获取演示分布数据（内部实现，不再对外使用）。"""
         return {
             "wins": 10,
             "losses": 5,

@@ -1019,5 +1019,124 @@ def _fake_controls(
     }
 
 
+    def test_workspace_includes_terminal_view(self) -> None:
+        """测试 workspace 包含 terminal 视图字段。"""
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        self.assertIn("terminal", item)
+        terminal = item["terminal"]
+        self.assertIn("page", terminal)
+        self.assertIn("metrics", terminal)
+        self.assertIn("charts", terminal)
+        self.assertIn("tables", terminal)
+        self.assertIn("states", terminal)
+
+    def test_terminal_view_page_structure(self) -> None:
+        """测试 terminal 视图 page 结构。"""
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        page = terminal.get("page", {})
+        self.assertIn("route", page)
+        self.assertIn("title", page)
+        self.assertIn("breadcrumb", page)
+        self.assertIn("updated_at", page)
+
+    def test_terminal_view_states_structure(self) -> None:
+        """测试 terminal 视图 states 结构。"""
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        states = terminal.get("states", {})
+        self.assertIn("status", states)
+        self.assertIn("data_quality", states)
+        self.assertIn("warnings", states)
+        self.assertIn("updated_at", states)
+
+    def test_terminal_view_metrics_format(self) -> None:
+        """测试 terminal 视图 metrics 格式。"""
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        metrics = terminal.get("metrics", [])
+        self.assertIsInstance(metrics, list)
+        for metric in metrics:
+            self.assertIn("key", metric)
+            self.assertIn("label", metric)
+            self.assertIn("value", metric)
+            self.assertIn("format", metric)
+
+    def test_terminal_view_charts_structure(self) -> None:
+        """测试 terminal 视图 charts 结构。"""
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        charts = terminal.get("charts", {})
+        self.assertIsInstance(charts, dict)
+        for chart_name, chart_data in charts.items():
+            self.assertIn("series", chart_data)
+            self.assertIn("meta", chart_data)
+
+    def test_terminal_view_empty_state(self) -> None:
+        """测试 terminal 视图空状态。"""
+        service = EvaluationWorkspaceService(
+            report_reader=_UnavailableResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        states = terminal.get("states", {})
+        self.assertEqual(states.get("status"), "unavailable")
+
+    def test_terminal_view_tables_structure(self) -> None:
+        """测试 terminal 视图 tables 结构。"""
+        service = EvaluationWorkspaceService(
+            report_reader=_FakeResearchService(),
+            controls_builder=_fake_controls,
+            review_reader=_FakeValidationReviewService(),
+        )
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        tables = terminal.get("tables", {})
+        self.assertIn("leaderboard", tables)
+        self.assertIn("gate_matrix", tables)
+        self.assertIsInstance(tables["leaderboard"], list)
+
+
 if __name__ == "__main__":
     unittest.main()

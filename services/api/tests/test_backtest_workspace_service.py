@@ -183,5 +183,101 @@ def _fake_controls() -> dict[str, object]:
     }
 
 
+    def test_workspace_includes_terminal_view(self) -> None:
+        """测试 workspace 包含 terminal 视图字段。"""
+        service = BacktestWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        self.assertIn("terminal", item)
+        terminal = item["terminal"]
+        self.assertIn("page", terminal)
+        self.assertIn("metrics", terminal)
+        self.assertIn("charts", terminal)
+        self.assertIn("tables", terminal)
+        self.assertIn("states", terminal)
+
+    def test_terminal_view_page_structure(self) -> None:
+        """测试 terminal 视图 page 结构。"""
+        service = BacktestWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        page = terminal.get("page", {})
+        self.assertIn("route", page)
+        self.assertEqual(page["route"], "/backtest")
+        self.assertIn("title", page)
+        self.assertIn("breadcrumb", page)
+        self.assertIn("updated_at", page)
+
+    def test_terminal_view_states_structure(self) -> None:
+        """测试 terminal 视图 states 结构。"""
+        service = BacktestWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        states = terminal.get("states", {})
+        self.assertIn("status", states)
+        self.assertIn("data_quality", states)
+        self.assertIn("warnings", states)
+        self.assertIn("updated_at", states)
+
+    def test_terminal_view_metrics_format(self) -> None:
+        """测试 terminal 视图 metrics 格式。"""
+        service = BacktestWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        metrics = terminal.get("metrics", [])
+        self.assertIsInstance(metrics, list)
+        for metric in metrics:
+            self.assertIn("key", metric)
+            self.assertIn("label", metric)
+            self.assertIn("value", metric)
+            self.assertIn("format", metric)
+            self.assertIn("tone", metric)
+
+    def test_terminal_view_charts_structure(self) -> None:
+        """测试 terminal 视图 charts 结构。"""
+        service = BacktestWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        charts = terminal.get("charts", {})
+        self.assertIn("performance", charts)
+        performance = charts["performance"]
+        self.assertIn("series", performance)
+        self.assertIn("meta", performance)
+        self.assertIn("data_quality", performance["meta"])
+
+    def test_terminal_view_empty_state(self) -> None:
+        """测试 terminal 视图空状态。"""
+        service = BacktestWorkspaceService(report_reader=_UnavailableResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        states = terminal.get("states", {})
+        self.assertEqual(states.get("status"), "unavailable")
+        # 空状态时 data_quality 应为 empty 或 partial
+        self.assertIn(states.get("data_quality"), ["empty", "partial"])
+
+    def test_terminal_view_tables_structure(self) -> None:
+        """测试 terminal 视图 tables 结构。"""
+        service = BacktestWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        terminal = item.get("terminal", {})
+        tables = terminal.get("tables", {})
+        self.assertIn("leaderboard", tables)
+        self.assertIn("stage_assessment", tables)
+        self.assertIsInstance(tables["leaderboard"], list)
+
+
 if __name__ == "__main__":
     unittest.main()

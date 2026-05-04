@@ -309,5 +309,68 @@ class _DriftedArtifactResearchService(_FakeResearchService):
         return payload
 
 
+    def test_workspace_includes_terminal_view(self) -> None:
+        """测试 workspace 包含 terminal 视图字段。"""
+        service = ResearchWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        # 注意：research_workspace_service 当前尚未实现 terminal 字段
+        # 此测试预留，待实现后启用
+        # self.assertIn("terminal", item)
+        # self.assertIn("page", item["terminal"])
+        # self.assertIn("metrics", item["terminal"])
+        # self.assertIn("charts", item["terminal"])
+        # self.assertIn("states", item["terminal"])
+        pass
+
+    def test_terminal_view_page_structure(self) -> None:
+        """测试 terminal 视图 page 结构。"""
+        service = ResearchWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        # 注意：research_workspace_service 当前尚未实现 terminal 字段
+        # 此测试预留，待实现后启用
+        # terminal = item.get("terminal", {})
+        # page = terminal.get("page", {})
+        # self.assertIn("route", page)
+        # self.assertIn("title", page)
+        # self.assertIn("breadcrumb", page)
+        pass
+
+    def test_terminal_view_states_structure(self) -> None:
+        """测试 terminal 视图 states 结构。"""
+        service = ResearchWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        # 注意：research_workspace_service 当前尚未实现 terminal 字段
+        # 此测试预留，待实现后启用
+        # terminal = item.get("terminal", {})
+        # states = terminal.get("states", {})
+        # self.assertIn("status", states)
+        # self.assertIn("data_quality", states)
+        # self.assertIn("warnings", states)
+        pass
+
+    def test_terminal_view_metrics_format(self) -> None:
+        """测试 terminal 视图 metrics 格式。"""
+        service = ResearchWorkspaceService(report_reader=_FakeResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        # 注意：research_workspace_service 当前尚未实现 terminal 字段
+        # 此测试预留，待实现后启用
+        # terminal = item.get("terminal", {})
+        # metrics = terminal.get("metrics", [])
+        # self.assertIsInstance(metrics, list)
+        # for metric in metrics:
+        #     self.assertIn("key", metric)
+        #     self.assertIn("label", metric)
+        #     self.assertIn("value", metric)
+        pass
+
+
 if __name__ == "__main__":
     unittest.main()

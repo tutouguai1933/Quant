@@ -1,55 +1,47 @@
-/* 这个文件负责渲染首页驾驶舱，精简版：移除冗余卡片，提升信息密度。 */
+/**
+ * 工作台首页
+ * 终端风格总览页面
+ */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-import { AppShell } from "../components/app-shell";
-import { FeedbackBanner } from "../components/feedback-banner";
-import { PageHero } from "../components/page-hero";
-import { StatusBar } from "../components/status-bar";
-import { Button } from "../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
-import { Skeleton } from "../components/ui/skeleton";
-import { buildAutomationHandoffSummary } from "../lib/automation-handoff";
+import {
+  TerminalShell,
+  MetricCard,
+  TerminalCard,
+} from "../components/terminal";
 import { readFeedback } from "../lib/feedback";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
-  getEvaluationWorkspace,
-  getEvaluationWorkspaceFallback,
   getResearchRuntimeStatus,
   getResearchRuntimeStatusFallback,
-  listOrders,
-  listRiskEvents,
-  listSignals,
-  listStrategies,
+  getStrategyWorkspace,
+  getStrategyWorkspaceFallback,
 } from "../lib/api";
-import { useResearchRuntimeStatus, useAutomationStatus } from "../lib/use-realtime-status";
+import { FeedbackBanner } from "../components/feedback-banner";
+import { LoadingBanner } from "../components/loading-banner";
 
+/* 页面主组件 */
 export default function HomePage() {
   const searchParams = useSearchParams();
   const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
   const feedback = readFeedback(params);
 
+  // 状态管理
   const [session, setSession] = useState<{ token: string | null; isAuthenticated: boolean }>({
     token: null,
     isAuthenticated: false,
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [signals, setSignals] = useState<Array<{ symbol?: string; status?: string }>>([]);
-  const [orders, setOrders] = useState<Array<{ symbol?: string; status?: string; side?: string }>>([]);
-  const [strategies, setStrategies] = useState<Array<{ status?: string }>>([]);
-  const [riskEvents, setRiskEvents] = useState<Array<{ ruleName?: string }>>([]);
-  const [initialResearchRuntime, setInitialResearchRuntime] = useState(getResearchRuntimeStatusFallback());
-  const [evaluationWorkspace, setEvaluationWorkspace] = useState(getEvaluationWorkspaceFallback());
-  const [initialAutomationCycle, setInitialAutomationCycle] = useState<Record<string, unknown>>(getAutomationStatusFallback().item);
+  const [automationStatus, setAutomationStatus] = useState(getAutomationStatusFallback().item);
+  const [researchRuntime, setResearchRuntime] = useState(getResearchRuntimeStatusFallback());
+  const [strategyWorkspace, setStrategyWorkspace] = useState(getStrategyWorkspaceFallback());
 
-  // 使用实时状态 hooks（WebSocket + 轮询降级）
-  const { status: researchRuntime } = useResearchRuntimeStatus(initialResearchRuntime);
-  const { cycle: automationCycle } = useAutomationStatus(initialAutomationCycle);
-
+  // 获取会话状态
   useEffect(() => {
     fetch("/api/control/session")
       .then((res) => res.json())
@@ -59,39 +51,32 @@ export default function HomePage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
+  // 获取数据
   useEffect(() => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     Promise.allSettled([
-      listSignals(controller.signal).then((res) => res.error ? [] : res.data.items),
-      listOrders(controller.signal).then((res) => res.error ? [] : res.data.items),
-      session.isAuthenticated && session.token
-        ? listStrategies(session.token, controller.signal).then((res) => res.error ? [] : res.data.items)
-        : Promise.resolve([]),
-      session.isAuthenticated && session.token
-        ? listRiskEvents(session.token, controller.signal).then((res) => res.error ? [] : res.data.items)
-        : Promise.resolve([]),
-      getResearchRuntimeStatus(controller.signal).then((res) => res.error ? getResearchRuntimeStatusFallback() : res.data.item),
-      getEvaluationWorkspace(controller.signal).then((res) => res.error ? getEvaluationWorkspaceFallback() : res.data.item),
-      session.isAuthenticated && session.token
-        ? getAutomationStatus(session.token, controller.signal).then((res) => res.error ? getAutomationStatusFallback().item : res.data.item)
-        : Promise.resolve(getAutomationStatusFallback().item),
+      getAutomationStatus(undefined, controller.signal),
+      getResearchRuntimeStatus(controller.signal),
+      getStrategyWorkspace(undefined, controller.signal),
     ])
-      .then(([signalsRes, ordersRes, strategiesRes, risksRes, runtimeRes, evalRes, autoRes]) => {
+      .then(([automationRes, runtimeRes, strategyRes]) => {
         clearTimeout(timeoutId);
-        if (signalsRes.status === "fulfilled") setSignals(signalsRes.value);
-        if (ordersRes.status === "fulfilled") setOrders(ordersRes.value);
-        if (strategiesRes.status === "fulfilled") setStrategies(strategiesRes.value);
-        if (risksRes.status === "fulfilled") setRiskEvents(risksRes.value);
-        if (runtimeRes.status === "fulfilled") setInitialResearchRuntime(runtimeRes.value);
-        if (evalRes.status === "fulfilled") setEvaluationWorkspace(evalRes.value);
-        if (autoRes.status === "fulfilled") setInitialAutomationCycle(autoRes.value);
+
+        if (automationRes.status === "fulfilled" && !automationRes.value.error) {
+          setAutomationStatus(automationRes.value.data.item);
+        }
+        if (runtimeRes.status === "fulfilled" && !runtimeRes.value.error) {
+          setResearchRuntime(runtimeRes.value.data.item);
+        }
+        if (strategyRes.status === "fulfilled" && !strategyRes.value.error) {
+          setStrategyWorkspace(strategyRes.value.data);
+        }
+
         setIsLoading(false);
       })
       .catch(() => {
@@ -103,206 +88,137 @@ export default function HomePage() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [session.isAuthenticated, session.token]);
+  }, []);
 
-  const latestSignal = signals[0];
-  const latestOrder = orders[0];
-  const latestStrategy = strategies[0];
-  const latestRisk = riskEvents[0];
+  // 系统状态指标
+  const systemMetrics = useMemo(() => [
+    {
+      label: "数据更新",
+      value: automationStatus.health?.status === "ok" ? "正常" : "异常",
+      colorType: automationStatus.health?.status === "ok" ? "positive" as const : "negative" as const,
+    },
+    {
+      label: "控程引擎",
+      value: `${automationStatus.controlActions?.length || 0} 运行中`,
+      colorType: "neutral" as const,
+    },
+    {
+      label: "实盘连接",
+      value: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "已连接" : "断开",
+      colorType: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "positive" as const : "negative" as const,
+    },
+    {
+      label: "研究状态",
+      value: researchRuntime.status || "空闲",
+      colorType: "neutral" as const,
+    },
+  ], [automationStatus, researchRuntime, strategyWorkspace]);
 
-  const researchHref = session.isAuthenticated ? "/research" : "/login?next=%2Fresearch";
-  const evaluationHref = session.isAuthenticated ? "/evaluation" : "/login?next=%2Fevaluation";
-  const strategiesHref = session.isAuthenticated ? "/strategies" : "/login?next=%2Fstrategies";
-  const tasksHref = session.isAuthenticated ? "/tasks" : "/login?next=%2Ftasks";
-
-  const currentRecommendationSymbol = evaluationWorkspace.overview.recommended_symbol || latestSignal?.symbol || "无推荐";
-  const arbitration = asRecord(automationCycle.arbitration);
-  const suggestedAction = asRecord(arbitration.suggested_action);
-
-  const automationHandoff = buildAutomationHandoffSummary({
-    automation: automationCycle as Record<string, unknown>,
-    tasksHref,
-    fallbackTargetHref: readText(suggestedAction, "target_page", researchHref),
-    fallbackTargetLabel: readText(suggestedAction, "label", "按当前建议继续"),
-    fallbackHeadline: readText(arbitration, "headline", "当前还没有自动化仲裁结论"),
-    fallbackDetail: readText(arbitration, "detail", "查看研究、执行和任务状态。"),
-  });
-
-  const researchStatus = researchRuntime.status || "idle";
-  const researchValue = latestSignal?.symbol ?? normalizeStageLabel(researchStatus);
-
-  const executionStatus = latestStrategy?.status || (session.isAuthenticated ? "idle" : "需登录");
-  const executionValue = latestOrder?.symbol ?? executionStatus;
-
-  const riskValue = latestRisk?.ruleName ?? (session.isAuthenticated ? "无风险" : "需登录");
-
-  const automationMode = (automationCycle.mode as string) || "manual";
-  const automationPaused = automationCycle.paused as boolean;
-  const automationManualTakeover = automationCycle.manualTakeover as boolean;
-  const automationValue = automationPaused ? "已暂停" : automationManualTakeover ? "人工接管" : automationMode;
+  // 快速导航
+  const quickLinks = [
+    { href: "/research", label: "模型训练", description: "训练因子模型" },
+    { href: "/backtest", label: "回测训练", description: "策略回测验证" },
+    { href: "/evaluation", label: "选币回测", description: "Top-K 组合回测" },
+    { href: "/features", label: "因子研究", description: "IC/IR 分析" },
+    { href: "/factor-knowledge", label: "因子知识库", description: "因子解释和用法" },
+    { href: "/strategies", label: "实盘管理", description: "执行器状态" },
+  ];
 
   return (
-    <AppShell
-      title="驾驶舱"
-      subtitle="快速决策入口，显示当前状态和下一步动作"
+    <TerminalShell
+      breadcrumb="研究 / 工作台"
+      title="工作台"
+      subtitle="研究、回测、执行和风险的当前状态"
       currentPath="/"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
+      {isLoading && <LoadingBanner />}
 
-      <PageHero
-        badge="决策优先"
-        title={`当前推荐：${currentRecommendationSymbol}`}
-        description={automationHandoff.headline}
-      />
-
-      {isLoading ? (
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-20 rounded-xl" />
-            ))}
-          </div>
-          <Skeleton className="h-32 rounded-xl" />
+      <div className="space-y-4">
+        {/* 系统状态指标 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {systemMetrics.map((metric) => (
+            <MetricCard
+              key={metric.label}
+              label={metric.label}
+              value={metric.value}
+              colorType={metric.colorType}
+            />
+          ))}
         </div>
-      ) : (
-        <>
-          <StatusBar
-            items={[
-              {
-                label: "研究",
-                value: researchValue,
-                status: researchStatus === "running" ? "running" : researchStatus === "completed" ? "success" : "waiting",
-                detail: latestSignal ? `最新候选` : "等待研究",
-              },
-              {
-                label: "执行",
-                value: executionValue,
-                status: latestOrder ? "success" : executionStatus === "running" ? "running" : "waiting",
-                detail: latestOrder ? `最近订单` : "等待执行",
-              },
-              {
-                label: "风险",
-                value: riskValue,
-                status: latestRisk ? "error" : "safe",
-                detail: latestRisk ? "需要处理" : "无风险事件",
-              },
-              {
-                label: "自动化",
-                value: automationValue,
-                status: automationPaused || automationManualTakeover ? "waiting" : "active",
-                detail: automationHandoff.runtimeHeadline,
-              },
-            ]}
-          />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>下一步动作</CardTitle>
-              <CardDescription>{automationHandoff.detail.replaceAll("候选池", "候选篮子").replaceAll("live 子集", "执行篮子")}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-3">
-              <Button asChild variant="terminal">
-                <Link href={automationHandoff.targetHref || researchHref}>
-                  {automationHandoff.targetLabel || "按当前建议继续"}
-                </Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href={evaluationHref}>去评估中心</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href={strategiesHref}>去策略页</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href={tasksHref}>去任务页</Link>
-              </Button>
-              <Button asChild variant="secondary">
-                <Link href="/signals">查看研究报告</Link>
-              </Button>
-            </CardContent>
-          </Card>
+        {/* 快速导航 */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {quickLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="terminal-card p-3 hover:border-[var(--terminal-cyan)] transition-colors"
+            >
+              <div className="text-[var(--terminal-text)] text-[13px] font-medium">
+                {link.label}
+              </div>
+              <div className="text-[var(--terminal-dim)] text-[11px] mt-1">
+                {link.description}
+              </div>
+            </Link>
+          ))}
+        </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <p className="eyebrow">研究状态</p>
-                <CardTitle>{researchValue}</CardTitle>
-                <CardDescription>
-                  {researchRuntime.message || "当前没有研究任务在运行"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>当前阶段：{normalizeStageLabel(researchRuntime.current_stage)}</p>
-                <p>进度：{researchRuntime.progress_pct}%</p>
-                <p>信号数量：{signals.length}</p>
-                <div className="pt-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={researchHref}>去研究工作台</Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <p className="eyebrow">执行状态</p>
-                <CardTitle>{executionValue}</CardTitle>
-                <CardDescription>
-                  {latestOrder ? `${latestOrder.status} / ${latestOrder.side}` : "等待执行确认"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>执行器：{latestStrategy?.status || "未启动"}</p>
-                <p>订单数量：{orders.length}</p>
-                <p>候选篮子：{evaluationWorkspace.overview.candidate_count || 0} 个</p>
-                <div className="pt-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={strategiesHref}>去策略页</Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+        {/* 最近候选队列 */}
+        <TerminalCard title="最近候选队列">
+          <div className="text-[var(--terminal-muted)] text-[12px]">
+            {strategyWorkspace.research?.signal_count || 0} 个候选信号
           </div>
+          {strategyWorkspace.whitelist?.slice(0, 5).map((symbol) => (
+            <div key={symbol} className="text-[var(--terminal-text)] text-[12px] mt-1">
+              {symbol}
+            </div>
+          ))}
+        </TerminalCard>
 
-          {(latestRisk || ((automationCycle.alerts as Array<unknown>)?.length > 0)) && (
-            <Card className="border-destructive/50 bg-destructive/5">
-              <CardHeader>
-                <p className="eyebrow">风险与告警</p>
-                <CardTitle>{latestRisk ? latestRisk.ruleName : `${(automationCycle.alerts as Array<unknown>)?.length || 0} 个告警`}</CardTitle>
-                <CardDescription>
-                  {latestRisk ? `最近风险事件` : ((automationCycle.alerts as Array<Record<string, unknown>>)?.[0]?.message as string) || "需要关注"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button asChild variant="outline" size="sm">
-                  <Link href={tasksHref}>去任务页处理</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
-    </AppShell>
+        {/* 自动化状态 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <TerminalCard title="自动化状态">
+            <div className="space-y-2 text-[12px]">
+              <div className="flex justify-between">
+                <span className="text-[var(--terminal-muted)]">运行模式</span>
+                <span className="text-[var(--terminal-text)]">{automationStatus.mode || "--"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--terminal-muted)]">暂停状态</span>
+                <span className={automationStatus.paused ? "text-[var(--terminal-yellow)]" : "text-[var(--terminal-green)]"}>
+                  {automationStatus.paused ? "已暂停" : "运行中"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--terminal-muted)]">告警数量</span>
+                <span className={automationStatus.alerts?.length > 0 ? "text-[var(--terminal-yellow)]" : "text-[var(--terminal-green)]"}>
+                  {automationStatus.alerts?.length || 0}
+                </span>
+              </div>
+            </div>
+          </TerminalCard>
+
+          <TerminalCard title="系统状态">
+            <div className="space-y-2 text-[12px]">
+              <div className="flex justify-between">
+                <span className="text-[var(--terminal-muted)]">研究状态</span>
+                <span className="text-[var(--terminal-text)]">{strategyWorkspace.research?.status || "--"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--terminal-muted)]">执行器</span>
+                <span className="text-[var(--terminal-text)]">{strategyWorkspace.executor_runtime?.executor || "--"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[var(--terminal-muted)]">运行模式</span>
+                <span className="text-[var(--terminal-text)]">{strategyWorkspace.executor_runtime?.mode || "--"}</span>
+              </div>
+            </div>
+          </TerminalCard>
+        </div>
+      </div>
+    </TerminalShell>
   );
-}
-
-function readText(record: Record<string, unknown>, key: string, fallback: string) {
-  const value = record[key];
-  if (value === null || value === undefined) {
-    return fallback;
-  }
-  const normalized = String(value).trim();
-  return normalized.length ? normalized : fallback;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function normalizeStageLabel(value: string) {
-  const normalized = value.trim();
-  if (!normalized) {
-    return "空闲";
-  }
-  return normalized.replaceAll("_", " ");
 }

@@ -1,10 +1,13 @@
-/* 评估与实验中心：精简版 */
+/**
+ * 选币回测页面入口
+ * 复刻参考图 2 的终端化布局
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-import { AppShell } from "../../components/app-shell";
+import { TerminalShell } from "../../components/terminal";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { readFeedback } from "../../lib/feedback";
 import { EvaluationClient } from "./evaluation-client";
@@ -25,23 +28,22 @@ export default function EvaluationPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
   const feedback = readFeedback(params);
 
   return (
-    <AppShell
-      title="评估"
-      subtitle="评估中心先回答：哪些候选值得推进、为什么推荐、为什么淘汰。"
+    <TerminalShell
+      breadcrumb="研究 / 选币回测"
+      title="选币回测"
+      subtitle="多标的 Top-K 组合回测"
       currentPath="/evaluation"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
       <EvaluationClient token={session.token} isAuthenticated={session.isAuthenticated} />
-    </AppShell>
+    </TerminalShell>
   );
 }

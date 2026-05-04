@@ -5,8 +5,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from services.api.app.services.candidate_priority_service import candidate_priority_service
 from services.api.app.services.research_service import research_service
+from services.api.app.services.terminal_series_service import terminal_series_service
+from services.api.app.services.terminal_view_helpers import (
+    build_terminal_page,
+    metric_card,
+    terminal_state,
+)
 from services.api.app.services.validation_workflow_service import validation_workflow_service
 from services.api.app.services.workbench_config_service import (
     _build_automation_preset_catalog,
@@ -106,6 +114,15 @@ class EvaluationWorkspaceService:
             recommendation_explanation=recommendation_explanation,
             elimination_explanation=elimination_explanation,
             alignment_story=alignment_story,
+        )
+
+        # 构造 terminal 视图数据
+        terminal_payload = self._build_terminal_view(
+            report=report,
+            overview=overview,
+            leaderboard=leaderboard,
+            gate_matrix=gate_matrix,
+            elimination_explanation=elimination_explanation,
         )
 
         status = str(report.get("status", "unavailable") or "unavailable")
@@ -230,6 +247,7 @@ class EvaluationWorkspaceService:
             ),
             "alignment_actions": alignment_actions,
             "stage_decision_summary": stage_decision_summary,
+            "terminal": terminal_payload,
         }
 
     @staticmethod
@@ -2439,6 +2457,149 @@ class EvaluationWorkspaceService:
         if status:
             return status == "passed"
         return not [str(reason).strip() for reason in list(gate.get("reasons") or []) if str(reason).strip()]
+
+    def _build_terminal_view(
+        self,
+        *,
+        report: dict[str, object],
+        overview: dict[str, object],
+        leaderboard: list[dict[str, object]],
+        gate_matrix: list[dict[str, object]],
+        elimination_explanation: dict[str, object],
+    ) -> dict[str, object]:
+        """构造 terminal 视图数据。
+
+        从现有字段提取数据，构造 terminal 视图所需的 page、metrics、charts、tables、states 结构。
+
+        Args:
+            report: 研究报告字典
+            overview: 概览数据
+            leaderboard: 排行榜数据
+            gate_matrix: 门控矩阵数据
+            elimination_explanation: 淘汰说明数据
+
+        Returns:
+            terminal 视图字典
+        """
+        # 构造页面信息
+        page = build_terminal_page(
+            route="/evaluation",
+            breadcrumb="研究 / 选币回测",
+            title="选币回测",
+            subtitle="Top N 候选对比、闸门过滤与执行建议",
+        )
+
+        # 从 overview 提取推荐标的和候选数量
+        recommended_symbol = str(overview.get("recommended_symbol", "") or "")
+        candidate_count = int(overview.get("candidate_count", 0) or 0)
+
+        # 从 leaderboard 计算 passed_count 和 rejected_count
+        passed_count = sum(
+            1
+            for item in leaderboard
+            if str(item.get("elimination_reason", "")) == "已通过" or not item.get("elimination_reason")
+        )
+        rejected_count = candidate_count - passed_count
+
+        # 从 leaderboard 提取最佳净收益和最佳回撤
+        best_net_return_pct = 0.0
+        best_max_drawdown_pct = 0.0
+        for item in leaderboard:
+            backtest = dict(item.get("backtest") or {})
+            net_return = float(backtest.get("net_return_pct", 0) or 0)
+            max_drawdown = float(backtest.get("max_drawdown_pct", 0) or 0)
+            if net_return > best_net_return_pct:
+                best_net_return_pct = net_return
+            if max_drawdown > 0 and (best_max_drawdown_pct == 0 or max_drawdown < best_max_drawdown_pct):
+                best_max_drawdown_pct = max_drawdown
+
+        # 构造指标卡
+        metrics = [
+            metric_card("recommended_symbol", "推荐标的", recommended_symbol or "-", format="text"),
+            metric_card("candidate_count", "候选数量", str(candidate_count), format="integer"),
+            metric_card("passed_count", "通过数量", str(passed_count), format="integer"),
+            metric_card("rejected_count", "淘汰数量", str(rejected_count), format="integer"),
+            metric_card(
+                "best_net_return_pct",
+                "最佳净收益",
+                f"{best_net_return_pct:.2f}",
+                format="percent",
+                tone="profit_loss",
+            ),
+            metric_card(
+                "best_max_drawdown_pct",
+                "最佳回撤",
+                f"{best_max_drawdown_pct:.2f}",
+                format="percent",
+                tone="risk",
+            ),
+        ]
+
+        # 构造图表：Top 候选净值对比
+        top_candidate_nav = terminal_series_service.build_top_candidate_nav_series(report)
+
+        # 构造表格：candidate_rows
+        candidate_rows = []
+        for item in leaderboard[:10]:
+            backtest = dict(item.get("backtest") or {})
+            candidate_rows.append({
+                "symbol": str(item.get("symbol", "") or ""),
+                "score": str(item.get("score", "") or ""),
+                "net_return_pct": f"{float(backtest.get('net_return_pct', 0) or 0):.2f}",
+                "max_drawdown_pct": f"{float(backtest.get('max_drawdown_pct', 0) or 0):.2f}",
+                "sharpe": f"{float(backtest.get('sharpe', 0) or 0):.2f}",
+                "elimination_reason": str(item.get("elimination_reason", "") or "已通过"),
+            })
+
+        # 构造表格：gate_rows
+        gate_rows = []
+        for item in gate_matrix[:10]:
+            gate_rows.append({
+                "symbol": str(item.get("symbol", "") or ""),
+                "allowed_to_dry_run": "是" if item.get("allowed_to_dry_run") else "否",
+                "allowed_to_live": "是" if item.get("allowed_to_live") else "否",
+                "blocking_gate": str(item.get("blocking_gate", "") or ""),
+                "primary_reason": str(item.get("primary_reason", "") or ""),
+            })
+
+        # 构造表格：elimination_rows
+        elimination_rows = []
+        elimination_evidence = list(elimination_explanation.get("evidence") or [])
+        for idx, evidence in enumerate(elimination_evidence[:5]):
+            elimination_rows.append({
+                "order": idx + 1,
+                "detail": str(evidence),
+            })
+
+        # 确定状态
+        has_data = bool(leaderboard or gate_matrix)
+        status = "ready" if has_data else "empty"
+        data_quality = "real" if has_data else "empty"
+        warnings = []
+        if not leaderboard:
+            warnings.append("leaderboard_missing")
+        if not top_candidate_nav.get("series"):
+            warnings.append("candidate_backtest_series_missing")
+
+        states = terminal_state(
+            status=status,
+            data_quality=data_quality,
+            warnings=warnings,
+        )
+
+        return {
+            "page": page,
+            "metrics": metrics,
+            "charts": {
+                "top_candidate_nav": top_candidate_nav,
+            },
+            "tables": {
+                "candidate_rows": candidate_rows,
+                "gate_rows": gate_rows,
+                "elimination_rows": elimination_rows,
+            },
+            "states": states,
+        }
 
 
 evaluation_workspace_service = EvaluationWorkspaceService()

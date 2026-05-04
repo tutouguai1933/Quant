@@ -1,0 +1,317 @@
+/**
+ * 终端主题颜色变量
+ * 用于量化研究终端的统一深色主题
+ */
+
+/* 终端主题变量 */
+:root {
+  /* 页面底色 - 接近纯黑但略带蓝 */
+  --terminal-bg: #070b12;
+  /* 侧边栏底色 - 比主背景略亮 */
+  --terminal-sidebar: #0a0f18;
+  /* 卡片底色 */
+  --terminal-panel: #141a25;
+  /* 卡片深层底色 - 用于输入框、表格、图表底 */
+  --terminal-panel-deep: #0b1018;
+  /* 卡片描边 - 细线 */
+  --terminal-border: #202838;
+  /* 分割线 */
+  --terminal-grid: #1b2433;
+  /* 主强调色 - 青蓝 */
+  --terminal-cyan: #43c7e8;
+  /* 主强调暗底 */
+  --terminal-cyan-bg: rgba(67, 199, 232, 0.16);
+  /* 成功绿 */
+  --terminal-green: #6bd889;
+  /* 风险红 */
+  --terminal-red: #ee6b78;
+  /* 黄色 */
+  --terminal-yellow: #e5c46b;
+  /* 紫色 - ML 标签 */
+  --terminal-purple: #8b6be8;
+  /* 主文字 */
+  --terminal-text: #e8edf4;
+  /* 次级文字 */
+  --terminal-muted: #8b96a8;
+  /* 弱文字 */
+  --terminal-dim: #5e6a7b;
+}
+
+/* 终端页面背景 */
+body.terminal-theme {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(67, 199, 232, 0.06), transparent 28%),
+    linear-gradient(180deg, var(--terminal-bg) 0%, #080d15 100%);
+}
+
+/* 终端侧边栏样式 */
+.terminal-sidebar-root {
+  background: var(--terminal-sidebar);
+  border-right: 1px solid var(--terminal-border);
+}
+
+/* 终端卡片基础样式 */
+.terminal-card {
+  border-radius: 8px;
+  border: 1px solid var(--terminal-border);
+  background: var(--terminal-panel);
+  box-shadow: none;
+}
+
+/* 终端输入框样式 */
+.terminal-input {
+  background: var(--terminal-panel-deep);
+  border: 1px solid var(--terminal-border);
+  border-radius: 6px;
+  color: var(--terminal-text);
+  font-size: 13px;
+  padding: 8px 12px;
+  transition: border-color 0.15s ease;
+}
+
+.terminal-input:focus {
+  outline: none;
+  border-color: var(--terminal-cyan);
+}
+
+/* 终端按钮样式 */
+.terminal-btn {
+  background: var(--terminal-cyan);
+  color: #070b12;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.terminal-btn:hover {
+  opacity: 0.9;
+}
+
+.terminal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 终端 chip 样式 */
+.terminal-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  border: 1px solid var(--terminal-border);
+  background: var(--terminal-panel-deep);
+  color: var(--terminal-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.terminal-chip:hover {
+  border-color: var(--terminal-cyan);
+  color: var(--terminal-cyan);
+}
+
+.terminal-chip.active {
+  border-color: var(--terminal-cyan);
+  background: var(--terminal-cyan-bg);
+  color: var(--terminal-cyan);
+}
+
+/* 终端 ML 标签 */
+.terminal-chip-ml {
+  background: rgba(139, 107, 232, 0.16);
+  border-color: var(--terminal-purple);
+  color: var(--terminal-purple);
+}
+
+/* 终端 RULE 标签 */
+.terminal-chip-rule {
+  background: rgba(67, 199, 232, 0.1);
+  border-color: rgba(67, 199, 232, 0.5);
+  color: var(--terminal-cyan);
+}
+
+/* 终端指标卡 */
+.terminal-metric-card {
+  border-radius: 8px;
+  border: 1px solid var(--terminal-border);
+  background: var(--terminal-panel);
+  padding: 12px 14px;
+}
+
+.terminal-metric-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--terminal-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.terminal-metric-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--terminal-text);
+  margin-top: 4px;
+}
+
+.terminal-metric-value.positive {
+  color: var(--terminal-green);
+}
+
+.terminal-metric-value.negative {
+  color: var(--terminal-red);
+}
+
+.terminal-metric-detail {
+  font-size: 12px;
+  color: var(--terminal-dim);
+  margin-top: 4px;
+}
+
+/* 终端页面标题 */
+.terminal-page-header {
+  border-bottom: 1px solid var(--terminal-border);
+  padding: 16px 18px;
+  min-height: 78px;
+}
+
+.terminal-breadcrumb {
+  font-size: 11px;
+  color: var(--terminal-dim);
+  margin-bottom: 4px;
+}
+
+.terminal-page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--terminal-text);
+}
+
+.terminal-page-subtitle {
+  font-size: 13px;
+  color: var(--terminal-muted);
+  margin-top: 2px;
+}
+
+/* 终端参数面板 */
+.terminal-control-panel {
+  border-radius: 8px;
+  border: 1px solid var(--terminal-border);
+  background: var(--terminal-panel);
+  padding: 14px 16px;
+}
+
+.terminal-control-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--terminal-text);
+  margin-bottom: 12px;
+}
+
+/* 终端表单行 */
+.terminal-field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.terminal-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--terminal-muted);
+}
+
+/* 终端图表容器 */
+.terminal-chart-panel {
+  border-radius: 8px;
+  border: 1px solid var(--terminal-border);
+  background: linear-gradient(180deg, rgba(15, 26, 36, 0.92) 0%, rgba(12, 21, 30, 0.92) 100%);
+  padding: 14px 16px;
+  min-height: 300px;
+}
+
+.terminal-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--terminal-text);
+  margin-bottom: 12px;
+}
+
+/* 终端 JSON 面板 */
+.terminal-json-panel {
+  border-radius: 8px;
+  border: 1px solid var(--terminal-border);
+  background: var(--terminal-panel-deep);
+  padding: 14px 16px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  color: var(--terminal-muted);
+  overflow-x: auto;
+}
+
+/* 终端状态指示器 */
+.terminal-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.terminal-status-dot.online {
+  background: var(--terminal-green);
+}
+
+.terminal-status-dot.offline {
+  background: var(--terminal-red);
+}
+
+.terminal-status-dot.warning {
+  background: var(--terminal-yellow);
+}
+
+/* 终端导航项 */
+.terminal-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--terminal-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.terminal-nav-item:hover {
+  background: rgba(67, 199, 232, 0.08);
+  color: var(--terminal-text);
+}
+
+.terminal-nav-item.active {
+  background: var(--terminal-cyan-bg);
+  color: var(--terminal-cyan);
+}
+
+/* 终端分割线 */
+.terminal-divider {
+  height: 1px;
+  background: var(--terminal-border);
+  margin: 12px 0;
+}
+
+/* 终端导航分组标题 */
+.terminal-nav-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--terminal-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 12px;
+  margin-top: 8px;
+}

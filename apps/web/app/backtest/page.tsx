@@ -1,91 +1,61 @@
-/* 这个文件负责渲染回测工作台，让成本模型、净收益、回撤和动作段直接可见。 */
+/**
+ * 回测训练页面
+ * 复刻参考图 1 的终端化布局
+ * 左侧：策略配置/风控参数/回测区间
+ * 右侧：指标卡、净值曲线图、回撤图、资金对比
+ */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 
-import { AppShell } from "../../components/app-shell";
-import { DataTable } from "../../components/data-table";
+import {
+  TerminalShell,
+  ControlPanel,
+  FieldRow,
+  TerminalInput,
+  TerminalSelect,
+  SegmentedControl,
+  ChipList,
+  MetricStrip,
+  EquityCurveChart,
+  DrawdownChart,
+  FundsBridge,
+  TerminalTabs,
+} from "../../components/terminal";
+import { readFeedback } from "../../lib/feedback";
+import {
+  getBacktestWorkspace,
+  getBacktestWorkspaceFallback,
+  type BacktestWorkspaceModel,
+} from "../../lib/api";
+import { FeedbackBanner } from "../../components/feedback-banner";
 import { LoadingBanner } from "../../components/loading-banner";
-import { MetricGrid } from "../../components/metric-grid";
-import { PageHero } from "../../components/page-hero";
-import { ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
-import { Badge } from "../../components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Skeleton } from "../../components/ui/skeleton";
-import { getBacktestWorkspaceFallback } from "../../lib/api";
-import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 
-type BacktestWorkspaceModel = {
-  status: string;
-  backend: string;
-  overview: {
-    holding_window: string;
-    candidate_count: number;
-    recommended_symbol: string;
-  };
-  assumptions: Record<string, string>;
-  selection_story?: Record<string, unknown>;
-  cost_filter_catalog?: Array<Record<string, unknown>>;
-  stage_assessment?: Array<Record<string, unknown>>;
-  controls: {
-    backtest_preset_key?: string;
-    fee_bps: string;
-    slippage_bps: string;
-    cost_model: string;
-    available_cost_models: string[];
-    cost_model_catalog?: Array<Record<string, unknown>>;
-    available_backtest_presets?: string[];
-    backtest_preset_catalog?: Array<Record<string, unknown>>;
-    enable_rule_gate: boolean;
-    enable_validation_gate: boolean;
-    enable_backtest_gate: boolean;
-    enable_consistency_gate: boolean;
-    enable_live_gate: boolean;
-    dry_run_min_score: string;
-    dry_run_min_positive_rate: string;
-    dry_run_min_net_return_pct: string;
-    dry_run_min_sharpe: string;
-    dry_run_max_drawdown_pct: string;
-    dry_run_max_loss_streak: string;
-    dry_run_min_win_rate: string;
-    dry_run_max_turnover: string;
-    dry_run_min_sample_count: string;
-    validation_min_sample_count: string;
-    validation_min_avg_future_return_pct: string;
-    consistency_max_validation_backtest_return_gap_pct: string;
-    consistency_max_training_validation_positive_rate_gap: string;
-    consistency_max_training_validation_return_gap_pct: string;
-    rule_min_ema20_gap_pct: string;
-    rule_min_ema55_gap_pct: string;
-    rule_max_atr_pct: string;
-    rule_min_volume_ratio: string;
-    strict_rule_min_ema20_gap_pct?: string;
-    strict_rule_min_ema55_gap_pct?: string;
-    strict_rule_max_atr_pct?: string;
-    strict_rule_min_volume_ratio?: string;
-    live_min_score: string;
-    live_min_positive_rate: string;
-    live_min_net_return_pct: string;
-    live_min_win_rate: string;
-    live_max_turnover: string;
-    live_min_sample_count: string;
-  };
-  training_backtest: {
-    metrics?: Record<string, string>;
-  };
-  leaderboard: Array<{
-    symbol: string;
-    strategy_template?: string;
-    backtest: {
-      net_return_pct?: string;
-      cost_impact_pct?: string;
-      max_drawdown_pct?: string;
-      sharpe?: string;
-    };
-  }>;
+/* 快速时间区间 */
+const QUICK_DATE_RANGES = [
+  { value: "1m", label: "近1月" },
+  { value: "3m", label: "近3月" },
+  { value: "1y", label: "近1年" },
+  { value: "3y", label: "近3年" },
+  { value: "5y", label: "近5年" },
+];
+
+/* 策略标签类型 */
+type StrategyTag = {
+  label: string;
+  value: string;
+  active: boolean;
+  type: "ml" | "rule" | "default";
 };
 
+/* 页面主组件 */
 export default function BacktestPage() {
+  const searchParams = useSearchParams();
+  const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
+  const feedback = readFeedback(params);
+
+  // 状态管理
   const [session, setSession] = useState<{ token: string | null; isAuthenticated: boolean }>({
     token: null,
     isAuthenticated: false,
@@ -93,6 +63,14 @@ export default function BacktestPage() {
   const [workspace, setWorkspace] = useState<BacktestWorkspaceModel>(getBacktestWorkspaceFallback());
   const [isLoading, setIsLoading] = useState(true);
 
+  // 表单状态
+  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [symbolName, setSymbolName] = useState("Bitcoin");
+  const [selectedDateRange, setSelectedDateRange] = useState("5y");
+  const [selectedStrategies, setSelectedStrategies] = useState<string[]>(["ma_cross"]);
+  const [activeTab, setActiveTab] = useState("equity");
+
+  // 获取会话状态
   useEffect(() => {
     fetch("/api/control/session")
       .then((res) => res.json())
@@ -102,519 +80,258 @@ export default function BacktestPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
+  // 获取工作区数据
   useEffect(() => {
     const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    fetch("/api/control/backtest/workspace", { signal: controller.signal })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.data?.item) {
-          setWorkspace(data.data.item);
+    getBacktestWorkspace()
+      .then((response) => {
+        clearTimeout(timeoutId);
+        if (!response.error) {
+          setWorkspace(response.data.item);
+          // 初始化表单
+          if (response.data.item.overview.recommended_symbol) {
+            setSymbol(response.data.item.overview.recommended_symbol);
+          }
         }
         setIsLoading(false);
       })
       .catch(() => {
-        // Keep fallback workspace data
+        clearTimeout(timeoutId);
         setIsLoading(false);
       });
 
     return () => {
+      clearTimeout(timeoutId);
       controller.abort();
     };
   }, []);
 
-  const backtestStatus = workspace.status || "unavailable";
-  const metrics = workspace.training_backtest.metrics || {};
-  const backtestNote =
-    workspace.training_backtest.metrics && Object.keys(workspace.training_backtest.metrics).length
-      ? `净收益 ${metric(metrics, "net_return_pct")} / Sharpe ${metric(metrics, "sharpe")}`
-      : "当前还没有回测结果";
-  const selectionStory = asRecord(workspace.selection_story);
-  const selectedBacktestPreset = asRecord(selectionStory.backtest_preset);
-  const selectedCostModel = asRecord(selectionStory.cost_model);
-  const costModelCatalog = Array.isArray(workspace.controls.cost_model_catalog)
-    ? workspace.controls.cost_model_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const backtestPresetCatalog = Array.isArray(workspace.controls.backtest_preset_catalog)
-    ? workspace.controls.backtest_preset_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const costFilterCatalog = Array.isArray(workspace.cost_filter_catalog)
-    ? workspace.cost_filter_catalog.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const stageAssessment = Array.isArray(workspace.stage_assessment)
-    ? workspace.stage_assessment.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    : [];
-  const configEditable = workspace.status !== "unavailable";
-  const unavailableConfigReason = "工作台暂时不可用，先恢复研究接口再保存配置。";
-  const gateStates = [
-    { label: "规则门", key: "enable_rule_gate", enabled: workspace.controls.enable_rule_gate },
-    { label: "验证门", key: "enable_validation_gate", enabled: workspace.controls.enable_validation_gate },
-    { label: "回测门", key: "enable_backtest_gate", enabled: workspace.controls.enable_backtest_gate },
-    { label: "一致性门", key: "enable_consistency_gate", enabled: workspace.controls.enable_consistency_gate },
-    { label: "live 门", key: "enable_live_gate", enabled: workspace.controls.enable_live_gate },
-  ];
+  // 构建策略 chip 列表
+  const strategyChips = useMemo((): StrategyTag[] => {
+    const strategies = workspace.leaderboard.map((item) => ({
+      label: item.strategy_template || item.symbol,
+      value: item.strategy_template || item.symbol,
+      active: selectedStrategies.includes(item.strategy_template || item.symbol),
+      type: (item.strategy_template?.includes("model") ? "ml" : "rule") as "ml" | "rule" | "default",
+    }));
+    return strategies.length > 0 ? strategies : [
+      { label: "ma_cross", value: "ma_cross", active: true, type: "rule" },
+      { label: "model_infer", value: "model_infer", active: false, type: "ml" },
+      { label: "rsi_reversion", value: "rsi_reversion", active: false, type: "rule" },
+      { label: "lgbm_rolling", value: "lgbm_rolling", active: false, type: "ml" },
+    ];
+  }, [workspace, selectedStrategies]);
+
+  // 处理策略选择
+  const handleStrategyChange = (value: string) => {
+    setSelectedStrategies((prev) =>
+      prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value]
+    );
+  };
+
+  // 构建指标卡数据
+  const metrics = useMemo(() => {
+    const m = workspace.training_backtest.metrics || {};
+    return [
+      {
+        label: "年化收益",
+        value: m.annual_return_pct || "--",
+        detail: m.net_return_pct ? `累计 ${m.net_return_pct}` : undefined,
+        colorType: m.annual_return_pct && parseFloat(m.annual_return_pct) >= 0 ? "positive" as const : "negative" as const,
+      },
+      {
+        label: "夏普比率",
+        value: m.sharpe || "--",
+        detail: m.calmar || m.sortino ? `Calmar ${m.calmar || "--"} · Sortino ${m.sortino || "--"}` : undefined,
+        colorType: "neutral" as const,
+      },
+      {
+        label: "最大回撤",
+        value: m.max_drawdown_pct || "--",
+        detail: m.volatility ? `波动率 ${m.volatility}` : undefined,
+        colorType: "negative" as const,
+      },
+      {
+        label: "胜率 / 盈亏比",
+        value: m.win_rate ? `${m.win_rate} / ${m.profit_loss_ratio || "--"}` : "--",
+        detail: m.trade_count ? `交易 ${m.trade_count} 次` : undefined,
+        colorType: "neutral" as const,
+      },
+    ];
+  }, [workspace]);
+
+  // 候选币种选项
+  const symbolOptions = useMemo(() => {
+    const symbols = workspace.leaderboard.map((item) => item.symbol);
+    return symbols.length > 0
+      ? symbols.map((s) => ({ value: s, label: s }))
+      : [
+          { value: "BTCUSDT", label: "BTCUSDT" },
+          { value: "ETHUSDT", label: "ETHUSDT" },
+          { value: "SOLUSDT", label: "SOLUSDT" },
+        ];
+  }, [workspace]);
 
   return (
-    <AppShell
-      title="回测工作台"
-      subtitle="把回测结果拆开讲清楚：成本模型是什么，净收益是多少，成本影响、回撤和动作段又分别代表什么。"
+    <TerminalShell
+      breadcrumb="研究 / 回测训练"
+      title="回测训练"
+      subtitle="单标的策略回测，跑出可部署的策略版本"
       currentPath="/backtest"
       isAuthenticated={session.isAuthenticated}
     >
-      <PageHero
-        badge="回测工作台"
-        title="先确认净收益、成本影响和动作段，再决定这套研究结果值不值得进入验证。"
-        description="这里不会只给一个回测分数，而是直接把成本模型、净收益、回撤、Sharpe 和动作段统计摊开，方便你判断这次回测到底靠不靠谱。"
-      />
-
+      <FeedbackBanner feedback={feedback} />
       {isLoading && <LoadingBanner />}
 
-      <MetricGrid
-        items={[
-          { label: "净收益", value: metric(metrics, "net_return_pct"), detail: `${workspace.overview.holding_window || "未写入"} / ${workspace.backend}` },
-          { label: "成本影响", value: metric(metrics, "cost_impact_pct"), detail: "把手续费和滑点单独摊开看" },
-          { label: "最大回撤", value: metric(metrics, "max_drawdown_pct"), detail: "亏损最深的那一段" },
-          { label: "动作段统计", value: metric(metrics, "action_segment_count"), detail: `方向切换 ${metric(metrics, "direction_switch_count")}` },
-        ]}
-      />
-
-      <WorkbenchConfigStatusCard
-        scope="回测"
-        status={backtestStatus}
-        note={backtestNote}
-        editable={configEditable}
-      />
-
-      {isLoading ? (
-        <div className="space-y-5">
-          <Skeleton className="h-64 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
-        </div>
-      ) : (
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
-          <div className="space-y-5">
-            <DataTable
-              columns={["标的", "模板", "净收益", "成本影响", "最大回撤", "Sharpe"]}
-              rows={workspace.leaderboard.map((item) => ({
-                id: item.symbol,
-                cells: [
-                  item.symbol,
-                  item.strategy_template || "未标注",
-                  valueOrFallback(item.backtest.net_return_pct),
-                  valueOrFallback(item.backtest.cost_impact_pct),
-                  valueOrFallback(item.backtest.max_drawdown_pct),
-                  valueOrFallback(item.backtest.sharpe),
-                ],
-              }))}
-              emptyTitle="还没有候选回测"
-              emptyDetail="先运行研究训练和推理，再回到这里比较候选回测。"
-            />
-
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>当前回测选择</CardTitle>
-                <CardDescription>先看清这轮回测究竟按什么口径在算，再去读净收益、回撤和阶段门槛。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                <InfoBlock label="当前组合" value={displayValue(selectionStory.headline, "当前还没有回测组合摘要")} />
-                <InfoBlock label="当前组合说明" value={displayValue(selectionStory.detail, "当前还没有组合说明")} />
-                <InfoBlock
-                  label="回测预设"
-                  value={`${displayValue(selectedBacktestPreset.label, String(workspace.controls.backtest_preset_key ?? "realistic_standard"))} / ${displayValue(selectedBacktestPreset.fit, "当前没有适用场景说明")}`}
-                />
-                <InfoBlock
-                  label="成本模型"
-                  value={`${displayValue(selectedCostModel.label, workspace.controls.cost_model)} / ${displayValue(selectedCostModel.fit, "当前没有适用场景说明")}`}
-                />
-                <InfoBlock label="规则过滤" value={displayValue(selectionStory.filter_summary, "当前还没有规则过滤摘要")} />
-                <InfoBlock label="结果口径" value={displayValue(selectionStory.alignment_note, "当前还没有结果口径说明")} />
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>交易明细</CardTitle>
-                <CardDescription>当前最小回测先展示动作段和切换统计，逐笔明细后续再继续补齐。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                <InfoBlock label="动作段统计" value={metric(metrics, "action_segment_count")} />
-                <InfoBlock label="方向切换" value={metric(metrics, "direction_switch_count")} />
-                <InfoBlock label="胜率" value={metric(metrics, "win_rate")} />
-                <InfoBlock label="连续亏损段" value={metric(metrics, "max_loss_streak")} />
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>成本与过滤拆解</CardTitle>
-                <CardDescription>把成本来源、动作段明细和过滤影响拆开讲清楚，避免只看到一串净收益。</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                <DataTable
-                  columns={["拆解项", "当前口径", "会影响什么"]}
-                  rows={buildBacktestBreakdownRows(selectionStory, costFilterCatalog, metrics)}
-                  emptyTitle="当前还没有回测拆解"
-                  emptyDetail="先保存回测参数并跑一轮训练，这里才会按当前配置解释成本和过滤影响。"
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>严格规则</CardTitle>
-                <CardDescription>研究候选只有同时满足这四条严格规则，才会被认为有突破辨识度。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                <InfoBlock label="EMA20 最低偏离" value={valueOrFallback(workspace.controls.strict_rule_min_ema20_gap_pct)} />
-                <InfoBlock label="EMA55 最低偏离" value={valueOrFallback(workspace.controls.strict_rule_min_ema55_gap_pct)} />
-                <InfoBlock label="最高 ATR 波动" value={valueOrFallback(workspace.controls.strict_rule_max_atr_pct)} />
-                <InfoBlock label="最低量能比" value={valueOrFallback(workspace.controls.strict_rule_min_volume_ratio)} />
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>门控开关</CardTitle>
-                <CardDescription>五个门控可以临时开/关，用来快速排查是哪一层阻止了候选。</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-2">
-                {gateStates.map((gate) => (
-                  <Badge key={gate.key} variant={gate.enabled ? undefined : "outline"}>
-                    {gate.label}: {gate.enabled ? "开启" : "关闭"}
-                  </Badge>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-5">
-            <WorkbenchConfigCard
-              title="回测预设"
-              description="先套用一套回测口径，再继续微调手续费、滑点和门槛。"
-              scope="backtest"
-              returnTo="/backtest"
-              disabled={!configEditable}
-              disabledReason={unavailableConfigReason}
-            >
-              <ConfigField label="一键套用" hint="预设会先改成本模型、手续费和滑点，让你快速切换到标准、压力或基线口径。">
-                <ConfigSelect
-                  name="backtest_preset_key"
-                  defaultValue={String(workspace.controls.backtest_preset_key ?? "realistic_standard")}
-                  options={(workspace.controls.available_backtest_presets || []).map((item) => ({
-                    value: item,
-                    label: item,
-                  }))}
-                />
-              </ConfigField>
-              <DataTable
-                columns={["回测预设", "适用场景", "说明"]}
-                rows={backtestPresetCatalog.map((item, index) => ({
-                  id: `${item.key ?? index}`,
-                  cells: [
-                    String(item.key ?? "n/a"),
-                    String(item.fit ?? "当前没有适用场景说明"),
-                    String(item.detail ?? "当前没有预设说明"),
-                  ],
-                }))}
-                emptyTitle="当前还没有回测预设"
-                emptyDetail="恢复工作台后可用"
+      {/* 主布局：左侧参数栏 + 右侧内容 */}
+      <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+        {/* 左侧：参数配置 */}
+        <div className="space-y-4">
+          {/* 策略配置 */}
+          <ControlPanel title="策略配置">
+            {/* 标的代码 */}
+            <FieldRow label="标的代码">
+              <TerminalInput
+                value={symbol}
+                onChange={setSymbol}
+                placeholder="BTCUSDT"
               />
-            </WorkbenchConfigCard>
+            </FieldRow>
 
-            <WorkbenchConfigCard
-              title="回测参数配置"
-              description="这里改的是成本模型，保存后下一轮训练、回测和评估都会按这里的口径重算。"
-              scope="backtest"
-              returnTo="/backtest"
-              disabled={!configEditable}
-              disabledReason={unavailableConfigReason}
-            >
-              <ConfigField label="成本模型" hint="先定清楚成本是按单边、双边还是零成本基线计算。">
-                <ConfigSelect
-                  name="cost_model"
-                  defaultValue={workspace.controls.cost_model}
-                  options={workspace.controls.available_cost_models.map((item) => ({ value: item, label: item }))}
-                />
-              </ConfigField>
-              <ConfigField label="手续费和滑点" hint="先把成本口径定清楚，再看净收益和回撤。">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <ConfigInput name="fee_bps" defaultValue={workspace.controls.fee_bps} placeholder="手续费 bps" />
-                  <ConfigInput name="slippage_bps" defaultValue={workspace.controls.slippage_bps} placeholder="滑点 bps" />
-                </div>
-              </ConfigField>
-              <ConfigField label="dry-run 门槛" hint="这里控制一轮回测至少要达到什么水平，才允许继续进入 dry-run。">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <ConfigInput name="dry_run_min_score" defaultValue={workspace.controls.dry_run_min_score} placeholder="最低分数" />
-                  <ConfigInput name="dry_run_min_positive_rate" defaultValue={workspace.controls.dry_run_min_positive_rate} placeholder="最低正收益比例" />
-                  <ConfigInput name="dry_run_min_net_return_pct" defaultValue={workspace.controls.dry_run_min_net_return_pct} placeholder="最低净收益 %" />
-                  <ConfigInput name="dry_run_min_sharpe" defaultValue={workspace.controls.dry_run_min_sharpe} placeholder="最低 Sharpe" />
-                  <ConfigInput name="dry_run_max_drawdown_pct" defaultValue={workspace.controls.dry_run_max_drawdown_pct} placeholder="最大回撤 %" />
-                  <ConfigInput name="dry_run_max_loss_streak" defaultValue={workspace.controls.dry_run_max_loss_streak} placeholder="最大连续亏损段" />
-                  <ConfigInput name="dry_run_min_win_rate" defaultValue={workspace.controls.dry_run_min_win_rate} placeholder="最低胜率" />
-                  <ConfigInput name="dry_run_max_turnover" defaultValue={workspace.controls.dry_run_max_turnover} placeholder="最高换手" />
-                  <ConfigInput name="dry_run_min_sample_count" defaultValue={workspace.controls.dry_run_min_sample_count} placeholder="最低样本数" />
-                </div>
-              </ConfigField>
-              <ConfigField label="验证与 live 门槛" hint="这里继续补齐验证和 live 的最小放行条件。">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <ConfigInput name="validation_min_sample_count" defaultValue={workspace.controls.validation_min_sample_count} placeholder="验证最少样本数" />
-                  <ConfigInput name="validation_min_avg_future_return_pct" defaultValue={workspace.controls.validation_min_avg_future_return_pct} placeholder="验证最低未来收益 %" />
-                  <ConfigInput name="live_min_score" defaultValue={workspace.controls.live_min_score} placeholder="live 最低分数" />
-                  <ConfigInput name="live_min_positive_rate" defaultValue={workspace.controls.live_min_positive_rate} placeholder="live 最低正收益比例" />
-                  <ConfigInput name="live_min_net_return_pct" defaultValue={workspace.controls.live_min_net_return_pct} placeholder="live 最低净收益 %" />
-                  <ConfigInput name="live_min_win_rate" defaultValue={workspace.controls.live_min_win_rate} placeholder="live 最低胜率" />
-                  <ConfigInput name="live_max_turnover" defaultValue={workspace.controls.live_max_turnover} placeholder="live 最高换手" />
-                  <ConfigInput name="live_min_sample_count" defaultValue={workspace.controls.live_min_sample_count} placeholder="live 最低样本数" />
-                </div>
-              </ConfigField>
-              <ConfigField label="规则门与一致性门" hint="这里控制趋势确认、波动上限、量能要求，以及训练/验证/回测之间允许出现多大漂移。">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <ConfigInput name="rule_min_ema20_gap_pct" defaultValue={workspace.controls.rule_min_ema20_gap_pct} placeholder="EMA20 最低偏离 %" />
-                  <ConfigInput name="rule_min_ema55_gap_pct" defaultValue={workspace.controls.rule_min_ema55_gap_pct} placeholder="EMA55 最低偏离 %" />
-                  <ConfigInput name="rule_max_atr_pct" defaultValue={workspace.controls.rule_max_atr_pct} placeholder="ATR 最高波动 %" />
-                  <ConfigInput name="rule_min_volume_ratio" defaultValue={workspace.controls.rule_min_volume_ratio} placeholder="最低量能比" />
-                  <ConfigInput name="strict_rule_min_ema20_gap_pct" defaultValue={String(workspace.controls.strict_rule_min_ema20_gap_pct ?? "1.2")} placeholder="严格模板 EMA20 最低偏离 %" />
-                  <ConfigInput name="strict_rule_min_ema55_gap_pct" defaultValue={String(workspace.controls.strict_rule_min_ema55_gap_pct ?? "1.8")} placeholder="严格模板 EMA55 最低偏离 %" />
-                  <ConfigInput name="strict_rule_max_atr_pct" defaultValue={String(workspace.controls.strict_rule_max_atr_pct ?? "4.5")} placeholder="严格模板 ATR 最高波动 %" />
-                  <ConfigInput name="strict_rule_min_volume_ratio" defaultValue={String(workspace.controls.strict_rule_min_volume_ratio ?? "1.05")} placeholder="严格模板最低量能比" />
-                  <ConfigInput name="consistency_max_validation_backtest_return_gap_pct" defaultValue={workspace.controls.consistency_max_validation_backtest_return_gap_pct} placeholder="验证/回测最大收益差 %" />
-                  <ConfigInput name="consistency_max_training_validation_positive_rate_gap" defaultValue={workspace.controls.consistency_max_training_validation_positive_rate_gap} placeholder="训练/验证最大正收益比例差" />
-                  <ConfigInput name="consistency_max_training_validation_return_gap_pct" defaultValue={workspace.controls.consistency_max_training_validation_return_gap_pct} placeholder="训练/验证最大收益差 %" />
-                </div>
-              </ConfigField>
-              <ConfigField label="门控开关" hint="这里可以临时关闭某一层门控，方便判断到底是规则、验证、回测还是一致性在拦住候选。">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <ConfigSelect
-                    name="enable_rule_gate"
-                    defaultValue={String(Boolean(workspace.controls.enable_rule_gate))}
-                    options={[
-                      { value: "true", label: "开启规则门" },
-                      { value: "false", label: "关闭规则门" },
-                    ]}
-                  />
-                  <ConfigSelect
-                    name="enable_validation_gate"
-                    defaultValue={String(Boolean(workspace.controls.enable_validation_gate))}
-                    options={[
-                      { value: "true", label: "开启验证门" },
-                      { value: "false", label: "关闭验证门" },
-                    ]}
-                  />
-                  <ConfigSelect
-                    name="enable_backtest_gate"
-                    defaultValue={String(Boolean(workspace.controls.enable_backtest_gate))}
-                    options={[
-                      { value: "true", label: "开启回测门" },
-                      { value: "false", label: "关闭回测门" },
-                    ]}
-                  />
-                  <ConfigSelect
-                    name="enable_consistency_gate"
-                    defaultValue={String(Boolean(workspace.controls.enable_consistency_gate))}
-                    options={[
-                      { value: "true", label: "开启一致性门" },
-                      { value: "false", label: "关闭一致性门" },
-                    ]}
-                  />
-                  <ConfigSelect
-                    name="enable_live_gate"
-                    defaultValue={String(Boolean(workspace.controls.enable_live_gate))}
-                    options={[
-                      { value: "true", label: "开启 live 门" },
-                      { value: "false", label: "关闭 live 门" },
-                    ]}
-                  />
-                </div>
-              </ConfigField>
-            </WorkbenchConfigCard>
+            {/* 标的名称 */}
+            <FieldRow label="标的名称">
+              <TerminalInput
+                value={symbolName}
+                onChange={setSymbolName}
+                placeholder="Bitcoin"
+              />
+            </FieldRow>
 
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>成本模型</CardTitle>
-                <CardDescription>先确认手续费、滑点和回合成本是怎么算的。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3">
-                <InfoBlock label="手续费" value={valueOrFallback(workspace.assumptions.fee_bps)} />
-                <InfoBlock label="滑点" value={valueOrFallback(workspace.assumptions.slippage_bps)} />
-                <InfoBlock label="回合成本" value={valueOrFallback(workspace.assumptions.round_trip_cost_pct)} />
-                <InfoBlock label="成本模型" value={valueOrFallback(workspace.assumptions.cost_model)} />
-              </CardContent>
-            </Card>
+            {/* 资产类型 */}
+            <FieldRow label="资产类型">
+              <TerminalSelect
+                value="crypto"
+                onChange={() => {}}
+                options={[{ value: "crypto", label: "加密货币" }]}
+              />
+            </FieldRow>
 
-            <DataTable
-              columns={["成本模型说明", "更适合什么", "当前是否选中", "说明"]}
-              rows={costModelCatalog.map((item, index) => ({
-                id: `${String(item.key ?? index)}`,
-                cells: [
-                  String(item.label ?? item.key ?? "n/a"),
-                  String(item.fit ?? "n/a"),
-                  String(item.key ?? "") === String(workspace.controls.cost_model ?? "") ? "当前口径" : "可切换",
-                  String(item.detail ?? "当前没有额外说明"),
-                ],
-              }))}
-              emptyTitle="当前还没有成本模型目录"
-              emptyDetail="恢复工作台后可用"
+            {/* 频率 */}
+            <FieldRow label="频率">
+              <TerminalSelect
+                value="4h"
+                onChange={() => {}}
+                options={[
+                  { value: "1h", label: "1小时" },
+                  { value: "4h", label: "4小时" },
+                  { value: "1d", label: "日线" },
+                ]}
+              />
+            </FieldRow>
+
+            {/* 策略选择 */}
+            <FieldRow label="策略（可多选）">
+              <ChipList
+                items={strategyChips}
+                onChange={handleStrategyChange}
+                multiSelect
+              />
+            </FieldRow>
+
+            {/* 初始资金 */}
+            <FieldRow label="初始资金（USDT）">
+              <TerminalInput
+                value="1000"
+                onChange={() => {}}
+                type="number"
+              />
+            </FieldRow>
+          </ControlPanel>
+
+          {/* 风控参数 */}
+          <ControlPanel title="风控参数">
+            <div className="grid grid-cols-2 gap-2">
+              <FieldRow label="最大持仓天数">
+                <TerminalInput value="10" onChange={() => {}} type="number" />
+              </FieldRow>
+              <FieldRow label="单币仓位">
+                <TerminalInput value="100%" onChange={() => {}} />
+              </FieldRow>
+              <FieldRow label="单币止损">
+                <TerminalInput value="8%" onChange={() => {}} />
+              </FieldRow>
+            </div>
+          </ControlPanel>
+
+          {/* 回测区间 */}
+          <ControlPanel title="回测区间">
+            <FieldRow label="快速选择">
+              <SegmentedControl
+                value={selectedDateRange}
+                onChange={setSelectedDateRange}
+                options={QUICK_DATE_RANGES}
+                size="small"
+              />
+            </FieldRow>
+          </ControlPanel>
+        </div>
+
+        {/* 右侧：指标和图表 */}
+        <div className="space-y-4">
+          {/* 指标卡 */}
+          <MetricStrip metrics={metrics} />
+
+          {/* 图表 Tabs */}
+          <div className="terminal-chart-panel">
+            <TerminalTabs
+              value={activeTab}
+              onChange={setActiveTab}
+              options={[
+                { value: "equity", label: "净值曲线" },
+                { value: "kline", label: "K线" },
+                { value: "trades", label: "交易记录" },
+                { value: "config", label: "策略配置" },
+              ]}
             />
-
-            <DataTable
-              columns={["过滤参数目录", "当前作用", "会拦住什么", "说明"]}
-              rows={costFilterCatalog.map((item, index) => ({
-                id: `${String(item.key ?? index)}`,
-                cells: [
-                  displayValue(item.label, "n/a"),
-                  displayValue(item.current, "当前没有作用摘要"),
-                  displayValue(item.effect, "当前没有过滤影响说明"),
-                  displayValue(item.detail, "当前没有额外说明"),
-                ],
-              }))}
-              emptyTitle="当前还没有过滤参数目录"
-              emptyDetail="恢复工作台后可用"
-            />
-
-            <DataTable
-              columns={["准入阶段", "先看什么", "当前结果", "说明"]}
-              rows={stageAssessment.map((item, index) => ({
-                id: `${String(item.stage ?? index)}`,
-                cells: [
-                  String(item.stage ?? "n/a"),
-                  String(item.focus ?? "当前没有门槛摘要"),
-                  String(item.current ?? "当前没有结果"),
-                  String(item.headline ?? "当前没有阶段说明"),
-                ],
-              }))}
-              emptyTitle="当前还没有阶段门槛对照"
-              emptyDetail="先生成一轮回测结果，系统才会按 dry-run / 验证 / live 三层给出对照。"
-            />
-
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>回测摘要</CardTitle>
-                <CardDescription>把关键结果压成一眼能看懂的最小摘要。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3">
-                <InfoBlock label="总收益" value={metric(metrics, "total_return_pct")} />
-                <InfoBlock label="毛收益" value={metric(metrics, "gross_return_pct")} />
-                <InfoBlock label="净收益" value={metric(metrics, "net_return_pct")} />
-                <InfoBlock label="Sharpe" value={metric(metrics, "sharpe")} />
-              </CardContent>
-            </Card>
-
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>完整准入门槛</CardTitle>
-                <CardDescription>把 dry-run、验证和 live 三层门槛一次看全，先确认这轮结果到底卡在哪一层。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                <InfoBlock label="dry_run_min_score" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_score))} />
-                <InfoBlock label="dry_run_min_positive_rate" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_positive_rate))} />
-                <InfoBlock label="dry_run_min_net_return_pct" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_net_return_pct))} />
-                <InfoBlock label="dry_run_min_sharpe" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_sharpe))} />
-                <InfoBlock label="dry_run_max_drawdown_pct" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_max_drawdown_pct))} />
-                <InfoBlock label="dry_run_max_loss_streak" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_max_loss_streak))} />
-                <InfoBlock label="dry_run_min_win_rate" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_win_rate))} />
-                <InfoBlock label="dry_run_max_turnover" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_max_turnover))} />
-                <InfoBlock label="dry_run_min_sample_count" value={valueOrFallback(asOptionalString(workspace.controls.dry_run_min_sample_count))} />
-                <InfoBlock label="validation_min_sample_count" value={valueOrFallback(asOptionalString(workspace.controls.validation_min_sample_count))} />
-                <InfoBlock label="validation_min_avg_future_return_pct" value={valueOrFallback(asOptionalString(workspace.controls.validation_min_avg_future_return_pct))} />
-                <InfoBlock label="rule_min_ema20_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.rule_min_ema20_gap_pct))} />
-                <InfoBlock label="rule_min_ema55_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.rule_min_ema55_gap_pct))} />
-                <InfoBlock label="rule_max_atr_pct" value={valueOrFallback(asOptionalString(workspace.controls.rule_max_atr_pct))} />
-                <InfoBlock label="rule_min_volume_ratio" value={valueOrFallback(asOptionalString(workspace.controls.rule_min_volume_ratio))} />
-                <InfoBlock label="consistency_max_validation_backtest_return_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.consistency_max_validation_backtest_return_gap_pct))} />
-                <InfoBlock label="consistency_max_training_validation_positive_rate_gap" value={valueOrFallback(asOptionalString(workspace.controls.consistency_max_training_validation_positive_rate_gap))} />
-                <InfoBlock label="consistency_max_training_validation_return_gap_pct" value={valueOrFallback(asOptionalString(workspace.controls.consistency_max_training_validation_return_gap_pct))} />
-                <InfoBlock label="live_min_score" value={valueOrFallback(asOptionalString(workspace.controls.live_min_score))} />
-                <InfoBlock label="live_min_positive_rate" value={valueOrFallback(asOptionalString(workspace.controls.live_min_positive_rate))} />
-                <InfoBlock label="live_min_net_return_pct" value={valueOrFallback(asOptionalString(workspace.controls.live_min_net_return_pct))} />
-                <InfoBlock label="live_min_win_rate" value={valueOrFallback(asOptionalString(workspace.controls.live_min_win_rate))} />
-                <InfoBlock label="live_max_turnover" value={valueOrFallback(asOptionalString(workspace.controls.live_max_turnover))} />
-                <InfoBlock label="live_min_sample_count" value={valueOrFallback(asOptionalString(workspace.controls.live_min_sample_count))} />
-              </CardContent>
-            </Card>
+            <div className="pt-4">
+              {activeTab === "equity" && (
+                <>
+                  <EquityCurveChart data={[]} height={320} />
+                  <DrawdownChart data={[]} height={100} className="mt-4" />
+                </>
+              )}
+              {activeTab === "kline" && (
+                <div className="text-center text-[var(--terminal-muted)] py-20">
+                  K线图暂未实现，请使用市场页面查看
+                </div>
+              )}
+              {activeTab === "trades" && (
+                <div className="text-center text-[var(--terminal-muted)] py-20">
+                  暂无交易记录数据
+                </div>
+              )}
+              {activeTab === "config" && (
+                <div className="text-center text-[var(--terminal-muted)] py-20">
+                  策略配置详情请在左侧调整
+                </div>
+              )}
+            </div>
           </div>
-        </section>
-      )}
-    </AppShell>
-  );
-}
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
-      <p className="eyebrow">{label}</p>
-      <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value}</p>
-    </div>
+          {/* 资金对比 */}
+          <FundsBridge
+            initialFunds={1000}
+            returnPct="--"
+            finalFunds="--"
+            currency="USDT"
+          />
+        </div>
+      </div>
+    </TerminalShell>
   );
-}
-
-function metric(metrics: Record<string, string>, key: string) {
-  return valueOrFallback(metrics[key]);
-}
-function valueOrFallback(value: string | undefined) {
-  return value && value.length > 0 ? value : "n/a";
-}
-function displayValue(value: unknown, fallback: string) {
-  return valueOrFallback(asOptionalString(value)) === "n/a" ? fallback : valueOrFallback(asOptionalString(value));
-}
-function asOptionalString(value: unknown): string | undefined {
-  return value === null || value === undefined ? undefined : String(value);
-}
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-function buildBacktestBreakdownRows(
-  selectionStory: Record<string, unknown>,
-  costFilterCatalog: Array<Record<string, unknown>>,
-  metrics: Record<string, string>,
-) {
-  const catalogRows = costFilterCatalog.map((item, index) => ({
-    id: String(item.key ?? index),
-    cells: [
-      displayValue(item.label, "未命名拆解项"),
-      displayValue(item.current, "当前没有口径说明"),
-      displayValue(item.effect, "当前没有影响说明"),
-    ],
-  }));
-  const fallbackRows = [
-    {
-      id: "selection-headline",
-      cells: [
-        "当前组合",
-        displayValue(selectionStory.headline, "当前没有回测组合摘要"),
-        displayValue(selectionStory.detail, "当前没有组合说明"),
-      ],
-    },
-    {
-      id: "rule-filter",
-      cells: [
-        "规则过滤",
-        displayValue(selectionStory.filter_summary, "当前没有规则过滤摘要"),
-        "先筛掉趋势不够强、波动过大或量能不足的候选。",
-      ],
-    },
-    {
-      id: "gate-summary",
-      cells: [
-        "门控影响",
-        displayValue(selectionStory.gate_summary, "当前没有门控摘要"),
-        "规则门、验证门、回测门、一致性门和 live 门共同决定这轮结果能不能继续进入下一阶段。",
-      ],
-    },
-  ];
-  return [
-    ...(catalogRows.length ? catalogRows : fallbackRows),
-    {
-      id: "action-segments",
-      cells: [
-        "动作段明细",
-        `${metric(metrics, "action_segment_count")} / 切换 ${metric(metrics, "direction_switch_count")}`,
-        "动作段越多、切换越频繁，越容易把成本模型放大成净收益压力。",
-      ],
-    },
-  ];
 }
