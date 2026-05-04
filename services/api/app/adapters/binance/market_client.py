@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.request import urlopen, ProxyHandler, build_opener
 
 from services.api.app.core.settings import Settings
 
@@ -25,9 +26,23 @@ class BinanceMarketClient:
         settings = Settings.from_env()
         self.base_url = (base_url or settings.binance_market_base_url).rstrip("/")
         self.timeout_seconds = timeout_seconds or settings.binance_timeout_seconds
-        self._opener = opener or urlopen
         self.max_retries = max_retries
         self.base_delay = base_delay
+
+        # 配置代理
+        if opener is not None:
+            self._opener = opener
+        else:
+            http_proxy = os.getenv("HTTP_PROXY", "")
+            https_proxy = os.getenv("HTTPS_PROXY", "")
+            if http_proxy or https_proxy:
+                proxy_handler = ProxyHandler({
+                    "http": http_proxy or None,
+                    "https": https_proxy or None,
+                })
+                self._opener = build_opener(proxy_handler).open
+            else:
+                self._opener = urlopen
 
     def _safe_public_get(self, url: str, default):
         """读取公共接口，带重试和指数退避，异常时回退到空结果。"""
@@ -36,8 +51,8 @@ class BinanceMarketClient:
 
         for attempt in range(self.max_retries):
             try:
-                with self._opener(url, timeout=self.timeout_seconds) as response:
-                    return json.load(response)
+                response = self._opener(url, timeout=self.timeout_seconds)
+                return json.load(response)
             except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
                 last_exception = exc
                 if attempt < self.max_retries - 1:
@@ -54,7 +69,9 @@ class BinanceMarketClient:
         """读取 24 小时行情汇总。"""
 
         if symbols:
-            query = urlencode({"symbols": json.dumps([s.strip().upper() for s in symbols if s.strip()])})
+            # Binance API 要求 JSON 数组格式，且不能有空格
+            symbols_json = json.dumps([s.strip().upper() for s in symbols if s.strip()], separators=(',', ':'))
+            query = urlencode({"symbols": symbols_json})
             url = f"{self.base_url}/api/v3/ticker/24hr?{query}"
         else:
             url = f"{self.base_url}/api/v3/ticker/24hr"
@@ -72,7 +89,8 @@ class BinanceMarketClient:
 
         query: dict[str, object] = {}
         if symbols:
-            query["symbols"] = json.dumps([symbol.strip().upper() for symbol in symbols if symbol.strip()])
+            # Binance API 要求 JSON 数组格式，且不能有空格
+            query["symbols"] = json.dumps([symbol.strip().upper() for symbol in symbols if symbol.strip()], separators=(',', ':'))
         query_string = urlencode(query)
         suffix = f"?{query_string}" if query_string else ""
         url = f"{self.base_url}/api/v3/exchangeInfo{suffix}"
