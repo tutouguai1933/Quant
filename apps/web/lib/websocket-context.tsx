@@ -56,7 +56,7 @@ function getWebSocketUrl(): string {
   const token = getAuthToken();
 
   // 构建带 token 的 URL
-  const baseUrl = `${protocol}//${wsHost}/ws`;
+  const baseUrl = `${protocol}//${wsHost}/api/v1/ws`;
   return token ? `${baseUrl}?token=${encodeURIComponent(token)}` : baseUrl;
 }
 
@@ -101,7 +101,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
         // 重新订阅之前的通道
         subscriptionsRef.current.forEach((channel) => {
-          ws.send(JSON.stringify({ action: "subscribe", channel }));
+          ws.send(JSON.stringify({ type: "subscribe", channel }));
         });
       };
 
@@ -158,7 +158,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     subscriptionsRef.current.add(channel);
 
     if (wsRef.current && status === "connected") {
-      wsRef.current.send(JSON.stringify({ action: "subscribe", channel }));
+      wsRef.current.send(JSON.stringify({ type: "subscribe", channel }));
     }
   }, [status]);
 
@@ -166,7 +166,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     subscriptionsRef.current.delete(channel);
 
     if (wsRef.current && status === "connected") {
-      wsRef.current.send(JSON.stringify({ action: "unsubscribe", channel }));
+      wsRef.current.send(JSON.stringify({ type: "unsubscribe", channel }));
     }
   }, [status]);
 
@@ -189,7 +189,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
     const interval = window.setInterval(() => {
       if (wsRef.current) {
-        wsRef.current.send(JSON.stringify({ action: "ping" }));
+        wsRef.current.send(JSON.stringify({ type: "ping" }));
       }
     }, 15000);
 
