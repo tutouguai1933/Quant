@@ -6,28 +6,37 @@
 
 ---
 
-## ⚠️ 开发环境架构（必读）
+## ⚠️ 混合部署架构（必读）
 
-### 核心原则：开发与部署分离
+### 部署方式
 
-| 环境 | 位置 | 作用 |
-|------|------|------|
-| **开发环境** | 本地WSL | 代码编辑、Git提交、文档维护 |
-| **生产环境** | 阿里云服务器 39.106.11.65 | 运行所有Docker服务 |
+| 服务 | 部署方式 | 原因 |
+|------|----------|------|
+| **API** | 直接运行 | 修改代码后重启即可，无需 Docker build |
+| **Web** | 开发模式 | 热重载，修改前端即时生效 |
+| **Freqtrade** | Docker | 第三方服务，环境隔离 |
+| **mihomo** | Docker | 代理服务，配置固定 |
 
-**规则：**
-- ✅ 本地WSL：修改代码 → git push
-- ✅ 阿里云服务器：git pull → docker compose build → docker compose up
-- ❌ **禁止在本地WSL运行Docker容器**（会导致混淆和端口冲突）
-- ❌ **禁止在阿里云服务器直接编辑代码**（应通过Git同步）
+### 服务管理
+
+```bash
+# 查看所有服务
+tmux ls                                    # API 和 Web
+docker ps --filter name=quant              # Docker 容器
+
+# API 服务
+tmux attach -t quant-api                   # 查看日志
+tmux send-keys -t quant-api C-c            # 停止
+
+# Web 服务
+tmux attach -t quant-web                   # 查看日志
+tmux send-keys -t quant-web C-c            # 停止
+```
 
 ### SSH连接方式
 
 ```bash
-# 本地WSL连接阿里云服务器
 ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
-
-# 密钥位置：~/.ssh/id_aliyun_djy
 ```
 
 ---
@@ -37,55 +46,75 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
 ```
 我正在继续Quant量化交易系统的开发和运维工作。
 
-## ⚠️ 开发环境规则
-- 本地WSL：只用于代码编辑和Git推送，不运行服务
-- 阿里云服务器(39.106.11.65)：运行所有生产服务
+## ⚠️ 混合部署架构
+- API/Web：直接运行（tmux管理），修改代码后 git pull + 重启即可
+- Freqtrade/mihomo：Docker容器，修改后需要 docker compose build
 - SSH密钥：~/.ssh/id_aliyun_djy
+
+## 服务状态检查
+tmux ls && docker ps --format 'table {{.Names}}\t{{.Status}}' --filter "name=quant"
 
 ## 项目概况
 - Quant = Freqtrade交易引擎 + FastAPI控制平面 + Next.js前端 + 自动化运维
 - Live实盘模式，运行于阿里云服务器 39.106.11.65
 - 当前余额约21 USDT，16个交易对白名单
 
-## 核心服务（阿里云服务器上的5个容器）
+## 核心服务
 - quant-api (9011): FastAPI控制平面，市场数据、告警推送
-- quant-freqtrade (9013): Freqtrade交易引擎，EnhancedStrategy策略
-- quant-web (9012): Next.js前端
-- quant-openclaw: 自动化巡检服务
+- quant-web (9012): Next.js前端，开发模式
+- quant-freqtrade (9013): Freqtrade交易引擎
 - quant-mihomo (7890/9090): 代理服务，出口IP 154.31.113.7
 
 ## 关键认证
 - Freqtrade API: `Freqtrader:jianyu0.0.`
 - API Admin: `admin:1933`
-- SSH: 密钥认证 `~/.ssh/id_aliyun_djy`
 
 ## 文档位置
-- 项目概览: docs/PROJECT_OVERVIEW.md
+- 开发手册: docs/DEV_HANDBOOK.md（含混合部署说明）
 - 运维手册: docs/OPS_HANDBOOK.md
-- 开发手册: docs/DEV_HANDBOOK.md（含开发流程规范）
-- 踩坑记录: docs/ops-troubleshooting.md
+- 项目概览: docs/PROJECT_OVERVIEW.md
 
-## 请先阅读 docs/DEV_HANDBOOK.md 了解开发流程规则，然后：
-1. SSH到阿里云服务器检查状态：ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "docker ps"
-2. 检查market API：ssh ... "curl -s http://127.0.0.1:9011/api/v1/market | jq '.data.items | length'"
-3. 确认返回16个symbols（BTCUSDT、ETHUSDT等）
-
-请告诉我当前系统运行状态，以及有什么需要我继续开发或运维的工作。
+请先阅读 docs/DEV_HANDBOOK.md 了解部署架构，然后检查系统状态。
 ```
 
 ---
 
-## 远程状态检查命令（在本地WSL执行）
+## 服务启动命令
 
+### API 服务
 ```bash
-# 一键诊断（通过SSH）
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "
-docker ps --format 'table {{.Names}}\t{{.Status}}' --filter 'name=quant'
-echo '--- Market API ---'
-curl -s http://127.0.0.1:9011/api/v1/market | jq '.data.items | length'
-echo '--- Freqtrade ---'
-curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/balance | jq '.total'
-"
+cd ~/Quant/services/api && source ~/Quant/infra/deploy/api.env && export HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 PYTHONPATH=/home/djy/Quant && python3 -m uvicorn app.main:app --host 0.0.0.0 --port 9011
+```
+
+### Web 服务
+```bash
+source ~/.nvm/nvm.sh && cd ~/Quant/apps/web && export QUANT_API_BASE_URL=http://127.0.0.1:9011/api/v1 && pnpm dev --hostname 0.0.0.0 --port 9012
+```
+
+### Docker 容器
+```bash
+cd ~/Quant/infra/deploy && docker compose up -d
+```
+
+---
+
+## 快速部署流程
+
+### 修改 API/Web 代码后部署
+```bash
+# 1. 本地推送
+git add . && git commit -m "fix: xxx" && git push
+
+# 2. 服务器拉取
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull"
+
+# 3. 重启服务（API需要重启，Web会自动热重载）
+# API: tmux send-keys -t quant-api C-c 然后重新启动
+```
+
+### 修改 Docker 服务后部署
+```bash
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra/deploy && docker compose build && docker compose up -d"
 ```
 
 ---
@@ -94,37 +123,21 @@ curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/balance | jq '.t
 
 | 完成项 | 内容 |
 |--------|------|
-| 容器健康检查修复 | 修复docker inspect模板报错导致的"容器已停止"误报 |
-| 开发流程规范 | 明确WSL只用于开发，阿里云服务器用于运行，通过Git同步 |
-| 文档更新 | 更新DEV_HANDBOOK、OPS_HANDBOOK、HANDOVER、PROJECT_OVERVIEW |
-| Git同步流程 | 建立本地推送→服务器pull→重建容器的标准流程 |
-
-### 容器健康检查修复详情
-
-**问题**：飞书持续收到"容器已停止"误报，但容器实际正常运行
-
-**原因**：`health_monitor_service.py`和`auto_recovery_service.py`使用`{{.State.Health.Status}}`模板，当容器没有Health属性时docker inspect报错
-
-**修复**：使用安全的Go模板语法
-```python
-# 修复前（会报错）
-"{{.State.Status}}|{{.State.Health.Status}}|{{.Id}}"
-
-# 修复后（安全）
-"{{.State.Status}}|{{.Id}}"
-"{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"
-```
+| 混合部署架构 | API/Web 直接运行，Freqtrade/mihomo 保持 Docker |
+| Market API优化 | 响应时间从 25s 降至 0.5s |
+| RSI历史功能 | 添加 `/api/v1/market/{symbol}/rsi-history` 端点 |
+| 交易历史功能 | 添加 `/api/v1/trade-log/history` 端点 |
 
 ---
 
 ## 当前系统状态（2026-05-05）
 
-| 服务 | 状态 | 说明 |
-|------|------|------|
-| quant-api | ✅ Running | Market API返回16个symbols |
-| quant-web | ✅ Running | 前端正常访问 |
-| quant-freqtrade | ✅ Running | 交易引擎正常 |
-| quant-mihomo | ✅ Running | 代理工作正常 |
+| 服务 | 状态 | 部署方式 |
+|------|------|----------|
+| quant-api | ✅ Running | 直接运行 |
+| quant-web | ✅ Running | 直接运行 |
+| quant-freqtrade | ✅ Running | Docker |
+| quant-mihomo | ✅ Running | Docker |
 
 ### Market白名单（16个币种）
 
@@ -140,25 +153,9 @@ PEPEUSDT, SHIBUSDT, WIFUSDT, ORDIUSDT, BONKUSDT
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| P1 | Grafana告警规则优化 | 添加更多交易指标监控 |
-| P2 | RSI历史Tab完善 | 单币页面RSI历史展示 |
-| P3 | 策略回测 | 测试不同RSI参数效果 |
-
----
-
-## 部署流程（标准操作）
-
-```bash
-# 1. 本地修改代码并推送
-git add . && git commit -m "fix: xxx" && git push
-
-# 2. SSH到服务器拉取并重建
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "
-cd ~/Quant && git pull &&
-cd ~/Quant/infra/deploy && docker compose build &&
-docker compose up -d
-"
-```
+| P1 | 配置 systemd 服务 | 开机自启动 API/Web |
+| P2 | Grafana告警规则优化 | 添加更多交易指标监控 |
+| P3 | RSI历史Tab完善 | 单币页面RSI历史展示 |
 
 ---
 
@@ -169,28 +166,36 @@ infra/deploy/api.env           # API环境变量
 infra/freqtrade/user_data/config.live.base.json  # Freqtrade主配置
 infra/freqtrade/user_data/strategies/EnhancedStrategy.py  # 策略代码
 infra/grafana/dashboards/quant-overview.json  # Grafana仪表盘
+scripts/start-api.sh           # API启动脚本
+scripts/start-web.sh           # Web启动脚本
 ```
 
 ---
 
 ## 常见问题快速修复
 
+### API 无法访问
+```bash
+tmux ls                      # 检查 session 是否存在
+lsof -i :9011               # 检查端口占用
+tmux attach -t quant-api    # 查看日志
+```
+
+### Web 无法访问
+```bash
+tmux ls                      # 检查 session 是否存在
+lsof -i :9012               # 检查端口占用
+source ~/.nvm/nvm.sh && node --version  # 检查 Node.js
+```
+
 ### Market API返回空数据
 ```bash
 # 检查代理配置
-ssh ... "docker exec quant-api env | grep -i proxy"
-# 应显示 HTTP_PROXY=http://127.0.0.1:7890
-
-# 测试Binance连接
-ssh ... "docker exec quant-api curl -s 'https://api.binance.com/api/v3/ping'"
+curl -x http://127.0.0.1:7890 https://api.binance.com/api/v3/ping
 ```
 
-### 容器unhealthy
+### Docker容器unhealthy
 ```bash
-ssh ... "docker logs quant-api --tail 20"
-```
-
-### 需要重建服务
-```bash
-ssh ... "cd ~/Quant/infra/deploy && docker compose build api && docker compose up -d api"
+docker logs quant-freqtrade --tail 20
+docker restart quant-freqtrade
 ```

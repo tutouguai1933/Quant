@@ -8,61 +8,154 @@
 
 ## ⚠️ 重要：开发环境架构
 
-### 开发与部署分离原则
+### 混合部署架构（2026-05-05 更新）
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        开发流程                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   本地 WSL (开发机)              阿里云服务器 (生产环境)          │
-│   ┌─────────────────┐           ┌─────────────────┐            │
-│   │ 代码编辑        │           │ Docker容器运行   │            │
-│   │ Git提交/推送    │  ──────>  │ quant-api       │            │
-│   │ 文档更新        │   SSH     │ quant-web       │            │
-│   │                 │   部署    │ quant-freqtrade │            │
-│   │ ❌ 不运行服务   │           │ quant-mihomo    │            │
-│   └─────────────────┘           └─────────────────┘            │
-│                                                                 │
-│   IP: 动态(WSL2)                 IP: 39.106.11.65               │
-│   私网: 172.21.x.x               私网: 172.22.73.168            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          部署架构                                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   本地 WSL (开发机)                阿里云服务器 39.106.11.65              │
+│   ┌──────────────────┐            ┌────────────────────────────────┐   │
+│   │ 代码编辑         │            │                                │   │
+│   │ Git提交/推送     │  ───────>  │  直接运行（快速迭代）:          │   │
+│   │ 文档更新         │   SSH      │  ├─ quant-api  (FastAPI:9011)  │   │
+│   │                  │   git pull │  └─ quant-web  (Next.js:9012)  │   │
+│   │ ❌ 不运行服务    │            │                                │   │
+│   └──────────────────┘            │  Docker容器（稳定服务）:        │   │
+│                                   │  ├─ quant-freqtrade (:9013)    │   │
+│                                   │  ├─ quant-mihomo    (:7890)    │   │
+│                                   │  ├─ quant-openclaw             │   │
+│                                   │  ├─ quant-grafana   (:3000)    │   │
+│                                   │  └─ quant-prometheus(:9091)    │   │
+│                                   └────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 核心规则
+### 为什么使用混合部署？
 
-| 环境 | 作用 | 禁止操作 |
-|------|------|----------|
-| 本地WSL | 代码编辑、Git推送、文档维护 | ❌ 运行Docker容器、启动服务 |
-| 阿里云服务器 | 运行所有服务、生产环境 | ❌ 直接编辑代码（应通过Git部署） |
+| 服务 | 部署方式 | 原因 |
+|------|----------|------|
+| **API** | 直接运行 | 修改代码后重启即可，无需 Docker build（节省 2-3 分钟） |
+| **Web** | 开发模式 | 热重载，修改前端即时生效 |
+| **Freqtrade** | Docker | 第三方服务，环境隔离更重要 |
+| **mihomo** | Docker | 代理服务，配置固定 |
 
-### SSH连接到阿里云服务器
+### 服务管理命令
 
 ```bash
-# 本地WSL中执行
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
+# 查看所有服务状态
+tmux ls                    # API 和 Web 运行在 tmux 中
+docker ps --filter name=quant  # Docker 容器状态
 
-# 或使用域名（如已配置）
-ssh -i ~/.ssh/id_aliyun_djy djy@quant-server
+# API 服务
+tmux attach -t quant-api   # 查看 API 日志
+tmux send-keys -t quant-api C-c  # 停止 API
+
+# Web 服务
+tmux attach -t quant-web   # 查看 Web 日志
+tmux send-keys -t quant-web C-c  # 停止 Web
+
+# Docker 容器
+docker restart quant-freqtrade quant-mihomo
+docker logs quant-freqtrade --tail 50
 ```
 
 ---
 
-## 1. 技术栈
+## 1. 快速部署流程
+
+### 修改 API 代码后部署
+
+```bash
+# 1. 本地修改并推送
+git add . && git commit -m "fix: xxx" && git push
+
+# 2. 服务器拉取并重启（一条命令）
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && tmux send-keys -t quant-api C-c; sleep 2; tmux send-keys -t quant-api 'cd ~/Quant/services/api && source ~/Quant/infra/deploy/api.env && export HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 PYTHONPATH=/home/djy/Quant && python3 -m uvicorn app.main:app --host 0.0.0.0 --port 9011' Enter"
+```
+
+### 修改 Web 代码后部署
+
+```bash
+# 1. 本地修改并推送
+git add . && git commit -m "feat: xxx" && git push
+
+# 2. 服务器拉取（Web 开发模式会自动热重载）
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull"
+```
+
+### 修改 Freqtrade/mihomo 配置后部署
+
+```bash
+# 这些服务仍使用 Docker，需要重建
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra/deploy && docker compose build freqtrade && docker compose up -d freqtrade"
+```
+
+---
+
+## 2. 服务启动/重启脚本
+
+### 启动 API 服务
+
+```bash
+# 在服务器上执行
+cd ~/Quant/services/api
+source ~/Quant/infra/deploy/api.env
+export HTTP_PROXY=http://127.0.0.1:7890
+export HTTPS_PROXY=http://127.0.0.1:7890
+export PYTHONPATH=/home/djy/Quant
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 9011
+```
+
+### 启动 Web 服务
+
+```bash
+# 在服务器上执行
+source ~/.nvm/nvm.sh
+cd ~/Quant/apps/web
+export QUANT_API_BASE_URL=http://127.0.0.1:9011/api/v1
+pnpm dev --hostname 0.0.0.0 --port 9012
+```
+
+### 使用启动脚本
+
+```bash
+~/Quant/scripts/start-api.sh   # 启动 API
+~/Quant/scripts/start-web.sh   # 启动 Web
+```
+
+---
+
+## 3. 端口分配
+
+| 服务 | 端口 | 部署方式 |
+|------|------|----------|
+| API | 9011 | 直接运行 |
+| Web | 9012 | 直接运行 |
+| Freqtrade | 9013 | Docker |
+| mihomo HTTP代理 | 7890 | Docker |
+| mihomo 控制台 | 9090 | Docker |
+| Grafana | 3000 | Docker |
+| Prometheus | 9091 | Docker |
+
+---
+
+## 4. 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | Next.js 14 + React + TailwindCSS |
-| 后端 | FastAPI + Python 3.11 |
+| 前端 | Next.js 15 + React 19 + TailwindCSS |
+| 后端 | FastAPI + Python 3.12 |
 | 交易引擎 | Freqtrade + EnhancedStrategy |
-| 数据库 | SQLite（Freqtrade） + PostgreSQL（可选） |
+| 数据库 | SQLite（Freqtrade） |
 | 监控 | Prometheus + Grafana |
 | 代理 | mihomo（Clash Meta） |
 
 ---
 
-## 2. 服务代码结构
+## 5. 服务代码结构
 
 ### API服务 (services/api/)
 ```
@@ -70,61 +163,37 @@ services/api/
 ├── app/
 │   ├── main.py              # FastAPI入口
 │   ├── routes/              # API路由
+│   │   ├── market.py        # 市场数据
 │   │   ├── feishu.py        # 飞书推送
-│   │   ├── health.py        # 健康检查
-│   │   ├── signals.py       # 信号处理
-│   │   ├── strategies.py    # 策略管理
-│   │   └── openclaw.py      # 自动化控制
+│   │   └── health.py        # 健康检查
 │   ├── services/            # 业务逻辑
-│   │   ├── feishu_push_service.py
-│   │   ├── alert_push_service.py
-│   │   ├── health_monitor_service.py
-│   │   └── performance_monitor_service.py
-│   ├── adapters/            # 外部适配
-│   │   └── freqtrade/rest_client.py
-│   └── core/                # 配置和日志
-├── tests/
-└── Dockerfile
-```
-
-### OpenClaw服务 (services/openclaw/)
-```
-services/openclaw/
-├── openclaw_scheduler.py    # 巡检调度
-├── openclaw_action_policy_service.py  # 动作策略
-└── Dockerfile
+│   │   ├── market_service.py
+│   │   └── alert_push_service.py
+│   └── adapters/            # 外部适配
+└── requirements.txt
 ```
 
 ### Web前端 (apps/web/)
 ```
 apps/web/
 ├── app/                     # Next.js页面
-│   ├── analytics/           # 数据分析页
-│   ├── dashboard/           # 控制面板
-│   └── workbench/           # 工作台
 ├── components/              # React组件
-│   ├── charts/              # 图表组件
-│   └── ui/                  # UI组件
 ├── lib/                     # 工具库
-│   ├── websocket-context.tsx  # WebSocket
-│   └── api-client.ts        # API调用
 └── package.json
 ```
 
 ---
 
-## 3. API端点速查
+## 6. API端点速查
 
 ### 核心端点
 | 路径 | 作用 |
 |------|------|
 | `/healthz` | 健康检查 |
-| `/api/v1/feishu/test` | 测试飞书推送 |
-| `/api/v1/feishu/alert` | 发送告警 |
-| `/api/v1/health` | 容器健康状态 |
-| `/api/v1/performance` | 性能指标 |
-| `/api/v1/signals` | 信号列表 |
-| `/api/v1/strategies` | 策略管理 |
+| `/api/v1/market` | 市场快照（16币种白名单） |
+| `/api/v1/market/{symbol}/chart` | 单币K线图 |
+| `/api/v1/market/{symbol}/rsi-history` | RSI历史 |
+| `/api/v1/trade-log/history` | 交易历史 |
 
 ### Freqtrade端点（端口9013）
 | 路径 | 作用 |
@@ -132,90 +201,26 @@ apps/web/
 | `/api/v1/ping` | 心跳 |
 | `/api/v1/status` | 持仓状态 |
 | `/api/v1/balance` | 余额 |
-| `/api/v1/show_config` | 配置 |
-| `/api/v1/forceentry` | 强制买入 |
-| `/api/v1/forceexit` | 强制卖出 |
 
 ---
 
-## 4. 环境变量（api.env）
+## 7. 环境变量
 
-### 必须配置
+API 环境变量位于 `infra/deploy/api.env`：
+
 ```bash
 QUANT_RUNTIME_MODE=dry-run
 QUANT_FREQTRADE_API_URL=http://127.0.0.1:9013
 QUANT_FREQTRADE_API_USERNAME=Freqtrader
 QUANT_FREQTRADE_API_PASSWORD=jianyu0.0.
 
-FEISHU_WEBHOOK_URL=https://open.feishu.cn/...
-QUANT_ALERT_WEBHOOK_URL=https://open.feishu.cn/...
-```
-
-### 监控配置
-```bash
-QUANT_MIHOMO_API_URL=http://127.0.0.1:9090
-QUANT_API_LATENCY_THRESHOLD_MS=60000
-QUANT_TRADE_LATENCY_THRESHOLD_MS=5000
+HTTP_PROXY=http://127.0.0.1:7890
+HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
 ---
 
-## 5. 开发流程
-
-### 正确的开发部署流程
-
-```bash
-# 步骤1: 在本地WSL编辑代码
-vim services/api/app/routes/market.py
-
-# 步骤2: 本地提交并推送到GitHub
-git add services/api/app/routes/market.py
-git commit -m "fix: market endpoint优化"
-git push origin master
-
-# 步骤3: SSH连接到阿里云服务器
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
-
-# 步骤4: 在服务器上拉取最新代码并重建
-cd ~/Quant && git pull origin master
-cd ~/Quant/infra/deploy && docker compose build api
-docker compose up -d api
-
-# 步骤5: 验证部署
-curl -s http://127.0.0.1:9011/api/v1/health | jq '.'
-```
-
-### 本地开发（仅用于代码调试，不用于生产）
-
-```bash
-# 安装依赖（本地测试用）
-cd services/api && pip install -r requirements.txt
-
-# 本地单元测试
-pytest tests/ -v
-
-# ⚠️ 注意：本地不要启动完整服务，只做代码验证
-```
-
-### 远程部署（生产环境）
-
-```bash
-# SSH到阿里云服务器后执行
-cd ~/Quant/infra/deploy
-
-# 构建所有服务
-docker compose build
-
-# 启动服务
-docker compose up -d
-
-# 查看状态
-docker ps --filter "name=quant"
-```
-
----
-
-## 6. 策略开发
+## 8. 策略开发
 
 ### EnhancedStrategy位置
 ```
@@ -227,121 +232,69 @@ infra/freqtrade/user_data/strategies/
 ### 关键参数
 | 参数 | 当前值 | 说明 |
 |------|--------|------|
-| rsi_entry_threshold | **45** | RSI超卖入场（从40提高到45增加机会） |
+| rsi_entry_threshold | 45 | RSI超卖入场 |
 | rsi_exit_threshold | 74 | RSI超买出场 |
 | stoploss | -8% | 止损 |
-| minimal_roi (120min) | **3%** | 最低ROI（已考虑手续费） |
-| order_time_in_force | **IOC** | 防止重复挂单 |
-
-### RSI阈值选择依据（基于30天历史数据分析）
-```
-RSI阈值    入场机会    胜率      平均收益
-RSI<30     极少        70-85%    0.9-2.0%
-RSI<35     较少        44-71%    0.3-2.3%
-RSI<40     中等        51-63%    0.6-2.1%
-RSI<45     较多        57-74%    1.0-2.4%  ← 当前选择
-RSI<50     很多        62-75%    0.8-2.2%
-```
-
-选择RSI=45的权衡：
-- 交易频率适中（30天约50-64次信号）
-- 胜率较好（57-74%）
-- 扣除0.2%手续费后仍有合理利润
-
-### ROI配置（已考虑0.2%手续费）
-```
-时间    ROI阈值    净收益（扣手续费）
-0分钟   8%         7.80%
-30分钟  5%         4.80%
-60分钟  4%         3.80%
-120分钟 3%         2.80%  ← 最低阈值
-```
-
-**重要**：设置ROI时必须考虑双边手续费（买入0.1% + 卖出0.1% = 0.2%），确保净收益合理。
+| minimal_roi (120min) | 3% | 最低ROI |
 
 ### 修改策略后部署
 ```bash
-# 重启Freqtrade加载新策略
+# Freqtrade 是 Docker 容器，需要重启
 docker restart quant-freqtrade
-docker logs quant-freqtrade --tail 50 | grep -i rsi
-```
-
----
-
-## 7. WebSocket使用
-
-### 前端连接
-```typescript
-// apps/web/lib/websocket-context.tsx
-const ws = new WebSocket('ws://127.0.0.1:9011/api/v1/ws');
-
-// 可用通道
-channels: ['research_runtime', 'automation_status']
-```
-
-### 后端处理
-```python
-# services/api/app/routes/websocket.py
-@router.websocket("/api/v1/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-```
-
----
-
-## 8. 测试
-
-### API测试
-```bash
-cd services/api
-pytest tests/ -v
-
-# 快速测试
-curl -s http://127.0.0.1:9011/healthz | jq '.'
-```
-
-### 集成测试
-```bash
-python infra/deploy/api_endpoint_test.py
 ```
 
 ---
 
 ## 9. 常用命令
 
-### 查看日志
+### 查看 API 日志
 ```bash
-docker logs quant-api --since 10m -f
-docker logs quant-freqtrade --tail 100 | grep -iE 'buy|sell|profit'
+tmux attach -t quant-api
+# 按 Ctrl+B 然后 D 退出（不停止服务）
 ```
 
-### 进入容器
+### 查看 Web 日志
 ```bash
-docker exec -it quant-api bash
-docker exec -it quant-freqtrade freqtrade backtesting --config ...
+tmux attach -t quant-web
 ```
 
-### 复制文件到容器
+### 查看 Docker 容器日志
 ```bash
-docker cp services/api/app/main.py quant-api:/app/app/main.py
-docker restart quant-api
+docker logs quant-freqtrade --tail 50
+docker logs quant-mihomo --since 10m
+```
+
+### 测试 API 响应
+```bash
+curl -s 'http://127.0.0.1:9011/api/v1/market' | jq '.data.items | length'
+# 应返回 16
 ```
 
 ---
 
-## 10. 调试技巧
+## 10. 故障排查
 
-### 查看环境变量
+### API 无法启动
 ```bash
-docker exec quant-api env | grep QUANT
+# 检查端口占用
+lsof -i :9011
+
+# 检查依赖
+pip list | grep fastapi
 ```
 
-### 测试API响应
+### Web 无法启动
 ```bash
-time curl -s http://127.0.0.1:9011/api/v1/health | jq '.'
+# 检查 Node.js
+source ~/.nvm/nvm.sh && node --version
+
+# 检查依赖
+cd ~/Quant/apps/web && pnpm install
 ```
 
-### 检查Freqtrade连接
+### 代理不工作
 ```bash
-curl -v -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/ping
+# 检查 mihomo 容器
+docker ps --filter name=mihomo
+curl -x http://127.0.0.1:7890 https://api.ipify.org
 ```
