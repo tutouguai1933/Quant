@@ -1,10 +1,11 @@
 """交易报告服务：生成日报、周报和定时报告调度。
 
 该服务负责:
-- 生成每日交易报告
-- 生成每周交易报告
+- 生成每日交易报告（每日6:00 UTC自动生成）
+- 生成每周交易报告（每周一6:00 UTC自动生成）
 - 报告历史存储和查询
 - 定时任务调度（使用threading.Timer）
+- 推送飞书 webhook
 """
 
 from __future__ import annotations
@@ -21,6 +22,10 @@ from typing import Any
 from services.api.app.services.analytics_service import analytics_service
 from services.api.app.services.factor_analysis_service import factor_analysis_service
 from services.api.app.services.scoring import scoring_service
+from services.api.app.services.feishu_push_service import (
+    feishu_push_service,
+    ReportCardMessage,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -105,6 +110,11 @@ class ReportService:
         self._timer: threading.Timer | None = None
         self._schedule_active: bool = False
         self._schedule_interval_minutes: int = 60
+        # 新增：定时报告调度器（每日6:00和每周一6:00）
+        self._scheduled_report_timer: threading.Timer | None = None
+        self._scheduled_report_active: bool = False
+        self._last_daily_report_date: str | None = None
+        self._last_weekly_report_week: str | None = None
 
     def set_config_path(self, path: str | Path) -> None:
         """设置配置持久化路径。"""
@@ -616,9 +626,212 @@ class ReportService:
             "status": "ready",
             "schedule_active": self._schedule_active,
             "schedule_interval_minutes": self._schedule_interval_minutes,
+            "scheduled_report_active": self._scheduled_report_active,
             "daily_reports_cached": daily_count,
             "weekly_reports_cached": weekly_count,
             "history_records": history_count,
+            "last_daily_report_date": self._last_daily_report_date,
+            "last_weekly_report_week": self._last_weekly_report_week,
+        }
+
+    def start_scheduled_reports(self) -> dict[str, Any]:
+        """启动定时报告生成（每日6:00 UTC和每周一6:00 UTC）。
+
+        使用 threading.Timer 实现精确时间调度。
+        报告生成后自动推送飞书 webhook。
+        """
+        if self._scheduled_report_active:
+            return {
+                "success": False,
+                "message": "定时报告调度已在运行",
+                "last_daily": self._last_daily_report_date,
+                "last_weekly": self._last_weekly_report_week,
+            }
+
+        self._scheduled_report_active = True
+        self._schedule_next_report()
+        logger.info("定时报告生成已启动（每日6:00 UTC日报，每周一6:00 UTC周报）")
+
+        return {
+            "success": True,
+            "message": "定时报告生成已启动",
+            "schedule": {
+                "daily": "06:00 UTC",
+                "weekly": "Monday 06:00 UTC",
+            },
+        }
+
+    def stop_scheduled_reports(self) -> dict[str, Any]:
+        """停止定时报告生成。"""
+        if self._scheduled_report_timer is not None:
+            self._scheduled_report_timer.cancel()
+            self._scheduled_report_timer = None
+
+        self._scheduled_report_active = False
+        logger.info("定时报告生成已停止")
+
+        return {
+            "success": True,
+            "message": "定时报告生成已停止",
+        }
+
+    def _schedule_next_report(self) -> None:
+        """计算并调度下一次报告生成时间。"""
+        if not self._scheduled_report_active:
+            return
+
+        now = utc_now()
+        target_hour = 6  # 6:00 UTC
+
+        # 计算下一个6:00 UTC
+        next_daily = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
+        if now.hour >= target_hour:
+            next_daily = next_daily + timedelta(days=1)
+
+        # 计算下周一6:00 UTC
+        days_until_monday = (7 - now.weekday()) % 7
+        if now.weekday() == 0 and now.hour < target_hour:
+            days_until_monday = 0  # 今天是周一且还没到6点
+        elif now.weekday() == 0 and now.hour >= target_hour:
+            days_until_monday = 7  # 今天是周一但已过了6点
+        next_monday = now + timedelta(days=days_until_monday)
+        next_monday = next_monday.replace(hour=target_hour, minute=0, second=0, microsecond=0)
+
+        # 选择最近的调度时间
+        next_schedule = min(next_daily, next_monday)
+        wait_seconds = (next_schedule - now).total_seconds()
+
+        logger.info("下一次报告调度时间: %s (等待 %.0f 秒)", next_schedule.isoformat(), wait_seconds)
+
+        self._scheduled_report_timer = threading.Timer(wait_seconds, self._execute_scheduled_report)
+        self._scheduled_report_timer.start()
+
+    def _execute_scheduled_report(self) -> None:
+        """执行定时报告生成并推送飞书。"""
+        if not self._scheduled_report_active:
+            return
+
+        now = utc_now()
+        today = now.strftime("%Y-%m-%d")
+        weekday = now.weekday()
+
+        try:
+            # 检查是否需要生成日报
+            if self._last_daily_report_date != today:
+                logger.info("定时生成日报: %s", today)
+                daily_report = self.generate_daily_report(today)
+                self._last_daily_report_date = today
+                self._push_daily_report_to_feishu(daily_report)
+
+            # 检查是否需要生成周报（周一）
+            if weekday == 0 and self._last_weekly_report_week != today:
+                logger.info("定时生成周报: %s", today)
+                weekly_report = self.generate_weekly_report(today)
+                self._last_weekly_report_week = today
+                self._push_weekly_report_to_feishu(weekly_report)
+
+        except Exception as e:
+            logger.warning("定时报告生成失败: %s", e)
+
+        # 调度下一次
+        self._schedule_next_report()
+
+    def _push_daily_report_to_feishu(self, report: DailyReport) -> bool:
+        """推送日报到飞书。"""
+        if not feishu_push_service.enabled:
+            logger.debug("飞书推送未启用，跳过日报推送")
+            return False
+
+        # 构建摘要文本
+        summary_lines = [
+            f"总交易: {report.trade_summary.get('trade_count', 0)}笔",
+            f"盈亏: {report.pnl_summary.get('total_pnl', '0')}",
+            f"胜率: {report.pnl_summary.get('win_rate', '0')}",
+        ]
+        summary = "\n".join(summary_lines)
+
+        # 构建指标字典
+        metrics = {
+            "交易次数": str(report.trade_summary.get("trade_count", 0)),
+            "盈亏": report.pnl_summary.get("total_pnl", "0"),
+            "胜率": report.pnl_summary.get("win_rate", "0"),
+            "最大盈利": report.pnl_summary.get("max_profit", "0"),
+            "最大亏损": report.pnl_summary.get("max_loss", "0"),
+            "风险等级": report.risk_metrics.get("risk_level", "N/A"),
+        }
+
+        feishu_report = ReportCardMessage(
+            report_type="daily",
+            summary=summary,
+            metrics=metrics,
+        )
+
+        success = feishu_push_service.send_report(feishu_report)
+        if success:
+            logger.info("日报已推送飞书: %s", report.date)
+        else:
+            logger.warning("日报推送飞书失败: %s", report.date)
+
+        return success
+
+    def _push_weekly_report_to_feishu(self, report: WeeklyReport) -> bool:
+        """推送周报到飞书。"""
+        if not feishu_push_service.enabled:
+            logger.debug("飞书推送未启用，跳过周报推送")
+            return False
+
+        # 构建摘要文本
+        summary_lines = [
+            f"周盈亏: {report.risk_analysis.get('week_pnl', '0')}",
+            f"胜率: {report.risk_analysis.get('win_rate', '0')}",
+            f"活跃策略: {report.strategy_performance.get('total_strategies', 0)}个",
+        ]
+        summary = "\n".join(summary_lines)
+
+        # 构建指标字典
+        metrics = {
+            "累计盈亏": report.risk_analysis.get("week_pnl", "0"),
+            "胜率": report.risk_analysis.get("win_rate", "0"),
+            "最佳策略": report.strategy_performance.get("best_strategy", "N/A"),
+            "最佳交易日": report.risk_analysis.get("best_day", "N/A"),
+            "最差交易日": report.risk_analysis.get("worst_day", "N/A"),
+        }
+
+        feishu_report = ReportCardMessage(
+            report_type="weekly",
+            summary=summary,
+            metrics=metrics,
+        )
+
+        success = feishu_push_service.send_report(feishu_report)
+        if success:
+            logger.info("周报已推送飞书: %s - %s", report.week_start, report.week_end)
+        else:
+            logger.warning("周报推送飞书失败: %s - %s", report.week_start, report.week_end)
+
+        return success
+
+    def generate_and_push_daily_report(self, date: str | None = None) -> dict[str, Any]:
+        """手动生成日报并推送飞书。"""
+        report = self.generate_daily_report(date)
+        push_success = self._push_daily_report_to_feishu(report)
+
+        return {
+            "report": report.to_dict(),
+            "feishu_push": push_success,
+            "date": report.date,
+        }
+
+    def generate_and_push_weekly_report(self, week_start: str | None = None) -> dict[str, Any]:
+        """手动生成周报并推送飞书。"""
+        report = self.generate_weekly_report(week_start)
+        push_success = self._push_weekly_report_to_feishu(report)
+
+        return {
+            "report": report.to_dict(),
+            "feishu_push": push_success,
+            "week_start": report.week_start,
+            "week_end": report.week_end,
         }
 
 

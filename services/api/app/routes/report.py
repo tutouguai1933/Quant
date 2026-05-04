@@ -5,7 +5,10 @@
 - GET /api/v1/report/weekly - 周报
 - GET /api/v1/report/history - 报告历史
 - POST /api/v1/report/generate - 手动生成报告
+- POST /api/v1/report/generate-and-push - 手动生成并推送飞书
 - GET /api/v1/report/status - 服务状态
+- POST /api/v1/report/schedule/start - 启动定时报告（每日6:00/周一6:00）
+- POST /api/v1/report/schedule/stop - 停止定时报告
 """
 
 from __future__ import annotations
@@ -251,3 +254,87 @@ def stop_schedule(
 
     result = report_service.stop_schedule()
     return _success(result, _build_meta("stop-schedule", status=result.get("message")))
+
+
+@router.post("/scheduled-reports/start")
+def start_scheduled_reports(
+    token: str = "",
+    authorization: str = Header(""),
+) -> dict:
+    """启动定时报告生成（每日6:00 UTC日报，每周一6:00 UTC周报）。
+
+    报告生成后自动推送飞书 webhook。
+    """
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
+    result = report_service.start_scheduled_reports()
+    return _success(result, _build_meta("start-scheduled-reports", status=result.get("message")))
+
+
+@router.post("/scheduled-reports/stop")
+def stop_scheduled_reports(
+    token: str = "",
+    authorization: str = Header(""),
+) -> dict:
+    """停止定时报告生成（需要认证）。"""
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
+    result = report_service.stop_scheduled_reports()
+    return _success(result, _build_meta("stop-scheduled-reports", status=result.get("message")))
+
+
+@router.post("/generate-and-push")
+def generate_and_push_report(
+    payload: dict[str, Any],
+    token: str = "",
+    authorization: str = Header(""),
+) -> dict:
+    """手动生成报告并推送飞书（需要认证）。
+
+    Args:
+        payload: {report_type: "daily"|"weekly", date: "YYYY-MM-DD"}
+    """
+    try:
+        auth_service.require_control_plane_access(
+            auth_service.resolve_access_token(token, authorization)
+        )
+    except PermissionError:
+        return _unauthorized()
+
+    report_type = payload.get("report_type", "daily")
+    target_date = payload.get("date")
+
+    if report_type == "daily":
+        result = report_service.generate_and_push_daily_report(date=target_date)
+        return _success(
+            result,
+            _build_meta(
+                "generate-and-push",
+                report_type="daily",
+                date=result.get("date"),
+                feishu_push=result.get("feishu_push"),
+            ),
+        )
+    elif report_type == "weekly":
+        result = report_service.generate_and_push_weekly_report(week_start=target_date)
+        return _success(
+            result,
+            _build_meta(
+                "generate-and-push",
+                report_type="weekly",
+                week_start=result.get("week_start"),
+                feishu_push=result.get("feishu_push"),
+            ),
+        )
+    else:
+        return _error("invalid_request", "report_type must be 'daily' or 'weekly'")

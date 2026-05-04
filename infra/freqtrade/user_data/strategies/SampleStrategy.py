@@ -36,11 +36,18 @@ import sys
 sys.path.insert(0, '/freqtrade/user_data')
 from config_helper import get_config
 
+# 交易告警集成
+try:
+    TRADE_ALERT_ENABLED = get_config("QUANT_TRADE_ALERT_ENABLED", default="true", as_type="str").lower() == "true"
+except Exception:
+    TRADE_ALERT_ENABLED = False
+
 logger = getLogger(__name__)
 
 
 # 策略配置参数（使用统一配置接口）
-MIN_ENTRY_SCORE = float(get_config("QUANT_STRATEGY_MIN_ENTRY_SCORE", default=Decimal("0.60"), as_type="decimal"))
+# 回测优化：降低入场阈值，更容易触发交易信号
+MIN_ENTRY_SCORE = float(get_config("QUANT_STRATEGY_MIN_ENTRY_SCORE", default=Decimal("0.35"), as_type="decimal"))
 TRAILING_STOP_TRIGGER = float(get_config("QUANT_STRATEGY_TRAILING_STOP_TRIGGER", default=Decimal("0.02"), as_type="decimal"))
 TRAILING_STOP_DISTANCE = float(get_config("QUANT_STRATEGY_TRAILING_STOP_DISTANCE", default=Decimal("0.01"), as_type="decimal"))
 PROFIT_EXIT_RATIO = float(get_config("QUANT_STRATEGY_PROFIT_EXIT_RATIO", default=Decimal("0.05"), as_type="decimal"))
@@ -88,6 +95,179 @@ class SampleStrategy(IStrategy):
     _research_score_cache: dict[str, dict] = {}
     _cache_timestamp: Optional[datetime] = None
     _cache_ttl_seconds: int = 300  # 5分钟缓存
+
+    # 交易告警追踪
+    _trade_alert_tracker: dict[str, dict] = {}
+    _daily_pnl_tracker: dict[str, float] = {}
+    _consecutive_losses: dict[str, int] = {}
+    _last_alert_reset_date: Optional[str] = None
+
+    def _check_trade_alerts(self, pair: str, profit_ratio: float, entry_price: float, exit_price: float) -> None:
+        """检查交易告警条件并发送告警。
+
+        Args:
+            pair: 币种对
+            profit_ratio: 盈亏比例
+            entry_price: 入场价格
+            exit_price: 出场价格
+        """
+        if not TRADE_ALERT_ENABLED:
+            return
+
+        try:
+            import requests
+
+            # 告警配置阈值
+            large_loss_threshold = 0.05  # 5%
+            consecutive_loss_threshold = 3
+            daily_loss_threshold = 0.10  # 10%
+
+            symbol = pair.replace("/", "").replace(":", "")
+            is_loss = profit_ratio < 0
+
+            # 检查单笔大额亏损
+            if is_loss and abs(profit_ratio) > large_loss_threshold:
+                self._send_trade_alert(
+                    alert_type="large_loss",
+                    symbol=symbol,
+                    message=f"单笔亏损 {abs(profit_ratio):.2%} 超过阈值 {large_loss_threshold:.2%}",
+                    details={
+                        "loss_percent": f"{abs(profit_ratio):.2%}",
+                        "entry_price": str(entry_price),
+                        "exit_price": str(exit_price),
+                    }
+                )
+
+            # 检查连续亏损
+            if is_loss:
+                self._consecutive_losses[symbol] = self._consecutive_losses.get(symbol, 0) + 1
+                if self._consecutive_losses[symbol] >= consecutive_loss_threshold:
+                    self._send_trade_alert(
+                        alert_type="consecutive_loss",
+                        symbol=symbol,
+                        message=f"连续亏损 {self._consecutive_losses[symbol]} 笔",
+                        details={
+                            "consecutive_count": str(self._consecutive_losses[symbol]),
+                        }
+                    )
+                    # 重置计数
+                    self._consecutive_losses[symbol] = 0
+            else:
+                self._consecutive_losses[symbol] = 0
+
+            # 更新日盈亏追踪
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if self._last_alert_reset_date != today:
+                self._daily_pnl_tracker.clear()
+                self._last_alert_reset_date = today
+
+            self._daily_pnl_tracker[symbol] = self._daily_pnl_tracker.get(symbol, 0.0) + profit_ratio
+
+            # 检查日亏损限制
+            daily_pnl = self._daily_pnl_tracker.get(symbol, 0.0)
+            if daily_pnl < -daily_loss_threshold:
+                self._send_trade_alert(
+                    alert_type="daily_loss_limit",
+                    symbol=symbol,
+                    message=f"日亏损 {abs(daily_pnl):.2%} 超过阈值 {daily_loss_threshold:.2%}",
+                    details={
+                        "daily_loss": f"{abs(daily_pnl):.2%}",
+                        "date": today,
+                    }
+                )
+
+        except Exception as e:
+            logger.warning("交易告警检查失败: %s", e)
+
+    def _send_trade_alert(self, alert_type: str, symbol: str, message: str, details: dict) -> None:
+        """发送交易告警到飞书。
+
+        Args:
+            alert_type: 告警类型
+            symbol: 币种符号
+            message: 告警消息
+            details: 告警详情
+        """
+        try:
+            import requests
+
+            # 飞书告警 API
+            alert_url = f"{QUANT_API_BASE_URL}/api/v1/alert/trade"
+            payload = {
+                "alert_type": alert_type,
+                "symbol": symbol,
+                "message": message,
+                "details": details,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+            response = requests.post(alert_url, json=payload, timeout=5)
+            if response.status_code == 200:
+                logger.info("交易告警发送成功: %s - %s", alert_type, symbol)
+            else:
+                logger.warning("交易告警发送失败: HTTP %d", response.status_code)
+
+        except requests.exceptions.Timeout:
+            logger.warning("交易告警发送超时")
+        except Exception as e:
+            logger.warning("交易告警发送异常: %s", e)
+
+    def confirm_trade_exit(
+        self,
+        pair: str,
+        order: dict,
+        trade: object,
+        current_time: datetime,
+        proposed_rate: float,
+        current_profit: float,
+        exit_reason: str,
+        **kwargs,
+    ) -> bool:
+        """交易退出确认回调 - 检查告警条件。
+
+        Args:
+            pair: 币种对
+            order: 订单信息
+            trade: 交易对象
+            current_time: 当前时间
+            proposed_rate: 提议的退出价格
+            current_profit: 当前盈利比例
+            exit_reason: 退出原因
+
+        Returns:
+            是否确认退出（始终返回 True）
+        """
+        # 检查交易告警
+        entry_price = float(trade.open_rate) if hasattr(trade, 'open_rate') else proposed_rate
+        self._check_trade_alerts(
+            pair=pair,
+            profit_ratio=current_profit,
+            entry_price=entry_price,
+            exit_price=proposed_rate,
+        )
+
+        logger.info(
+            "交易退出确认: %s, 盈亏=%.2f%%, 原因=%s",
+            pair,
+            current_profit * 100,
+            exit_reason,
+        )
+
+        return True
+
+    def bot_loop_start(self, current_time: datetime, **kwargs) -> None:
+        """Bot循环开始回调 - 每日开始时重置统计数据。
+
+        Args:
+            current_time: 当前时间
+        """
+        today = current_time.strftime("%Y-%m-%d")
+
+        # 检查是否需要重置日统计
+        if self._last_alert_reset_date != today:
+            self._daily_pnl_tracker.clear()
+            self._last_alert_reset_date = today
+            logger.info("交易日统计数据已重置: %s", today)
 
     def _fetch_research_score(self, symbol: str) -> Optional[float]:
         """从研究 API 获取币种评分。

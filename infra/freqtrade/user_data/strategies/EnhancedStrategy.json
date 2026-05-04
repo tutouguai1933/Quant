@@ -1,0 +1,35 @@
+{
+  "strategy_name": "EnhancedStrategy",
+  "params": {
+    "roi": {
+      "0": 0.08,
+      "30": 0.05,
+      "60": 0.04,
+      "120": 0.03
+    },
+    "stoploss": {
+      "stoploss": -0.08
+    },
+    "trailing": {
+      "trailing_stop": true,
+      "trailing_stop_positive": 0.03,
+      "trailing_stop_positive_offset": 0.05,
+      "trailing_only_offset_is_reached": true
+    },
+    "max_open_trades": {
+      "max_open_trades": 3
+    },
+    "buy": {
+      "atr_multiplier": 2.998,
+      "atr_period": 12,
+      "max_consecutive_losses": 4,
+      "max_day_loss_pct": 0.083,
+      "rsi_entry_threshold": 45
+    },
+    "sell": {
+      "rsi_exit_threshold": 74
+    }
+  },
+  "ft_stratparam_v": 1,
+  "export_time": "2026-05-02 20:48:26.896544+00:00"
+}

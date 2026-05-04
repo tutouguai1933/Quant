@@ -64,6 +64,46 @@ test.describe("单币市场页 /market/BTCUSDT", () => {
     await expect(page.getByRole("link", { name: "返回市场页" })).toBeVisible();
     await expect(page.getByRole("link", { name: "返回信号页继续研究" })).toBeVisible();
   });
+
+  test("TC-MARKET-SYMBOL-004: RSI历史Tab显示", async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(`${WEB_BASE_URL}/market/BTCUSDT`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await expect(page.locator("body")).toContainText("BTCUSDT", { timeout: 60000 });
+
+    // 检查Tab按钮存在
+    await expect(page.getByRole("tab", { name: "图表" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "RSI历史" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "交易历史" })).toBeVisible();
+
+    // 点击RSI历史Tab
+    await page.getByRole("tab", { name: "RSI历史" }).click();
+
+    // 等待数据加载
+    await page.waitForTimeout(5000);
+
+    // 检查RSI历史内容
+    const bodyText = await page.locator("body").textContent();
+    const hasRsiContent = bodyText?.includes("RSI") ||
+                          bodyText?.includes("超买") ||
+                          bodyText?.includes("超卖");
+    console.log(`RSI历史内容: ${hasRsiContent ? '显示' : '未检测到'}`);
+  });
+
+  test("TC-MARKET-SYMBOL-005: 交易历史Tab显示", async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(`${WEB_BASE_URL}/market/BTCUSDT`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await expect(page.locator("body")).toContainText("BTCUSDT", { timeout: 60000 });
+
+    // 点击交易历史Tab
+    await page.getByRole("tab", { name: "交易历史" }).click();
+
+    // 等待数据加载
+    await page.waitForTimeout(5000);
+
+    // 检查交易历史标题显示
+    await expect(page.locator("body")).toContainText("交易历史", { timeout: 30000 });
+    console.log(`交易历史Tab: 正常显示`);
+  });
 });
 
 // 3. 余额页测试

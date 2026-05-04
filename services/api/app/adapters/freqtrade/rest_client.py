@@ -181,6 +181,14 @@ class FreqtradeRestClient:
                 current_trade = self._find_trade_history(symbol, trade_id=target_trade["trade_id"]) or target_trade
                 if str(target_trade["trade_id"]) == str(primary_trade["trade_id"]):
                     hydrated_trade = current_trade
+            # 平仓成功后推送飞书通知
+            self._push_trade_notification(
+                signal_type="sell",
+                symbol=symbol,
+                side=side,
+                trade=hydrated_trade,
+                response=response,
+            )
         else:
             stake_amount = self._resolve_action_stake_amount(action)
             response = self._request_json(
@@ -197,6 +205,14 @@ class FreqtradeRestClient:
             )
             trade_id = response.get("trade_id") or response.get("id")
             hydrated_trade = self._find_open_trade(symbol, trade_id=trade_id) or self._find_trade_history(symbol, trade_id=trade_id)
+            # 开仓成功后推送飞书通知
+            self._push_trade_notification(
+                signal_type="buy",
+                symbol=symbol,
+                side=side,
+                trade=hydrated_trade,
+                response=response,
+            )
 
         return self._build_order_feedback(
             action=action,
@@ -813,3 +829,45 @@ class FreqtradeRestClient:
             raise FreqtradeRestError(f"无法连接 Freqtrade REST /api/v1/token/login: {reason}") from last_exception
         else:
             raise FreqtradeRestError("Freqtrade REST POST /api/v1/token/login 请求失败") from last_exception
+
+    def _push_trade_notification(
+        self,
+        signal_type: str,
+        symbol: str,
+        side: str,
+        trade: dict[str, object] | None,
+        response: dict[str, object],
+    ) -> None:
+        """交易成功后推送飞书通知。"""
+        try:
+            from services.api.app.services.feishu_push_service import send_feishu_trade_signal
+
+            # 提取交易信息
+            price = None
+            quantity = None
+            profit = None
+            reason = None
+
+            if trade:
+                price = float(trade.get("open_rate") or trade.get("close_rate") or 0)
+                quantity = float(trade.get("amount") or 0)
+                if signal_type == "sell":
+                    profit = float(trade.get("profit_abs") or trade.get("close_profit_abs") or 0)
+                    reason = str(trade.get("exit_reason") or "手动平仓")
+
+            if not price and response:
+                price = float(response.get("price") or response.get("average") or 0)
+
+            # 发送推送
+            send_feishu_trade_signal(
+                signal_type=signal_type,
+                symbol=symbol,
+                price=price or 0.0,
+                quantity=quantity or 0.0,
+                profit=profit,
+                reason=reason,
+                strategy="EnhancedStrategy",
+            )
+            logger.info("交易推送已发送: %s %s", signal_type, symbol)
+        except Exception as exc:
+            logger.warning("交易推送失败: %s", exc)

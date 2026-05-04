@@ -19,6 +19,12 @@ from services.api.app.services.auto_recovery_service import (
     alert_silence_service,
     RecoveryStatus,
 )
+from services.api.app.services.trade_alert_service import (
+    trade_alert_service,
+    TradeAlertType,
+    TradeAlertLevel,
+    TradeAlertMessage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -414,3 +420,203 @@ def clear_recovery_history():
     except Exception as e:
         logger.error("清空恢复历史失败: %s", e)
         return RecoveryResponse(success=False, error=str(e))
+
+
+# ==================== 交易告警 API ====================
+
+
+class TradeAlertRequest(BaseModel):
+    """交易告警请求。"""
+
+    alert_type: str  # large_loss, price_deviation, consecutive_loss, daily_loss_limit
+    symbol: str
+    message: str
+    details: dict[str, Any] = {}
+    timestamp: str | None = None
+
+
+class TradeAlertResponse(BaseModel):
+    """交易告警响应。"""
+
+    success: bool
+    alert_type: str | None = None
+    symbol: str | None = None
+    message: str | None = None
+    error: str | None = None
+
+
+class TradeExitAlertRequest(BaseModel):
+    """交易退出告警请求。"""
+
+    symbol: str
+    entry_price: float
+    exit_price: float
+    profit_ratio: float
+    trade_id: str | None = None
+
+
+class TradeEntryAlertRequest(BaseModel):
+    """交易入场告警请求。"""
+
+    symbol: str
+    entry_price: float
+    market_price: float
+    trade_id: str | None = None
+
+
+@router.post("/trade", response_model=TradeAlertResponse)
+def send_trade_alert(request: TradeAlertRequest):
+    """发送交易告警。
+
+    Args:
+        request: 交易告警请求
+
+    Returns:
+        告警发送结果
+    """
+    try:
+        # 映射告警类型
+        alert_type_map = {
+            "large_loss": TradeAlertType.LARGE_LOSS,
+            "price_deviation": TradeAlertType.PRICE_DEVIATION,
+            "consecutive_loss": TradeAlertType.CONSECUTIVE_LOSS,
+            "daily_loss_limit": TradeAlertType.DAILY_LOSS_LIMIT,
+        }
+
+        alert_type = alert_type_map.get(request.alert_type)
+        if alert_type is None:
+            return TradeAlertResponse(
+                success=False,
+                error=f"未知的告警类型: {request.alert_type}",
+            )
+
+        # 根据告警类型设置级别
+        level_map = {
+            TradeAlertType.LARGE_LOSS: TradeAlertLevel.ERROR,
+            TradeAlertType.PRICE_DEVIATION: TradeAlertLevel.WARNING,
+            TradeAlertType.CONSECUTIVE_LOSS: TradeAlertLevel.WARNING,
+            TradeAlertType.DAILY_LOSS_LIMIT: TradeAlertLevel.CRITICAL,
+        }
+
+        # 构建告警标题
+        title_map = {
+            TradeAlertType.LARGE_LOSS: "大额亏损告警",
+            TradeAlertType.PRICE_DEVIATION: "异常价格告警",
+            TradeAlertType.CONSECUTIVE_LOSS: "连续亏损告警",
+            TradeAlertType.DAILY_LOSS_LIMIT: "日亏损超标告警",
+        }
+
+        alert = TradeAlertMessage(
+            alert_type=alert_type,
+            level=level_map.get(alert_type, TradeAlertLevel.WARNING),
+            title=title_map.get(alert_type, "交易告警"),
+            message=request.message,
+            details=request.details,
+            timestamp=request.timestamp or "",
+        )
+
+        success = trade_alert_service._send_alert(alert)
+
+        logger.info("交易告警发送: type=%s, symbol=%s, success=%s", request.alert_type, request.symbol, success)
+
+        return TradeAlertResponse(
+            success=success,
+            alert_type=request.alert_type,
+            symbol=request.symbol,
+            message=request.message,
+        )
+    except Exception as e:
+        logger.error("发送交易告警失败: %s", e)
+        return TradeAlertResponse(success=False, error=str(e))
+
+
+@router.post("/trade/exit", response_model=TradeAlertResponse)
+def check_trade_exit_alert(request: TradeExitAlertRequest):
+    """检查交易退出告警条件。
+
+    Args:
+        request: 交易退出告警请求
+
+    Returns:
+        告警检查结果
+    """
+    try:
+        results = trade_alert_service.record_trade(
+            symbol=request.symbol,
+            entry_price=request.entry_price,
+            exit_price=request.exit_price,
+            profit_ratio=request.profit_ratio,
+            trade_id=request.trade_id or "unknown",
+        )
+
+        triggered_types = [k for k, v in results.items() if v]
+
+        logger.info(
+            "交易退出告警检查: symbol=%s, profit=%.2f%%, triggered=%s",
+            request.symbol,
+            request.profit_ratio * 100,
+            triggered_types,
+        )
+
+        return TradeAlertResponse(
+            success=True,
+            symbol=request.symbol,
+            message=f"告警检查完成，触发: {triggered_types}" if triggered_types else "无告警触发",
+        )
+    except Exception as e:
+        logger.error("检查交易退出告警失败: %s", e)
+        return TradeAlertResponse(success=False, error=str(e))
+
+
+@router.post("/trade/entry", response_model=TradeAlertResponse)
+def check_trade_entry_alert(request: TradeEntryAlertRequest):
+    """检查交易入场告警条件。
+
+    Args:
+        request: 交易入场告警请求
+
+    Returns:
+        告警检查结果
+    """
+    try:
+        triggered = trade_alert_service.check_entry(
+            symbol=request.symbol,
+            entry_price=request.entry_price,
+            market_price=request.market_price,
+            trade_id=request.trade_id,
+        )
+
+        logger.info(
+            "交易入场告警检查: symbol=%s, entry=%.4f, market=%.4f, triggered=%s",
+            request.symbol,
+            request.entry_price,
+            request.market_price,
+            triggered,
+        )
+
+        return TradeAlertResponse(
+            success=True,
+            symbol=request.symbol,
+            message="价格偏离告警触发" if triggered else "入场价格正常",
+        )
+    except Exception as e:
+        logger.error("检查交易入场告警失败: %s", e)
+        return TradeAlertResponse(success=False, error=str(e))
+
+
+@router.get("/trade/stats/{symbol}", response_model=dict)
+def get_trade_alert_stats(symbol: str):
+    """获取交易告警统计。
+
+    Args:
+        symbol: 币种符号
+
+    Returns:
+        交易统计信息
+    """
+    try:
+        stats = trade_alert_service.get_trade_stats(symbol)
+        return {"success": True, "stats": stats}
+    except Exception as e:
+        logger.error("获取交易告警统计失败: %s", e)
+        return {"success": False, "error": str(e)}

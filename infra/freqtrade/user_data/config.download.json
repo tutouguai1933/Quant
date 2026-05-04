@@ -1,0 +1,38 @@
+{
+  "dry_run": true,
+  "dry_run_wallet": 1000,
+  "stake_currency": "USDT",
+  "stake_amount": 50,
+  "tradable_balance_ratio": 0.99,
+  "timeframe": "1h",
+  "trading_mode": "spot",
+  "exchange": {
+    "name": "binance",
+    "key": "",
+    "secret": "",
+    "enable_ws": false,
+    "ccxt_config": {
+      "enableRateLimit": true,
+      "aiohttp_proxy": "http://127.0.0.1:7890"
+    },
+    "ccxt_async_config": {
+      "enableRateLimit": true,
+      "rateLimit": 200,
+      "aiohttp_proxy": "http://127.0.0.1:7890"
+    },
+    "pair_whitelist": [],
+    "pair_blacklist": []
+  },
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+  "api_server": {
+    "enabled": false,
+    "listen_ip_address": "0.0.0.0",
+    "listen_port": 8080,
+    "username": "freqtrader",
+    "password": "temp_password"
+  }
+}

@@ -84,14 +84,27 @@ test.describe('关键交互测试', () => {
   test('市场页 - 检查数据加载', async ({ page }) => {
     await page.goto(`${BASE_URL}/market`, { waitUntil: 'domcontentloaded' });
 
-    await page.waitForTimeout(3000);
+    // Wait longer for client-side data fetching
+    await page.waitForTimeout(8000);
+
+    // Take screenshot for debugging
+    await page.screenshot({ path: '/tmp/market-debug.png', fullPage: true });
 
     const bodyText = await page.locator('body').textContent();
-    const hasMarketData = bodyText?.includes('BTC') ||
-                          bodyText?.includes('ETH') ||
-                          bodyText?.includes('USDT');
+    const hasMarketData = bodyText?.includes('BTCUSDT') ||
+                          bodyText?.includes('ETHUSDT') ||
+                          bodyText?.includes('DOGEUSDT') ||
+                          bodyText?.includes('SOLUSDT');
 
     console.log(`市场数据加载: ${hasMarketData ? '成功' : '未检测到'}`);
+
+    // Also check for empty state
+    const hasEmptyState = bodyText?.includes('暂无市场数据');
+    console.log(`空状态显示: ${hasEmptyState ? '是' : '否'}`);
+
+    // Check for table rows
+    const tableRowCount = await page.locator('table tbody tr').count();
+    console.log(`表格行数: ${tableRowCount}`);
   });
 
   test('因子页 - 检查内容', async ({ page }) => {

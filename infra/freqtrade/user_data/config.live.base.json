@@ -1,10 +1,10 @@
 {
   "bot_name": "quant-spot-live",
   "dry_run": false,
-  "max_open_trades": 1,
+  "max_open_trades": 3,
   "stake_currency": "USDT",
   "stake_amount": 6,
-  "tradable_balance_ratio": 0.99,
+  "tradable_balance_ratio": 0.5,
   "timeframe": "1h",
   "cancel_open_orders_on_exit": true,
   "trading_mode": "spot",
@@ -47,9 +47,32 @@
       "BTC/USDT",
       "ETH/USDT",
       "SOL/USDT",
-      "DOGE/USDT"
+      "XRP/USDT",
+      "BNB/USDT",
+      "DOGE/USDT",
+      "ADA/USDT",
+      "AVAX/USDT",
+      "LINK/USDT",
+      "DOT/USDT",
+      "MATIC/USDT",
+      "PEPE/USDT",
+      "SHIB/USDT",
+      "WIF/USDT",
+      "ORDI/USDT",
+      "BONK/USDT"
     ],
     "pair_blacklist": []
+  },
+  "order_types": {
+    "entry": "limit",
+    "exit": "limit",
+    "emergency_exit": "market",
+    "stoploss": "limit",
+    "stoploss_on_exchange": false
+  },
+  "order_time_in_force": {
+    "entry": "IOC",
+    "exit": "IOC"
   },
   "pairlists": [
     {
@@ -58,13 +81,13 @@
   ],
   "api_server": {
     "enabled": true,
-    "listen_ip_address": "127.0.0.1",
+    "listen_ip_address": "0.0.0.0",
     "listen_port": 9013,
     "verbosity": "error",
     "enable_openapi": false,
     "CORS_origins": []
   },
-  "initial_state": "stopped",
+  "initial_state": "running",
   "force_entry_enable": true,
   "internals": {
     "process_throttle_secs": 5

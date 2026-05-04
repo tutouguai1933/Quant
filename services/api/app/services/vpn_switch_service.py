@@ -24,21 +24,21 @@ DEFAULT_WHITELIST_IPS = [
     "154.3.37.169",   # 白名单IP
 ]
 
-# 默认可用节点
+# 默认可用节点（与mihomo实际节点名称一致）
 DEFAULT_AVAILABLE_NODES = [
-    # 香港节点
-    "香港¹",
-    "香港²",
-    "香港³",
-    "香港⁴",
-    # 日本节点
-    "日本¹",
-    "日本²",
-    "日本³",
-    "日本⁴",
-    # 美国节点
-    "美国¹",
-    "美国²",
+    # 日本节点（优先，白名单IP）
+    "JP1",  # 154.31.113.7
+    "JP2",  # 45.95.212.82
+    "JP3",
+    "JP4",
+    # 香港节点（白名单IP）
+    "HK1",
+    "HK2",  # 202.85.76.66
+    "HK3",
+    "HK4",
+    # IEPL/IPLC专线
+    "IEPL-HK",
+    "IPLC-JP",
 ]
 
 # 节点优先级（按白名单IP对应关系排序）
@@ -775,6 +775,12 @@ class VPNSwitchService:
     ) -> None:
         """发送切换成功告警。"""
         try:
+            from services.api.app.services.alert_push_service import (
+                AlertEventType,
+                AlertLevel,
+                AlertMessage,
+                alert_push_service,
+            )
             alert_push_service.push_sync(
                 AlertMessage(
                     event_type=AlertEventType.NODE_FAILURE,
@@ -804,6 +810,12 @@ class VPNSwitchService:
     ) -> None:
         """异步发送切换成功告警。"""
         try:
+            from services.api.app.services.alert_push_service import (
+                AlertEventType,
+                AlertLevel,
+                AlertMessage,
+                alert_push_service,
+            )
             await alert_push_service.push_async(
                 AlertMessage(
                     event_type=AlertEventType.NODE_FAILURE,
@@ -833,6 +845,12 @@ class VPNSwitchService:
     ) -> None:
         """发送切换失败告警。"""
         try:
+            from services.api.app.services.alert_push_service import (
+                AlertEventType,
+                AlertLevel,
+                AlertMessage,
+                alert_push_service,
+            )
             alert_push_service.push_sync(
                 AlertMessage(
                     event_type=AlertEventType.NODE_FAILURE,
@@ -857,6 +875,12 @@ class VPNSwitchService:
     ) -> None:
         """异步发送切换失败告警。"""
         try:
+            from services.api.app.services.alert_push_service import (
+                AlertEventType,
+                AlertLevel,
+                AlertMessage,
+                alert_push_service,
+            )
             await alert_push_service.push_async(
                 AlertMessage(
                     event_type=AlertEventType.NODE_FAILURE,

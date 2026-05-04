@@ -2,6 +2,7 @@
 
 通过飞书机器人 Webhook 推送交易信号、告警和报告。
 支持消息卡片格式和文本消息。
+发送前记录消息内容到日志文件，方便调试。
 """
 
 from __future__ import annotations
@@ -12,11 +13,29 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# 飞书发送日志文件路径
+FEISHU_SEND_LOG = Path("/var/log/feishu_send.log")
+
+def _log_feishu_send(payload: dict, source: str = "unknown") -> None:
+    """记录飞书发送内容到日志文件。"""
+    try:
+        FEISHU_SEND_LOG.parent.mkdir(parents=True, exist_ok=True)
+        log_entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": source,
+            "payload": payload,
+        }
+        with open(FEISHU_SEND_LOG, "a") as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning("记录飞书发送日志失败: %s", e)
 
 
 class FeishuMessageType(str, Enum):
@@ -316,12 +335,13 @@ class FeishuPushService:
             self._http_client = httpx.AsyncClient(timeout=10.0)
         return self._http_client
 
-    def send_message(self, msg_type: str, content: dict) -> bool:
+    def send_message(self, msg_type: str, content: dict, source: str = "unknown") -> bool:
         """同步发送飞书消息。
 
         Args:
             msg_type: 消息类型 (text, post, interactive)
             content: 消息内容
+            source: 来源标识，用于调试
 
         Returns:
             是否发送成功
@@ -331,6 +351,9 @@ class FeishuPushService:
             return False
 
         payload = {"msg_type": msg_type, "content": content}
+
+        # 记录发送内容
+        _log_feishu_send(payload, source)
 
         try:
             client = self._get_sync_client()
@@ -398,11 +421,12 @@ class FeishuPushService:
             logger.exception("飞书推送异常: %s", e)
             return False
 
-    def send_card(self, card_content: dict) -> bool:
+    def send_card(self, card_content: dict, source: str = "unknown") -> bool:
         """同步发送飞书卡片消息。
 
         Args:
             card_content: 卡片内容
+            source: 来源标识，用于调试
 
         Returns:
             是否发送成功
@@ -411,6 +435,9 @@ class FeishuPushService:
             return False
 
         payload = {"msg_type": "interactive", "card": card_content}
+
+        # 记录发送内容
+        _log_feishu_send(payload, source)
 
         try:
             client = self._get_sync_client()

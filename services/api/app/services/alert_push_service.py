@@ -334,6 +334,22 @@ class AlertPushService:
     def _push_feishu_sync(self, alert: AlertMessage) -> dict[str, Any]:
         """同步推送到飞书。"""
         try:
+            # 先记录要发送的内容到日志
+            import json
+            from pathlib import Path
+            log_file = Path("/var/log/feishu_send.log")
+            try:
+                log_file.parent.mkdir(parents=True, exist_ok=True)
+                log_entry = {
+                    "timestamp": alert.timestamp,
+                    "source": "alert_push_service",
+                    "alert": alert.to_webhook_payload(),
+                }
+                with open(log_file, "a") as f:
+                    f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+            except Exception as log_err:
+                logger.warning("记录飞书发送日志失败: %s", log_err)
+
             feishu_service = self._get_feishu_service()
             if not feishu_service.enabled:
                 return {"status": "skipped", "message": "飞书推送未配置或已禁用"}

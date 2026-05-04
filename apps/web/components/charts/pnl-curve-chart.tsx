@@ -1,14 +1,16 @@
 "use client";
 
 import {
-  AreaChart,
+  ComposedChart,
   Area,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  Legend,
 } from "recharts";
 
 interface PnlCurveChartProps {
@@ -48,7 +50,7 @@ export function PnlCurveChart({ data, title = "盈亏曲线" }: PnlCurveChartPro
     <div className="space-y-2">
       <h4 className="text-sm font-medium text-foreground">{title}</h4>
       <ResponsiveContainer width="100%" height={280}>
-        <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+        <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="pnlGradientPositive" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
@@ -57,6 +59,10 @@ export function PnlCurveChart({ data, title = "盈亏曲线" }: PnlCurveChartPro
             <linearGradient id="pnlGradientNegative" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
               <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="cumulativeGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -83,22 +89,36 @@ export function PnlCurveChart({ data, title = "盈亏曲线" }: PnlCurveChartPro
             formatter={(value, name) => {
               const numValue = typeof value === "number" ? value : 0;
               const nameStr = typeof name === "string" ? name : String(name);
+              const label = nameStr === "cumulative" ? "累计盈亏" : "当日盈亏";
+              const color = numValue >= 0 ? "#22c55e" : "#ef4444";
               return [
-                formatValue(numValue),
-                nameStr === "cumulative" ? "累计盈亏" : "当日盈亏",
+                <span style={{ color }}>{formatValue(numValue)}</span>,
+                label,
               ];
             }}
           />
+          <Legend
+            formatter={(value) => {
+              return value === "cumulative" ? "累计盈亏" : "当日盈亏";
+            }}
+          />
           <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
+          <Bar
+            type="monotone"
+            dataKey="pnl"
+            fill="#6366f1"
+            barSize={8}
+            opacity={0.6}
+          />
           <Area
             type="monotone"
             dataKey="cumulative"
             stroke="#3b82f6"
             strokeWidth={2}
-            fill="url(#pnlGradientPositive)"
+            fill="url(#cumulativeGradient)"
             dot={false}
           />
-        </AreaChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
