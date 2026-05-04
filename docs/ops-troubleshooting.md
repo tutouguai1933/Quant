@@ -2,13 +2,50 @@
 
 > 本文档记录运维过程中遇到的问题和解决方案，避免重复踩坑。
 >
-> **最后更新：2026-05-04**
+> **最后更新：2026-05-05**
 
 ---
 
-## 0. 最新变更（2026-05-04）
+## 0. 最新变更（2026-05-05）
 
-### 0.1 系统优化汇总
+### 0.1 开发环境架构规范
+
+**核心规则**：本地WSL只用于代码编辑和Git推送，阿里云服务器用于运行服务。
+
+| 环境 | 作用 | SSH连接 |
+|------|------|---------|
+| 本地WSL | 编辑代码、git push | - |
+| 阿里云服务器(39.106.11.65) | 运行Docker容器 | `ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65` |
+
+**标准部署流程**：
+```bash
+# 1. 本地修改并推送
+git add . && git commit -m "fix: xxx" && git push
+
+# 2. 服务器拉取并重建
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra/deploy && docker compose build && docker compose up -d"
+```
+
+### 0.2 容器健康检查模板报错修复（2026-05-05）
+
+**问题**：飞书持续收到"容器已停止: quant-api"误报
+
+**原因**：docker inspect模板`{{.State.Health.Status}}`在容器没有Health属性时报错
+
+**修复文件**：
+- `services/api/app/services/health_monitor_service.py`
+- `services/api/app/services/auto_recovery_service.py`
+
+**修复方案**：使用安全的Go模板语法
+```python
+# 先获取状态（Health可能不存在）
+"--format", "{{.State.Status}}|{{.Id}}|{{.Config.Image}}"
+
+# 单独获取健康状态
+"--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"
+```
+
+### 0.3 系统优化汇总（历史记录）
 
 | 优化项 | 变更前 | 变更后 | 说明 |
 |--------|--------|--------|------|

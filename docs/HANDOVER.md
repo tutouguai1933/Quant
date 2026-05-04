@@ -94,9 +94,26 @@ curl -s -u 'Freqtrader:jianyu0.0.' http://127.0.0.1:9013/api/v1/balance | jq '.t
 
 | 完成项 | 内容 |
 |--------|------|
-| Market API修复 | 添加代理支持，修复json.dumps空格问题，扩展为16个币种 |
-| 开发流程规范 | 明确WSL只用于开发，阿里云服务器用于运行 |
-| 文档更新 | 更新DEV_HANDBOOK、OPS_HANDBOOK、HANDOVER |
+| 容器健康检查修复 | 修复docker inspect模板报错导致的"容器已停止"误报 |
+| 开发流程规范 | 明确WSL只用于开发，阿里云服务器用于运行，通过Git同步 |
+| 文档更新 | 更新DEV_HANDBOOK、OPS_HANDBOOK、HANDOVER、PROJECT_OVERVIEW |
+| Git同步流程 | 建立本地推送→服务器pull→重建容器的标准流程 |
+
+### 容器健康检查修复详情
+
+**问题**：飞书持续收到"容器已停止"误报，但容器实际正常运行
+
+**原因**：`health_monitor_service.py`和`auto_recovery_service.py`使用`{{.State.Health.Status}}`模板，当容器没有Health属性时docker inspect报错
+
+**修复**：使用安全的Go模板语法
+```python
+# 修复前（会报错）
+"{{.State.Status}}|{{.State.Health.Status}}|{{.Id}}"
+
+# 修复后（安全）
+"{{.State.Status}}|{{.Id}}"
+"{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"
+```
 
 ---
 
