@@ -1,19 +1,21 @@
-/* 这个文件负责渲染数据工作台，让研究数据来源和快照状态直接可见。 */
+/**
+ * 数据工作台页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-import { AppShell } from "../../components/app-shell";
-import { DataTable } from "../../components/data-table";
-import { MetricGrid } from "../../components/metric-grid";
-import { PageHero } from "../../components/page-hero";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricStrip,
+} from "../../components/terminal";
 import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Skeleton } from "../../components/ui/skeleton";
 import { WorkbenchConfigStatusCard } from "../../components/workbench-config-status-card";
 import { getDataWorkspace, getDataWorkspaceFallback } from "../../lib/api";
 import type { DataWorkspaceModel } from "../../lib/api";
@@ -37,9 +39,7 @@ export default function DataPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -67,18 +67,25 @@ export default function DataPage() {
 
   if (isLoading || !workspace) {
     return (
-      <AppShell
+      <TerminalShell
+        breadcrumb="数据 / 工作台"
         title="数据工作台"
-        subtitle="先把研究到底用了什么数据讲清楚，再进入特征、策略研究和回测。"
+        subtitle="研究数据来源和快照状态"
         currentPath="/data"
         isAuthenticated={session.isAuthenticated}
       >
-        <div className="space-y-5">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-96 w-full" />
+        <div className="space-y-4">
+          <div className="terminal-card p-4 animate-pulse">
+            <div className="h-4 w-32 bg-[var(--terminal-border)] rounded" />
+          </div>
+          <div className="terminal-card p-4 animate-pulse">
+            <div className="h-24 bg-[var(--terminal-border)] rounded" />
+          </div>
+          <div className="terminal-card p-4 animate-pulse">
+            <div className="h-48 bg-[var(--terminal-border)] rounded" />
+          </div>
         </div>
-      </AppShell>
+      </TerminalShell>
     );
   }
 
@@ -97,37 +104,38 @@ export default function DataPage() {
   const alignmentFields = Array.isArray(configAlignment.stale_fields) ? configAlignment.stale_fields.map(String) : [];
   const snapshotConsistency = workspace.snapshot_consistency;
 
+  const statusMetrics = [
+    {
+      label: "数据来源",
+      value: `${workspace.sources.market} / ${workspace.sources.research}`,
+      colorType: ("neutral" as const),
+    },
+    {
+      label: "数据快照",
+      value: workspace.snapshot.snapshot_id || "未生成",
+      colorType: ("neutral" as const),
+    },
+    {
+      label: "样本数量",
+      value: String(workspace.preview.total_rows),
+      colorType: ("neutral" as const),
+    },
+    {
+      label: "当前状态",
+      value: workspace.snapshot.active_data_state || workspace.status,
+      colorType: ("neutral" as const),
+    },
+  ];
+
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="数据 / 工作台"
       title="数据工作台"
-      subtitle="先把研究到底用了什么数据讲清楚，再进入特征、策略研究和回测。"
+      subtitle="研究数据来源和快照状态"
       currentPath="/data"
       isAuthenticated={session.isAuthenticated}
     >
-      <PageHero
-        badge="数据工作台"
-        title="先确认数据来源、时间范围、样本数量和快照状态。"
-        description="直接展示数据来源、快照、时间范围和样本数量，以及当前数据状态。"
-        aside={
-          <div className="grid gap-3">
-            <Button asChild size="sm">
-              <Link href={buildRefreshHref(workspace.filters.selected_symbol, workspace.filters.selected_interval, workspace.filters.limit)}>
-                刷新数据认知
-              </Link>
-            </Button>
-            <p className="text-sm leading-6 text-muted-foreground">先看这页，再进入信号、回测和执行页，避免只看到结果不知道底层数据来自哪里。</p>
-          </div>
-        }
-      />
-
-      <MetricGrid
-        items={[
-          { label: "数据来源", value: `${workspace.sources.market} / ${workspace.sources.research}`, detail: "市场样本和研究快照都直接显示" },
-          { label: "数据快照", value: workspace.snapshot.snapshot_id || "未生成", detail: "每次研究都会回指一个 snapshot id" },
-          { label: "样本数量", value: String(workspace.preview.total_rows), detail: `${workspace.preview.symbol} / ${workspace.preview.interval}` },
-          { label: "当前状态", value: workspace.snapshot.active_data_state || workspace.status, detail: "raw / cleaned / feature-ready" },
-        ]}
-      />
+      <MetricStrip metrics={statusMetrics} />
 
       <WorkbenchConfigStatusCard
         scope="数据"
@@ -137,14 +145,11 @@ export default function DataPage() {
         editable={configEditable}
       />
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
-        <div className="space-y-5">
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>数据快照</CardTitle>
-              <CardDescription>回答"这次研究到底用了什么数据"。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_380px]">
+        <div className="space-y-4">
+          {/* 数据快照 */}
+          <TerminalCard title="数据快照">
+            <div className="grid gap-3 md:grid-cols-2">
               <InfoBlock label="快照来源" value={formatSnapshotSource(workspace.snapshot.run_type, workspace.snapshot.run_id)} />
               <InfoBlock label="快照生成时间" value={formatMoment(workspace.snapshot.generated_at)} />
               <InfoBlock label="快照 ID" value={workspace.snapshot.snapshot_id || "未生成"} />
@@ -152,15 +157,12 @@ export default function DataPage() {
               <InfoBlock label="缓存状态" value={formatCacheStatus(workspace.snapshot.cache_status, workspace.snapshot.cache_hit_count, workspace.snapshot.cache_miss_count)} />
               <InfoBlock label="当前状态" value={workspace.snapshot.active_data_state || workspace.status} />
               <InfoBlock label="快照路径" value={workspace.snapshot.dataset_snapshot_path || "当前未落盘"} />
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>训练 / 推理快照一致性</CardTitle>
-              <CardDescription>先确认训练和推理是不是站在同一份快照上，再决定要不要直接看评估和执行。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
+          {/* 训练/推理快照一致性 */}
+          <TerminalCard title="训练 / 推理快照一致性">
+            <div className="grid gap-3 md:grid-cols-2">
               <InfoBlock label="训练快照" value={snapshotConsistency.training_snapshot_id || "未生成"} />
               <InfoBlock label="推理快照" value={snapshotConsistency.inference_snapshot_id || "未生成"} />
               <InfoBlock label="训练生成时间" value={formatMoment(snapshotConsistency.training_generated_at)} />
@@ -174,15 +176,12 @@ export default function DataPage() {
                 value={`train ${formatCacheStatus(snapshotConsistency.training_cache_status, snapshotConsistency.training_cache_hit_count, snapshotConsistency.training_cache_miss_count)} / infer ${formatCacheStatus(snapshotConsistency.inference_cache_status, snapshotConsistency.inference_cache_hit_count, snapshotConsistency.inference_cache_miss_count)}`}
               />
               <InfoBlock label="当前判断" value={snapshotConsistency.note} />
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>数据质量</CardTitle>
-              <CardDescription>先看原始样本经过清洗后还剩多少，再决定要不要继续训练。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
+          {/* 数据质量 */}
+          <TerminalCard title="数据质量">
+            <div className="grid gap-3 md:grid-cols-2">
               <InfoBlock label="原始样本" value={String(workspace.quality.raw_rows)} />
               <InfoBlock label="清洗后样本" value={String(workspace.quality.cleaned_rows)} />
               <InfoBlock label="特征就绪样本" value={String(workspace.quality.feature_ready_rows)} />
@@ -194,52 +193,118 @@ export default function DataPage() {
               />
               <InfoBlock label="当前判断" value={workspace.quality.summary} />
               <InfoBlock label="补充说明" value={workspace.quality.detail} />
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <DataTable
-            columns={["质量阶段", "当前摘要"]}
-            rows={qualityRows.map((item) => ({
-              id: item.label,
-              cells: [item.label, item.summary],
-            }))}
-            emptyTitle="当前还没有质量明细"
-            emptyDetail="先生成一轮研究快照，系统才能算出样本在各层之间掉了多少。"
-          />
+          {/* 质量阶段表格 */}
+          <TerminalCard title="质量阶段">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-[var(--terminal-border)]">
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">质量阶段</th>
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">当前摘要</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {qualityRows.length === 0 ? (
+                    <tr><td colSpan={2} className="py-4 text-center text-[var(--terminal-muted)]">当前还没有质量明细</td></tr>
+                  ) : (
+                    qualityRows.map((item) => (
+                      <tr key={item.label} className="border-b border-[var(--terminal-border)]/50">
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.label}</td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.summary}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TerminalCard>
 
-          <DataTable
-            columns={["状态层", "摘要"]}
-            rows={stateSummary.map((item) => ({
-              id: item.name,
-              cells: [item.name, item.summary],
-            }))}
-            emptyTitle="还没有数据状态"
-            emptyDetail="先运行一次 Qlib 训练，研究层才会把数据快照和状态写出来。"
-          />
+          {/* 数据状态表格 */}
+          <TerminalCard title="数据状态">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-[var(--terminal-border)]">
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">状态层</th>
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">摘要</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stateSummary.length === 0 ? (
+                    <tr><td colSpan={2} className="py-4 text-center text-[var(--terminal-muted)]">还没有数据状态</td></tr>
+                  ) : (
+                    stateSummary.map((item) => (
+                      <tr key={item.name} className="border-b border-[var(--terminal-border)]/50">
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.name}</td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.summary}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TerminalCard>
 
-          <DataTable
-            columns={["窗口", "时间范围 / 样本数"]}
-            rows={sampleRows.map((item) => ({
-              id: item.name,
-              cells: [item.name, item.summary],
-            }))}
-            emptyTitle="时间范围暂不可用"
-            emptyDetail="当前还没有训练窗口信息，先运行研究训练再回到这里。"
-          />
+          {/* 时间窗口表格 */}
+          <TerminalCard title="时间窗口">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-[var(--terminal-border)]">
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">窗口</th>
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">时间范围 / 样本数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sampleRows.length === 0 ? (
+                    <tr><td colSpan={2} className="py-4 text-center text-[var(--terminal-muted)]">时间范围暂不可用</td></tr>
+                  ) : (
+                    sampleRows.map((item) => (
+                      <tr key={item.name} className="border-b border-[var(--terminal-border)]/50">
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.name}</td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.summary}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TerminalCard>
 
-          <DataTable
-            columns={["来源层", "当前来源", "为什么这样读"]}
-            rows={sourceRows}
-            emptyTitle="当前还没有来源解释"
-            emptyDetail="先运行一次研究训练，系统才会把研究快照和窗口口径写出来。"
-          />
+          {/* 来源解释表格 */}
+          <TerminalCard title="来源解释">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-[var(--terminal-border)]">
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">来源层</th>
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">当前来源</th>
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">为什么这样读</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sourceRows.length === 0 ? (
+                    <tr><td colSpan={3} className="py-4 text-center text-[var(--terminal-muted)]">当前还没有来源解释</td></tr>
+                  ) : (
+                    sourceRows.map((item) => (
+                      <tr key={item.id} className="border-b border-[var(--terminal-border)]/50">
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.cells[0]}</td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.cells[1]}</td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.cells[2]}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TerminalCard>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>当前结果与配置对齐</CardTitle>
-              <CardDescription>样本预览会立即按当前配置更新，但训练窗口仍来自最近一次研究结果，这里先确认两者是不是同一轮。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
+          {/* 配置对齐 */}
+          <TerminalCard title="当前结果与配置对齐">
+            <div className="space-y-3">
               <InfoBlock label="对齐状态" value={String(configAlignment.status ?? "unavailable")} />
               <InfoBlock label="说明" value={String(configAlignment.note ?? "当前还没有可用对齐说明")} />
               <InfoBlock
@@ -250,11 +315,12 @@ export default function DataPage() {
                     : "当前没有发现配置漂移"
                 }
               />
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-4">
+          {/* 数据范围配置 */}
           <WorkbenchConfigCard
             title="数据范围配置"
             description="这里改的是研究主链真正会消费的数据范围：标的、周期、样本长度和时间窗口。"
@@ -329,12 +395,9 @@ export default function DataPage() {
             </ConfigField>
           </WorkbenchConfigCard>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>当前筛选条件</CardTitle>
-              <CardDescription>这些就是当前数据工作台正在看的币种、周期和样本范围。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
+          {/* 当前筛选条件 */}
+          <TerminalCard title="当前筛选条件">
+            <div className="space-y-3">
               <InfoBlock label="币种" value={workspace.filters.selected_symbol || "未选择"} />
               <InfoBlock label="周期" value={workspace.filters.selected_interval} />
               <InfoBlock label="时间范围" value={formatTimeRange(workspace.preview.first_open_time, workspace.preview.last_close_time)} />
@@ -362,60 +425,69 @@ export default function DataPage() {
                 value={String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid")}
               />
               <InfoBlock label="预览状态" value={workspace.preview.status === "ready" ? "样本预览正常" : workspace.preview.detail || "当前预览不可用"} />
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <DataTable
-            columns={["候选篮子预设", "适用场景", "当前是否选中", "说明"]}
-            rows={(workspace.controls.candidate_pool_preset_catalog || []).map((item, index) => ({
-              id: `${String(item.key ?? index)}`,
-              cells: [
-                String(item.label ?? item.key ?? "n/a"),
-                String(item.fit ?? "当前没有适用场景说明"),
-                String(item.key ?? "") === String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid") ? "当前候选篮子预设" : "可切换",
-                String(item.detail ?? "当前没有候选篮子说明"),
-              ],
-            }))}
-            emptyTitle="当前还没有候选篮子预设目录"
-            emptyDetail="恢复工作台后可用"
-          />
+          {/* 候选篮子预设目录 */}
+          <TerminalCard title="候选篮子预设目录">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-[var(--terminal-border)]">
+                    <th className="text-left py-2 px-2 text-[var(--terminal-dim)]">预设</th>
+                    <th className="text-left py-2 px-2 text-[var(--terminal-dim)]">适用场景</th>
+                    <th className="text-left py-2 px-2 text-[var(--terminal-dim)]">状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(workspace.controls.candidate_pool_preset_catalog || []).length === 0 ? (
+                    <tr><td colSpan={3} className="py-4 text-center text-[var(--terminal-muted)]">当前还没有候选篮子预设目录</td></tr>
+                  ) : (
+                    (workspace.controls.candidate_pool_preset_catalog || []).map((item, index) => (
+                      <tr key={String(item.key ?? index)} className="border-b border-[var(--terminal-border)]/50">
+                        <td className="py-2 px-2 text-[var(--terminal-text)]">{String(item.label ?? item.key ?? "n/a")}</td>
+                        <td className="py-2 px-2 text-[var(--terminal-text)]">{String(item.fit ?? "当前没有适用场景说明")}</td>
+                        <td className="py-2 px-2 text-[var(--terminal-text)]">
+                          {String(item.key ?? "") === String(workspace.controls.candidate_pool_preset_key ?? "top10_liquid") ? "当前预设" : "可切换"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TerminalCard>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>候选篮子怎么走到 live</CardTitle>
-              <CardDescription>先把研究和 dry-run 的共享候选篮子讲清楚，再决定哪些币继续进入更严格的 执行篮子。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-3">
+          {/* 候选篮子流程 */}
+          <TerminalCard title="候选篮子怎么走到 live">
+            <div className="grid gap-3 md:grid-cols-3">
               <InfoBlock label="第一层：候选篮子" value="研究和 dry-run 会共用这组更大的候选篮子，先尽量找出值得继续比较的币。" />
               <InfoBlock label="第二层：评估门" value="候选篮子里的币会继续经过规则门、验证门、回测门和一致性门，不是进池就直接执行。" />
               <InfoBlock label="第三层：执行篮子" value="只有候选篮子里通过更严门控的一小部分币，后面才会继续进入 执行篮子做小额真实验证。" />
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card className="bg-card/90">
-            <CardHeader>
-              <CardTitle>标的列表</CardTitle>
-              <CardDescription>先看白名单里哪些币已经进入当前数据认知。</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
+          {/* 标的列表 */}
+          <TerminalCard title="标的列表">
+            <div className="flex flex-wrap gap-2">
               {workspace.symbols.length ? workspace.symbols.map((item) => (
                 <Badge key={item.symbol} variant={item.selected ? "default" : "outline"}>
                   {item.symbol}
                 </Badge>
-              )) : <p className="text-sm leading-6 text-muted-foreground">当前还没有可展示的白名单标的。</p>}
-            </CardContent>
-          </Card>
+              )) : <p className="text-sm text-[var(--terminal-muted)]">当前还没有可展示的白名单标的。</p>}
+            </div>
+          </TerminalCard>
         </div>
-      </section>
-    </AppShell>
+      </div>
+    </TerminalShell>
   );
 }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
-      <p className="eyebrow">{label}</p>
-      <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value || "n/a"}</p>
+    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className="mt-2 text-sm text-[var(--terminal-text)] break-all">{value || "n/a"}</p>
     </div>
   );
 }

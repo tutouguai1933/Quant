@@ -1,17 +1,18 @@
-/* 这个文件负责渲染持仓页。 */
+/**
+ * 持仓页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 
-import { AppShell } from "../../components/app-shell";
-import { DataTable } from "../../components/data-table";
-import { MetricGrid } from "../../components/metric-grid";
-import { PageHero } from "../../components/page-hero";
-import { StatusBadge } from "../../components/status-badge";
-import { ToolDetailHub } from "../../components/tool-detail-hub";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Skeleton } from "../../components/ui/skeleton";
-import { getPositionsPageModel, listPositions } from "../../lib/api";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricCard,
+} from "../../components/terminal";
+import { listPositions } from "../../lib/api";
+import { LoadingBanner } from "../../components/loading-banner";
 
 type PositionItem = {
   id: string;
@@ -28,11 +29,10 @@ type PositionsPageModel = {
 };
 
 export default function PositionsPage() {
-  const [session, setSession] = useState<{ token: string | null; isAuthenticated: boolean }>({
-    token: null,
+  const [session, setSession] = useState<{ isAuthenticated: boolean }>({
     isAuthenticated: false,
   });
-  const [model, setModel] = useState<PositionsPageModel>(getPositionsPageModel());
+  const [model, setModel] = useState<PositionsPageModel>({ source: "unknown", truthSource: "unknown", items: [] });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -40,21 +40,13 @@ export default function PositionsPage() {
       .then((res) => res.json())
       .then((data) => {
         setSession({
-          token: data.token || null,
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (!session.token) {
-      setIsLoading(false);
-      return;
-    }
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -64,9 +56,7 @@ export default function PositionsPage() {
           setModel(response.data);
         }
       })
-      .catch(() => {
-        // API 不可用时仍然保留演示数据。
-      })
+      .catch(() => {})
       .finally(() => {
         clearTimeout(timeoutId);
         setIsLoading(false);
@@ -76,105 +66,92 @@ export default function PositionsPage() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [session.token]);
+  }, []);
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="资产 / 持仓"
       title="持仓"
-      subtitle="持仓页现在只负责核对仓位结果，不再承担主流程判断。"
+      subtitle="当前仓位与浮盈亏"
       currentPath="/positions"
       isAuthenticated={session.isAuthenticated}
     >
-      <PageHero
-        badge="持仓详情"
-        title="持仓详情页"
-        description="先在执行页或任务页确认要不要看结果，再回到这里核对仓位有没有真的形成。"
-      />
+      {isLoading && <LoadingBanner />}
 
-      <ToolDetailHub
-        summary="持仓页只负责回答「执行后的仓位有没有真的形成」，不再承担主链推进。"
-        detail="这里保留最新方向、数量和浮盈亏，帮助你核对目标品种有没有真正建仓，但不再让持仓页自己承担判断职责。"
-        mainHint="首页先决定要不要继续看执行结果，需要核对仓位时再回持仓页。"
-        strategiesHint="策略页负责继续推进或暂停，这里只用来对照仓位结果。"
-        tasksHint="任务页提示同步或恢复问题时，再回持仓页确认是不是仓位层异常。"
-      />
-
-      {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-      ) : (
-        <MetricGrid
-          items={[
-            { label: "持仓数量", value: String(model.items.length), detail: "执行后应该能在这里看到最新仓位" },
-            { label: "最新方向", value: model.items[0]?.side ?? "waiting", detail: "long / short / flat 是最先要确认的信号" },
-            { label: "最新品种", value: model.items[0]?.symbol ?? "n/a", detail: "确认是不是你刚刚派发的目标品种" },
-          ]}
+      {/* 指标卡 */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <MetricCard
+          label="持仓数量"
+          value={String(model.items.length)}
+          colorType="neutral"
         />
-      )}
+        <MetricCard
+          label="最新方向"
+          value={model.items[0]?.side ?? "--"}
+          colorType={model.items[0]?.side === "long" ? "positive" : model.items[0]?.side === "short" ? "negative" : "neutral"}
+        />
+        <MetricCard
+          label="最新品种"
+          value={model.items[0]?.symbol ?? "--"}
+          colorType="neutral"
+        />
+      </div>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        {isLoading ? (
-          <Skeleton className="h-64" />
-        ) : (
-          <DataTable
-            columns={["Symbol", "Side", "Quantity", "PnL"]}
-            rows={model.items.map((item) => ({
-              id: item.id,
-              cells: [item.symbol, <StatusBadge key={item.id} value={item.side} />, item.quantity, item.unrealizedPnl],
-            }))}
-            emptyTitle="还没有持仓"
-            emptyDetail="当订单已经成交后，再回到这里确认是否形成最新仓位；如果这里只显示空列表，记得去余额页看看是否只剩交易所零头。"
-          />
-        )}
-
-        <div className="space-y-6">
-          <Card className="bg-card/90">
-            <CardHeader>
-              <p className="eyebrow">同步来源</p>
-              <CardTitle>先确认仓位数据来自哪里</CardTitle>
-              <CardDescription>这里只解释结果，不和主表抢空间。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              {isLoading ? (
-                <>
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-40" />
-                  <Skeleton className="h-4 w-48" />
-                </>
-              ) : (
-                <>
-                  <p>source：<span className="text-foreground">{model.source}</span></p>
-                  <p>truth source：<span className="text-foreground">{model.truthSource}</span></p>
-                  <p>最新仓位：<span className="text-foreground">{model.items[0]?.symbol ?? "n/a"} / {model.items[0]?.side ?? "waiting"}</span></p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <p className="eyebrow">仓位判断</p>
-              <CardTitle>先看有没有真的形成仓位</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoTile title="有持仓时" detail="优先确认目标品种、方向和数量，再判断是否符合预期。" />
-              <InfoTile title="空列表时" detail="如果余额页还剩少量币，先把它当成交易所零头，而不是系统卡着持仓。" />
-            </CardContent>
-          </Card>
+      {/* 同步来源 */}
+      <TerminalCard title="同步来源">
+        <div className="space-y-2 text-[12px]">
+          <div className="flex justify-between">
+            <span className="text-[var(--terminal-muted)]">source</span>
+            <span className="text-[var(--terminal-text)]">{model.source}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[var(--terminal-muted)]">truth source</span>
+            <span className="text-[var(--terminal-text)]">{model.truthSource}</span>
+          </div>
         </div>
-      </section>
-    </AppShell>
-  );
-}
+      </TerminalCard>
 
-function InfoTile({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
-    </div>
+      {/* 持仓表格 */}
+      <TerminalCard title="持仓列表">
+        {model.items.length === 0 ? (
+          <div className="text-center py-10 text-[var(--terminal-muted)]">
+            暂无持仓数据
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-[var(--terminal-border)]">
+                  <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">品种</th>
+                  <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">方向</th>
+                  <th className="text-right py-2 px-3 text-[var(--terminal-dim)]">数量</th>
+                  <th className="text-right py-2 px-3 text-[var(--terminal-dim)]">浮盈亏</th>
+                </tr>
+              </thead>
+              <tbody>
+                {model.items.map((item) => (
+                  <tr key={item.id} className="border-b border-[var(--terminal-border)]/50 hover:bg-[var(--terminal-bg-hover)]">
+                    <td className="py-2 px-3 text-[var(--terminal-text)] font-medium">{item.symbol}</td>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${
+                        item.side === "long"
+                          ? "bg-[var(--terminal-green)]/20 text-[var(--terminal-green)]"
+                          : item.side === "short"
+                          ? "bg-[var(--terminal-red)]/20 text-[var(--terminal-red)]"
+                          : "bg-[var(--terminal-border)] text-[var(--terminal-dim)]"
+                      }`}>
+                        {item.side}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-right text-[var(--terminal-text)]">{item.quantity}</td>
+                    <td className="py-2 px-3 text-right text-[var(--terminal-text)]">{item.unrealizedPnl}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </TerminalCard>
+    </TerminalShell>
   );
 }

@@ -6,14 +6,15 @@ import { useSearchParams } from "next/navigation";
 
 import { BarChart3, TrendingUp, TrendingDown, Activity, Calendar, Clock } from "lucide-react";
 
-import { AppShell } from "../../components/app-shell";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricStrip,
+} from "../../components/terminal";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
-import { PageHero } from "../../components/page-hero";
 import { Skeleton } from "../../components/ui/skeleton";
-import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { readFeedback } from "../../lib/feedback";
 import {
@@ -122,30 +123,26 @@ export default function AnalyticsPage() {
     };
   }, []);
 
-  const statusItems = [
+  const statusMetrics = [
     {
       label: "服务状态",
       value: serviceStatus.status,
-      status: serviceStatus.status === "ready" ? "success" : "waiting",
-      detail: `历史${serviceStatus.history_days}天`,
+      colorType: serviceStatus.status === "ready" ? ("positive" as const) : ("neutral" as const),
     },
     {
       label: "交易记录",
       value: String(serviceStatus.trade_count),
-      status: serviceStatus.trade_count > 0 ? "active" : "waiting",
-      detail: serviceStatus.last_sync_at ? `最近同步: ${formatTime(serviceStatus.last_sync_at)}` : "等待同步",
+      colorType: serviceStatus.trade_count > 0 ? ("positive" as const) : ("neutral" as const),
     },
     {
       label: "今日盈亏",
       value: formatPnl(dailySummary.total_pnl),
-      status: parseFloat(dailySummary.total_pnl) >= 0 ? "success" : "error",
-      detail: `${dailySummary.trade_count}笔交易`,
+      colorType: parseFloat(dailySummary.total_pnl) >= 0 ? ("positive" as const) : ("negative" as const),
     },
     {
       label: "本周盈亏",
       value: formatPnl(weeklySummary.total_pnl),
-      status: parseFloat(weeklySummary.total_pnl) >= 0 ? "success" : "error",
-      detail: `胜率: ${formatPercent(weeklySummary.win_rate)}`,
+      colorType: parseFloat(weeklySummary.total_pnl) >= 0 ? ("positive" as const) : ("negative" as const),
     },
   ];
 
@@ -153,341 +150,306 @@ export default function AnalyticsPage() {
   const strategyAttributionList = pnlAttribution ? Object.values(pnlAttribution.by_strategy) : [];
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="分析 / 数据分析"
       title="数据分析"
       subtitle="交易统计、盈亏归因、策略表现和交易历史"
       currentPath="/analytics"
       isAuthenticated={session.isAuthenticated}
     >
+      {/* 反馈横幅 */}
       <FeedbackBanner feedback={feedback} />
 
-      <PageHero
-        badge="Analytics"
-        title="交易数据分析"
-        description="查看每日/每周统计、盈亏归因分析、策略表现对比和交易历史记录"
-      />
-
-      <StatusBar items={statusItems} />
+      {/* 指标条 */}
+      <MetricStrip metrics={statusMetrics} />
 
       {isLoading ? (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <Skeleton className="h-48 rounded-xl" />
-            <Skeleton className="h-48 rounded-xl" />
+            <Skeleton className="h-48 rounded-lg" />
+            <Skeleton className="h-48 rounded-lg" />
           </div>
-          <Skeleton className="h-64 rounded-xl" />
-          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-64 rounded-lg" />
+          <Skeleton className="h-96 rounded-lg" />
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* 每日/每周统计卡片 */}
           <div className="grid gap-4 md:grid-cols-2">
-            <Card className="bg-card/90">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <Calendar className="size-4 text-primary" />
-                  <p className="eyebrow">每日统计</p>
+            <TerminalCard>
+              <div className="flex items-center gap-3 mb-4">
+                <Calendar className="size-4 text-[color:var(--accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">每日统计</span>
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-1">{dailySummary.date}</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {dailySummary.trade_count}笔交易 | 胜率 {formatPercent(dailySummary.win_rate)}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoBlock label="总盈亏" value={formatPnl(dailySummary.total_pnl)} />
+                <InfoBlock label="胜率" value={formatPercent(dailySummary.win_rate)} />
+                <InfoBlock label="盈利笔数" value={String(dailySummary.win_count)} />
+                <InfoBlock label="亏损笔数" value={String(dailySummary.loss_count)} />
+                <InfoBlock label="平均盈亏" value={formatPnl(dailySummary.avg_pnl)} />
+                <InfoBlock label="最大盈利" value={formatPnl(dailySummary.max_profit)} />
+              </div>
+              {dailySummary.symbols.length > 0 && (
+                <div className="pt-4 mt-4 border-t border-border/50">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">交易标的</p>
+                  <p className="mt-2 text-sm text-foreground">{dailySummary.symbols.join(", ")}</p>
                 </div>
-                <CardTitle>{dailySummary.date}</CardTitle>
-                <CardDescription>
-                  {dailySummary.trade_count}笔交易 | 胜率 {formatPercent(dailySummary.win_rate)}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <InfoBlock label="总盈亏" value={formatPnl(dailySummary.total_pnl)} />
-                  <InfoBlock label="胜率" value={formatPercent(dailySummary.win_rate)} />
-                  <InfoBlock label="盈利笔数" value={String(dailySummary.win_count)} />
-                  <InfoBlock label="亏损笔数" value={String(dailySummary.loss_count)} />
-                  <InfoBlock label="平均盈亏" value={formatPnl(dailySummary.avg_pnl)} />
-                  <InfoBlock label="最大盈利" value={formatPnl(dailySummary.max_profit)} />
-                </div>
-                {dailySummary.symbols.length > 0 && (
-                  <div className="pt-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">交易标的</p>
-                    <p className="mt-2 text-sm text-foreground">{dailySummary.symbols.join(", ")}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+              )}
+            </TerminalCard>
 
-            <Card className="bg-card/90">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <Calendar className="size-4 text-primary" />
-                  <p className="eyebrow">每周统计</p>
-                </div>
-                <CardTitle>{weeklySummary.week_start} ~ {weeklySummary.week_end}</CardTitle>
-                <CardDescription>
-                  {weeklySummary.trade_count}笔交易 | 胜率 {formatPercent(weeklySummary.win_rate)}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <InfoBlock label="总盈亏" value={formatPnl(weeklySummary.total_pnl)} />
-                  <InfoBlock label="胜率" value={formatPercent(weeklySummary.win_rate)} />
-                  <InfoBlock label="盈利笔数" value={String(weeklySummary.win_count)} />
-                  <InfoBlock label="亏损笔数" value={String(weeklySummary.loss_count)} />
-                  <InfoBlock label="最佳日" value={weeklySummary.best_day || "无"} />
-                  <InfoBlock label="最差日" value={weeklySummary.worst_day || "无"} />
-                </div>
-              </CardContent>
-            </Card>
+            <TerminalCard>
+              <div className="flex items-center gap-3 mb-4">
+                <Calendar className="size-4 text-[color:var(--accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">每周统计</span>
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-1">{weeklySummary.week_start} ~ {weeklySummary.week_end}</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {weeklySummary.trade_count}笔交易 | 胜率 {formatPercent(weeklySummary.win_rate)}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoBlock label="总盈亏" value={formatPnl(weeklySummary.total_pnl)} />
+                <InfoBlock label="胜率" value={formatPercent(weeklySummary.win_rate)} />
+                <InfoBlock label="盈利笔数" value={String(weeklySummary.win_count)} />
+                <InfoBlock label="亏损笔数" value={String(weeklySummary.loss_count)} />
+                <InfoBlock label="最佳日" value={weeklySummary.best_day || "无"} />
+                <InfoBlock label="最差日" value={weeklySummary.worst_day || "无"} />
+              </div>
+            </TerminalCard>
           </div>
 
           {/* 盈亏曲线图 */}
-            <Card className="bg-card/90">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <TrendingUp className="size-4 text-primary" />
-                  <p className="eyebrow">趋势分析</p>
-                </div>
-                <CardTitle>盈亏曲线图</CardTitle>
-                <CardDescription>
-                  每日盈亏变化趋势和累计盈亏曲线
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <PnlCurveChart
-                  data={buildPnlChartData(weeklySummary, tradeHistory)}
-                  title="本周盈亏趋势"
-                />
-              </CardContent>
-            </Card>
+          <TerminalCard>
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingUp className="size-4 text-[color:var(--accent)]" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">趋势分析</span>
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-1">盈亏曲线图</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              每日盈亏变化趋势和累计盈亏曲线
+            </p>
+            <PnlCurveChart
+              data={buildPnlChartData(weeklySummary, tradeHistory)}
+              title="本周盈亏趋势"
+            />
+          </TerminalCard>
 
           {/* 盈亏归因分析 */}
-          <Card className="bg-card/90">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <BarChart3 className="size-4 text-primary" />
-                <p className="eyebrow">盈亏归因</p>
-              </div>
-              <CardTitle>盈亏归因分析</CardTitle>
-              <CardDescription>
-                按标的和策略分组分析盈亏来源
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="symbol">
-                <TabsList>
-                  <TabsTrigger value="symbol">按标的</TabsTrigger>
-                  <TabsTrigger value="strategy">按策略</TabsTrigger>
-                  <TabsTrigger value="chart">图表视图</TabsTrigger>
-                  <TabsTrigger value="top">最佳/最差</TabsTrigger>
-                </TabsList>
+          <TerminalCard>
+            <div className="flex items-center gap-3 mb-4">
+              <BarChart3 className="size-4 text-[color:var(--accent)]" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">盈亏归因</span>
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-1">盈亏归因分析</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              按标的和策略分组分析盈亏来源
+            </p>
+            <Tabs defaultValue="symbol">
+              <TabsList>
+                <TabsTrigger value="symbol">按标的</TabsTrigger>
+                <TabsTrigger value="strategy">按策略</TabsTrigger>
+                <TabsTrigger value="chart">图表视图</TabsTrigger>
+                <TabsTrigger value="top">最佳/最差</TabsTrigger>
+              </TabsList>
 
-                <TabsContent value="symbol" className="mt-4">
-                  <DataTable
-                    columns={["标的", "交易数", "买入", "卖出", "总盈亏"]}
-                    rows={symbolAttributionList.map((item) => ({
-                      id: item.symbol,
-                      cells: [
-                        item.symbol,
-                        String(item.trade_count),
-                        String(item.buy_count),
-                        String(item.sell_count),
-                        <PnlValue key={item.symbol} value={item.total_pnl} />,
-                      ],
+              <TabsContent value="symbol" className="mt-4">
+                <DataTable
+                  columns={["标的", "交易数", "买入", "卖出", "总盈亏"]}
+                  rows={symbolAttributionList.map((item) => ({
+                    id: item.symbol,
+                    cells: [
+                      item.symbol,
+                      String(item.trade_count),
+                      String(item.buy_count),
+                      String(item.sell_count),
+                      <PnlValue key={item.symbol} value={item.total_pnl} />,
+                    ],
+                  }))}
+                  emptyTitle="暂无归因数据"
+                  emptyDetail="等待交易记录"
+                />
+              </TabsContent>
+
+              <TabsContent value="strategy" className="mt-4">
+                <DataTable
+                  columns={["策略", "交易数", "总盈亏"]}
+                  rows={strategyAttributionList.map((item) => ({
+                    id: String(item.strategy_id || "unknown"),
+                    cells: [
+                      item.strategy_name,
+                      String(item.trade_count),
+                      <PnlValue key={String(item.strategy_id)} value={item.total_pnl} />,
+                    ],
+                  }))}
+                  emptyTitle="暂无归因数据"
+                  emptyDetail="等待交易记录"
+                />
+              </TabsContent>
+
+              <TabsContent value="chart" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <SymbolAttributionPieChart
+                    data={symbolAttributionList.map((item) => ({
+                      symbol: item.symbol,
+                      total_pnl: item.total_pnl,
                     }))}
-                    emptyTitle="暂无归因数据"
-                    emptyDetail="等待交易记录"
                   />
-                </TabsContent>
-
-                <TabsContent value="strategy" className="mt-4">
-                  <DataTable
-                    columns={["策略", "交易数", "总盈亏"]}
-                    rows={strategyAttributionList.map((item) => ({
-                      id: String(item.strategy_id || "unknown"),
-                      cells: [
-                        item.strategy_name,
-                        String(item.trade_count),
-                        <PnlValue key={String(item.strategy_id)} value={item.total_pnl} />,
-                      ],
+                  <StrategyAttributionPieChart
+                    data={strategyAttributionList.map((item) => ({
+                      strategy_name: item.strategy_name,
+                      total_pnl: item.total_pnl,
                     }))}
-                    emptyTitle="暂无归因数据"
-                    emptyDetail="等待交易记录"
                   />
-                </TabsContent>
+                </div>
+              </TabsContent>
 
-                <TabsContent value="chart" className="mt-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <SymbolAttributionPieChart
-                      data={symbolAttributionList.map((item) => ({
-                        symbol: item.symbol,
-                        total_pnl: item.total_pnl,
-                      }))}
-                    />
-                    <StrategyAttributionPieChart
-                      data={strategyAttributionList.map((item) => ({
-                        strategy_name: item.strategy_name,
-                        total_pnl: item.total_pnl,
-                      }))}
-                    />
+              <TabsContent value="top" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="terminal-card p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <TrendingUp className="size-4 text-green-500" />
+                      <span className="text-sm font-semibold">盈利标的 TOP 5</span>
+                    </div>
+                    {(pnlAttribution?.top_profit_symbols?.length ?? 0) > 0 ? (
+                      <ul className="space-y-2">
+                        {pnlAttribution?.top_profit_symbols?.map((item, idx) => (
+                          <li key={item.symbol} className="flex items-center justify-between text-sm">
+                            <span>{idx + 1}. {item.symbol}</span>
+                            <span className="text-green-500 font-medium">{item.total_pnl}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">暂无盈利记录</p>
+                    )}
                   </div>
-                </TabsContent>
 
-                <TabsContent value="top" className="mt-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Card className="bg-[color:var(--panel-strong)]/80">
-                      <CardHeader>
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="size-4 text-green-500" />
-                          <CardTitle className="text-base">盈利标的 TOP 5</CardTitle>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        {(pnlAttribution?.top_profit_symbols?.length ?? 0) > 0 ? (
-                          <ul className="space-y-2">
-                            {pnlAttribution?.top_profit_symbols?.map((item, idx) => (
-                              <li key={item.symbol} className="flex items-center justify-between text-sm">
-                                <span>{idx + 1}. {item.symbol}</span>
-                                <span className="text-green-500 font-medium">{item.total_pnl}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">暂无盈利记录</p>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card className="bg-[color:var(--panel-strong)]/80">
-                      <CardHeader>
-                        <div className="flex items-center gap-2">
-                          <TrendingDown className="size-4 text-red-500" />
-                          <CardTitle className="text-base">亏损标的 TOP 5</CardTitle>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        {(pnlAttribution?.top_loss_symbols?.length ?? 0) > 0 ? (
-                          <ul className="space-y-2">
-                            {pnlAttribution?.top_loss_symbols?.map((item, idx) => (
-                              <li key={item.symbol} className="flex items-center justify-between text-sm">
-                                <span>{idx + 1}. {item.symbol}</span>
-                                <span className="text-red-500 font-medium">{item.total_pnl}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">暂无亏损记录</p>
-                        )}
-                      </CardContent>
-                    </Card>
+                  <div className="terminal-card p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <TrendingDown className="size-4 text-red-500" />
+                      <span className="text-sm font-semibold">亏损标的 TOP 5</span>
+                    </div>
+                    {(pnlAttribution?.top_loss_symbols?.length ?? 0) > 0 ? (
+                      <ul className="space-y-2">
+                        {pnlAttribution?.top_loss_symbols?.map((item, idx) => (
+                          <li key={item.symbol} className="flex items-center justify-between text-sm">
+                            <span>{idx + 1}. {item.symbol}</span>
+                            <span className="text-red-500 font-medium">{item.total_pnl}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">暂无亏损记录</p>
+                    )}
                   </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </TerminalCard>
 
           {/* 策略表现对比 */}
-          <Card className="bg-card/90">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <Activity className="size-4 text-primary" />
-                <p className="eyebrow">策略表现</p>
-              </div>
-              <CardTitle>策略表现对比</CardTitle>
-              <CardDescription>
-                按策略维度对比交易表现、胜率和收益
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="table">
-                <TabsList>
-                  <TabsTrigger value="table">数据表格</TabsTrigger>
-                  <TabsTrigger value="chart">盈亏图表</TabsTrigger>
-                  <TabsTrigger value="winrate">胜率图表</TabsTrigger>
-                </TabsList>
+          <TerminalCard>
+            <div className="flex items-center gap-3 mb-4">
+              <Activity className="size-4 text-[color:var(--accent)]" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">策略表现</span>
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-1">策略表现对比</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              按策略维度对比交易表现、胜率和收益
+            </p>
+            <Tabs defaultValue="table">
+              <TabsList>
+                <TabsTrigger value="table">数据表格</TabsTrigger>
+                <TabsTrigger value="chart">盈亏图表</TabsTrigger>
+                <TabsTrigger value="winrate">胜率图表</TabsTrigger>
+              </TabsList>
 
-                <TabsContent value="table" className="mt-4">
-                  <DataTable
-                    columns={["策略", "交易数", "总盈亏", "胜率", "平均盈亏", "Sharpe"]}
-                    rows={strategyPerformances.map((item) => ({
-                      id: String(item.strategy_id || "unknown"),
-                      cells: [
-                        item.strategy_name,
-                        String(item.trade_count),
-                        <PnlValue key={String(item.strategy_id)} value={item.total_pnl} />,
-                        formatPercent(item.win_rate),
-                        formatPnl(item.avg_pnl),
-                        item.sharpe_ratio ? formatDecimal(item.sharpe_ratio) : "N/A",
-                      ],
-                    }))}
-                    emptyTitle="暂无策略表现数据"
-                    emptyDetail="等待交易记录"
-                  />
-                </TabsContent>
+              <TabsContent value="table" className="mt-4">
+                <DataTable
+                  columns={["策略", "交易数", "总盈亏", "胜率", "平均盈亏", "Sharpe"]}
+                  rows={strategyPerformances.map((item) => ({
+                    id: String(item.strategy_id || "unknown"),
+                    cells: [
+                      item.strategy_name,
+                      String(item.trade_count),
+                      <PnlValue key={String(item.strategy_id)} value={item.total_pnl} />,
+                      formatPercent(item.win_rate),
+                      formatPnl(item.avg_pnl),
+                      item.sharpe_ratio ? formatDecimal(item.sharpe_ratio) : "N/A",
+                    ],
+                  }))}
+                  emptyTitle="暂无策略表现数据"
+                  emptyDetail="等待交易记录"
+                />
+              </TabsContent>
 
-                <TabsContent value="chart" className="mt-4">
-                  <StrategyPerformanceChart data={strategyPerformances} />
-                </TabsContent>
+              <TabsContent value="chart" className="mt-4">
+                <StrategyPerformanceChart data={strategyPerformances} />
+              </TabsContent>
 
-                <TabsContent value="winrate" className="mt-4">
-                  <StrategyWinRateChart data={strategyPerformances} />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
+              <TabsContent value="winrate" className="mt-4">
+                <StrategyWinRateChart data={strategyPerformances} />
+              </TabsContent>
+            </Tabs>
+          </TerminalCard>
 
           {/* 交易历史 */}
-          <Card className="bg-card/90">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <Clock className="size-4 text-primary" />
-                <p className="eyebrow">交易历史</p>
-              </div>
-              <CardTitle>交易历史记录</CardTitle>
-              <CardDescription>
-                最近 {tradeHistory.length} 笔交易记录
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="table">
-                <TabsList>
-                  <TabsTrigger value="table">交易列表</TabsTrigger>
-                  <TabsTrigger value="timeline">时间线图</TabsTrigger>
-                  <TabsTrigger value="distribution">盈亏分布</TabsTrigger>
-                </TabsList>
+          <TerminalCard>
+            <div className="flex items-center gap-3 mb-4">
+              <Clock className="size-4 text-[color:var(--accent)]" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">交易历史</span>
+            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-1">交易历史记录</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              最近 {tradeHistory.length} 笔交易记录
+            </p>
+            <Tabs defaultValue="table">
+              <TabsList>
+                <TabsTrigger value="table">交易列表</TabsTrigger>
+                <TabsTrigger value="timeline">时间线图</TabsTrigger>
+                <TabsTrigger value="distribution">盈亏分布</TabsTrigger>
+              </TabsList>
 
-                <TabsContent value="table" className="mt-4">
-                  <DataTable
-                    columns={["时间", "标的", "方向", "数量", "价格", "盈亏"]}
-                    rows={tradeHistory.map((item) => ({
-                      id: item.trade_id,
-                      cells: [
-                        formatTime(item.executed_at),
-                        item.symbol,
-                        <StatusBadge key={item.trade_id} value={item.side} />,
-                        item.quantity,
-                        item.price,
-                        <PnlValue key={item.trade_id} value={item.pnl} />,
-                      ],
-                    }))}
-                    emptyTitle="暂无交易历史"
-                    emptyDetail="等待交易执行"
-                  />
-                </TabsContent>
+              <TabsContent value="table" className="mt-4">
+                <DataTable
+                  columns={["时间", "标的", "方向", "数量", "价格", "盈亏"]}
+                  rows={tradeHistory.map((item) => ({
+                    id: item.trade_id,
+                    cells: [
+                      formatTime(item.executed_at),
+                      item.symbol,
+                      <StatusBadge key={item.trade_id} value={item.side} />,
+                      item.quantity,
+                      item.price,
+                      <PnlValue key={item.trade_id} value={item.pnl} />,
+                    ],
+                  }))}
+                  emptyTitle="暂无交易历史"
+                  emptyDetail="等待交易执行"
+                />
+              </TabsContent>
 
-                <TabsContent value="timeline" className="mt-4">
-                  <TradeTimelineChart data={tradeHistory} />
-                </TabsContent>
+              <TabsContent value="timeline" className="mt-4">
+                <TradeTimelineChart data={tradeHistory} />
+              </TabsContent>
 
-                <TabsContent value="distribution" className="mt-4">
-                  <TradePnlDistribution data={tradeHistory} />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
+              <TabsContent value="distribution" className="mt-4">
+                <TradePnlDistribution data={tradeHistory} />
+              </TabsContent>
+            </Tabs>
+          </TerminalCard>
         </div>
       )}
-    </AppShell>
+    </TerminalShell>
   );
 }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-[color:var(--panel-strong)]/80 p-3">
+    <div className="terminal-card p-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
       <p className="mt-2 text-base font-semibold text-foreground">{value}</p>
     </div>

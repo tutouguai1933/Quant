@@ -1,17 +1,18 @@
-/* 这个文件负责渲染订单页。 */
+/**
+ * 订单页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 
-import { AppShell } from "../../components/app-shell";
-import { DataTable } from "../../components/data-table";
-import { MetricGrid } from "../../components/metric-grid";
-import { PageHero } from "../../components/page-hero";
-import { StatusBadge } from "../../components/status-badge";
-import { ToolDetailHub } from "../../components/tool-detail-hub";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Skeleton } from "../../components/ui/skeleton";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricCard,
+} from "../../components/terminal";
 import { DEFAULT_API_TIMEOUT, getOrdersPageModel, listOrders } from "../../lib/api";
+import { LoadingBanner } from "../../components/loading-banner";
 
 type OrdersPageModel = {
   source: string;
@@ -36,9 +37,7 @@ export default function OrdersPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -56,9 +55,7 @@ export default function OrdersPage() {
           setModel(response.data);
         }
       })
-      .catch(() => {
-        // API 不可用时仍然保留演示数据。
-      })
+      .catch(() => {})
       .finally(() => {
         clearTimeout(timeoutId);
         setIsLoading(false);
@@ -71,102 +68,119 @@ export default function OrdersPage() {
   }, [session.token]);
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="资产 / 订单"
       title="订单"
-      subtitle="订单页现在只负责核对执行回报，不再承担主流程判断。"
+      subtitle="订单核对与执行回报"
       currentPath="/orders"
       isAuthenticated={session.isAuthenticated}
     >
-      <PageHero
-        badge="订单详情"
-        title="订单详情页"
-        description="先在执行页或任务页判断要不要查结果，再回到这里确认执行器到底回了什么。"
-      />
+      {isLoading && <LoadingBanner />}
 
-      <ToolDetailHub
-        summary='订单页只负责回答"这次执行到底回了什么"，主链判断继续留在首页、执行页和任务页。'
-        detail="这里保留关键数量、订单状态和回报明细，帮助你确认执行是否真正落地，但不再把订单页当成下一步动作的起点。"
-        mainHint="首页已经说明要不要继续执行；要核对订单回报时，再回订单页看明细。"
-        strategiesHint="执行按钮和推进判断留在策略页，这里只用来确认订单状态。"
-        tasksHint="任务页提示失败或需要人工复核时，再回订单页对照最近回报。"
-      />
-
-      {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-      ) : (
-        <MetricGrid
-          items={[
-            { label: "订单数量", value: String(model.items.length), detail: "来自控制平面的聚合视图" },
-            { label: "最新品种", value: model.items[0]?.symbol ?? "n/a", detail: "优先确认最新订单是不是你刚刚派发的品种" },
-            { label: "最新状态", value: model.items[0]?.status ?? "waiting", detail: "看到 closed 或 filled，说明执行已经落地" },
-          ]}
+      {/* 指标卡 */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <MetricCard
+          label="订单数量"
+          value={String(model.items.length)}
+          colorType="neutral"
         />
-      )}
+        <MetricCard
+          label="最新品种"
+          value={model.items[0]?.symbol ?? "--"}
+          colorType="neutral"
+        />
+        <MetricCard
+          label="最新状态"
+          value={model.items[0]?.status ?? "waiting"}
+          colorType={model.items[0]?.status === "filled" || model.items[0]?.status === "closed" ? "positive" : "neutral"}
+        />
+      </div>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        {isLoading ? (
-          <Skeleton className="h-64" />
-        ) : (
-          <DataTable
-            columns={["Symbol", "Side", "Type", "Status"]}
-            rows={model.items.map((item) => ({
-              id: item.id,
-              cells: [item.symbol, item.side, item.orderType, <StatusBadge key={item.id} value={item.status} />],
-            }))}
-            emptyTitle="还没有订单"
-            emptyDetail="先去策略页派发最新信号；如果这里已经清空，但余额页还有少量币，优先按余额页提示判断是不是交易所零头。"
-          />
-        )}
-
-        <div className="space-y-6">
-          <Card className="bg-card/90">
-            <CardHeader>
-              <p className="eyebrow">同步来源</p>
-              <CardTitle>先确认订单数据来自哪里</CardTitle>
-              <CardDescription>右侧只保留结果解释，不再在主区重复堆说明文字。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              {isLoading ? (
-                <>
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-40" />
-                  <Skeleton className="h-4 w-48" />
-                </>
-              ) : (
-                <>
-                  <p>source：<span className="text-foreground">{model.source}</span></p>
-                  <p>truth source：<span className="text-foreground">{model.truthSource}</span></p>
-                  <p>最新订单：<span className="text-foreground">{model.items[0]?.symbol ?? "n/a"} / {model.items[0]?.status ?? "waiting"}</span></p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader>
-              <p className="eyebrow">结果判断</p>
-              <CardTitle>执行是否真正落地</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <InfoTile title="有订单时" detail="先看最新品种和状态，确认是不是你刚刚派发的目标。" />
-              <InfoTile title="没订单时" detail="如果余额页还剩少量币，通常说明执行已结束，只留下交易所零头。" />
-            </CardContent>
-          </Card>
+      {/* 同步来源 */}
+      <TerminalCard title="同步来源">
+        <div className="space-y-2 text-[12px]">
+          <div className="flex justify-between">
+            <span className="text-[var(--terminal-muted)]">source</span>
+            <span className="text-[var(--terminal-text)]">{model.source}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[var(--terminal-muted)]">truth source</span>
+            <span className="text-[var(--terminal-text)]">{model.truthSource}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-[var(--terminal-muted)]">最新订单</span>
+            <span className="text-[var(--terminal-text)]">
+              {model.items[0]?.symbol ?? "n/a"} / {model.items[0]?.status ?? "waiting"}
+            </span>
+          </div>
         </div>
-      </section>
-    </AppShell>
-  );
-}
+      </TerminalCard>
 
-function InfoTile({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
-    </div>
+      {/* 订单表格 */}
+      <TerminalCard title="订单列表">
+        {model.items.length === 0 ? (
+          <div className="text-center py-10 text-[var(--terminal-muted)]">
+            暂无订单数据，请先连接交易所账户
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-[var(--terminal-border)]">
+                  <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">品种</th>
+                  <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">方向</th>
+                  <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">类型</th>
+                  <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {model.items.map((item) => (
+                  <tr key={item.id} className="border-b border-[var(--terminal-border)]/50 hover:bg-[var(--terminal-bg-hover)]">
+                    <td className="py-2 px-3 text-[var(--terminal-text)] font-medium">{item.symbol}</td>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${
+                        item.side === "buy"
+                          ? "bg-[var(--terminal-green)]/20 text-[var(--terminal-green)]"
+                          : item.side === "sell"
+                          ? "bg-[var(--terminal-red)]/20 text-[var(--terminal-red)]"
+                          : "bg-[var(--terminal-border)] text-[var(--terminal-dim)]"
+                      }`}>
+                        {item.side}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-center text-[var(--terminal-text)]">{item.orderType}</td>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${
+                        item.status === "filled" || item.status === "closed"
+                          ? "bg-[var(--terminal-green)]/20 text-[var(--terminal-green)]"
+                          : item.status === "canceled" || item.status === "rejected"
+                          ? "bg-[var(--terminal-red)]/20 text-[var(--terminal-red)]"
+                          : "bg-[var(--terminal-yellow)]/20 text-[var(--terminal-yellow)]"
+                      }`}>
+                        {item.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </TerminalCard>
+
+      {/* 结果判断 */}
+      <TerminalCard title="结果判断">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded border border-[var(--terminal-border)]/60 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">有订单时</p>
+            <p className="mt-2 text-sm text-[var(--terminal-text)]">先看最新品种和状态，确认是不是你刚刚派发的目标。</p>
+          </div>
+          <div className="rounded border border-[var(--terminal-border)]/60 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">没订单时</p>
+            <p className="mt-2 text-sm text-[var(--terminal-text)]">如果余额页还剩少量币，通常说明执行已结束，只留下交易所零头。</p>
+          </div>
+        </div>
+      </TerminalCard>
+    </TerminalShell>
   );
 }

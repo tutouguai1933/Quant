@@ -1,28 +1,26 @@
-/* 这个文件负责渲染风险页。 */
+/**
+ * 风险页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-import { AppShell } from "../../components/app-shell";
-import { DataTable } from "../../components/data-table";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricCard,
+} from "../../components/terminal";
 import { FeedbackBanner } from "../../components/feedback-banner";
-import { MetricGrid } from "../../components/metric-grid";
-import { PageHero } from "../../components/page-hero";
-import { StatusBadge } from "../../components/status-badge";
-import { ToolDetailHub } from "../../components/tool-detail-hub";
-import { Skeleton } from "../../components/ui/skeleton";
+import { LoadingBanner } from "../../components/loading-banner";
 import { readFeedback } from "../../lib/feedback";
 import { getRiskPageModel, listRiskEvents } from "../../lib/api";
 
 type RiskItem = { id: string; level: string; ruleName: string; decision: string };
 
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export default function RiskPage({}: PageProps) {
+export default function RiskPage() {
   const searchParams = useSearchParams();
   const params = searchParams ? Object.fromEntries(searchParams.entries()) : {};
   const feedback = readFeedback(params);
@@ -43,9 +41,7 @@ export default function RiskPage({}: PageProps) {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -63,9 +59,7 @@ export default function RiskPage({}: PageProps) {
           setItems(response.data.items);
         }
       })
-      .catch(() => {
-        // API 不可用时仍然保留占位数据。
-      })
+      .catch(() => {})
       .finally(() => {
         clearTimeout(timeoutId);
         setIsLoading(false);
@@ -78,61 +72,108 @@ export default function RiskPage({}: PageProps) {
   }, [session.token]);
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="资产 / 风险"
       title="风险"
-      subtitle="风险页现在只负责核对告警和规则明细，不再承担主流程判断。"
+      subtitle="风险告警与规则明细"
       currentPath="/risk"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
-
-      <PageHero
-        badge="风险详情"
-        title="风险详情页"
-        description="先在任务页或首页确认是否有异常，再回到这里核对规则、决定和最近风险事件。"
-      />
-
-      <ToolDetailHub
-        summary="风险页只负责把告警、规则和拒绝事件看清楚，主链判断继续留在首页、执行页和任务页。"
-        detail="这里保留规则名称、决策和风险事件明细，帮助你确认系统不是「没发生」，而是「被明确阻止」，但不再把风险页当成主流程入口。"
-        mainHint="首页已经先告诉你有没有头号阻塞，再回风险页核对具体规则。"
-        strategiesHint="执行页先决定是否继续推进；如果被挡住，再回风险页看具体拒绝原因。"
-        tasksHint="任务页负责恢复和接管，这里只负责把告警和规则明细看清楚。"
-      />
+      {isLoading && <LoadingBanner />}
 
       {!session.isAuthenticated ? (
-        <section className="panel">
-          <p className="eyebrow">动作反馈</p>
-          <h3>风险页需要管理员登录</h3>
-          <p>登录后才能查看真实风控事件和规则名称。</p>
-          <Link className="button-link primary-link" href="/login?next=%2Frisk">
-            前往登录
-          </Link>
-        </section>
-      ) : isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
+        <TerminalCard title="需要登录">
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--terminal-muted)]">登录后才能查看真实风控事件和规则名称。</p>
+            <Link
+              className="inline-flex items-center justify-center rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-4 py-2 text-sm text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
+              href="/login?next=%2Frisk"
+            >
+              前往登录
+            </Link>
+          </div>
+        </TerminalCard>
       ) : (
-        <MetricGrid
-          items={[
-            { label: "风险事件数", value: String(items.length), detail: "优先确认异常是不是已经被记录" },
-            { label: "最新规则", value: items[0]?.ruleName ?? "n/a", detail: "规则名称能帮助你快速定位拒绝原因" },
-            { label: "最新决定", value: items[0]?.decision ?? "waiting", detail: "block / warn / allow" },
-          ]}
-        />
-      )}
+        <>
+          {/* 指标卡 */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <MetricCard
+              label="风险事件数"
+              value={String(items.length)}
+              colorType="neutral"
+            />
+            <MetricCard
+              label="最新规则"
+              value={items[0]?.ruleName ?? "--"}
+              colorType="neutral"
+            />
+            <MetricCard
+              label="最新决定"
+              value={items[0]?.decision ?? "waiting"}
+              colorType={items[0]?.decision === "block" ? "negative" : items[0]?.decision === "warn" ? "neutral" : "neutral"}
+            />
+          </div>
 
-      <DataTable
-        columns={["Level", "Rule", "Decision"]}
-        rows={items.map((item) => ({
-          id: item.id,
-          cells: [item.level, item.ruleName, <StatusBadge key={item.id} value={item.decision} />],
-        }))}
-        emptyTitle="当前没有风险事件"
-        emptyDetail="如果要验证异常路径，先去策略页停止策略，再派发最新信号。"
-      />
-    </AppShell>
+          {/* 风险表格 */}
+          <TerminalCard title="风险事件列表">
+            {items.length === 0 ? (
+              <div className="text-center py-10 text-[var(--terminal-muted)]">
+                当前没有风险事件
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="border-b border-[var(--terminal-border)]">
+                      <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">级别</th>
+                      <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">规则</th>
+                      <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">决定</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => (
+                      <tr key={item.id} className="border-b border-[var(--terminal-border)]/50 hover:bg-[var(--terminal-bg-hover)]">
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.level}</td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{item.ruleName}</td>
+                        <td className="py-2 px-3 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${
+                            item.decision === "block"
+                              ? "bg-[var(--terminal-red)]/20 text-[var(--terminal-red)]"
+                              : item.decision === "warn"
+                              ? "bg-[var(--terminal-yellow)]/20 text-[var(--terminal-yellow)]"
+                              : "bg-[var(--terminal-green)]/20 text-[var(--terminal-green)]"
+                          }`}>
+                            {item.decision}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </TerminalCard>
+
+          {/* 结果判断 */}
+          <TerminalCard title="结果判断">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded border border-[var(--terminal-border)]/60 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">首页判断</p>
+                <p className="mt-2 text-sm text-[var(--terminal-text)]">首页已经先告诉你有没有头号阻塞，再回风险页核对具体规则。</p>
+              </div>
+              <div className="rounded border border-[var(--terminal-border)]/60 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">策略页判断</p>
+                <p className="mt-2 text-sm text-[var(--terminal-text)]">执行页先决定是否继续推进；如果被挡住，再回风险页看具体拒绝原因。</p>
+              </div>
+              <div className="rounded border border-[var(--terminal-border)]/60 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">任务页判断</p>
+                <p className="mt-2 text-sm text-[var(--terminal-text)]">任务页负责恢复和接管，这里只负责把告警和规则明细看清楚。</p>
+              </div>
+            </div>
+          </TerminalCard>
+        </>
+      )}
+    </TerminalShell>
   );
 }

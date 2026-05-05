@@ -1,21 +1,24 @@
-/* 任务与自动化控制台：精简版 */
+/**
+ * 任务与自动化控制台
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
-import { AppShell } from "../../components/app-shell";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricStrip,
+} from "../../components/terminal";
 import { LoadingBanner } from "../../components/loading-banner";
 import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
-import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { OpenclawActionConfirmDialog } from "../../components/openclaw-action-confirm-dialog";
-import { PageHero } from "../../components/page-hero";
-import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { readFeedback } from "../../lib/feedback";
 import {
   DEFAULT_API_TIMEOUT,
@@ -26,10 +29,6 @@ import {
   getOpenclawPatrolHistory,
   listTasks,
 } from "../../lib/api";
-
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
 
 export default function TasksPage() {
   const searchParams = useSearchParams();
@@ -48,7 +47,6 @@ export default function TasksPage() {
   const [openclawPatrolHistory, setOpenclawPatrolHistory] = useState<Array<Record<string, unknown>>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 确认弹窗状态
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     action: string;
@@ -56,7 +54,6 @@ export default function TasksPage() {
     riskLevel: "safe" | "medium" | "danger" | "critical";
   } | null>(null);
 
-  // 动作风险等级映射
   const getActionRiskLevel = (action: string): "safe" | "medium" | "danger" | "critical" => {
     if (action === "automation_clear_non_error_alerts" || action === "automation_confirm_alert") {
       return "safe";
@@ -98,9 +95,7 @@ export default function TasksPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -165,13 +160,10 @@ export default function TasksPage() {
   const runtimeHeadline = readText(runtimeGuard.headline, "当前运行正常");
   const runtimeDetail = readText(runtimeGuard.detail, "");
   const degradeMode = readText(runtimeGuard.degrade_mode, "none");
-  const runtimeReasonLabel = readText(runtimeGuard.reason_label, "");
-  const runtimeAlertContext = asRecord(runtimeGuard.alert_context);
   const takeoverReviewDueAt = readText(runtimeGuard.takeover_review_due_at, "");
   const cooldownEndsAt = readText(runtimeGuard.cooldown_ends_at, "");
   const lastCycleAt = readText(runtimeGuard.last_cycle_at, "");
   const degradeReason = readText(runtimeGuard.degrade_reason, "");
-  // 新增 runtime_guard 字段
   const runtimeBlockersFull = Array.isArray(runtimeGuard.blockers)
     ? runtimeGuard.blockers.map((item) => {
         const blocker = asRecord(item);
@@ -182,7 +174,6 @@ export default function TasksPage() {
         };
       })
     : [];
-  const runtimeBlockers = runtimeBlockersFull.map((b) => b.label);
   const runtimeSuggestedAction = readText(runtimeGuard.suggested_action, "");
   const runtimeSuggestedActionReason = readText(runtimeGuard.suggested_action_reason, "");
   const runtimeAutoRunAllowed = runtimeGuard.auto_run_allowed;
@@ -205,49 +196,39 @@ export default function TasksPage() {
   const openclawSuggestedActionReason = readText(openclawSuggestedAction?.reason, "");
   const openclawAutoRunAllowed = Boolean(openclawSuggestedAction?.auto_run_allowed);
 
-  const statusItems = [
+  const statusMetrics = [
     {
       label: "自动化模式",
       value: isManualTakeover ? "人工接管" : isPaused ? "已暂停" : automationMode,
-      status: (isManualTakeover || isPaused ? "waiting" : "active") as "waiting" | "active",
-      detail: isManualTakeover ? "接管中" : isPaused ? "已暂停" : "运行中",
+      colorType: isManualTakeover || isPaused ? ("neutral" as const) : ("positive" as const),
     },
     {
       label: "最近一轮",
       value: lastCycleStatus,
-      status: (lastCycleStatus === "success" ? "success" : lastCycleStatus === "error" ? "error" : "waiting") as "success" | "error" | "waiting",
-      detail: lastCycleMessage,
+      colorType: lastCycleStatus === "success" ? ("positive" as const) : lastCycleStatus === "error" ? ("negative" as const) : ("neutral" as const),
     },
     {
       label: "今日周期",
       value: `${cycleCount} 轮`,
-      status: (cycleCount > 0 ? "active" : "waiting") as "active" | "waiting",
-      detail: `成功 ${successCount} / 失败 ${failureCount}`,
+      colorType: cycleCount > 0 ? ("positive" as const) : ("neutral" as const),
     },
     {
       label: "恢复状态",
       value: recoveryStatus === "ready" ? "可恢复" : recoveryStatus === "attention_required" ? "需处理" : "等待中",
-      status: (recoveryStatus === "ready" ? "success" : recoveryStatus === "attention_required" ? "error" : "waiting") as "success" | "error" | "waiting",
-      detail: recoveryHeadline,
+      colorType: recoveryStatus === "ready" ? ("positive" as const) : recoveryStatus === "attention_required" ? ("negative" as const) : ("neutral" as const),
     },
   ];
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="运维 / 任务"
       title="任务"
-      subtitle="自动化监控与恢复操作入口。"
+      subtitle="自动化监控与恢复操作入口"
       currentPath="/tasks"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
-
       {isLoading && <LoadingBanner />}
-
-      <PageHero
-        badge="自动化控制台"
-        title="先看状态，再决定要不要干预"
-        description="任务页只回答三件事：当前自动化在什么状态、有没有阻塞、需要什么操作。"
-      />
 
       <ArbitrationHandoffCard
         arbitration={arbitration}
@@ -257,343 +238,221 @@ export default function TasksPage() {
       />
 
       {!session.isAuthenticated ? (
-        <Card>
-          <CardHeader>
-            <p className="eyebrow">动作反馈</p>
-            <CardTitle>当前页面需要登录</CardTitle>
-            <CardDescription>登录后才能看到真实自动化状态和控制动作。</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <TerminalCard title="需要登录">
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--terminal-muted)]">登录后才能看到真实自动化状态和控制动作。</p>
             <Button asChild variant="terminal">
               <Link href="/login?next=%2Ftasks">先去登录</Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </TerminalCard>
       ) : (
         <>
-          <StatusBar items={statusItems} />
+          <MetricStrip metrics={statusMetrics} />
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <p className="eyebrow">当前恢复建议</p>
-                <CardTitle>{recoveryHeadline}</CardTitle>
-                <CardDescription>{recoveryDetail}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                <p>恢复状态：{recoveryStatus}</p>
-                <p>下一步动作：{recoveryNextAction || "当前可以继续自动化"}</p>
-                {recoveryBlockers.length > 0 ? (
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">当前阻塞</p>
-                    <ul className="mt-2 space-y-1 text-sm">
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* 当前恢复建议 */}
+            <TerminalCard title={recoveryHeadline}>
+              <div className="space-y-3 text-sm">
+                <p className="text-[var(--terminal-muted)]">{recoveryDetail}</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <InfoBlock label="恢复状态" value={recoveryStatus} />
+                  <InfoBlock label="下一步动作" value={recoveryNextAction || "当前可以继续自动化"} />
+                </div>
+                {recoveryBlockers.length > 0 && (
+                  <div className="rounded border border-[var(--terminal-border)] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">当前阻塞</p>
+                    <ul className="mt-2 space-y-1 text-xs">
                       {recoveryBlockers.map((blocker, idx) => (
-                        <li key={idx}>• {blocker}</li>
+                        <li key={idx} className="text-[var(--terminal-text)]">• {blocker}</li>
                       ))}
                     </ul>
                   </div>
-                ) : null}
-                {recoveryOperatorSteps.length > 0 ? (
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">恢复步骤清单</p>
-                    <ol className="mt-2 space-y-1 text-sm list-decimal list-inside">
+                )}
+                {recoveryOperatorSteps.length > 0 && (
+                  <div className="rounded border border-[var(--terminal-border)] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">恢复步骤清单</p>
+                    <ol className="mt-2 space-y-1 text-xs list-decimal list-inside">
                       {recoveryOperatorSteps.map((step, idx) => (
-                        <li key={idx}>{step}</li>
+                        <li key={idx} className="text-[var(--terminal-text)]">{step}</li>
                       ))}
                     </ol>
                   </div>
-                ) : null}
+                )}
                 <div className="flex items-center gap-2">
-                  <span>自动恢复：</span>
+                  <span className="text-xs text-[var(--terminal-muted)]">自动恢复：</span>
                   {recoveryAutoRecoverable === true ? (
-                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">可自动恢复</span>
+                    <span className="text-xs text-[var(--terminal-green)]">可自动恢复</span>
                   ) : recoveryAutoRecoverable === false ? (
-                    <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/30 dark:text-red-400">需人工处理</span>
+                    <span className="text-xs text-[var(--terminal-red)]">需人工处理</span>
                   ) : (
-                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-300">未知</span>
+                    <span className="text-xs text-[var(--terminal-muted)]">未知</span>
                   )}
                 </div>
-                {recoveryAutoRecoverable === false && recoveryManualRequiredReason ? (
-                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3">
-                    <p className="font-medium text-red-600 dark:text-red-400">必须人工处理</p>
-                    <p className="mt-1 text-red-600/80 dark:text-red-400/80">{recoveryManualRequiredReason}</p>
-                  </div>
-                ) : null}
-                {recoveryStatus === "attention_required" ? (
-                  <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3">
-                    <p className="font-medium text-yellow-600 dark:text-yellow-400">需要人工处理</p>
-                    <p className="mt-1 text-yellow-600/80 dark:text-yellow-400/80">{recoveryDetail}</p>
-                  </div>
-                ) : null}
-                <p className="text-xs text-muted-foreground">
-                  当前原因、告警升级和接管复核时间统一在长期运行状态卡片查看。
-                </p>
-              </CardContent>
-            </Card>
+              </div>
+            </TerminalCard>
 
-            <Card>
-              <CardHeader>
-                <p className="eyebrow">长期运行状态</p>
-                <CardTitle>{runtimeHeadline}</CardTitle>
-                <CardDescription>{runtimeDetail}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                <p>运行状态：{runtimeStatus}</p>
-                <p>运行模式：{degradeMode === "none" ? "完全自动" : degradeMode === "manual_only" ? "手动控制" : degradeMode === "window_wait" ? "等待窗口" : degradeMode}</p>
-                {degradeReason ? <p>模式原因：{degradeReason}</p> : null}
-                {runtimeReasonLabel ? <p>当前原因：{runtimeReasonLabel}</p> : null}
-                {takeoverReviewDueAt ? <p>接管复核截止：{takeoverReviewDueAt}</p> : null}
-                {cooldownEndsAt ? <p>冷却结束时间：{cooldownEndsAt}</p> : null}
-                {lastCycleAt ? <p>上一周期结束：{lastCycleAt}</p> : null}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">今日周期数</p>
-                    <p className="mt-2 text-lg font-semibold text-foreground">{runtimeCyclesToday}</p>
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">自动运行</p>
-                    <p className="mt-2 text-lg font-semibold">
-                      {runtimeAutoRunAllowed === true ? (
-                        <span className="text-green-600 dark:text-green-400">允许</span>
-                      ) : runtimeAutoRunAllowed === false ? (
-                        <span className="text-red-600 dark:text-red-400">禁止</span>
-                      ) : (
-                        <span className="text-muted-foreground">未知</span>
-                      )}
-                    </p>
-                  </div>
+            {/* 长期运行状态 */}
+            <TerminalCard title={runtimeHeadline}>
+              <div className="space-y-3 text-sm">
+                <p className="text-[var(--terminal-muted)]">{runtimeDetail}</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <InfoBlock label="运行状态" value={runtimeStatus} />
+                  <InfoBlock label="运行模式" value={degradeMode === "none" ? "完全自动" : degradeMode === "manual_only" ? "手动控制" : degradeMode} />
                 </div>
-                {runtimeBlockersFull.length > 0 ? (
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">阻塞列表</p>
-                    <ul className="mt-2 space-y-1 text-sm">
+                {degradeReason && <p className="text-xs text-[var(--terminal-muted)]">模式原因：{degradeReason}</p>}
+                {takeoverReviewDueAt && <p className="text-xs text-[var(--terminal-muted)]">接管复核截止：{takeoverReviewDueAt}</p>}
+                {cooldownEndsAt && <p className="text-xs text-[var(--terminal-muted)]">冷却结束时间：{cooldownEndsAt}</p>}
+                {lastCycleAt && <p className="text-xs text-[var(--terminal-muted)]">上一周期结束：{lastCycleAt}</p>}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <InfoBlock label="今日周期数" value={String(runtimeCyclesToday)} />
+                  <InfoBlock label="自动运行" value={runtimeAutoRunAllowed === true ? "允许" : runtimeAutoRunAllowed === false ? "禁止" : "未知"} />
+                </div>
+                {runtimeBlockersFull.length > 0 && (
+                  <div className="rounded border border-[var(--terminal-border)] p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">阻塞列表</p>
+                    <ul className="mt-2 space-y-1 text-xs">
                       {runtimeBlockersFull.map((blocker, idx) => (
-                        <li key={idx} className="flex items-center gap-2">
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                            blocker.severity === "error" ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                            : blocker.severity === "warning" ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
-                            : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                          }`}>
-                            {blocker.severity}
+                        <li key={idx} className="flex items-center gap-2 text-[var(--terminal-text)]">
+                          <span className={`text-xs ${blocker.severity === "error" ? "text-[var(--terminal-red)]" : blocker.severity === "warning" ? "text-[var(--terminal-yellow)]" : "text-[var(--terminal-accent)]"}`}>
+                            [{blocker.severity}]
                           </span>
                           <span>{blocker.label}</span>
-                          {blocker.code ? <span className="text-muted-foreground text-xs">({blocker.code})</span> : null}
                         </li>
                       ))}
                     </ul>
                   </div>
-                ) : null}
-                {runtimeSuggestedAction ? (
-                  <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">程序建议动作</p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="inline-flex items-center rounded-md bg-blue-600 px-2.5 py-1 text-sm font-semibold text-white">{runtimeSuggestedAction}</span>
-                    </div>
-                    {runtimeSuggestedActionReason ? (
-                      <p className="mt-2 text-sm text-blue-600/80 dark:text-blue-400/80">原因：{runtimeSuggestedActionReason}</p>
-                    ) : null}
+                )}
+                {runtimeSuggestedAction && (
+                  <div className="rounded border border-[var(--terminal-accent)]/30 bg-[var(--terminal-accent)]/10 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-accent)]">程序建议动作</p>
+                    <p className="mt-1 text-sm text-[var(--terminal-text)]">{runtimeSuggestedAction}</p>
+                    {runtimeSuggestedActionReason && (
+                      <p className="mt-1 text-xs text-[var(--terminal-muted)]">原因：{runtimeSuggestedActionReason}</p>
+                    )}
                   </div>
-                ) : null}
-                {runtimeStatus === "attention_required" || runtimeStatus === "degraded" ? (
-                  <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-3">
-                    <p className="font-medium text-orange-600 dark:text-orange-400">运行异常</p>
-                    <p className="mt-1 text-orange-600/80 dark:text-orange-400/80">{runtimeDetail}</p>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
+                )}
+              </div>
+            </TerminalCard>
           </div>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">最近一轮</p>
-              <CardTitle>最近自动化周期</CardTitle>
-              <CardDescription>
-                状态：{lastCycleStatus} / 今日已运行 {cycleCount} 轮
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              <p>{lastCycleMessage}</p>
+          {/* 最近一轮 */}
+          <TerminalCard title="最近自动化周期">
+            <div className="space-y-3">
+              <p className="text-sm text-[var(--terminal-muted)]">{lastCycleMessage}</p>
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">今日周期</p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">{cycleCount}</p>
-                </div>
-                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">成功</p>
-                  <p className="mt-2 text-lg font-semibold text-green-600 dark:text-green-400">{successCount}</p>
-                </div>
-                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">失败</p>
-                  <p className="mt-2 text-lg font-semibold text-red-600 dark:text-red-400">{failureCount}</p>
-                </div>
+                <InfoBlock label="今日周期" value={String(cycleCount)} />
+                <InfoBlock label="成功" value={String(successCount)} />
+                <InfoBlock label="失败" value={String(failureCount)} />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">定时巡检</p>
-              <CardTitle>OpenClaw 运维巡检</CardTitle>
-              <CardDescription>
-                最近巡检状态和动作记录
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+          {/* 定时巡检 */}
+          <TerminalCard title="OpenClaw 运维巡检">
+            <div className="space-y-3 text-sm">
               {openclawPatrolHistory.length > 0 ? (
-                <>
-                  {(() => {
-                    const latestPatrol = asRecord(openclawPatrolHistory[0]);
-                    const patrolStatus = readText(latestPatrol.status, "unknown");
-                    const patrolMessage = readText(latestPatrol.message, "");
-                    const patrolType = readText(latestPatrol.patrol_type, "");
-                    const executedAt = readText(latestPatrol.executed_at, "");
-                    const actionsTaken = Array.isArray(latestPatrol.actions_taken) ? latestPatrol.actions_taken : [];
-                    return (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <span>状态：</span>
-                          <StatusBadge value={patrolStatus === "normal" ? "正常" : patrolStatus === "action_taken" ? "已执行动作" : patrolStatus === "throttled" ? "已节流" : patrolStatus} />
+                (() => {
+                  const latestPatrol = asRecord(openclawPatrolHistory[0]);
+                  const patrolStatus = readText(latestPatrol.status, "unknown");
+                  const patrolMessage = readText(latestPatrol.message, "");
+                  const executedAt = readText(latestPatrol.executed_at, "");
+                  const actionsTaken = Array.isArray(latestPatrol.actions_taken) ? latestPatrol.actions_taken : [];
+                  return (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[var(--terminal-muted)]">状态：</span>
+                        <StatusBadge value={patrolStatus === "normal" ? "正常" : patrolStatus === "action_taken" ? "已执行动作" : patrolStatus === "throttled" ? "已节流" : patrolStatus} />
+                      </div>
+                      {patrolMessage && <p className="text-[var(--terminal-text)]">{patrolMessage}</p>}
+                      {executedAt && <p className="text-xs text-[var(--terminal-muted)]">执行时间：{executedAt}</p>}
+                      {actionsTaken.length > 0 && (
+                        <div className="rounded border border-[var(--terminal-border)] p-3">
+                          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">执行动作</p>
+                          <ul className="mt-2 space-y-1 text-xs">
+                            {actionsTaken.slice(0, 3).map((action, idx) => {
+                              const actionRecord = asRecord(action);
+                              const actionName = readText(actionRecord.action, "");
+                              const actionSuccess = Boolean(actionRecord.success);
+                              return (
+                                <li key={idx} className="flex items-center gap-2 text-[var(--terminal-text)]">
+                                  <span className={`inline-flex h-2 w-2 rounded-full ${actionSuccess ? "bg-[var(--terminal-green)]" : "bg-[var(--terminal-red)]"}`} />
+                                  <span className="font-medium">{actionName}</span>
+                                  <span className={actionSuccess ? "text-[var(--terminal-green)]" : "text-[var(--terminal-red)]"}>{actionSuccess ? "成功" : "失败"}</span>
+                                </li>
+                              );
+                            })}
+                          </ul>
                         </div>
-                        {patrolMessage ? <p>{patrolMessage}</p> : null}
-                        {executedAt ? <p className="text-xs text-muted-foreground">执行时间：{executedAt}</p> : null}
-                        {actionsTaken.length > 0 ? (
-                          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">执行动作</p>
-                            <ul className="mt-2 space-y-1 text-sm">
-                              {actionsTaken.slice(0, 3).map((action, idx) => {
-                                const actionRecord = asRecord(action);
-                                const actionName = readText(actionRecord.action, "");
-                                const actionSuccess = Boolean(actionRecord.success);
-                                return (
-                                  <li key={idx} className="flex items-center gap-2">
-                                    <span className={`inline-flex h-2 w-2 rounded-full ${actionSuccess ? "bg-green-500" : "bg-red-500"}`} />
-                                    <span className="font-medium">{actionName}</span>
-                                    <span className={actionSuccess ? "text-green-600" : "text-red-600"}>{actionSuccess ? "成功" : "失败"}</span>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                        ) : null}
-                      </>
-                    );
-                  })()}
-                </>
+                      )}
+                    </>
+                  );
+                })()
               ) : (
-                <p className="text-muted-foreground">暂无巡检记录</p>
+                <p className="text-[var(--terminal-muted)]">暂无巡检记录</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">Openclaw 安全动作</p>
-              <CardTitle>统一动作网关</CardTitle>
-              <CardDescription>
-                当前状态：{openclawOverallStatus} / 可执行周期：{openclawReadyForCycle ? "是" : "否"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              <p>运行时守卫：{openclawReadyForCycle ? "就绪" : "阻塞中"}</p>
-              {openclawBlockedReason ? <p>阻塞原因：{openclawBlockedReason}</p> : null}
-              <p>运行模式：{openclawDegradeMode === "none" ? "完全自动" : openclawDegradeMode === "manual_only" ? "手动控制" : openclawDegradeMode}</p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">自动运行</p>
-                  <p className="mt-2 text-lg font-semibold">
-                    {openclawAutoRunAllowed ? (
-                      <span className="text-green-600 dark:text-green-400">允许</span>
-                    ) : (
-                      <span className="text-red-600 dark:text-red-400">禁止</span>
-                    )}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">程序建议</p>
-                  <p className="mt-2 text-sm font-medium">{openclawSuggestedActionName || "暂无建议"}</p>
-                  {openclawSuggestedActionReason ? (
-                    <p className="text-xs text-muted-foreground">{openclawSuggestedActionReason}</p>
-                  ) : null}
-                </div>
+          {/* Openclaw 安全动作 */}
+          <TerminalCard title="统一动作网关">
+            <div className="space-y-3 text-sm">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <InfoBlock label="当前状态" value={openclawOverallStatus} />
+                <InfoBlock label="可执行周期" value={openclawReadyForCycle ? "是" : "否"} />
               </div>
-              {openclawAllowedActions.length > 0 ? (
-                <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">可用动作</p>
-                  <ul className="mt-2 space-y-1 text-sm">
+              {openclawBlockedReason && <p className="text-[var(--terminal-muted)]">阻塞原因：{openclawBlockedReason}</p>}
+              <p className="text-[var(--terminal-muted)]">运行模式：{openclawDegradeMode === "none" ? "完全自动" : openclawDegradeMode === "manual_only" ? "手动控制" : openclawDegradeMode}</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <InfoBlock label="自动运行" value={openclawAutoRunAllowed ? "允许" : "禁止"} />
+                <InfoBlock label="程序建议" value={openclawSuggestedActionName || "暂无建议"} />
+              </div>
+              {openclawAllowedActions.length > 0 && (
+                <div className="rounded border border-[var(--terminal-border)] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">可用动作</p>
+                  <ul className="mt-2 space-y-1 text-xs">
                     {openclawAllowedActions.map((action, idx) => (
-                      <li key={idx} className="flex items-center gap-2">
+                      <li key={idx} className="flex items-center gap-2 text-[var(--terminal-text)]">
                         <span className="font-medium">{readText(action.action, "")}</span>
-                        {action.reason ? <span className="text-muted-foreground"> - {readText(action.reason, "")}</span> : null}
-                        <div className="flex items-center gap-1 ml-2">
-                          {action.auto_execute !== undefined ? (
-                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs ${Boolean(action.auto_execute) ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"}`}>
-                              {Boolean(action.auto_execute) ? "自动" : "需确认"}
-                            </span>
-                          ) : null}
-                          {action.priority !== undefined ? (
-                            <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                              P{Number(action.priority)}
-                            </span>
-                          ) : null}
-                          {action.preconditions_met !== undefined ? (
-                            <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs ${Boolean(action.preconditions_met) ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                              {Boolean(action.preconditions_met) ? "可执行" : "前置条件不满足"}
-                            </span>
-                          ) : null}
-                        </div>
+                        {action.reason ? <span className="text-[var(--terminal-muted)]"> - {String(action.reason)}</span> : null}
                       </li>
                     ))}
                   </ul>
                 </div>
-              ) : (
-                <p className="text-muted-foreground">当前没有可用的安全动作</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">动作历史</p>
-              <CardTitle>OpenClaw 运维动作</CardTitle>
-              <CardDescription>展示最近 5 条动作记录</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+          {/* 动作历史 */}
+          <TerminalCard title="OpenClaw 运维动作">
+            <div className="space-y-2 text-sm">
               {openclawAuditRecords.length > 0 ? (
-                <div className="space-y-2">
-                  {openclawAuditRecords.slice(0, 5).map((record, idx) => {
-                    const actionName = readText(record.action, "未知动作");
-                    const success = Boolean(record.success);
-                    const executedAt = readText(record.executed_at || record.recorded_at, "");
-                    const reason = readText(record.reason || "", "");
-                    return (
-                      <div key={idx} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-2 w-2 rounded-full ${success ? "bg-green-500" : "bg-red-500"}`} />
-                          <span className="font-medium">{actionName}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className={success ? "text-green-600" : "text-red-600"}>{success ? "成功" : "失败"}</span>
-                          {executedAt ? <span className="ml-2 text-muted-foreground text-xs">{executedAt}</span> : null}
-                        </div>
-                        {reason ? <p className="text-xs text-muted-foreground mt-1">{reason}</p> : null}
+                openclawAuditRecords.slice(0, 5).map((record, idx) => {
+                  const actionName = readText(record.action, "未知动作");
+                  const success = Boolean(record.success);
+                  const executedAt = readText(record.executed_at || record.recorded_at, "");
+                  return (
+                    <div key={idx} className="flex items-center justify-between rounded border border-[var(--terminal-border)] p-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex h-2 w-2 rounded-full ${success ? "bg-[var(--terminal-green)]" : "bg-[var(--terminal-red)]"}`} />
+                        <span className="font-medium text-[var(--terminal-text)]">{actionName}</span>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="text-right">
+                        <span className={success ? "text-[var(--terminal-green)]" : "text-[var(--terminal-red)]"}>{success ? "成功" : "失败"}</span>
+                        {executedAt && <span className="ml-2 text-xs text-[var(--terminal-muted)]">{executedAt}</span>}
+                      </div>
+                    </div>
+                  );
+                })
               ) : (
-                <p className="text-muted-foreground">暂无动作记录</p>
+                <p className="text-[var(--terminal-muted)]">暂无动作记录</p>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">控制动作</p>
-              <CardTitle>自动化控制</CardTitle>
-              <CardDescription>恢复、暂停、切换模式等操作。</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
+          {/* 控制动作 */}
+          <TerminalCard title="自动化控制">
+            <div className="flex flex-wrap gap-2">
               <Button variant="terminal" size="sm" onClick={() => openConfirmDialog("automation_resume", "恢复自动化")}>
                 恢复自动化
               </Button>
@@ -606,8 +465,8 @@ export default function TasksPage() {
               <Button variant="secondary" size="sm" onClick={() => openConfirmDialog("automation_dry_run_only", "切换到 dry-run")}>
                 切换到 dry-run
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
           {confirmDialog?.open && (
             <OpenclawActionConfirmDialog
@@ -619,37 +478,43 @@ export default function TasksPage() {
             />
           )}
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">任务记录</p>
-              <CardTitle>最近任务</CardTitle>
-              <CardDescription>展示最近 3 条任务摘要。</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={["任务", "状态", "创建时间", "完成时间"]}
-                rows={items.slice(0, 3).map((item, index) => ({
-                  id: String(item.id ?? index),
-                  cells: [
-                    String(item.task_type ?? "unknown"),
-                    <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "pending")} />,
-                    String(item.created_at ?? ""),
-                    String(item.finished_at ?? ""),
-                  ],
-                }))}
-                emptyTitle="当前还没有任务"
-                emptyDetail="运行后产生"
-              />
-            </CardContent>
-          </Card>
+          {/* 任务记录 */}
+          <TerminalCard title="最近任务">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-[var(--terminal-border)]">
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">任务</th>
+                    <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">状态</th>
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">创建时间</th>
+                    <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">完成时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.slice(0, 3).length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-[var(--terminal-muted)]">当前还没有任务</td>
+                    </tr>
+                  ) : (
+                    items.slice(0, 3).map((item, index) => (
+                      <tr key={String(item.id ?? index)} className="border-b border-[var(--terminal-border)]/50 hover:bg-[var(--terminal-bg-hover)]">
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{String(item.task_type ?? "unknown")}</td>
+                        <td className="py-2 px-3 text-center">
+                          <StatusBadge value={String(item.status ?? "pending")} />
+                        </td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{String(item.created_at ?? "")}</td>
+                        <td className="py-2 px-3 text-[var(--terminal-text)]">{String(item.finished_at ?? "")}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">相关页面</p>
-              <CardTitle>跨页入口</CardTitle>
-              <CardDescription>回到其他工作台查看详细信息。</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
+          {/* 相关页面 */}
+          <TerminalCard title="跨页入口">
+            <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline" size="sm">
                 <Link href="/">回到首页</Link>
               </Button>
@@ -662,11 +527,20 @@ export default function TasksPage() {
               <Button asChild variant="outline" size="sm">
                 <Link href="/research">研究工作台</Link>
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
         </>
       )}
-    </AppShell>
+    </TerminalShell>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className="mt-2 text-sm text-[var(--terminal-text)]">{value}</p>
+    </div>
   );
 }
 
@@ -700,22 +574,6 @@ async function safeLoad<T>(
   try {
     const response = await loader(signal);
     return response.error ? fallback : response.data.items;
-  } catch {
-    return fallback;
-  } finally {
-    cleanup();
-  }
-}
-
-async function safeLoadItem<T>(
-  loader: (signal: AbortSignal) => Promise<{ data: T; error: unknown }>,
-  fallback: T,
-  timeoutMs = DEFAULT_API_TIMEOUT,
-): Promise<T> {
-  const { signal, cleanup } = createTimeoutController(timeoutMs);
-  try {
-    const response = await loader(signal);
-    return response.error ? fallback : response.data;
   } catch {
     return fallback;
   } finally {

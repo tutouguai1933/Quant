@@ -1,4 +1,7 @@
-/* 这个文件负责渲染信号页，并提供最小信号流水线入口。 */
+/**
+ * 信号页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,18 +9,17 @@ import { useSearchParams } from "next/navigation";
 
 import { FlaskConical, ScanSearch, Sparkles } from "lucide-react";
 
-import { AppShell } from "../../components/app-shell";
-import { DataTable } from "../../components/data-table";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricStrip,
+} from "../../components/terminal";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FormSubmitButton } from "../../components/form-submit-button";
-import { PageHero } from "../../components/page-hero";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
 import { ResearchRuntimePanel } from "../../components/research-runtime-panel";
 import { Skeleton } from "../../components/ui/skeleton";
-import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { readFeedback } from "../../lib/feedback";
 import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
@@ -59,9 +61,7 @@ export default function SignalsPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -133,104 +133,70 @@ export default function SignalsPage() {
     formatText(inferenceExperiment["generated_at"], formatText(researchReport.overview.generated_at, "n/a")),
   );
 
-  const statusItems = [
+  const statusMetrics = [
     {
       label: "信号总数",
       value: String(items.length),
-      status: (items.length > 0 ? "success" : "waiting") as "success" | "waiting",
-      detail: items[0]?.source ?? "暂无信号",
+      colorType: items.length > 0 ? ("positive" as const) : ("neutral" as const),
     },
     {
       label: "研究状态",
       value: formatText(researchReport.status, "未运行"),
-      status: (researchReport.status === "completed" ? "success" : "waiting") as "success" | "waiting",
-      detail: `${researchReport.overview.ready_count} 可进入 dry-run`,
+      colorType: researchReport.status === "completed" ? ("positive" as const) : ("neutral" as const),
     },
     {
       label: "自动化",
       value: automationHandoff.headline,
-      status: (automation.manualTakeover ? "waiting" : automation.paused ? "waiting" : "active") as "waiting" | "active",
-      detail: automationHandoff.detail,
+      colorType: automation.manualTakeover || automation.paused ? ("neutral" as const) : ("positive" as const),
     },
     {
       label: "最新状态",
       value: items[0]?.status ?? "waiting",
-      status: (items[0]?.status === "completed" ? "success" : "waiting") as "success" | "waiting",
-      detail: items[0] ? `来自 ${items[0].source}` : "暂无信号",
+      colorType: items[0]?.status === "completed" ? ("positive" as const) : ("neutral" as const),
     },
   ];
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="研究 / 信号"
       title="信号"
-      subtitle="左侧候选判断，右侧研究报告。"
+      subtitle="候选排行与研究报告"
       currentPath="/signals"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
 
-      <PageHero
-        badge="信号页"
-        title="候选排行与研究报告"
-        description=""
-        aside={
-          <div className="grid gap-2">
-            <ActionForm action="run_pipeline" label="运行 Qlib 信号流水线" returnTo="/signals" />
-            <ActionForm action="run_mock_pipeline" label="运行演示信号流水线" returnTo="/signals" />
-          </div>
-        }
-      />
-
-      <StatusBar items={statusItems} />
+      <MetricStrip metrics={statusMetrics} />
 
       <ResearchRuntimePanel initialStatus={runtimeStatus} />
 
       {isLoading ? (
-        <div className="space-y-6">
-          <Skeleton className="h-48 rounded-xl" />
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
-            <div className="space-y-6">
-              <Skeleton className="h-64 rounded-xl" />
-              <Skeleton className="h-48 rounded-xl" />
-            </div>
-            <div className="space-y-6">
-              <Skeleton className="h-80 rounded-xl" />
-              <Skeleton className="h-48 rounded-xl" />
-            </div>
+        <div className="space-y-4">
+          <Skeleton className="h-48 rounded-lg" />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Skeleton className="h-64 rounded-lg" />
+            <Skeleton className="h-80 rounded-lg" />
           </div>
         </div>
       ) : (
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
-          <div className="space-y-6">
-            <Card className="bg-card/90">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <ScanSearch className="size-4 text-primary" />
-                  <p className="eyebrow">自动化入口</p>
-                </div>
-                <CardTitle>自动化状态</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <InfoBlock label="当前模式" value={formatText(automation.mode, "manual")} />
-                  <InfoBlock label="最近一轮" value={formatText(automationCycle.status, "waiting")} />
-                  <InfoBlock label="当前判断" value={automationHandoff.headline} />
-                  <InfoBlock label="下一步动作" value={automationHandoff.targetLabel} />
-                </div>
-                <p className="text-sm leading-6 text-muted-foreground">{automationHandoff.detail}</p>
-                <div className="flex flex-wrap gap-3">
-                  <Button asChild variant="terminal" size="sm">
-                    <a href={tasksHref}>去任务页看自动化</a>
-                  </Button>
-                  {automationHandoff.targetHref !== tasksHref ? (
-                    <Button asChild variant="secondary" size="sm">
-                      <a href={automationHandoff.targetHref}>{automationHandoff.targetLabel}</a>
-                    </Button>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+          <div className="space-y-4">
+            {/* 自动化状态 */}
+            <TerminalCard>
+              <div className="flex items-center gap-3 mb-4">
+                <ScanSearch className="size-4 text-[var(--terminal-accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">自动化入口</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 mb-4">
+                <InfoBlock label="当前模式" value={formatText(automation.mode, "manual")} />
+                <InfoBlock label="最近一轮" value={formatText(automationCycle.status, "waiting")} />
+                <InfoBlock label="当前判断" value={automationHandoff.headline} />
+                <InfoBlock label="下一步动作" value={automationHandoff.targetLabel} />
+              </div>
+              <p className="text-sm text-[var(--terminal-muted)] mb-4">{automationHandoff.detail}</p>
+            </TerminalCard>
 
+            {/* 候选排行榜 */}
             <ResearchCandidateBoard
               title="候选排行榜"
               summary={{
@@ -245,96 +211,104 @@ export default function SignalsPage() {
               nextStep="下一步动作：优先看允许进入 dry-run 的候选，再进入策略中心确认是否继续派发。"
             />
 
-            <Card className="bg-card/90">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <FlaskConical className="size-4 text-primary" />
-                  <p className="eyebrow">研究动作</p>
-                </div>
-                <CardTitle>先训练，再推理</CardTitle>
-                <CardDescription>研究动作全部留在左侧，避免和统一研究报告抢主视线。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
+            {/* 研究动作 */}
+            <TerminalCard>
+              <div className="flex items-center gap-3 mb-4">
+                <FlaskConical className="size-4 text-[var(--terminal-accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">研究动作</span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
                 <ActionForm action="run_research_training" label="研究训练" returnTo="/signals" />
                 <ActionForm action="run_research_inference" label="研究推理" returnTo="/signals" />
-              </CardContent>
-            </Card>
+              </div>
+            </TerminalCard>
           </div>
 
-          <div className="space-y-6">
-            <Card className="bg-card/90">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <Sparkles className="size-4 text-primary" />
-                  <p className="eyebrow">统一研究报告</p>
-                </div>
-                <CardTitle>最近研究结果</CardTitle>
-                <CardDescription>
-                  当前可进入 dry-run：{String(researchReport.overview.ready_count)}，被拦下：{String(researchReport.overview.blocked_count)}。
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <InfoBlock label="研究状态" value={`${formatText(researchReport.status, "n/a")} / ${formatText(researchReport.backend, "n/a")}`} />
-                  <InfoBlock label="筛选通过率" value={`${researchReport.overview.pass_rate_pct}%`} />
-                  <InfoBlock label="当前最佳候选" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
-                  <InfoBlock label="最近推理信号数" value={String(researchReport.overview.signal_count)} />
-                </div>
+          <div className="space-y-4">
+            {/* 统一研究报告 */}
+            <TerminalCard>
+              <div className="flex items-center gap-3 mb-4">
+                <Sparkles className="size-4 text-[var(--terminal-accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">统一研究报告</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 mb-4">
+                <InfoBlock label="研究状态" value={`${formatText(researchReport.status, "n/a")} / ${formatText(researchReport.backend, "n/a")}`} />
+                <InfoBlock label="筛选通过率" value={`${researchReport.overview.pass_rate_pct}%`} />
+                <InfoBlock label="当前最佳候选" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
+                <InfoBlock label="最近推理信号数" value={String(researchReport.overview.signal_count)} />
+              </div>
 
-                <Tabs defaultValue="experiments">
-                  <TabsList>
-                    <TabsTrigger value="experiments">最近实验摘要</TabsTrigger>
-                    <TabsTrigger value="signals">最新信号</TabsTrigger>
-                  </TabsList>
+              <Tabs defaultValue="experiments">
+                <TabsList>
+                  <TabsTrigger value="experiments">最近实验摘要</TabsTrigger>
+                  <TabsTrigger value="signals">最新信号</TabsTrigger>
+                </TabsList>
 
-                  <TabsContent value="experiments" className="mt-4">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <ExperimentCard
-                        label="训练摘要"
-                        title="研究训练"
-                        status={formatText(trainingExperiment["status"], "unavailable")}
-                        meta={`模型版本：${formatText(latestTraining["model_version"], "n/a")}`}
-                      />
-                      <ExperimentCard
-                        label="推理摘要"
-                        title="研究推理"
-                        status={formatText(inferenceExperiment["status"], "unavailable")}
-                        meta={`生成时间：${inferenceGeneratedAt}`}
-                      />
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="signals" className="mt-4">
-                    <DataTable
-                      columns={["Symbol", "Source", "Generated", "Status"]}
-                      rows={items.map((item) => ({
-                        id: item.id,
-                        cells: [item.symbol, item.source, item.generatedAt, <StatusBadge key={item.id} value={item.status} />],
-                      }))}
-                      emptyTitle="还没有 signal"
-                      emptyDetail="运行后产生"
+                <TabsContent value="experiments" className="mt-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ExperimentCard
+                      label="训练摘要"
+                      title="研究训练"
+                      status={formatText(trainingExperiment["status"], "unavailable")}
+                      meta={`模型版本：${formatText(latestTraining["model_version"], "n/a")}`}
                     />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
+                    <ExperimentCard
+                      label="推理摘要"
+                      title="研究推理"
+                      status={formatText(inferenceExperiment["status"], "unavailable")}
+                      meta={`生成时间：${inferenceGeneratedAt}`}
+                    />
+                  </div>
+                </TabsContent>
 
-            <Card className="bg-card/90">
-              <CardHeader>
-                <CardTitle>模板适配判断</CardTitle>
-                <CardDescription>这里直接回答当前推荐为什么更适合这套研究模板，不用切到评估页再拼上下文。</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
+                <TabsContent value="signals" className="mt-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[12px]">
+                      <thead>
+                        <tr className="border-b border-[var(--terminal-border)]">
+                          <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">Symbol</th>
+                          <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">Source</th>
+                          <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">Generated</th>
+                          <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-[var(--terminal-muted)]">还没有 signal</td>
+                          </tr>
+                        ) : (
+                          items.map((item) => (
+                            <tr key={item.id} className="border-b border-[var(--terminal-border)]/50 hover:bg-[var(--terminal-bg-hover)]">
+                              <td className="py-2 px-3 text-[var(--terminal-text)]">{item.symbol}</td>
+                              <td className="py-2 px-3 text-[var(--terminal-text)]">{item.source}</td>
+                              <td className="py-2 px-3 text-[var(--terminal-text)]">{item.generatedAt}</td>
+                              <td className="py-2 px-3 text-center">
+                                <StatusBadge value={item.status} />
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </TerminalCard>
+
+            {/* 模板适配判断 */}
+            <TerminalCard title="模板适配判断">
+              <div className="grid gap-3 md:grid-cols-2">
                 <InfoBlock label="当前推荐" value={formatText(researchReport.overview.top_candidate_symbol, "n/a")} />
                 <InfoBlock label="更适合哪套模板" value={formatText(recommendationTemplateFit.headline, "当前还没有模板适配结论")} />
                 <InfoBlock label="模板适配说明" value={formatText(recommendationTemplateFit.detail, "当前还没有模板适配说明")} />
                 <InfoBlock label="下一步动作" value={formatText(stageDecisionSummary.next_step, "continue_research")} />
-              </CardContent>
-            </Card>
+              </div>
+            </TerminalCard>
           </div>
-        </section>
+        </div>
       )}
-    </AppShell>
+    </TerminalShell>
   );
 }
 
@@ -346,25 +320,23 @@ type ActionFormProps = {
 
 function ActionForm({ action, label, returnTo }: ActionFormProps) {
   return (
-    <Card className="bg-[color:var(--panel-strong)]/80">
-      <CardContent className="p-4">
-        <form action="/actions" method="post" className="space-y-4">
-          <input type="hidden" name="action" value={action} />
-          <input type="hidden" name="returnTo" value={returnTo} />
-          <div className="space-y-2">
-            <p className="text-sm font-semibold text-foreground">{label}</p>
-            <p className="text-sm leading-6 text-muted-foreground">通过控制平面提交研究动作，不直接碰后端实现。</p>
-          </div>
-          <FormSubmitButton
-            type="submit"
-            size="sm"
-            idleLabel={label}
-            pendingLabel={`${label}运行中…`}
-            pendingHint="研究动作已发出，页面会在结果返回后自动刷新。"
-          />
-        </form>
-      </CardContent>
-    </Card>
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)]/50 p-4">
+      <form action="/actions" method="post" className="space-y-3">
+        <input type="hidden" name="action" value={action} />
+        <input type="hidden" name="returnTo" value={returnTo} />
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-[var(--terminal-text)]">{label}</p>
+          <p className="text-xs text-[var(--terminal-muted)]">通过控制平面提交研究动作</p>
+        </div>
+        <FormSubmitButton
+          type="submit"
+          size="sm"
+          idleLabel={label}
+          pendingLabel={`${label}运行中…`}
+          pendingHint="研究动作已发出，页面会在结果返回后自动刷新。"
+        />
+      </form>
+    </div>
   );
 }
 
@@ -380,20 +352,20 @@ function ExperimentCard({
   meta: string;
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/80 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <h4 className="mt-3 text-base font-semibold text-foreground">{title}</h4>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">状态：{status}</p>
-      <p className="text-sm leading-6 text-muted-foreground">{meta}</p>
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)]/50 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <h4 className="mt-3 text-sm font-medium text-[var(--terminal-text)]">{title}</h4>
+      <p className="mt-2 text-xs text-[var(--terminal-muted)]">状态：{status}</p>
+      <p className="text-xs text-[var(--terminal-muted)]">{meta}</p>
     </div>
   );
 }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-[color:var(--panel-strong)]/80 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-3 text-base font-semibold text-foreground">{value}</p>
+    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className="mt-2 text-sm text-[var(--terminal-text)]">{value}</p>
     </div>
   );
 }

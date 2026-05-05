@@ -1,16 +1,18 @@
-/* 这个文件负责渲染余额页。 */
+/**
+ * 余额页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 
-import { AppShell } from "../../components/app-shell";
-import { DataTable } from "../../components/data-table";
-import { MetricGrid } from "../../components/metric-grid";
-import { PageHero } from "../../components/page-hero";
-import { ToolDetailHub } from "../../components/tool-detail-hub";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Skeleton } from "../../components/ui/skeleton";
-import { getBalancesPageModel, listBalances } from "../../lib/api";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricCard,
+} from "../../components/terminal";
+import { listBalances } from "../../lib/api";
+import { LoadingBanner } from "../../components/loading-banner";
 
 interface BalanceItem {
   id: string;
@@ -33,7 +35,7 @@ export default function BalancesPage() {
     isAuthenticated: false,
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [model, setModel] = useState<BalancesModel>(getBalancesPageModel());
+  const [model, setModel] = useState<BalancesModel>({ items: [], source: "unknown", truthSource: "unknown" });
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -43,9 +45,7 @@ export default function BalancesPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -74,128 +74,93 @@ export default function BalancesPage() {
   const items = model.items;
   const dustItems = items.filter((item) => item.tradeStatus === "dust");
   const tradableItems = items.filter((item) => item.tradeStatus === "tradable");
-  const firstFocusItem = dustItems[0] ?? tradableItems[0] ?? items[0];
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="资产 / 余额"
       title="余额"
-      subtitle="余额页现在只负责核对账户资产明细，不再承担主流程判断。"
+      subtitle="账户资产明细与可交易状态"
       currentPath="/balances"
       isAuthenticated={session.isAuthenticated}
     >
-      <PageHero
-        badge="余额详情"
-        title="余额详情页"
-        description="先在主工作台或执行页决定要不要查账户，再回到这里看真实余额、可交易资产和交易所零头。"
-      />
+      {isLoading && <LoadingBanner />}
 
-      <ToolDetailHub
-        summary="当主工作台或执行页提示要核对账户时，再回余额页看真实资产分布。"
-        detail="余额页只保留账户资产、可卖数量和零头判断，帮助你确认执行结果有没有真正回到账户，不再自己承担流程推进。"
-        mainHint="首页先告诉你该不该去看账户；需要确认资产时，再回余额页看真实余额。"
-        strategiesHint="执行完成后先在策略页看判断，再回余额页核对资金有没有回补。"
-        tasksHint="任务页如果提示同步或回填异常，可以回余额页确认问题是不是只停在资产层。"
-      />
+      {/* 指标卡 */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <MetricCard
+          label="资产数量"
+          value={String(items.length)}
+          colorType="neutral"
+        />
+        <MetricCard
+          label="可交易资产"
+          value={String(tradableItems.length)}
+          colorType="positive"
+        />
+        <MetricCard
+          label="零头资产"
+          value={String(dustItems.length)}
+          colorType="neutral"
+        />
+      </div>
 
-      {isLoading ? (
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-20 rounded-xl" />
-            ))}
+      {/* 同步来源 */}
+      <TerminalCard title="同步来源">
+        <div className="space-y-2 text-[12px]">
+          <div className="flex justify-between">
+            <span className="text-[var(--terminal-muted)]">source</span>
+            <span className="text-[var(--terminal-text)]">{model.source}</span>
           </div>
-          <Skeleton className="h-64 rounded-xl" />
+          <div className="flex justify-between">
+            <span className="text-[var(--terminal-muted)]">truth source</span>
+            <span className="text-[var(--terminal-text)]">{model.truthSource}</span>
+          </div>
         </div>
-      ) : (
-        <>
-          <section className="panel">
-            <p className="eyebrow">同步来源</p>
-            <h3>先确认这页读的是哪一层状态</h3>
-            <p>
-              source:
-              {" "}
-              {model.source}
-            </p>
-            <p>
-              truth source:
-              {" "}
-              {model.truthSource}
-            </p>
-            <p>当这里和订单页、持仓页都指向同一真实来源时，页面状态才算对齐。</p>
-          </section>
+      </TerminalCard>
 
-          <MetricGrid
-            items={[
-              { label: "资产数量", value: String(items.length), detail: "这是当前返回的资产行数" },
-              {
-                label: "可交易资产",
-                value: String(tradableItems.length),
-                detail: `优先确认 ${firstFocusItem?.asset ?? "主资产"} 的可卖数量`,
-              },
-              {
-                label: "零头资产",
-                value: String(dustItems.length),
-                detail: dustItems[0] ? `${dustItems[0].asset} 这类余额当前不能直接整笔卖出` : "当前没有检测到交易所零头",
-              },
-            ]}
-          />
-
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-            <DataTable
-              columns={["Asset", "Available", "Locked", "Status", "Sellable", "Hint"]}
-              rows={items.map((item) => ({
-                id: item.id,
-                cells: [
-                  item.asset,
-                  item.available,
-                  item.locked,
-                  item.tradeStatus,
-                  item.sellableQuantity,
-                  item.tradeHint,
-                ],
-              }))}
-              emptyTitle="还没有余额数据"
-              emptyDetail="先确认 Binance 账户接口已经接通，再回到这里查看真实账户余额。"
-            />
-
-            <div className="space-y-6">
-              <Card className="bg-card/90">
-                <CardHeader>
-                  <p className="eyebrow">同步来源</p>
-                  <CardTitle>先确认这页读的是哪一层状态</CardTitle>
-                  <CardDescription>余额、订单和持仓都指向同一真实来源时，页面状态才算对齐。</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p>source：<span className="text-foreground">{model.source}</span></p>
-                  <p>truth source：<span className="text-foreground">{model.truthSource}</span></p>
-                  <p>当前焦点资产：<span className="text-foreground">{firstFocusItem?.asset ?? "n/a"}</span></p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-card/90">
-                <CardHeader>
-                  <p className="eyebrow">账户判断</p>
-                  <CardTitle>先分清可交易和零头</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-3">
-                  <InfoTile title="可交易资产" detail={tradableItems[0] ? `${tradableItems[0].asset} 当前仍可继续处理。` : "当前没有新的可交易资产。"} />
-                  <InfoTile title="交易所零头" detail={dustItems[0] ? `${dustItems[0].asset} 当前更像零头，不要误当成系统卡仓。` : "当前没有检测到交易所零头。"} />
-                  <InfoTile title="下一步动作" detail="先看 Sellable 和 Hint，再决定是继续交易还是仅做零头记录。" />
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-        </>
-      )}
-    </AppShell>
-  );
-}
-
-function InfoTile({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
-    </div>
+      {/* 余额表格 */}
+      <TerminalCard title="资产列表">
+        {items.length === 0 ? (
+          <div className="text-center py-10 text-[var(--terminal-muted)]">
+            暂无余额数据，请先连接交易所账户
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-[var(--terminal-border)]">
+                  <th className="text-left py-2 px-3 text-[var(--terminal-dim)]">资产</th>
+                  <th className="text-right py-2 px-3 text-[var(--terminal-dim)]">可用</th>
+                  <th className="text-right py-2 px-3 text-[var(--terminal-dim)]">锁定</th>
+                  <th className="text-center py-2 px-3 text-[var(--terminal-dim)]">状态</th>
+                  <th className="text-right py-2 px-3 text-[var(--terminal-dim)]">可卖</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id} className="border-b border-[var(--terminal-border)]/50 hover:bg-[var(--terminal-bg-hover)]">
+                    <td className="py-2 px-3 text-[var(--terminal-text)] font-medium">{item.asset}</td>
+                    <td className="py-2 px-3 text-right text-[var(--terminal-text)]">{item.available}</td>
+                    <td className="py-2 px-3 text-right text-[var(--terminal-text)]">{item.locked}</td>
+                    <td className="py-2 px-3 text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${
+                        item.tradeStatus === "tradable"
+                          ? "bg-[var(--terminal-green)]/20 text-[var(--terminal-green)]"
+                          : item.tradeStatus === "dust"
+                          ? "bg-[var(--terminal-yellow)]/20 text-[var(--terminal-yellow)]"
+                          : "bg-[var(--terminal-border)] text-[var(--terminal-dim)]"
+                      }`}>
+                        {item.tradeStatus}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-right text-[var(--terminal-text)]">{item.sellableQuantity}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </TerminalCard>
+    </TerminalShell>
   );
 }

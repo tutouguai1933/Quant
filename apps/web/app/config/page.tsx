@@ -5,12 +5,15 @@ import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-import { AppShell } from "../../components/app-shell";
+import {
+  TerminalShell,
+  ControlPanel,
+  FieldRow,
+  TerminalInput,
+  TerminalSelect,
+} from "../../components/terminal";
 import { FeedbackBanner } from "../../components/feedback-banner";
-import { PageHero } from "../../components/page-hero";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
-import { Skeleton } from "../../components/ui/skeleton";
+import { LoadingBanner } from "../../components/loading-banner";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { readFeedback } from "../../lib/feedback";
@@ -42,16 +45,6 @@ const SECTION_LABELS: Record<string, string> = {
   research: "研究配置",
   auth: "认证配置",
   binance: "币安配置",
-};
-
-const SECTION_ICONS: Record<string, string> = {
-  network: "🌐",
-  trading: "📊",
-  risk: "⚠️",
-  alert: "🔔",
-  research: "🔬",
-  auth: "🔐",
-  binance: "₿",
 };
 
 const KEY_DESCRIPTIONS: Record<string, string> = {
@@ -186,121 +179,108 @@ export default function ConfigPage({}: PageProps) {
     return Object.keys(schema.sections);
   }, [schema]);
 
+  // Build section options for select
+  const sectionOptions = useMemo(() => {
+    return availableSections.map((section) => ({
+      value: section,
+      label: SECTION_LABELS[section] || section,
+    }));
+  }, [availableSections]);
+
+  // Calculate stats
+  const totalConfigItems = useMemo(() => {
+    return Object.values(sections).reduce(
+      (sum, s) => sum + Object.keys(s.config || {}).length,
+      0
+    );
+  }, [sections]);
+
   return (
-    <AppShell
-      title="配置中心"
+    <TerminalShell
+      breadcrumb="系统 / 配置"
+      title="配置"
       subtitle="查看和管理系统配置项，包括网络、交易、风控等分节配置"
       currentPath="/config"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
 
-      <PageHero
-        badge="系统配置"
-        title="配置管理"
-        description="查看当前系统配置项，了解各配置分节的含义和当前值"
-      />
+      {isLoading && <LoadingBanner />}
 
       {!session.isAuthenticated ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>需要登录</CardTitle>
-            <CardDescription>登录后才能查看完整配置信息</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <ControlPanel title="需要登录">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">登录后才能查看完整配置信息</p>
             <Button asChild variant="outline">
               <Link href="/login?next=%2Fconfig">前往登录</Link>
             </Button>
-          </CardContent>
-        </Card>
-      ) : isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-12 w-full" />
-          <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
-            <Skeleton className="h-64" />
-            <Skeleton className="h-64" />
           </div>
-        </div>
+        </ControlPanel>
       ) : (
-        <div className="space-y-4">
-          {/* Search bar */}
-          <div className="flex items-center gap-3">
-            <Input
-              type="text"
-              placeholder="搜索配置项..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="max-w-md"
-            />
-            <Badge variant="outline">
-              {filteredConfig.length} 项配置
-            </Badge>
+        <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+          {/* 左侧：配置分节选择 */}
+          <div className="space-y-4">
+            <ControlPanel title="配置分节">
+              <FieldRow label="选择类别">
+                <TerminalSelect
+                  value={selectedSection}
+                  onChange={setSelectedSection}
+                  options={sectionOptions}
+                />
+              </FieldRow>
+            </ControlPanel>
+
+            {/* 配置状态 */}
+            <ControlPanel title="配置状态">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">总配置分节</span>
+                  <span className="text-sm font-mono">{availableSections.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">已配置项</span>
+                  <span className="text-sm font-mono">{totalConfigItems}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">敏感配置</span>
+                  <span className="text-sm font-mono">{schema?.sensitive_keys?.length || 0}</span>
+                </div>
+              </div>
+            </ControlPanel>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
-            {/* Left: Section navigation */}
-            <Card className="h-fit">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">配置分节</CardTitle>
-                <CardDescription>选择要查看的配置类别</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {availableSections.map((section) => {
-                  const isActive = selectedSection === section;
-                  const label = SECTION_LABELS[section] || section;
-                  const icon = SECTION_ICONS[section] || "";
-                  const sectionData = sections[section];
-                  const configCount = Object.keys(sectionData?.config || {}).length;
+          {/* 右侧：配置项列表 */}
+          <div className="space-y-4">
+            {/* 搜索栏 */}
+            <ControlPanel title={SECTION_LABELS[selectedSection] || selectedSection}>
+              <FieldRow label="搜索配置项">
+                <TerminalInput
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  placeholder="输入关键词搜索..."
+                />
+              </FieldRow>
 
-                  return (
-                    <button
-                      key={section}
-                      onClick={() => setSelectedSection(section)}
-                      className={[
-                        "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
-                        isActive
-                          ? "border-primary/40 bg-primary/10 text-foreground"
-                          : "border-border/60 bg-background/70 text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground",
-                      ].join(" ")}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{icon}</span>
-                          <span className="text-sm font-medium">{label}</span>
-                        </div>
-                        <Badge variant={configCount > 0 ? "success" : "outline"} className="text-xs">
-                          {configCount}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground line-clamp-1">
-                        {sections[section]?.description || SECTION_LABELS[section] || ""}
-                      </p>
-                    </button>
-                  );
-                })}
-              </CardContent>
-            </Card>
+              <div className="flex items-center gap-2 pt-2">
+                <Badge variant="outline">
+                  {filteredConfig.length} 项配置
+                </Badge>
+                {sections[selectedSection]?.source && (
+                  <Badge variant="outline">
+                    来源: {sections[selectedSection].source}
+                  </Badge>
+                )}
+              </div>
+            </ControlPanel>
 
-            {/* Right: Config items display */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <CardTitle>
-                      {SECTION_LABELS[selectedSection] || selectedSection}
-                    </CardTitle>
-                    <CardDescription>
-                      {sections[selectedSection]?.description || "当前分节的配置项"}
-                    </CardDescription>
-                  </div>
-                  {sections[selectedSection]?.source && (
-                    <Badge variant="outline" className="text-xs">
-                      来源: {sections[selectedSection].source}
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
+            {/* 配置项列表 */}
+            <div className="terminal-card">
+              <div className="terminal-card-header">
+                <span className="text-xs text-muted-foreground">
+                  {sections[selectedSection]?.description || "当前分节的配置项"}
+                </span>
+              </div>
+              <div className="space-y-2">
                 {filteredConfig.length === 0 ? (
                   <div className="py-8 text-center text-muted-foreground">
                     <p className="text-sm">
@@ -310,89 +290,52 @@ export default function ConfigPage({}: PageProps) {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {filteredConfig.map((item) => {
-                      const isSensitive = schema?.sensitive_keys?.includes(item.key);
-                      const isRedacted = item.value === "***REDACTED***";
+                  filteredConfig.map((item) => {
+                    const isSensitive = schema?.sensitive_keys?.includes(item.key);
+                    const isRedacted = item.value === "***REDACTED***";
 
-                      return (
-                        <div
-                          key={item.key}
-                          className="rounded-xl border border-border/60 bg-background/70 p-4"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-foreground">
-                                  {item.key}
-                                </span>
-                                {isSensitive && (
-                                  <Badge variant="warning" className="text-xs">
-                                    敏感
-                                  </Badge>
-                                )}
-                              </div>
-                              {item.description && (
-                                <p className="text-xs text-muted-foreground">
-                                  {item.description}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {isRedacted ? (
-                                <Badge variant="outline" className="text-xs">
-                                  已脱敏
-                                </Badge>
-                              ) : (
-                                <code className="rounded-lg bg-muted/60 px-2 py-1 text-xs font-mono text-foreground">
-                                  {item.value || "(空)"}
-                                </code>
-                              )}
-                            </div>
+                    return (
+                      <div
+                        key={item.key}
+                        className="flex items-start justify-between gap-3 rounded border border-border/40 bg-background/40 p-3"
+                      >
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-foreground">
+                              {item.key}
+                            </span>
+                            {isSensitive && (
+                              <Badge variant="warning" className="text-xs">
+                                敏感
+                              </Badge>
+                            )}
                           </div>
+                          {item.description && (
+                            <p className="text-xs text-muted-foreground">
+                              {item.description}
+                            </p>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="flex items-center">
+                          {isRedacted ? (
+                            <Badge variant="outline" className="text-xs">
+                              已脱敏
+                            </Badge>
+                          ) : (
+                            <code className="rounded bg-muted/60 px-2 py-1 text-xs font-mono text-foreground">
+                              {item.value || "(空)"}
+                            </code>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Config validation summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">配置状态</CardTitle>
-              <CardDescription>配置完整性和验证状态</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-                  <p className="text-xs text-muted-foreground">总配置分节</p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {availableSections.length}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-                  <p className="text-xs text-muted-foreground">已配置项</p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {Object.values(sections).reduce(
-                      (sum, s) => sum + Object.keys(s.config || {}).length,
-                      0
-                    )}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-                  <p className="text-xs text-muted-foreground">敏感配置</p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {schema?.sensitive_keys?.length || 0}
-                  </p>
-                </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       )}
-    </AppShell>
+    </TerminalShell>
   );
 }

@@ -1,22 +1,22 @@
-/* 运维监控页面，展示服务健康状态、告警记录和巡检控制。 */
+/**
+ * 运维监控页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 
-import { Play, Square, Clock, RefreshCw, Server, Shield } from "lucide-react";
+import { Play, Square, Clock, RefreshCw, Server } from "lucide-react";
 
-import { AppShell } from "../../components/app-shell";
-import { PageHero } from "../../components/page-hero";
-import { Skeleton } from "../../components/ui/skeleton";
-import { StatusBar } from "../../components/status-bar";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricStrip,
+} from "../../components/terminal";
 import {
   HealthStatusCard,
   HealthStatusSkeleton,
   HealthServiceStatus,
-  HealthStatus,
   getHealthStatusFallback,
 } from "../../components/health-status-card";
 import {
@@ -27,7 +27,6 @@ import {
 } from "../../components/alert-list";
 import { useWebSocket } from "../../lib/websocket-context";
 import {
-  fetchJson,
   resolveControlPlaneUrl,
 } from "../../lib/api";
 
@@ -67,13 +66,11 @@ export default function OpsPage() {
 
   const { subscribe, unsubscribe, channelMessages } = useWebSocket();
 
-  // Subscribe to health_status channel for real-time updates
   useEffect(() => {
     subscribe("health_status");
     return () => unsubscribe("health_status");
   }, [subscribe, unsubscribe]);
 
-  // Handle WebSocket messages for health status updates
   useEffect(() => {
     const healthMessage = channelMessages["health_status"];
     if (healthMessage && healthMessage.data) {
@@ -82,7 +79,6 @@ export default function OpsPage() {
     }
   }, [channelMessages]);
 
-  // Fetch session
   useEffect(() => {
     fetch("/api/control/session")
       .then((res) => res.json())
@@ -92,12 +88,9 @@ export default function OpsPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
-  // Fetch health status, alerts, and patrol status
   useEffect(() => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -165,64 +158,57 @@ export default function OpsPage() {
     }
   };
 
-  const statusItems = [
+  const statusMetrics = [
     {
       label: "整体健康",
       value: healthStatus.overall_status === "healthy" ? "正常" : healthStatus.overall_status === "warning" ? "警告" : "异常",
-      status: healthStatus.overall_status === "healthy" ? "success" : healthStatus.overall_status === "warning" ? "waiting" : "error",
-      detail: `${healthStatus.services.length} 个服务`,
+      colorType: healthStatus.overall_status === "healthy" ? ("positive" as const) : healthStatus.overall_status === "warning" ? ("neutral" as const) : ("negative" as const),
     },
     {
       label: "活跃告警",
       value: String(alerts.filter((a) => !a.resolved).length),
-      status: alerts.some((a) => a.level === "critical" && !a.resolved) ? "error" : alerts.some((a) => !a.resolved) ? "waiting" : "success",
-      detail: `共 ${alerts.length} 条`,
+      colorType: alerts.some((a) => a.level === "critical" && !a.resolved) ? ("negative" as const) : alerts.some((a) => !a.resolved) ? ("neutral" as const) : ("positive" as const),
     },
     {
       label: "巡检状态",
       value: patrolStatus.is_running ? "运行中" : patrolStatus.schedule_enabled ? "已调度" : "待机",
-      status: patrolStatus.is_running ? "active" : patrolStatus.schedule_enabled ? "success" : "waiting",
-      detail: patrolStatus.is_running ? "手动巡检" : `间隔 ${patrolStatus.interval_minutes} 分钟`,
+      colorType: patrolStatus.is_running ? ("positive" as const) : patrolStatus.schedule_enabled ? ("positive" as const) : ("neutral" as const),
     },
     {
       label: "下次巡检",
       value: patrolStatus.next_scheduled_at ? formatTime(patrolStatus.next_scheduled_at) : "未调度",
-      status: patrolStatus.schedule_enabled ? "success" : "waiting",
-      detail: patrolStatus.schedule_enabled ? `上次: ${patrolStatus.last_completed_at ? formatTime(patrolStatus.last_completed_at) : "无"}` : "",
+      colorType: patrolStatus.schedule_enabled ? ("positive" as const) : ("neutral" as const),
     },
   ];
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="运维 / 监控"
       title="运维监控"
       subtitle="服务健康状态、告警记录和巡检控制"
       currentPath="/ops"
       isAuthenticated={session.isAuthenticated}
     >
-      <PageHero
-        badge="Operations"
-        title="系统运维监控"
-        description="查看所有服务健康状态、管理告警记录和控制巡检计划"
-      />
-
-      <StatusBar items={statusItems} />
+      <MetricStrip metrics={statusMetrics} />
 
       {isLoading ? (
-        <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {[1, 2, 3, 4].map((i) => (
               <HealthStatusSkeleton key={i} />
             ))}
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <AlertListSkeleton />
-            <Skeleton className="h-64 rounded-xl" />
+            <div className="rounded border border-[var(--terminal-border)] p-4 animate-pulse">
+              <div className="h-4 w-24 bg-[var(--terminal-border)] rounded" />
+            </div>
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* 服务健康状态卡片网格 */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-4">
+          {/* 服务健康状态 */}
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {healthStatus.services.map((service) => (
               <HealthStatusCard
                 key={service.name}
@@ -235,137 +221,123 @@ export default function OpsPage() {
             ))}
           </div>
 
-          {/* 告警列表和巡检控制面板 */}
+          {/* 告警列表和巡检控制 */}
           <div className="grid gap-4 lg:grid-cols-2">
             <AlertList alerts={alerts} limit={10} />
 
-            {/* 巡检控制面板 */}
-            <Card className="bg-card/90">
-              <CardHeader>
+            {/* 巡检控制 */}
+            <TerminalCard>
+              <div className="flex items-center gap-3 mb-4">
+                <RefreshCw className="size-4 text-[var(--terminal-accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">巡检控制</span>
+              </div>
+
+              <div className="space-y-4">
+                {/* 当前状态 */}
+                <div className="rounded border border-[var(--terminal-border)] px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Clock className="size-4 text-[var(--terminal-muted)]" />
+                      <span className="text-sm text-[var(--terminal-muted)]">当前状态</span>
+                    </div>
+                    <span className={`text-sm font-medium ${
+                      patrolStatus.is_running
+                        ? "text-[var(--terminal-accent)]"
+                        : patrolStatus.schedule_enabled
+                        ? "text-[var(--terminal-green)]"
+                        : "text-[var(--terminal-muted)]"
+                    }`}>
+                      {patrolStatus.is_running ? "正在运行" : patrolStatus.schedule_enabled ? "已调度" : "待机"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 手动控制 */}
                 <div className="flex items-center gap-3">
-                  <RefreshCw className="size-4 text-primary" />
-                  <CardTitle className="text-base">巡检控制</CardTitle>
+                  <button
+                    className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-3 py-1.5 text-xs text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)] disabled:opacity-50"
+                    onClick={handleStartPatrol}
+                    disabled={patrolStatus.is_running}
+                  >
+                    <Play className="size-3" />
+                    启动巡检
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-3 py-1.5 text-xs text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)] disabled:opacity-50"
+                    onClick={handleStopPatrol}
+                    disabled={!patrolStatus.is_running}
+                  >
+                    <Square className="size-3" />
+                    停止巡检
+                  </button>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-2">
-                <div className="space-y-4">
-                  {/* 当前状态 */}
-                  <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Clock className="size-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">当前状态</span>
-                      </div>
-                      <Badge variant={patrolStatus.is_running ? "accent" : patrolStatus.schedule_enabled ? "success" : "neutral"}>
-                        {patrolStatus.is_running ? "正在运行" : patrolStatus.schedule_enabled ? "已调度" : "待机"}
-                      </Badge>
-                    </div>
-                  </div>
 
-                  {/* 手动控制 */}
-                  <div className="flex items-center gap-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleStartPatrol}
-                      disabled={patrolStatus.is_running}
-                      className="flex items-center gap-2"
+                {/* 调度信息 */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <InfoBlock label="调度状态" value={patrolSchedule.enabled ? "已启用" : "已禁用"} />
+                  <InfoBlock label="巡检间隔" value={`${patrolSchedule.interval_minutes} 分钟`} />
+                  {patrolSchedule.last_run_at && (
+                    <InfoBlock label="上次运行" value={formatTime(patrolSchedule.last_run_at)} />
+                  )}
+                  {patrolSchedule.next_run_at && (
+                    <InfoBlock label="下次运行" value={formatTime(patrolSchedule.next_run_at)} />
+                  )}
+                </div>
+
+                {/* 运行历史链接 */}
+                <div className="rounded border border-[var(--terminal-border)] px-4 py-3">
+                  <p className="text-xs text-[var(--terminal-muted)]">
+                    点击下方按钮查看巡检历史记录和执行详情
+                  </p>
+                  <div className="mt-3">
+                    <a
+                      href="/tasks?tab=patrol"
+                      className="inline-flex items-center rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-3 py-1.5 text-xs text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
                     >
-                      <Play className="size-4" />
-                      启动巡检
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleStopPatrol}
-                      disabled={!patrolStatus.is_running}
-                      className="flex items-center gap-2"
-                    >
-                      <Square className="size-4" />
-                      停止巡检
-                    </Button>
-                  </div>
-
-                  {/* 调度信息 */}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <InfoBlock
-                      label="调度状态"
-                      value={patrolSchedule.enabled ? "已启用" : "已禁用"}
-                    />
-                    <InfoBlock
-                      label="巡检间隔"
-                      value={`${patrolSchedule.interval_minutes} 分钟`}
-                    />
-                    {patrolSchedule.last_run_at && (
-                      <InfoBlock
-                        label="上次运行"
-                        value={formatTime(patrolSchedule.last_run_at)}
-                      />
-                    )}
-                    {patrolSchedule.next_run_at && (
-                      <InfoBlock
-                        label="下次运行"
-                        value={formatTime(patrolSchedule.next_run_at)}
-                      />
-                    )}
-                  </div>
-
-                  {/* 运行历史链接 */}
-                  <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-                    <p className="text-xs text-muted-foreground">
-                      点击下方按钮查看巡检历史记录和执行详情
-                    </p>
-                    <div className="mt-3 flex items-center gap-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <a href="/tasks?tab=patrol">查看巡检历史</a>
-                      </Button>
-                    </div>
+                      查看巡检历史
+                    </a>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </TerminalCard>
           </div>
 
           {/* 系统概览 */}
-          <Card className="bg-card/90">
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <Server className="size-4 text-primary" />
-                <CardTitle className="text-base">系统概览</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-2">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <InfoBlock
-                  label="健康服务"
-                  value={String(healthStatus.services.filter((s) => s.status === "healthy").length)}
-                />
-                <InfoBlock
-                  label="警告服务"
-                  value={String(healthStatus.services.filter((s) => s.status === "warning").length)}
-                />
-                <InfoBlock
-                  label="异常服务"
-                  value={String(healthStatus.services.filter((s) => s.status === "unhealthy").length)}
-                />
-                <InfoBlock
-                  label="检查时间"
-                  value={formatTime(healthStatus.checked_at)}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <TerminalCard>
+            <div className="flex items-center gap-3 mb-4">
+              <Server className="size-4 text-[var(--terminal-accent)]" />
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">系统概览</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <InfoBlock
+                label="健康服务"
+                value={String(healthStatus.services.filter((s) => s.status === "healthy").length)}
+              />
+              <InfoBlock
+                label="警告服务"
+                value={String(healthStatus.services.filter((s) => s.status === "warning").length)}
+              />
+              <InfoBlock
+                label="异常服务"
+                value={String(healthStatus.services.filter((s) => s.status === "unhealthy").length)}
+              />
+              <InfoBlock
+                label="检查时间"
+                value={formatTime(healthStatus.checked_at)}
+              />
+            </div>
+          </TerminalCard>
         </div>
       )}
-    </AppShell>
+    </TerminalShell>
   );
 }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-[color:var(--panel-strong)]/80 p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-base font-semibold text-foreground">{value}</p>
+    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className="mt-2 text-sm text-[var(--terminal-text)]">{value}</p>
     </div>
   );
 }

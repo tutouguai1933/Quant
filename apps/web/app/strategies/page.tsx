@@ -1,20 +1,22 @@
-/* 策略中心：精简版，提升信息密度 */
+/**
+ * 策略中心页面
+ * 终端风格重构
+ */
 "use client";
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-import { AppShell } from "../../components/app-shell";
+import {
+  TerminalShell,
+  TerminalCard,
+  MetricStrip,
+} from "../../components/terminal";
 import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
-import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
-import { PageHero } from "../../components/page-hero";
-import { StatusBar } from "../../components/status-bar";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Skeleton } from "../../components/ui/skeleton";
 import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
 import { readFeedback } from "../../lib/feedback";
 import {
@@ -53,9 +55,7 @@ export default function StrategiesPage() {
           isAuthenticated: Boolean(data.isAuthenticated),
         });
       })
-      .catch(() => {
-        // Keep default session state
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -150,47 +150,38 @@ export default function StrategiesPage() {
   const isManualTakeover = Boolean(automation.manualTakeover);
   const takeoverReason = readText(automation, "pauseReason", "");
 
-  const statusItems = [
+  const statusMetrics = [
     {
       label: "执行器",
       value: executorRuntimeStatus === "unavailable" ? "不可用" : executorStatusLabel,
-      status: (executorRuntimeStatus === "unavailable" ? "error" : "success") as "error" | "success",
-      detail: executorRuntimeStatus === "unavailable" ? executorRuntimeDetail : executorConnectionStatus,
+      colorType: executorRuntimeStatus === "unavailable" ? ("negative" as const) : ("positive" as const),
     },
     {
       label: "自动化",
       value: isManualTakeover ? "人工接管" : automationHandoff.headline,
-      status: (isManualTakeover ? "error" : automation.paused ? "waiting" : "active") as "error" | "waiting" | "active",
-      detail: isManualTakeover ? takeoverReason : automationHandoff.detail,
+      colorType: isManualTakeover ? ("negative" as const) : automation.paused ? ("neutral" as const) : ("positive" as const),
     },
     {
       label: "账户",
       value: accountStateStatus === "unavailable" ? "不可用" : `${workspace.account_state.summary.balance_count} 余额`,
-      status: (accountStateStatus === "unavailable" ? "error" : "success") as "error" | "success",
-      detail: accountStateStatus === "unavailable" ? accountStateDetail : `${workspace.account_state.summary.order_count} 订单 / ${workspace.account_state.summary.position_count} 持仓`,
+      colorType: accountStateStatus === "unavailable" ? ("negative" as const) : ("positive" as const),
     },
     {
       label: "最近信号",
       value: String(recentSignals.length),
-      status: (recentSignals.length > 0 ? "active" : "waiting") as "active" | "waiting",
-      detail: recentSignals.length > 0 ? "有新信号" : "暂无信号",
+      colorType: recentSignals.length > 0 ? ("positive" as const) : ("neutral" as const),
     },
   ];
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb="策略 / 策略中心"
       title="策略"
-      subtitle="策略状态、市场判断、执行结果。"
+      subtitle="策略状态、市场判断、执行结果"
       currentPath="/strategies"
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
-
-      <PageHero
-        badge="策略中心"
-        title="先看判断，再决定要不要派发"
-        description="左侧先看推荐执行、研究候选和下一步动作，右侧只看执行器状态、账户收口和执行动作。"
-      />
 
       <ArbitrationHandoffCard
         arbitration={arbitration}
@@ -199,62 +190,43 @@ export default function StrategiesPage() {
         showActions={!session.isAuthenticated}
       />
 
-      {isLoading ? (
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-20 rounded-xl" />
-            ))}
-          </div>
-          <Skeleton className="h-40 rounded-xl" />
-          <Skeleton className="h-32 rounded-xl" />
-        </div>
-      ) : !session.isAuthenticated ? (
-        <Card>
-          <CardHeader>
-            <p className="eyebrow">动作反馈</p>
-            <CardTitle>当前页面需要登录</CardTitle>
-            <CardDescription>登录后才能看到真实策略状态、当前判断和最近执行结果，也才能继续启动、暂停、停止和派发。</CardDescription>
-          </CardHeader>
-          <CardContent>
+      {!session.isAuthenticated ? (
+        <TerminalCard title="需要登录">
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--terminal-muted)]">登录后才能看到真实策略状态、当前判断和最近执行结果。</p>
             <Button asChild variant="terminal">
               <Link href="/login?next=%2Fstrategies">先去登录</Link>
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </TerminalCard>
       ) : (
         <>
-          <StatusBar items={statusItems} />
+          <MetricStrip metrics={statusMetrics} />
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">当前执行器状态</p>
-              <CardTitle>执行器连接</CardTitle>
-              <CardDescription>
-                {executorRuntimeStatus === "unavailable" ? "执行器暂时不可用" : executorStatusLabel}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-              <p>连接状态：{executorConnectionStatus}</p>
-              {executorRuntimeStatus === "unavailable" ? (
-                <p className="text-red-600 dark:text-red-400">当前异常：{executorRuntimeDetail || "先恢复执行器接口"}</p>
-              ) : null}
-              <p>最近信号：{recentSignals.length} 条</p>
-              <p>最近订单：{recentOrders.length} 条</p>
-            </CardContent>
-          </Card>
+          {/* 执行器连接 */}
+          <TerminalCard title="执行器连接">
+            <div className="space-y-3 text-sm">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoBlock label="连接状态" value={executorConnectionStatus} />
+                <InfoBlock label="执行器" value={executorStatusLabel} />
+              </div>
+              {executorRuntimeStatus === "unavailable" && (
+                <p className="text-[var(--terminal-red)]">{executorRuntimeDetail || "先恢复执行器接口"}</p>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoBlock label="最近信号" value={`${recentSignals.length} 条`} />
+                <InfoBlock label="最近订单" value={`${recentOrders.length} 条`} />
+              </div>
+            </div>
+          </TerminalCard>
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <p className="eyebrow">当前推荐</p>
-                <CardTitle>{workspace.research_recommendation?.symbol || "暂无推荐"}</CardTitle>
-                <CardDescription>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* 当前推荐 */}
+            <TerminalCard title={workspace.research_recommendation?.symbol || "暂无推荐"}>
+              <div className="space-y-3">
+                <p className="text-xs text-[var(--terminal-muted)]">
                   {workspace.research_recommendation?.dry_run_gate?.status || "先完成研究和评估"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                <p>下一步动作：{automationHandoff.targetLabel || "继续观察"}</p>
+                </p>
                 <div className="flex gap-2">
                   <Button asChild variant="terminal" size="sm">
                     <Link href={automationHandoff.targetHref}>{automationHandoff.targetLabel || "继续"}</Link>
@@ -263,20 +235,15 @@ export default function StrategiesPage() {
                     <Link href="/research">回到研究</Link>
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </TerminalCard>
 
-            <Card>
-              <CardHeader>
-                <p className="eyebrow">执行状态</p>
-                <CardTitle>最近执行结果</CardTitle>
-                <CardDescription>
+            {/* 执行状态 */}
+            <TerminalCard title="最近执行结果">
+              <div className="space-y-3">
+                <p className="text-xs text-[var(--terminal-muted)]">
                   {recentOrders.length > 0 ? `${recentOrders.length} 条订单` : "暂无执行结果"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-                <p>最近信号：{recentSignals.length} 条</p>
-                <p>最近订单：{recentOrders.length} 条</p>
+                </p>
                 <div className="flex gap-2">
                   <Button asChild variant="outline" size="sm">
                     <Link href="/signals">查看信号</Link>
@@ -285,42 +252,34 @@ export default function StrategiesPage() {
                     <Link href="/orders">查看订单</Link>
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </TerminalCard>
           </div>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">策略判断</p>
-              <CardTitle>两套首批波段策略</CardTitle>
-              <CardDescription>具体策略判断下沉到这里，默认页不再继续铺开。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 xl:grid-cols-2">
+          {/* 策略判断 */}
+          <TerminalCard title="两套首批波段策略">
+            <div className="grid gap-4 xl:grid-cols-2">
               {strategyCards.length ? strategyCards.map((item) => (
                 <StrategyCard key={item.key} item={item} />
               )) : (
-                <div className="rounded-2xl border border-dashed border-border/70 bg-muted/35 p-5 text-sm leading-6 text-muted-foreground xl:col-span-2">
-                  <p className="font-medium text-foreground">当前还没有可评估的策略对象</p>
+                <div className="rounded border border-dashed border-[var(--terminal-border)] p-4 text-sm text-[var(--terminal-muted)] xl:col-span-2">
+                  <p className="font-medium text-[var(--terminal-text)]">当前还没有可评估的策略对象</p>
                   <p>统一候选篮子还是空的，所以策略页不会再回退到旧白名单假装继续评估。</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">入场评分</p>
-              <CardTitle>入场评分计算</CardTitle>
-              <CardDescription>输入交易标的，计算入场评分、建议仓位和入场建议。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          {/* 入场评分 */}
+          <TerminalCard title="入场评分计算">
+            <div className="space-y-4">
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={entryScoreSymbol}
                   onChange={(e) => setEntryScoreSymbol(e.target.value.toUpperCase())}
                   placeholder="输入 Symbol（如 BTCUSDT）"
-                  className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="flex-1 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-3 py-2 text-sm text-[var(--terminal-text)] placeholder:text-[var(--terminal-dim)] focus:border-[var(--terminal-accent)] focus:outline-none"
                 />
                 <Button
                   variant="terminal"
@@ -349,65 +308,82 @@ export default function StrategiesPage() {
                     label="建议仓位"
                     value={`${formatRatio(entryScoreResult.suggested_position_ratio)}%`}
                     detail="基于评分和波动率计算"
-                    status={entryScoreResult.suggested_position_ratio !== "0" ? "success" : "waiting"}
+                    status={entryScoreResult.suggested_position_ratio !== "0" ? "success" : "neutral"}
                   />
                   <EntryScoreDigest
                     label="趋势确认"
                     value={entryScoreResult.trend_confirmed ? "已确认" : "未确认"}
                     detail={entryScoreResult.research_aligned ? "研究信号一致" : "研究信号不一致"}
-                    status={entryScoreResult.trend_confirmed ? "success" : "waiting"}
+                    status={entryScoreResult.trend_confirmed ? "success" : "neutral"}
                   />
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">最近数据</p>
-              <CardTitle>信号与执行摘要</CardTitle>
-              <CardDescription>展示最近 3 条信号和执行结果。</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-5 lg:grid-cols-2">
-                <DataTable
-                  columns={["信号", "Symbol", "状态"]}
-                  rows={recentSignals.slice(0, 3).map((item, index) => ({
-                    id: String(item.signal_id ?? index),
-                    cells: [
-                      String(item.strategy_id ?? "n/a"),
-                      String(item.symbol ?? ""),
-                      <StatusBadge key={String(item.signal_id ?? index)} value={String(item.status ?? "")} />,
-                    ],
-                  }))}
-                  emptyTitle="当前还没有信号"
-                  emptyDetail="运行后产生"
-                />
-
-                <DataTable
-                  columns={["执行", "Side", "状态"]}
-                  rows={recentOrders.slice(0, 3).map((item, index) => ({
-                    id: String(item.id ?? index),
-                    cells: [
-                      String(item.symbol ?? ""),
-                      String(item.side ?? ""),
-                      <StatusBadge key={String(item.id ?? index)} value={String(item.status ?? "")} />,
-                    ],
-                  }))}
-                  emptyTitle="当前还没有执行结果"
-                  emptyDetail="运行后产生"
-                />
+          {/* 信号与执行摘要 */}
+          <TerminalCard title="信号与执行摘要">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)] mb-3">最近信号</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr className="border-b border-[var(--terminal-border)]">
+                        <th className="text-left py-2 px-2 text-[var(--terminal-dim)]">信号</th>
+                        <th className="text-left py-2 px-2 text-[var(--terminal-dim)]">Symbol</th>
+                        <th className="text-center py-2 px-2 text-[var(--terminal-dim)]">状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentSignals.slice(0, 3).length === 0 ? (
+                        <tr><td colSpan={3} className="py-4 text-center text-[var(--terminal-muted)]">暂无信号</td></tr>
+                      ) : (
+                        recentSignals.slice(0, 3).map((item, index) => (
+                          <tr key={String(item.signal_id ?? index)} className="border-b border-[var(--terminal-border)]/50">
+                            <td className="py-2 px-2 text-[var(--terminal-text)]">{String(item.strategy_id ?? "n/a")}</td>
+                            <td className="py-2 px-2 text-[var(--terminal-text)]">{String(item.symbol ?? "")}</td>
+                            <td className="py-2 px-2 text-center"><StatusBadge value={String(item.status ?? "")} /></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)] mb-3">最近执行</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr className="border-b border-[var(--terminal-border)]">
+                        <th className="text-left py-2 px-2 text-[var(--terminal-dim)]">执行</th>
+                        <th className="text-left py-2 px-2 text-[var(--terminal-dim)]">Side</th>
+                        <th className="text-center py-2 px-2 text-[var(--terminal-dim)]">状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentOrders.slice(0, 3).length === 0 ? (
+                        <tr><td colSpan={3} className="py-4 text-center text-[var(--terminal-muted)]">暂无执行</td></tr>
+                      ) : (
+                        recentOrders.slice(0, 3).map((item, index) => (
+                          <tr key={String(item.id ?? index)} className="border-b border-[var(--terminal-border)]/50">
+                            <td className="py-2 px-2 text-[var(--terminal-text)]">{String(item.symbol ?? "")}</td>
+                            <td className="py-2 px-2 text-[var(--terminal-text)]">{String(item.side ?? "")}</td>
+                            <td className="py-2 px-2 text-center"><StatusBadge value={String(item.status ?? "")} /></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </TerminalCard>
 
-          <Card>
-            <CardHeader>
-              <p className="eyebrow">工具详情</p>
-              <CardTitle>查看完整数据</CardTitle>
-              <CardDescription>余额、订单、持仓、风险事件等详细数据都在工具页。</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
+          {/* 工具详情 */}
+          <TerminalCard title="查看完整数据">
+            <div className="flex flex-wrap gap-2">
               <Button asChild variant="outline" size="sm">
                 <Link href="/balances">余额</Link>
               </Button>
@@ -423,11 +399,11 @@ export default function StrategiesPage() {
               <Button asChild variant="outline" size="sm">
                 <Link href="/tasks">任务</Link>
               </Button>
-            </CardContent>
-          </Card>
+            </div>
+          </TerminalCard>
         </>
       )}
-    </AppShell>
+    </TerminalShell>
   );
 }
 
@@ -455,36 +431,32 @@ function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
   const latestSignal = formatLatestSignal(item.latest_signal);
 
   return (
-    <article className="action-card strategy-card">
-      <div className="stack-xs">
-        <p className="eyebrow">{item.key}</p>
-        <h4>{item.display_name}</h4>
-        <p>{item.description}</p>
-      </div>
-      <div className="stack-xs">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>运行状态：</span>
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)]/50 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{item.key}</p>
+      <h4 className="mt-2 text-sm font-medium text-[var(--terminal-text)]">{item.display_name}</h4>
+      <p className="text-xs text-[var(--terminal-muted)]">{item.description}</p>
+      <div className="mt-3 space-y-2 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-[var(--terminal-muted)]">运行状态：</span>
           <StatusBadge value={item.runtime_status} />
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>当前判断：</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[var(--terminal-muted)]">当前判断：</span>
           <StatusBadge value={String(item.current_evaluation.decision ?? "unknown")} />
         </div>
-        <p>研究分数：{researchScore}</p>
-        <p>模型版本：{modelVersion}</p>
-        <p>推荐策略：{preferredStrategy}</p>
-        <p>执行建议：{executionHint}</p>
-        <p>观察币种：{item.symbols.join(" / ")}</p>
-        <p>最近信号：{latestSignal}</p>
+        <p className="text-[var(--terminal-muted)]">研究分数：{researchScore}</p>
+        <p className="text-[var(--terminal-muted)]">模型版本：{modelVersion}</p>
+        <p className="text-[var(--terminal-muted)]">推荐策略：{preferredStrategy}</p>
+        <p className="text-[var(--terminal-muted)]">执行建议：{executionHint}</p>
+        <p className="text-[var(--terminal-muted)]">观察币种：{item.symbols.join(" / ")}</p>
+        <p className="text-[var(--terminal-muted)]">最近信号：{latestSignal}</p>
       </div>
-    </article>
+    </div>
   );
 }
 
 function formatLatestSignal(item: Record<string, unknown> | null): string {
-  if (!item) {
-    return "暂无持久化信号";
-  }
+  if (!item) return "暂无持久化信号";
   return `${String(item.symbol ?? "")} / ${String(item.status ?? "")}`;
 }
 
@@ -495,25 +467,15 @@ function formatResearchScore(value: string): string {
 
 function formatExecutionHint(item: Record<string, unknown>): string {
   const decision = String(item.decision ?? "").trim();
-  if (decision === "signal") {
-    return "可以继续看最新信号并决定是否派发。";
-  }
-  if (decision === "watch") {
-    return "先保持观察，暂时不要派发。";
-  }
-  if (decision === "block") {
-    return "当前不适合执行，先不要派发。";
-  }
+  if (decision === "signal") return "可以继续看最新信号并决定是否派发。";
+  if (decision === "watch") return "先保持观察，暂时不要派发。";
+  if (decision === "block") return "当前不适合执行，先不要派发。";
   return "先确认执行器状态和最新信号。";
 }
 
 function formatPreferredStrategy(value: StrategyWorkspaceCard["research_cockpit"]["recommended_strategy"]): string {
-  if (value === "trend_breakout") {
-    return "趋势突破";
-  }
-  if (value === "trend_pullback") {
-    return "趋势回调";
-  }
+  if (value === "trend_breakout") return "趋势突破";
+  if (value === "trend_pullback") return "趋势回调";
   return "继续观察";
 }
 
@@ -529,6 +491,15 @@ function formatRatio(value: string): string {
   return `${(ratio * 100).toFixed(0)}`;
 }
 
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className="mt-2 text-sm text-[var(--terminal-text)]">{value}</p>
+    </div>
+  );
+}
+
 function EntryScoreDigest({
   label,
   value,
@@ -538,19 +509,18 @@ function EntryScoreDigest({
   label: string;
   value: string;
   detail: string;
-  status: "success" | "warning" | "waiting" | "error";
+  status: "success" | "warning" | "neutral";
 }) {
   const statusColorMap = {
-    success: "text-green-600 dark:text-green-400",
-    warning: "text-yellow-600 dark:text-yellow-400",
-    waiting: "text-muted-foreground",
-    error: "text-red-600 dark:text-red-400",
+    success: "text-[var(--terminal-green)]",
+    warning: "text-[var(--terminal-yellow)]",
+    neutral: "text-[var(--terminal-muted)]",
   };
   return (
-    <div className="rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/70 p-4">
-      <p className="eyebrow">{label}</p>
-      <p className={`mt-2 text-sm font-semibold leading-6 ${statusColorMap[status]}`}>{value}</p>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className={`mt-2 text-sm font-medium ${statusColorMap[status]}`}>{value}</p>
+      <p className="mt-1 text-xs text-[var(--terminal-muted)]">{detail}</p>
     </div>
   );
 }
