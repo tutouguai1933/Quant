@@ -489,7 +489,14 @@ class AutomationService:
             last_alert=last_alert,
             alert_summary=alert_summary,
         )
+        # 计算 status 字段：根据阻塞和告警情况判断系统健康状态
+        health_status = self._compute_health_status(
+            active_blockers=active_blockers,
+            alert_summary=alert_summary,
+            run_health=run_health,
+        )
         return {
+            "status": health_status,  # 新增：系统健康状态
             "mode": self._mode,
             "paused": self._paused,
             "manual_takeover": self._manual_takeover,
@@ -519,6 +526,40 @@ class AutomationService:
             "severity_summary": severity_summary,
             "resume_checklist": resume_checklist,
         }
+
+    def _compute_health_status(
+        self,
+        *,
+        active_blockers: list[dict[str, str]],
+        alert_summary: dict[str, object],
+        run_health: dict[str, object],
+    ) -> str:
+        """计算系统健康状态。
+
+        判断逻辑：
+        - ok: 无阻塞且无错误告警
+        - error: 存在严重阻塞（kill_switch、manual_takeover）或有错误告警
+        - degraded: 其他需要关注的情况
+        """
+
+        # 检查是否有严重阻塞
+        blocker_codes = {str(item.get("code", "")) for item in active_blockers}
+        has_critical_blocker = bool(
+            blocker_codes & {"kill_switch", "manual_takeover"}
+        )
+        # 检查是否有错误告警
+        error_count = int(alert_summary.get("error_count", 0) or 0)
+        has_error_alert = error_count > 0
+        # 检查是否有告警
+        warning_count = int(alert_summary.get("warning_count", 0) or 0)
+        # 检查升级级别
+        escalation_level = str(run_health.get("escalation_level", "normal") or "normal")
+        # 判断 status
+        if has_critical_blocker or has_error_alert or escalation_level == "critical":
+            return "error"
+        if blocker_codes == {"none"} and error_count == 0 and warning_count == 0:
+            return "ok"
+        return "degraded"
 
     def _build_alert_summary(self) -> dict[str, object]:
         """汇总最近告警级别，给前端直接展示。"""

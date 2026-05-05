@@ -624,6 +624,14 @@ class FeatureWorkspaceService:
     ) -> dict[str, object]:
         """构建终端视图，包含因子研究和因子知识库两个子视图。"""
 
+        # 构建顶层页面信息
+        page = build_terminal_page(
+            route="/features",
+            breadcrumb="数据与知识 / 因子研究",
+            title="因子研究",
+            subtitle="因子 IC、分组收益与冗余检查",
+        )
+
         # 构建 research 视图
         research = self._build_terminal_research(
             report=report,
@@ -642,6 +650,7 @@ class FeatureWorkspaceService:
         )
 
         return {
+            "page": page,
             "research": research,
             "knowledge": knowledge,
         }
@@ -656,14 +665,6 @@ class FeatureWorkspaceService:
         redundancy_summary: dict[str, object],
     ) -> dict[str, object]:
         """构建因子研究终端视图。"""
-
-        # 页面信息
-        page = build_terminal_page(
-            route="/features",
-            breadcrumb="数据与知识 / 因子研究",
-            title="因子研究",
-            subtitle="因子 IC、分组收益与冗余检查",
-        )
 
         # 指标卡：从 overview 和 effectiveness_summary 提取
         metrics = [
@@ -718,7 +719,6 @@ class FeatureWorkspaceService:
         }
 
         return {
-            "page": page,
             "metrics": metrics,
             "charts": charts,
             "tables": tables,
