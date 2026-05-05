@@ -114,8 +114,30 @@ export default function PositionsPage() {
       {/* 持仓表格 */}
       <TerminalCard title="持仓列表">
         {model.items.length === 0 ? (
-          <div className="text-center py-10 text-[var(--terminal-muted)]">
-            暂无持仓数据
+          <div className="text-center py-10 space-y-4">
+            <div className="text-[var(--terminal-muted)]">
+              <p className="text-lg mb-2">暂无持仓数据</p>
+              <p className="text-sm">当前没有持仓，可能原因：</p>
+              <ul className="text-sm mt-2 space-y-1 text-[var(--terminal-dim)]">
+                <li>• 策略尚未触发入场信号</li>
+                <li>• 持仓已全部平仓</li>
+                <li>• 执行器连接未建立</li>
+              </ul>
+            </div>
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-4 py-2 text-sm text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
+              >
+                刷新页面
+              </button>
+              <a
+                href="/signals"
+                className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-4 py-2 text-sm text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
+              >
+                查看信号列表
+              </a>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">

@@ -119,8 +119,30 @@ export default function OrdersPage() {
       {/* 订单表格 */}
       <TerminalCard title="订单列表">
         {model.items.length === 0 ? (
-          <div className="text-center py-10 text-[var(--terminal-muted)]">
-            暂无订单数据，请先连接交易所账户
+          <div className="text-center py-10 space-y-4">
+            <div className="text-[var(--terminal-muted)]">
+              <p className="text-lg mb-2">暂无订单数据</p>
+              <p className="text-sm">当前没有订单记录，可能原因：</p>
+              <ul className="text-sm mt-2 space-y-1 text-[var(--terminal-dim)]">
+                <li>• 策略尚未触发入场信号</li>
+                <li>• 订单已全部成交并从列表中移除</li>
+                <li>• 执行器连接未建立</li>
+              </ul>
+            </div>
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-4 py-2 text-sm text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
+              >
+                刷新页面
+              </button>
+              <a
+                href="/strategies"
+                className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-4 py-2 text-sm text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
+              >
+                查看策略状态
+              </a>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">

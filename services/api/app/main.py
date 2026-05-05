@@ -67,6 +67,7 @@ from services.api.app.routes.strategy_tuning import router as strategy_tuning_ro
 from services.api.app.routes.position_management import router as position_management_router
 from services.api.app.routes.ai_training import router as ai_training_router
 from services.api.app.routes.trade_log import router as trade_log_router
+from services.api.app.routes.hyperopt import router as hyperopt_router
 from services.api.app.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,8 @@ app.include_router(ai_training_router)
 app.routers.append(ai_training_router)  # type: ignore[attr-defined]
 app.include_router(trade_log_router)
 app.routers.append(trade_log_router)  # type: ignore[attr-defined]
+app.include_router(hyperopt_router)
+app.routers.append(hyperopt_router)  # type: ignore[attr-defined]
 
 
 # 性能监控中间件

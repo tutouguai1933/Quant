@@ -1,41 +1,65 @@
-/* 这个文件负责在路由切换期间显示统一终端加载状态。 */
-
+/**
+ * 全局加载状态组件
+ * Next.js 15 原生支持，优化页面切换体验
+ * 使用终端风格骨架屏
+ */
 export default function Loading() {
   return (
-    <div className="min-h-screen bg-background px-4 py-6 text-foreground sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-[1680px] gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-2xl border border-border/70 bg-card/80 p-5">
-          <p className="eyebrow">Quant Terminal</p>
-          <h2 className="mt-3 text-xl font-semibold tracking-tight">正在切换工作区</h2>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">页面会先显示骨架，再补研究、市场和执行数据，避免切换时整屏卡住。</p>
+    <div className="min-h-screen bg-[var(--terminal-bg)] text-[var(--terminal-text)]">
+      {/* 主布局：左侧导航 + 右侧内容 */}
+      <div className="grid min-h-screen lg:grid-cols-[160px_minmax(0,1fr)]">
+        {/* 左侧导航骨架 */}
+        <aside className="hidden lg:flex flex-col h-screen sticky top-0 border-r border-[var(--terminal-border)]">
+          {/* Logo骨架 */}
+          <div className="p-4 border-b border-[var(--terminal-border)]">
+            <div className="h-4 w-16 bg-[var(--terminal-border)] rounded animate-pulse" />
+            <div className="h-2 w-8 bg-[var(--terminal-border)] rounded animate-pulse mt-1" />
+          </div>
+          {/* 导航骨架 */}
+          <div className="flex-1 p-2 space-y-1">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="h-8 bg-[var(--terminal-border)]/50 rounded animate-pulse" />
+            ))}
+          </div>
+          {/* 状态骨架 */}
+          <div className="p-3 border-t border-[var(--terminal-border)] space-y-2">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-4 bg-[var(--terminal-border)]/50 rounded animate-pulse" />
+            ))}
+          </div>
         </aside>
 
-        <section className="space-y-5">
-          <div className="rounded-2xl border border-border/70 bg-card/80 p-5">
-            <div className="h-3 w-28 rounded-full bg-muted/60" />
-            <div className="mt-4 h-9 w-56 rounded-xl bg-muted/40" />
-            <div className="mt-4 h-4 w-3/4 rounded-full bg-muted/30" />
-          </div>
+        {/* 主内容骨架 */}
+        <div className="flex flex-col">
+          {/* 页面头部骨架 */}
+          <header className="border-b border-[var(--terminal-border)] px-4 py-3">
+            <div className="h-3 w-32 bg-[var(--terminal-border)] rounded animate-pulse mb-2" />
+            <div className="h-6 w-48 bg-[var(--terminal-border)] rounded animate-pulse" />
+          </header>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.9fr)]">
-            <div className="space-y-5">
-              <div className="rounded-2xl border border-border/70 bg-card/80 p-5">
-                <div className="h-3 w-24 rounded-full bg-muted/60" />
-                <div className="mt-4 h-8 w-2/5 rounded-xl bg-muted/40" />
-                <div className="mt-4 h-56 rounded-2xl bg-muted/20" />
-              </div>
+          {/* 内容骨架 */}
+          <main className="flex-1 p-4 lg:p-5 space-y-4">
+            {/* 指标卡骨架 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="h-20 bg-[var(--terminal-border)]/30 rounded-lg animate-pulse" />
+              ))}
             </div>
-            <div className="rounded-2xl border border-border/70 bg-card/80 p-5">
-              <div className="h-3 w-24 rounded-full bg-muted/60" />
-              <div className="mt-4 h-8 w-2/3 rounded-xl bg-muted/40" />
-              <div className="mt-4 grid gap-3">
-                <div className="h-16 rounded-2xl bg-muted/20" />
-                <div className="h-16 rounded-2xl bg-muted/20" />
-                <div className="h-16 rounded-2xl bg-muted/20" />
-              </div>
+
+            {/* 卡片骨架 */}
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-48 bg-[var(--terminal-border)]/20 rounded-lg animate-pulse" />
+              ))}
             </div>
-          </div>
-        </section>
+          </main>
+        </div>
+      </div>
+
+      {/* 加载指示器 */}
+      <div className="fixed bottom-4 right-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--terminal-bg)] border border-[var(--terminal-border)] shadow-lg">
+        <div className="w-3 h-3 border-2 border-[var(--terminal-cyan)] border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs text-[var(--terminal-muted)]">加载中...</span>
       </div>
     </div>
   );

@@ -4760,3 +4760,128 @@ export function getEntryDecisionFallback(): EntryDecisionModel {
     suggested_position_ratio: "0",
   };
 }
+
+/* ========================================
+ * Hyperopt API - 参数优化
+ * ======================================== */
+
+export type HyperoptStatus = {
+  status: "idle" | "running" | "completed" | "failed";
+  job_id?: string;
+  strategy?: string;
+  epochs?: number;
+  spaces?: string[];
+  timeframe?: string;
+  current_epoch?: number;
+  total_epochs?: number;
+  best_result?: number;
+  started_at?: string;
+  finished_at?: string;
+  parameters?: Record<string, unknown>;
+  error?: string;
+};
+
+export type HyperoptJob = {
+  id: string;
+  strategy: string;
+  timeframe: string;
+  epochs: number;
+  status: string;
+  best_profit?: number;
+  created_at: string;
+};
+
+export async function getHyperoptStatus(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<HyperoptStatus>> {
+  return fetchJson<HyperoptStatus>("/hyperopt/status", undefined, signal);
+}
+
+export async function listHyperoptJobs(
+  limit: number = 20,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ jobs: HyperoptJob[] }>> {
+  return fetchJson<{ jobs: HyperoptJob[] }>(`/hyperopt/jobs?limit=${limit}`, undefined, signal);
+}
+
+export async function startHyperopt(
+  strategy: string = "EnhancedStrategy",
+  epochs: number = 100,
+  spaces: string[] = ["buy", "sell", "roi", "stoploss"],
+  timeframe: string = "1h",
+  timerange?: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<HyperoptStatus>> {
+  try {
+    const url = await resolveControlPlaneUrl("/hyperopt/start");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ strategy, epochs, spaces, timeframe, timerange }),
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) {
+      return {
+        data: { status: "idle" },
+        error: { code: `http_${response.status}`, message: `API 请求失败: ${response.statusText}` },
+        meta: { status: response.status },
+      };
+    }
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        data: { status: "idle" },
+        error: { code: "request_timeout", message: "请求超时" },
+        meta: { aborted: true },
+      };
+    }
+    return {
+      data: { status: "idle" },
+      error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" },
+      meta: {},
+    };
+  }
+}
+
+export async function stopHyperopt(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ status: string }>> {
+  try {
+    const url = await resolveControlPlaneUrl("/hyperopt/stop");
+    const response = await fetch(url, {
+      method: "POST",
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) {
+      return {
+        data: { status: "idle" },
+        error: { code: `http_${response.status}`, message: `API 请求失败: ${response.statusText}` },
+        meta: { status: response.status },
+      };
+    }
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        data: { status: "idle" },
+        error: { code: "request_timeout", message: "请求超时" },
+        meta: { aborted: true },
+      };
+    }
+    return {
+      data: { status: "idle" },
+      error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" },
+      meta: {},
+    };
+  }
+}
+
+export async function getHyperoptResult(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<HyperoptJob>> {
+  return fetchJson<HyperoptJob>(`/hyperopt/result/${jobId}`, undefined, signal);
+}
