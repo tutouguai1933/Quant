@@ -302,7 +302,10 @@ class FreqtradeRestClient:
         """读取账户余额列表。"""
 
         payload = self._request_json("GET", "/api/v1/balance", auth=True)
+        # Freqtrade balance API 返回 "currencies" 字段，需要特殊处理
         items = _payload_items(payload, "balances")
+        if not items:
+            items = _payload_items(payload, "currencies")
         return [dict(item) for item in items]
 
     def _get_positions(self) -> list[dict[str, object]]:
