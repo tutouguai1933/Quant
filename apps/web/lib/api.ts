@@ -852,8 +852,8 @@ export type BacktestWorkspaceModel = {
       key: string;
       label: string;
       value: string;
-      format?: string;
-      tone?: string;
+      format?: "integer" | "decimal" | "percent" | "percent_ratio" | "text" | "status";
+      tone?: "neutral" | "profit_loss" | "risk" | "success" | "warning" | "danger";
     }>;
     charts?: {
       performance?: {
@@ -977,8 +977,8 @@ export type EvaluationWorkspaceModel = {
       key: string;
       label: string;
       value: string;
-      format?: string;
-      tone?: string;
+      format?: "integer" | "decimal" | "percent" | "percent_ratio" | "text" | "status";
+      tone?: "neutral" | "profit_loss" | "risk" | "success" | "warning" | "danger";
     }>;
     charts?: {
       top_candidate_nav?: {
