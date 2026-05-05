@@ -35,12 +35,13 @@ const NAV_GROUPS: NavGroup[] = [
     title: "研究",
     items: [
       { href: "/", label: "工作台" },
-      { href: "/research", label: "模型训练" },
-      { href: "/backtest", label: "回测训练" },
-      { href: "/evaluation", label: "选币回测" },
-      { href: "/features", label: "因子研究" },
-      { href: "/signals", label: "因子挖掘监控" },
+      { href: "/research", label: "模型训练", protected: true },
+      { href: "/backtest", label: "回测训练", protected: true },
+      { href: "/evaluation", label: "选币回测", protected: true },
+      { href: "/features", label: "因子研究", protected: true },
+      { href: "/signals", label: "信号" },
       { href: "/hyperopt", label: "参数优化", protected: true },
+      { href: "/analytics", label: "数据分析" },
     ],
   },
   {
@@ -48,12 +49,14 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/data", label: "数据管理" },
       { href: "/factor-knowledge", label: "因子知识库" },
+      { href: "/config", label: "配置管理" },
     ],
   },
   {
     title: "运营",
     items: [
-      { href: "/strategies", label: "实盘管理", protected: true },
+      { href: "/strategies", label: "策略中心", protected: true },
+      { href: "/ops", label: "运维监控" },
       { href: "/tasks", label: "任务", protected: true },
     ],
   },

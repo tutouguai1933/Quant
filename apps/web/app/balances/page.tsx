@@ -121,8 +121,17 @@ export default function BalancesPage() {
       {/* 余额表格 */}
       <TerminalCard title="资产列表">
         {items.length === 0 ? (
-          <div className="text-center py-10 text-[var(--terminal-muted)]">
-            暂无余额数据，请先连接交易所账户
+          <div className="text-center py-10 space-y-4">
+            <div className="text-[var(--terminal-muted)]">
+              <p className="text-lg mb-2">暂无余额数据</p>
+              <p className="text-sm">请先连接交易所账户或查看执行器状态</p>
+            </div>
+            <a
+              href="/strategies"
+              className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-4 py-2 text-sm text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
+            >
+              查看执行器连接状态
+            </a>
           </div>
         ) : (
           <div className="overflow-x-auto">

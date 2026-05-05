@@ -73,7 +73,7 @@ export default function RiskPage() {
 
   return (
     <TerminalShell
-      breadcrumb="资产 / 风险"
+      breadcrumb="工具 / 风险"
       title="风险"
       subtitle="风险告警与规则明细"
       currentPath="/risk"

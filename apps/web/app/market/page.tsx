@@ -16,6 +16,7 @@ import {
   MarketSnapshotWorkspace,
   MarketSnapshotWorkspaceSkeleton,
 } from "../../components/market-snapshot-workspace";
+import { ErrorBanner } from "../../components/error-banner";
 
 type MarketSnapshotsResponse = Awaited<ReturnType<typeof loadMarketSnapshots>>;
 
@@ -29,6 +30,7 @@ export default function MarketPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [snapshotsPromise, setSnapshotsPromise] = useState<Promise<MarketSnapshotsResponse> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -43,7 +45,11 @@ export default function MarketPage() {
   }, []);
 
   useEffect(() => {
-    setSnapshotsPromise(getMarketSnapshotsSnapshot());
+    const promise = getMarketSnapshotsSnapshot();
+    setSnapshotsPromise(promise);
+    promise.catch((err) => {
+      setError(err instanceof Error ? err.message : "网络请求失败，请稍后重试");
+    });
   }, []);
 
   return (
@@ -63,6 +69,14 @@ export default function MarketPage() {
         </div>
       ) : (
         <>
+          {/* 错误提示 */}
+          {error && (
+            <ErrorBanner
+              message={error}
+              onDismiss={() => setError(null)}
+            />
+          )}
+
           {/* 市场筛选器 */}
           <TerminalCard title="市场筛选">
             <MarketFilterBar />

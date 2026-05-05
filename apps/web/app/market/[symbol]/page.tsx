@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
-import { AppShell } from "../../../components/app-shell";
+import { TerminalShell } from "../../../components/terminal/terminal-shell";
 import { MarketSymbolWorkspace } from "../../../components/market-symbol-workspace";
 import { PageHero } from "../../../components/page-hero";
 import { Button } from "../../../components/ui/button";
@@ -82,10 +82,11 @@ export default function MarketSymbolPage() {
   }, [symbol, normalizedSymbol, interval]);
 
   return (
-    <AppShell
+    <TerminalShell
+      breadcrumb={`市场 / ${normalizedSymbol}`}
       title={normalizedSymbol}
-      subtitle="图表是主角，周期切换、研究判断和执行准备都围绕主图展开。"
-      currentPath="/market"
+      subtitle="K线图表和技术指标"
+      currentPath="/market/[symbol]"
       isAuthenticated={session.isAuthenticated}
     >
       <PageHero
@@ -118,7 +119,7 @@ export default function MarketSymbolPage() {
           <MarketSymbolWorkspace symbol={normalizedSymbol} initialData={chartData} candidate={candidate} />
         )}
       </section>
-    </AppShell>
+    </TerminalShell>
   );
 }
 

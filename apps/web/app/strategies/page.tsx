@@ -177,7 +177,7 @@ export default function StrategiesPage() {
 
   return (
     <TerminalShell
-      breadcrumb="策略 / 策略中心"
+      breadcrumb="运营 / 策略中心"
       title="策略"
       subtitle="策略状态、市场判断、执行结果"
       currentPath="/strategies"

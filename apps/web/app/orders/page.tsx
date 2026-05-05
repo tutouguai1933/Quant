@@ -137,7 +137,7 @@ export default function OrdersPage() {
                 刷新页面
               </button>
               <a
-                href="/strategies"
+                href="/signals"
                 className="inline-flex items-center gap-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)] px-4 py-2 text-sm text-[var(--terminal-text)] hover:bg-[var(--terminal-bg-hover)]"
               >
                 查看策略状态
