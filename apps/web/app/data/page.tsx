@@ -12,7 +12,9 @@ import {
   TerminalShell,
   TerminalCard,
   MetricStrip,
+  InfoBlock,
 } from "../../components/terminal";
+import { asRecord } from "../../lib/utils/helpers";
 import { ConfigCheckboxGrid, ConfigField, ConfigInput, ConfigSelect, WorkbenchConfigCard } from "../../components/workbench-config-card";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -483,15 +485,6 @@ export default function DataPage() {
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
-      <p className="mt-2 text-sm text-[var(--terminal-text)] break-all">{value || "n/a"}</p>
-    </div>
-  );
-}
-
 function buildRefreshHref(symbol: string, interval: string, limit: number): string {
   const query = new URLSearchParams({
     symbol: symbol || "BTCUSDT",
@@ -581,8 +574,4 @@ function formatMoment(value: string) {
 
 function formatOptionalCount(value: number | null) {
   return value === null ? "暂未单独记录" : String(value);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

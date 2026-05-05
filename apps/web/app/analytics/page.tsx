@@ -10,6 +10,7 @@ import {
   TerminalShell,
   TerminalCard,
   MetricStrip,
+  InfoBlock,
 } from "../../components/terminal";
 import { DataTable } from "../../components/data-table";
 import { FeedbackBanner } from "../../components/feedback-banner";
@@ -17,6 +18,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { StatusBadge } from "../../components/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { readFeedback } from "../../lib/feedback";
+import { formatTime, formatPercent, formatDecimal, formatPnl } from "../../lib/utils/helpers";
 import {
   getAnalyticsStatus,
   getAnalyticsStatusFallback,
@@ -42,7 +44,7 @@ import {
   TradePnlDistribution,
   SymbolAttributionPieChart,
   StrategyAttributionPieChart,
-} from "../../components/charts";
+} from "../../components/charts/lazy-charts";
 
 export default function AnalyticsPage() {
   const searchParams = useSearchParams();
@@ -447,15 +449,6 @@ export default function AnalyticsPage() {
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="terminal-card p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-base font-semibold text-foreground">{value}</p>
-    </div>
-  );
-}
-
 function PnlValue({ value }: { value: string }) {
   const num = parseFloat(value);
   const isPositive = num >= 0;
@@ -465,37 +458,6 @@ function PnlValue({ value }: { value: string }) {
       {isPositive ? "+" : ""}{formatDecimal(value)}
     </span>
   );
-}
-
-function formatPnl(value: string): string {
-  const num = parseFloat(value);
-  const sign = num >= 0 ? "+" : "";
-  return `${sign}${formatDecimal(value)}`;
-}
-
-function formatPercent(value: string): string {
-  const num = parseFloat(value);
-  return `${(num * 100).toFixed(1)}%`;
-}
-
-function formatDecimal(value: string): string {
-  const num = parseFloat(value);
-  if (Math.abs(num) < 0.0001) return "0";
-  return num.toFixed(8);
-}
-
-function formatTime(value: string): string {
-  try {
-    const date = new Date(value);
-    return date.toLocaleString("zh-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return value;
-  }
 }
 
 function buildPnlChartData(

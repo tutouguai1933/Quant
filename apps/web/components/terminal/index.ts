@@ -53,3 +53,6 @@ export type { FactorCardProps, FactorCardGridProps } from "./factor-card";
 
 export { TermGrid } from "./term-grid";
 export type { TermGridProps, TermItem } from "./term-grid";
+
+export { InfoBlock } from "./info-block";
+export type { InfoBlockProps } from "./info-block";

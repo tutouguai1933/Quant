@@ -13,7 +13,9 @@ import {
   TerminalShell,
   TerminalCard,
   MetricStrip,
+  InfoBlock,
 } from "../../components/terminal";
+import { asRecord } from "../../lib/utils/helpers";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { FormSubmitButton } from "../../components/form-submit-button";
 import { ResearchCandidateBoard } from "../../components/research-candidate-board";
@@ -359,22 +361,6 @@ function ExperimentCard({
       <p className="text-xs text-[var(--terminal-muted)]">{meta}</p>
     </div>
   );
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
-      <p className="mt-2 text-sm text-[var(--terminal-text)]">{value}</p>
-    </div>
-  );
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
 }
 
 function formatText(value: unknown, fallback: string): string {

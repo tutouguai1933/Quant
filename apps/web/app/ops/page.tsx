@@ -12,6 +12,7 @@ import {
   TerminalShell,
   TerminalCard,
   MetricStrip,
+  InfoBlock,
 } from "../../components/terminal";
 import {
   HealthStatusCard,
@@ -330,15 +331,6 @@ export default function OpsPage() {
         </div>
       )}
     </TerminalShell>
-  );
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
-      <p className="mt-2 text-sm text-[var(--terminal-text)]">{value}</p>
-    </div>
   );
 }
 

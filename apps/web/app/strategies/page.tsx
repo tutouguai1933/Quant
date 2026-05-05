@@ -12,7 +12,9 @@ import {
   TerminalShell,
   TerminalCard,
   MetricStrip,
+  InfoBlock,
 } from "../../components/terminal";
+import { asRecord } from "../../lib/utils/helpers";
 import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { StatusBadge } from "../../components/status-badge";
@@ -416,13 +418,6 @@ function readText(obj: unknown, key: string, fallback: string): string {
   return text.length > 0 ? text : fallback;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
-}
-
 function StrategyCard({ item }: { item: StrategyWorkspaceCard }) {
   const executionHint = formatExecutionHint(item.current_evaluation);
   const researchScore = formatResearchScore(item.research_summary.score);
@@ -489,15 +484,6 @@ function formatRatio(value: string): string {
   const ratio = parseFloat(value);
   if (isNaN(ratio)) return "0";
   return `${(ratio * 100).toFixed(0)}`;
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-[var(--terminal-border)]/60 bg-[var(--terminal-bg)]/30 p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
-      <p className="mt-2 text-sm text-[var(--terminal-text)]">{value}</p>
-    </div>
-  );
 }
 
 function EntryScoreDigest({
