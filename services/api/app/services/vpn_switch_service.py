@@ -61,8 +61,8 @@ class NodeHealthStatus(str, Enum):
 class VPNConfig:
     """VPN切换配置。"""
 
-    mihomo_api_url: str = "http://mihomo:9090"
-    mihomo_proxy_url: str = "http://mihomo:7890"
+    mihomo_api_url: str = "http://127.0.0.1:9090"
+    mihomo_proxy_url: str = "http://127.0.0.1:7890"
     health_check_url: str = "https://api.binance.com/api/v3/ping"
     health_check_timeout: float = 10.0
     health_check_interval: int = 60  # 秒
@@ -73,8 +73,9 @@ class VPNConfig:
     @classmethod
     def from_env(cls) -> "VPNConfig":
         """从环境变量读取配置。"""
-        mihomo_api_url = os.getenv("QUANT_MIHOMO_API_URL", "http://mihomo:9090")
-        mihomo_proxy_url = os.getenv("QUANT_MIHOMO_PROXY_URL", "http://mihomo:7890")
+        # 使用 localhost 而非 mihomo，因为容器使用 host 网络模式
+        mihomo_api_url = os.getenv("QUANT_MIHOMO_API_URL", "http://127.0.0.1:9090")
+        mihomo_proxy_url = os.getenv("QUANT_MIHOMO_PROXY_URL", "http://127.0.0.1:7890")
         health_check_url = os.getenv("QUANT_VPN_HEALTH_CHECK_URL", "https://api.binance.com/api/v3/ping")
         health_check_timeout = float(os.getenv("QUANT_VPN_HEALTH_CHECK_TIMEOUT", "10.0"))
         health_check_interval = int(os.getenv("QUANT_VPN_HEALTH_CHECK_INTERVAL", "60"))
