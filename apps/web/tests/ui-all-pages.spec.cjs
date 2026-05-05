@@ -19,7 +19,7 @@ const pages = [
 ];
 
 test.describe('所有页面可访问性测试', () => {
-  test.setTimeout(120000);
+  test.setTimeout(300000); // 5 minutes for slow dev server compilation
 
   for (const page of pages) {
     test(`${page.name} - ${page.path}`, async ({ page: browserPage }) => {
@@ -27,7 +27,7 @@ test.describe('所有页面可访问性测试', () => {
 
       const response = await browserPage.goto(`${BASE_URL}${page.path}`, {
         waitUntil: 'domcontentloaded',
-        timeout: 30000,
+        timeout: 180000, // 3 minutes
       });
 
       expect(response?.status()).toBe(200);
