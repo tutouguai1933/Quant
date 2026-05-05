@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -20,6 +21,9 @@ from services.worker.qlib_runner import QlibRunner
 
 class ResearchService:
     """负责研究层读写和最小结果转换。"""
+
+    # 缓存 TTL（秒）
+    _CACHE_TTL: float = 5.0
 
     def __init__(
         self,
@@ -36,9 +40,27 @@ class ResearchService:
         self._workbench_config_reader = workbench_config_reader or workbench_config_service.get_config
         self._runtime_override_provider = runtime_override_provider or workbench_config_service.get_research_runtime_overrides
         self._market_cache: dict[tuple[str, str, int, tuple[str, ...]], list[dict[str, object]]] = {}
+        # 结果缓存
+        self._latest_result_cache: dict[str, object] | None = None
+        self._latest_result_cache_time: float = 0
+        self._factory_report_cache: dict[str, object] | None = None
+        self._factory_report_cache_time: float = 0
 
     def get_latest_result(self) -> dict[str, object]:
-        """返回最近一次研究结果。"""
+        """返回最近一次研究结果（带缓存）。"""
+
+        # 检查缓存
+        now = time.time()
+        if self._latest_result_cache is not None and (now - self._latest_result_cache_time) < self._CACHE_TTL:
+            return self._latest_result_cache
+
+        result = self._compute_latest_result()
+        self._latest_result_cache = result
+        self._latest_result_cache_time = now
+        return result
+
+    def _compute_latest_result(self) -> dict[str, object]:
+        """计算最近一次研究结果（无缓存）。"""
 
         config = self._load_runtime_config()
         if getattr(config, "status", "") != "ready":
@@ -139,11 +161,19 @@ class ResearchService:
         return ResearchFactoryService(result_provider=self.get_latest_result).get_symbol_snapshot(symbol)
 
     def get_factory_report(self) -> dict[str, object]:
-        """返回统一研究报告。"""
+        """返回统一研究报告（带缓存）。"""
+
+        # 检查缓存
+        now = time.time()
+        if self._factory_report_cache is not None and (now - self._factory_report_cache_time) < self._CACHE_TTL:
+            return self._factory_report_cache
 
         from services.api.app.services.research_factory_service import ResearchFactoryService
 
-        return ResearchFactoryService(result_provider=self.get_latest_result).build_report()
+        report = ResearchFactoryService(result_provider=self.get_latest_result).build_report()
+        self._factory_report_cache = report
+        self._factory_report_cache_time = now
+        return report
 
     def get_research_recommendation(self) -> dict[str, object] | None:
         """返回当前最值得继续进入执行链的研究候选。"""

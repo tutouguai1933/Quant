@@ -1035,16 +1035,33 @@ def _default_config() -> dict[str, object]:
 class WorkbenchConfigService:
     """管理工作台统一配置。"""
 
+    # 缓存 TTL（秒）
+    _CACHE_TTL: float = 10.0
+
     def __init__(self, *, config_path: Path | None = None) -> None:
         self._config_path = config_path or Path(
             (os.getenv("QUANT_WORKBENCH_CONFIG_PATH") or str(DEFAULT_WORKBENCH_CONFIG_PATH)).strip()
         ).expanduser()
+        # 缓存
+        self._config_cache: dict[str, object] | None = None
+        self._config_cache_time: float = 0
+        self._controls_cache: dict[str, object] | None = None
+        self._controls_cache_time: float = 0
 
     def get_config(self) -> dict[str, object]:
-        """读取当前配置。"""
+        """读取当前配置（带缓存）。"""
+
+        import time
+
+        now = time.time()
+        if self._config_cache is not None and (now - self._config_cache_time) < self._CACHE_TTL:
+            return self._config_cache
 
         payload = self._read_config_file()
-        return self._normalize_config(payload)
+        result = self._normalize_config(payload)
+        self._config_cache = result
+        self._config_cache_time = now
+        return result
 
     def update_section(self, section: str, values: dict[str, object]) -> dict[str, object]:
         """更新某一段配置。"""
@@ -1213,7 +1230,13 @@ class WorkbenchConfigService:
         cursor[path[-1]] = value
 
     def build_workspace_controls(self) -> dict[str, object]:
-        """返回给前端工作台使用的配置和选项。"""
+        """返回给前端工作台使用的配置和选项（带缓存）。"""
+
+        import time
+
+        now = time.time()
+        if self._controls_cache is not None and (now - self._controls_cache_time) < self._CACHE_TTL:
+            return self._controls_cache
 
         config = self.get_config()
         feature_categories = {
@@ -1230,7 +1253,7 @@ class WorkbenchConfigService:
             for item in list(FEATURE_PROTOCOL.get("factors") or [])
             if isinstance(item, dict)
         ]
-        return {
+        result = {
             "config": config,
             "options": {
                 "timeframes": list(SUPPORTED_TIMEFRAMES),
@@ -1275,6 +1298,9 @@ class WorkbenchConfigService:
                 "all_factors": all_factors,
             },
         }
+        self._controls_cache = result
+        self._controls_cache_time = now
+        return result
 
     def build_candidate_scope_contract(self, config: dict[str, object] | None = None) -> dict[str, object]:
         """返回统一候选池与 live 子集契约。"""
