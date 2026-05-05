@@ -38,6 +38,8 @@ type PatrolStatus = {
   next_scheduled_at?: string;
   schedule_enabled: boolean;
   interval_minutes: number;
+  last_run_at?: string;
+  last_run_status?: string;
 };
 
 type PatrolSchedule = {
@@ -45,6 +47,10 @@ type PatrolSchedule = {
   interval_minutes: number;
   next_run_at?: string;
   last_run_at?: string;
+  last_run_status?: string;
+  total_runs?: number;
+  failed_runs?: number;
+  success_rate?: number;
 };
 
 export default function OpsPage() {
@@ -133,7 +139,7 @@ export default function OpsPage() {
 
   const handleStartPatrol = async () => {
     try {
-      const response = await fetch(await resolveControlPlaneUrl("/api/v1/patrol/start"), {
+      const response = await fetch(await resolveControlPlaneUrl("/patrol/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -147,7 +153,7 @@ export default function OpsPage() {
 
   const handleStopPatrol = async () => {
     try {
-      const response = await fetch(await resolveControlPlaneUrl("/api/v1/patrol/stop"), {
+      const response = await fetch(await resolveControlPlaneUrl("/patrol/stop"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -350,7 +356,7 @@ function formatTime(value: string): string {
 
 async function fetchHealthStatus(signal?: AbortSignal): Promise<{ data: HealthServiceStatus | null; error: { code: string; message: string } | null }> {
   try {
-    const response = await fetch(await resolveControlPlaneUrl("/api/v1/health"), {
+    const response = await fetch(await resolveControlPlaneUrl("/health"), {
       headers: { Accept: "application/json" },
       cache: "no-store",
       signal,
@@ -374,67 +380,90 @@ async function fetchHealthStatus(signal?: AbortSignal): Promise<{ data: HealthSe
 }
 
 async function fetchAlerts(signal?: AbortSignal): Promise<{ data: { alerts: AlertItem[] } | null; error: { code: string; message: string } | null }> {
+  // Use performance/alerts endpoint for slow endpoint alerts
   try {
-    const response = await fetch(await resolveControlPlaneUrl("/api/v1/alerts?limit=20"), {
+    const response = await fetch(await resolveControlPlaneUrl("/performance/alerts"), {
       headers: { Accept: "application/json" },
       cache: "no-store",
       signal,
     });
 
     if (!response.ok) {
-      return { data: null, error: { code: `http_${response.status}`, message: `告警请求失败: ${response.statusText}` } };
+      return { data: { alerts: [] }, error: null };
     }
 
     const json = await response.json();
-    return { data: json.data || { alerts: [] }, error: null };
+    // Convert slow_endpoints to alerts format if present
+    const slowEndpoints = json.data?.slow_endpoints || [];
+    const alerts: AlertItem[] = slowEndpoints.map((endpoint: { endpoint: string; avg_ms: number }) => ({
+      id: `slow-${endpoint.endpoint}`,
+      level: "warning",
+      message: `端点 ${endpoint.endpoint} 响应缓慢 (${endpoint.avg_ms.toFixed(0)}ms)`,
+      source: "performance",
+      created_at: new Date().toISOString(),
+    }));
+    return { data: { alerts }, error: null };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      return { data: null, error: { code: "request_timeout", message: "请求超时" } };
-    }
-    return { data: null, error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" } };
+    // Return empty alerts on error instead of failing
+    return { data: { alerts: [] }, error: null };
   }
 }
 
 async function fetchPatrolStatus(signal?: AbortSignal): Promise<{ data: { status: PatrolStatus } | null; error: { code: string; message: string } | null }> {
+  // Use patrol/schedule endpoint which returns status info
   try {
-    const response = await fetch(await resolveControlPlaneUrl("/api/v1/patrol/status"), {
+    const response = await fetch(await resolveControlPlaneUrl("/patrol/schedule"), {
       headers: { Accept: "application/json" },
       cache: "no-store",
       signal,
     });
 
     if (!response.ok) {
-      return { data: null, error: { code: `http_${response.status}`, message: `巡检状态请求失败: ${response.statusText}` } };
+      return { data: { status: { is_running: false, schedule_enabled: false, interval_minutes: 60 } }, error: null };
     }
 
     const json = await response.json();
-    return { data: json.data || { status: { is_running: false, schedule_enabled: false, interval_minutes: 60 } }, error: null };
+    // patrol/schedule returns status directly
+    const status: PatrolStatus = {
+      is_running: json.running || false,
+      schedule_enabled: json.running || false,
+      interval_minutes: json.interval_minutes || 60,
+      last_run_at: json.last_run_at,
+      last_run_status: json.last_run_status,
+    };
+    return { data: { status }, error: null };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      return { data: null, error: { code: "request_timeout", message: "请求超时" } };
-    }
-    return { data: null, error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" } };
+    // Return default status on error
+    return { data: { status: { is_running: false, schedule_enabled: false, interval_minutes: 60 } }, error: null };
   }
 }
 
 async function fetchPatrolSchedule(signal?: AbortSignal): Promise<{ data: { schedule: PatrolSchedule } | null; error: { code: string; message: string } | null }> {
   try {
-    const response = await fetch(await resolveControlPlaneUrl("/api/v1/patrol/schedule"), {
+    const response = await fetch(await resolveControlPlaneUrl("/patrol/schedule"), {
       headers: { Accept: "application/json" },
       cache: "no-store",
       signal,
     });
 
     if (!response.ok) {
-      return { data: null, error: { code: `http_${response.status}`, message: `巡检计划请求失败: ${response.statusText}` } };
+      return { data: { schedule: { enabled: false, interval_minutes: 60 } }, error: null };
     }
 
     const json = await response.json();
-    return { data: json.data || { schedule: { enabled: false, interval_minutes: 60 } }, error: null };
+    // patrol/schedule returns status directly
+    const schedule: PatrolSchedule = {
+      enabled: json.running || false,
+      interval_minutes: json.interval_minutes || 60,
+      last_run_at: json.last_run_at,
+      last_run_status: json.last_run_status,
+      total_runs: json.total_runs,
+      failed_runs: json.failed_runs,
+      success_rate: json.success_rate,
+    };
+    return { data: { schedule }, error: null };
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      return { data: null, error: { code: "request_timeout", message: "请求超时" } };
-    }
-    return { data: null, error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" } };
+    // Return default schedule on error
+    return { data: { schedule: { enabled: false, interval_minutes: 60 } }, error: null };
   }
 }

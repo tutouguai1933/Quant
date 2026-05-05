@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 
 from services.api.app.core.settings import Settings
 from services.api.app.adapters.freqtrade.client import freqtrade_client
+from services.api.app.services.auth_service import auth_service
 
 
 router = APIRouter(prefix="/api/v1/hyperopt", tags=["hyperopt"])
@@ -84,8 +85,12 @@ def start_hyperopt(
     spaces: list[str] | None = None,
     timeframe: str = "1h",
     timerange: str | None = None,
+    token: str = "",
+    authorization: str = Header(""),
 ) -> dict:
-    """启动参数优化。"""
+    """启动参数优化。需要控制平面认证。"""
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     global _job_counter, _hyperopt_status
 
     if spaces is None:
@@ -141,8 +146,10 @@ def start_hyperopt(
 
 
 @router.post("/stop")
-def stop_hyperopt() -> dict:
-    """停止参数优化。"""
+def stop_hyperopt(token: str = "", authorization: str = Header("")) -> dict:
+    """停止参数优化。需要控制平面认证。"""
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     global _hyperopt_status
 
     settings = Settings.from_env()

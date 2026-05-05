@@ -3,10 +3,11 @@
 提供巡检调度启动、停止、状态查询等控制接口。
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
 from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
+from services.api.app.services.auth_service import auth_service
 
 router = APIRouter(prefix="/api/v1/patrol", tags=["patrol"])
 
@@ -27,8 +28,12 @@ class PatrolResponse(BaseModel):
 
 
 @router.post("/start", response_model=PatrolResponse)
-def start_patrol(request: StartPatrolRequest = StartPatrolRequest()):
-    """启动定时巡检。
+def start_patrol(
+    request: StartPatrolRequest = StartPatrolRequest(),
+    token: str = "",
+    authorization: str = Header(""),
+):
+    """启动定时巡检。需要控制平面认证。
 
     Args:
         request: 启动请求，包含巡检间隔分钟数
@@ -36,6 +41,8 @@ def start_patrol(request: StartPatrolRequest = StartPatrolRequest()):
     Returns:
         启动结果，包含当前调度状态
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     try:
         result = scheduled_patrol_service.start_schedule(
             interval_minutes=request.interval_minutes,
@@ -51,12 +58,14 @@ def start_patrol(request: StartPatrolRequest = StartPatrolRequest()):
 
 
 @router.post("/stop", response_model=PatrolResponse)
-def stop_patrol():
-    """停止定时巡检。
+def stop_patrol(token: str = "", authorization: str = Header("")):
+    """停止定时巡检。需要控制平面认证。
 
     Returns:
         停止结果，包含当前调度状态
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     try:
         result = scheduled_patrol_service.stop_schedule()
         return PatrolResponse(
@@ -90,8 +99,8 @@ def get_patrol_schedule():
 
 
 @router.post("/run-now", response_model=PatrolResponse)
-def run_patrol_now(patrol_type: str = "full"):
-    """立即执行一次巡检（不依赖调度状态）。
+def run_patrol_now(patrol_type: str = "full", token: str = "", authorization: str = Header("")):
+    """立即执行一次巡检（不依赖调度状态）。需要控制平面认证。
 
     Args:
         patrol_type: 巡检类型，可选 "health_check", "state_sync", "cycle_check", "vpn_check", "auto_dispatch", "full"
@@ -99,6 +108,8 @@ def run_patrol_now(patrol_type: str = "full"):
     Returns:
         巡检执行结果
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     try:
         result = scheduled_patrol_service.run_patrol_now(patrol_type=patrol_type)
         return PatrolResponse(

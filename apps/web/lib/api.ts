@@ -1114,7 +1114,17 @@ export const AUTH_STORAGE_KEY = "quant_admin_token";
 export const DEFAULT_API_TIMEOUT = 10000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY_BASE = 500; // ms
-const PROTECTED_ROUTE_PATHS = ["/strategies", "/tasks", "/risk"];
+const PROTECTED_ROUTE_PATHS = [
+  "/strategies",
+  "/tasks",
+  "/risk",
+  "/research",
+  "/backtest",
+  "/evaluation",
+  "/features",
+  "/hyperopt",
+  "/config",
+];
 
 /* 业务错误 code 列表：这些是正常的业务状态，不应该触发降级模式 */
 const BUSINESS_ERROR_CODES = [
@@ -1177,7 +1187,10 @@ async function resolveControlPlaneBaseUrl(request?: Request): Promise<string> {
 
 export async function resolveControlPlaneUrl(path: string, request?: Request): Promise<string> {
   const baseUrl = await resolveControlPlaneBaseUrl(request);
-  return `${baseUrl}${path}`;
+  // Normalize path: remove leading /api/v1 if baseUrl already ends with it
+  // This prevents double prefix like /api/v1/api/v1/...
+  const normalizedPath = path.replace(/^\/api\/v1(\/|$)/, "/");
+  return `${baseUrl}${normalizedPath}`;
 }
 
 function deriveLocalApiBaseUrl(request?: Request): string | null {
@@ -1235,7 +1248,9 @@ export function buildUpstreamApiUrl(path: string, request?: Request): string {
     /\/$/,
     "",
   );
-  return `${configuredBaseUrl}${path}`;
+  // Normalize path: remove leading /api/v1 if baseUrl already ends with it
+  const normalizedPath = path.replace(/^\/api\/v1(\/|$)/, "/");
+  return `${configuredBaseUrl}${normalizedPath}`;
 }
 
 /* 构建当前主机下的控制代理地址。 */

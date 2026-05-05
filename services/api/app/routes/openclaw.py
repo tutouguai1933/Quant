@@ -1,6 +1,6 @@
 """Openclaw 快照和安全动作 API 路由。"""
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 
 from services.api.app.services.openclaw_snapshot_service import OpenclawSnapshotService
@@ -11,6 +11,7 @@ from services.api.app.services.strategy_dispatch_service import strategy_dispatc
 from services.api.app.services.automation_workflow_service import automation_workflow_service
 from services.api.app.services.openclaw_audit_service import openclaw_audit_service
 from services.api.app.services.openclaw_restart_history_service import openclaw_restart_history_service
+from services.api.app.services.auth_service import auth_service
 
 
 router = APIRouter(prefix="/api/v1/openclaw", tags=["openclaw"])
@@ -56,8 +57,10 @@ def get_snapshot(
 def execute_action(
     request: ExecuteActionRequest,
     service: OpenclawActionService = Depends(get_action_service),
+    token: str = "",
+    authorization: str = Header(""),
 ):
-    """执行安全动作。
+    """执行安全动作。需要控制平面认证。
 
     支持的动作包括：
     - automation_run_cycle: 运行一轮自动化
@@ -66,6 +69,8 @@ def execute_action(
     - system_restart_web: 重启 Web 服务
     - system_restart_freqtrade: 重启 Freqtrade 服务
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     try:
         result = service.execute_action(
             action=request.action,
@@ -116,8 +121,8 @@ def get_restart_history():
 
 
 @router.post("/patrol")
-def execute_patrol(patrol_type: str = "full"):
-    """执行一轮巡检。
+def execute_patrol(patrol_type: str = "full", token: str = "", authorization: str = Header("")):
+    """执行一轮巡检。需要控制平面认证。
 
     Args:
         patrol_type: 巡检类型，可选 "health_check", "state_sync", "cycle_check", "full"
@@ -126,6 +131,8 @@ def execute_patrol(patrol_type: str = "full"):
     Returns:
         巡检结果，包含执行的动作列表
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     try:
         result = openclaw_patrol_service.patrol(patrol_type=patrol_type)
         return result

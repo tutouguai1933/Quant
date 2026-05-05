@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 try:
-    from fastapi import APIRouter
+    from fastapi import APIRouter, Header
 except ImportError:
     class APIRouter:  # pragma: no cover - lightweight local fallback
         def __init__(self, *args, **kwargs) -> None:
@@ -21,6 +21,11 @@ except ImportError:
                 return func
 
             return decorator
+
+    def Header(default=""):  # pragma: no cover
+        return default
+
+from services.api.app.services.auth_service import auth_service
 
 
 router = APIRouter(tags=["health"])
@@ -111,8 +116,8 @@ def get_service_health(service: str) -> dict:
 
 
 @router.post("/api/v1/health/monitoring/start")
-def start_monitoring(interval_seconds: int = 60) -> dict:
-    """启动健康监控。
+def start_monitoring(interval_seconds: int = 60, token: str = "", authorization: str = Header("")) -> dict:
+    """启动健康监控。需要控制平面认证。
 
     Args:
         interval_seconds: 监控间隔（秒），默认60
@@ -120,6 +125,8 @@ def start_monitoring(interval_seconds: int = 60) -> dict:
     Returns:
         启动结果
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     from services.api.app.services.health_monitor_service import health_monitor_service
 
     try:
@@ -136,12 +143,14 @@ def start_monitoring(interval_seconds: int = 60) -> dict:
 
 
 @router.post("/api/v1/health/monitoring/stop")
-def stop_monitoring() -> dict:
-    """停止健康监控。
+def stop_monitoring(token: str = "", authorization: str = Header("")) -> dict:
+    """停止健康监控。需要控制平面认证。
 
     Returns:
         停止结果
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     from services.api.app.services.health_monitor_service import health_monitor_service
 
     try:
@@ -206,8 +215,8 @@ def get_log_status() -> dict:
 
 
 @router.post("/api/v1/logs/cleanup")
-def trigger_cleanup(days_to_keep: int = 30) -> dict:
-    """手动触发日志清理。
+def trigger_cleanup(days_to_keep: int = 30, token: str = "", authorization: str = Header("")) -> dict:
+    """手动触发日志清理。需要控制平面认证。
 
     Args:
         days_to_keep: 保留的日志天数，默认 30 天
@@ -215,6 +224,8 @@ def trigger_cleanup(days_to_keep: int = 30) -> dict:
     Returns:
         清理结果
     """
+    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+
     if days_to_keep < 1:
         return _error("days_to_keep 必须大于 0", "INVALID_DAYS")
 

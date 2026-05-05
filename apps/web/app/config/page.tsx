@@ -119,12 +119,12 @@ export default function ConfigPage({}: PageProps) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    // Fetch schema and all config
+    // Fetch schema and all config via /api/control proxy
     Promise.all([
-      fetch("/api/v1/config/schema", { signal: controller.signal })
+      fetch("/api/control/config/schema", { signal: controller.signal })
         .then((res) => res.json())
         .then((data) => data.error ? null : data.data),
-      fetch("/api/v1/config", { signal: controller.signal })
+      fetch("/api/control/config", { signal: controller.signal })
         .then((res) => res.json())
         .then((data) => data.error ? null : data.data),
     ])
