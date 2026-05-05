@@ -29,6 +29,7 @@ import {
 } from "../../lib/api";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { LoadingBanner } from "../../components/loading-banner";
+import { ErrorBanner } from "../../components/error-banner";
 
 /* 快速时间区间 */
 const QUICK_DATE_RANGES = [
@@ -62,6 +63,7 @@ export default function FeaturesPage() {
   });
   const [workspace, setWorkspace] = useState<FeatureWorkspaceModel>(getFeatureWorkspaceFallback());
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // 表单状态
   const [selectedFactor, setSelectedFactor] = useState("mom_20");
@@ -89,13 +91,18 @@ export default function FeaturesPage() {
     getFeatureWorkspace(controller.signal)
       .then((response) => {
         clearTimeout(timeoutId);
-        if (!response.error) {
+        if (response.error) {
+          setError(`加载数据失败: ${response.error.message}`);
+        } else {
           setWorkspace(response.data.item);
         }
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
         clearTimeout(timeoutId);
+        if (err.name !== "AbortError") {
+          setError("网络请求失败，请检查网络连接");
+        }
         setIsLoading(false);
       });
 
@@ -197,6 +204,7 @@ export default function FeaturesPage() {
     >
       <FeedbackBanner feedback={feedback} />
       {isLoading && <LoadingBanner />}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       {/* 顶部参数条 */}
       <ControlPanel title="参数配置">

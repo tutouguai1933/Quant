@@ -25,6 +25,7 @@ import {
   getEvaluationWorkspaceFallback,
   type EvaluationWorkspaceModel,
 } from "../../lib/api";
+import { ErrorBanner } from "../../components/error-banner";
 
 /* 快速时间区间 */
 const QUICK_DATE_RANGES = [

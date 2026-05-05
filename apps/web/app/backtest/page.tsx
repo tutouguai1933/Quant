@@ -31,6 +31,7 @@ import {
 } from "../../lib/api";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { LoadingBanner } from "../../components/loading-banner";
+import { ErrorBanner } from "../../components/error-banner";
 
 /* 快速时间区间 */
 const QUICK_DATE_RANGES = [
@@ -62,6 +63,7 @@ export default function BacktestPage() {
   });
   const [workspace, setWorkspace] = useState<BacktestWorkspaceModel>(getBacktestWorkspaceFallback());
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // 表单状态
   const [symbol, setSymbol] = useState("BTCUSDT");
@@ -88,10 +90,12 @@ export default function BacktestPage() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    getBacktestWorkspace()
+    getBacktestWorkspace(controller.signal)
       .then((response) => {
         clearTimeout(timeoutId);
-        if (!response.error) {
+        if (response.error) {
+          setError(`加载数据失败: ${response.error.message}`);
+        } else {
           setWorkspace(response.data.item);
           // 初始化表单
           if (response.data.item.overview.recommended_symbol) {
@@ -100,8 +104,11 @@ export default function BacktestPage() {
         }
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
         clearTimeout(timeoutId);
+        if (err.name !== "AbortError") {
+          setError("网络请求失败，请检查网络连接");
+        }
         setIsLoading(false);
       });
 
@@ -206,6 +213,7 @@ export default function BacktestPage() {
     >
       <FeedbackBanner feedback={feedback} />
       {isLoading && <LoadingBanner />}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       {/* 主布局：左侧参数栏 + 右侧内容 */}
       <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">

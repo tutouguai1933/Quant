@@ -557,3 +557,228 @@ def _recent_high(values: list[Decimal], lookback: int) -> Decimal:
     if not values:
         return Decimal("0")
     return max(values[-lookback:])
+
+
+def evaluate_factor_ic_series(
+    rows: list[dict[str, object]],
+    factor_names: list[str] | None = None,
+) -> list[dict[str, object]]:
+    """计算因子 IC 时间序列。
+
+    Args:
+        rows: 带因子值和未来收益的样本行
+        factor_names: 要计算的因子名称列表，默认为主因子
+
+    Returns:
+        IC 时间序列列表，每条记录包含 date, factor, ic, rank_ic, cumulative_ic
+    """
+    if not rows:
+        return []
+
+    # 默认使用所有主因子
+    if factor_names is None:
+        factor_names = list(PRIMARY_FEATURE_COLUMNS)
+
+    if len(rows) < 10:
+        return []
+
+    ic_series: list[dict[str, object]] = []
+
+    # 按时间分组计算 IC
+    # 首先按日期分组
+    rows_by_date: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        generated_at = row.get("generated_at")
+        if generated_at is None:
+            continue
+        try:
+            from datetime import datetime, timezone
+            ts = int(generated_at) / 1000
+            date_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        except (TypeError, ValueError, OSError):
+            continue
+
+        if date_str not in rows_by_date:
+            rows_by_date[date_str] = []
+        rows_by_date[date_str].append(row)
+
+    # 对每个日期的每个因子计算 IC
+    cumulative_ic: dict[str, float] = {factor: 0.0 for factor in factor_names}
+
+    for date_str in sorted(rows_by_date.keys()):
+        date_rows = rows_by_date[date_str]
+        if len(date_rows) < 5:  # 样本太少跳过
+            continue
+
+        for factor in factor_names:
+            factor_values = [_to_float_local(row.get(factor)) for row in date_rows]
+            future_returns = [_to_float_local(row.get("future_return_pct")) for row in date_rows]
+
+            # 计算 IC（皮尔逊相关系数）
+            ic = _compute_ic(factor_values, future_returns)
+
+            # 计算 Rank IC（秩相关系数）
+            rank_ic = _compute_rank_ic(factor_values, future_returns)
+
+            # 累积 IC
+            cumulative_ic[factor] += ic
+
+            ic_series.append({
+                "date": date_str,
+                "factor": factor,
+                "ic": round(ic, 4),
+                "rank_ic": round(rank_ic, 4),
+                "cumulative_ic": round(cumulative_ic[factor], 4),
+            })
+
+    return ic_series
+
+
+def evaluate_factor_quantile_nav(
+    rows: list[dict[str, object]],
+    factor_name: str = "ema20_gap_pct",
+    num_quantiles: int = 5,
+) -> list[dict[str, object]]:
+    """计算因子分组收益序列。
+
+    Args:
+        rows: 带因子值和未来收益的样本行
+        factor_name: 要分析的因子名称
+        num_quantiles: 分组数量，默认 5
+
+    Returns:
+        分组收益序列列表，每条记录包含 date, q1-q5 净值, long_short 收益差
+    """
+    if not rows or len(rows) < 20:
+        return []
+
+    quantile_nav: list[dict[str, object]] = []
+
+    # 按日期分组
+    rows_by_date: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        generated_at = row.get("generated_at")
+        if generated_at is None:
+            continue
+        try:
+            from datetime import datetime, timezone
+            ts = int(generated_at) / 1000
+            date_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+        except (TypeError, ValueError, OSError):
+            continue
+
+        if date_str not in rows_by_date:
+            rows_by_date[date_str] = []
+        rows_by_date[date_str].append(row)
+
+    # 初始化各分组的净值
+    quantile_navs = {f"q{i}": 1.0 for i in range(1, num_quantiles + 1)}
+
+    # 对每个日期计算分组收益
+    for date_str in sorted(rows_by_date.keys()):
+        date_rows = rows_by_date[date_str]
+        if len(date_rows) < num_quantiles:
+            continue
+
+        # 按因子值排序并分组
+        sorted_rows = sorted(date_rows, key=lambda r: _to_float_local(r.get(factor_name)))
+        group_size = len(sorted_rows) // num_quantiles
+
+        if group_size < 1:
+            continue
+
+        # 计算各分组的平均收益
+        group_returns: list[float] = []
+        for i in range(num_quantiles):
+            start_idx = i * group_size
+            end_idx = start_idx + group_size if i < num_quantiles - 1 else len(sorted_rows)
+            group_rows = sorted_rows[start_idx:end_idx]
+            if not group_rows:
+                group_returns.append(0.0)
+                continue
+            avg_return = sum(_to_float_local(r.get("future_return_pct")) for r in group_rows) / len(group_rows)
+            group_returns.append(avg_return)
+
+        # 更新净值
+        for i, ret in enumerate(group_returns):
+            key = f"q{i + 1}"
+            quantile_navs[key] *= 1 + (ret / 100.0)
+
+        # 计算多空收益（最高分组 - 最低分组）
+        long_short = group_returns[-1] - group_returns[0] if group_returns else 0.0
+
+        quantile_nav.append({
+            "date": date_str,
+            "q1": round(quantile_navs["q1"], 4),
+            "q2": round(quantile_navs["q2"], 4),
+            "q3": round(quantile_navs["q3"], 4),
+            "q4": round(quantile_navs["q4"], 4),
+            "q5": round(quantile_navs["q5"], 4),
+            "long_short": round(long_short, 4),
+        })
+
+    return quantile_nav
+
+
+def _to_float_local(value: object) -> float:
+    """把任意值尽量转成 float。"""
+    try:
+        return float(Decimal(str(value)))
+    except (TypeError, ValueError, InvalidOperation):
+        return 0.0
+
+
+def _compute_ic(x: list[float], y: list[float]) -> float:
+    """计算皮尔逊相关系数（IC）。"""
+    if not x or not y or len(x) != len(y):
+        return 0.0
+
+    n = len(x)
+    if n < 2:
+        return 0.0
+
+    mean_x = sum(x) / n
+    mean_y = sum(y) / n
+
+    covariance = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(n))
+    variance_x = sum((x[i] - mean_x) ** 2 for i in range(n))
+    variance_y = sum((y[i] - mean_y) ** 2 for i in range(n))
+
+    if variance_x == 0 or variance_y == 0:
+        return 0.0
+
+    return covariance / ((variance_x ** 0.5) * (variance_y ** 0.5))
+
+
+def _compute_rank_ic(x: list[float], y: list[float]) -> float:
+    """计算秩相关系数（Rank IC）。"""
+    if not x or not y or len(x) != len(y):
+        return 0.0
+
+    n = len(x)
+    if n < 2:
+        return 0.0
+
+    # 计算秩
+    def compute_ranks(values: list[float]) -> list[int]:
+        sorted_pairs = sorted(enumerate(values), key=lambda p: p[1])
+        ranks = [0] * n
+        for rank, (idx, _) in enumerate(sorted_pairs):
+            ranks[idx] = rank + 1
+        return ranks
+
+    ranks_x = compute_ranks(x)
+    ranks_y = compute_ranks(y)
+
+    # 计算秩相关系数
+    mean_rx = sum(ranks_x) / n
+    mean_ry = sum(ranks_y) / n
+
+    covariance = sum((ranks_x[i] - mean_rx) * (ranks_y[i] - mean_ry) for i in range(n))
+    variance_x = sum((ranks_x[i] - mean_rx) ** 2 for i in range(n))
+    variance_y = sum((ranks_y[i] - mean_ry) ** 2 for i in range(n))
+
+    if variance_x == 0 or variance_y == 0:
+        return 0.0
+
+    return covariance / ((variance_x ** 0.5) * (variance_y ** 0.5))

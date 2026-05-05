@@ -24,6 +24,7 @@ import {
 } from "../lib/api";
 import { FeedbackBanner } from "../components/feedback-banner";
 import { LoadingBanner } from "../components/loading-banner";
+import { ErrorBanner } from "../components/error-banner";
 
 /* 页面主组件 */
 export default function HomePage() {
@@ -37,6 +38,7 @@ export default function HomePage() {
     isAuthenticated: false,
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [automationStatus, setAutomationStatus] = useState(getAutomationStatusFallback().item);
   const [researchRuntime, setResearchRuntime] = useState(getResearchRuntimeStatusFallback());
   const [strategyWorkspace, setStrategyWorkspace] = useState(getStrategyWorkspaceFallback());
@@ -67,20 +69,39 @@ export default function HomePage() {
       .then(([automationRes, runtimeRes, strategyRes]) => {
         clearTimeout(timeoutId);
 
+        const errors: string[] = [];
+
         if (automationRes.status === "fulfilled" && !automationRes.value.error) {
           setAutomationStatus(automationRes.value.data.item);
+        } else if (automationRes.status === "fulfilled" && automationRes.value.error) {
+          errors.push(`自动化状态加载失败: ${automationRes.value.error.message}`);
         }
+
         if (runtimeRes.status === "fulfilled" && !runtimeRes.value.error) {
           setResearchRuntime(runtimeRes.value.data.item);
+        } else if (runtimeRes.status === "fulfilled" && runtimeRes.value.error) {
+          errors.push(`研究运行状态加载失败: ${runtimeRes.value.error.message}`);
         }
+
         if (strategyRes.status === "fulfilled" && !strategyRes.value.error) {
           setStrategyWorkspace(strategyRes.value.data);
+        } else if (strategyRes.status === "fulfilled" && strategyRes.value.error) {
+          errors.push(`策略工作区加载失败: ${strategyRes.value.error.message}`);
+        }
+
+        if (errors.length > 0) {
+          setError(errors.join("; "));
+          console.error("工作台数据加载错误:", errors);
         }
 
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
         clearTimeout(timeoutId);
+        if (err.name !== "AbortError") {
+          setError("网络请求失败，请检查网络连接");
+          console.error("工作台网络错误:", err);
+        }
         setIsLoading(false);
       });
 
@@ -141,6 +162,7 @@ export default function HomePage() {
     >
       <FeedbackBanner feedback={feedback} />
       {isLoading && <LoadingBanner />}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       <div className="space-y-4">
         {/* 系统状态指标 */}

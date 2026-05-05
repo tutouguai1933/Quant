@@ -29,6 +29,9 @@ def run_backtest(
     )
     net_returns = [item - round_trip_cost_pct for item in gross_returns]
 
+    # 计算净值序列
+    performance_series = _build_performance_series(rows, net_returns)
+
     metrics = {
         "total_return_pct": _format_float(sum(net_returns)),
         "gross_return_pct": _format_float(sum(gross_returns)),
@@ -54,6 +57,9 @@ def run_backtest(
             "segment_turnover_mode": "watch_to_action_segments",
         },
         "metrics": metrics,
+        "series": {
+            "performance": performance_series,
+        },
     }
 
 
@@ -65,6 +71,60 @@ def _resolve_cost_pct(*, fee_bps: Decimal, slippage_bps: Decimal, cost_model: st
     if cost_model == "single_side_basis_points":
         return float((fee_bps + slippage_bps) / Decimal("100"))
     return float((fee_bps + slippage_bps) * Decimal("2") / Decimal("100"))
+
+
+def _build_performance_series(
+    rows: list[dict[str, object]],
+    net_returns: list[float],
+) -> list[dict[str, object]]:
+    """构建净值序列数据。
+
+    Args:
+        rows: 原始样本行
+        net_returns: 扣除成本后的净收益列表
+
+    Returns:
+        净值序列列表，包含 date, strategy_nav, benchmark_nav, drawdown_pct
+    """
+    if not rows or not net_returns:
+        return []
+
+    series: list[dict[str, object]] = []
+    strategy_nav = 1.0  # 策略净值，初始为 1
+    benchmark_nav = 1.0  # 基准净值，初始为 1
+    peak_nav = 1.0  # 用于计算回撤的峰值净值
+
+    for index, (row, net_return) in enumerate(zip(rows, net_returns)):
+        # 更新净值
+        strategy_nav *= 1 + (net_return / 100.0)
+        benchmark_nav *= 1 + (0.0 / 100.0)  # 基准净值保持不变或按需调整
+
+        # 更新峰值并计算回撤
+        peak_nav = max(peak_nav, strategy_nav)
+        drawdown_pct = ((strategy_nav / peak_nav) - 1.0) * 100.0
+
+        # 解析日期
+        generated_at = row.get("generated_at")
+        if generated_at is not None:
+            try:
+                from datetime import datetime, timezone
+                ts = int(generated_at) / 1000
+                date_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            except (TypeError, ValueError, OSError):
+                date_str = ""
+        else:
+            date_str = ""
+
+        series.append({
+            "date": date_str,
+            "strategy_nav": round(strategy_nav, 4),
+            "benchmark_nav": round(benchmark_nav, 4),
+            "drawdown_pct": round(drawdown_pct, 4),
+            "daily_return_pct": round(net_return, 4),
+            "turnover": round(_to_float(row.get("turnover", 0)), 4),
+        })
+
+    return series
 
 
 def _max_drawdown_pct(returns: list[float]) -> float:

@@ -595,6 +595,11 @@ export type FeatureWorkspaceModel = {
     category: string;
     role: string;
     description: string;
+    formula: string;
+    why_effective: string;
+    how_to_use: string;
+    pitfalls: string;
+    recommended_with: string;
   }>;
   selection_matrix?: Array<{
     name: string;
@@ -631,7 +636,29 @@ export type FeatureWorkspaceModel = {
     };
     knowledge?: {
       metrics?: Array<{ key: string; label: string; value: string | number }>;
-      factor_cards?: Array<Record<string, unknown>>;
+      factor_cards?: Array<{
+        name: string;
+        category: string;
+        role: string;
+        current_role: string;
+        description: string;
+        formula: string;
+        why_effective: string;
+        how_to_use: string;
+        pitfalls: string;
+        recommended_with: string;
+      }>;
+      factor_details?: Array<{
+        name: string;
+        category: string;
+        role: string;
+        description: string;
+        formula: string;
+        why_effective: string;
+        how_to_use: string;
+        pitfalls: string;
+        recommended_with: string;
+      }>;
     };
   };
 };
@@ -2839,6 +2866,11 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
           category: String(factor.category ?? ""),
           role: String(factor.role ?? ""),
           description: String(factor.description ?? ""),
+          formula: String(factor.formula ?? "暂无公式说明"),
+          why_effective: String(factor.why_effective ?? "暂无有效性说明"),
+          how_to_use: String(factor.how_to_use ?? "暂无使用说明"),
+          pitfalls: String(factor.pitfalls ?? "暂无注意事项"),
+          recommended_with: String(factor.recommended_with ?? "暂无推荐搭配"),
         };
       })
       .filter((value) => value.name.length > 0),

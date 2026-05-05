@@ -36,6 +36,7 @@ import {
 } from "../../lib/api";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { LoadingBanner } from "../../components/loading-banner";
+import { ErrorBanner } from "../../components/error-banner";
 
 /* 模型标签映射 */
 const MODEL_LABELS: Record<string, string> = {
@@ -99,6 +100,7 @@ export default function ResearchPage() {
   const [runtimeStatus, setRuntimeStatus] = useState<ResearchRuntimeStatusModel>(getResearchRuntimeStatusFallback());
   const [featureWorkspace, setFeatureWorkspace] = useState<FeatureWorkspaceModel>(getFeatureWorkspaceFallback());
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // 表单状态
   const [modelId, setModelId] = useState("");
@@ -158,8 +160,11 @@ export default function ResearchPage() {
 
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
         clearTimeout(timeoutId);
+        if (err.name !== "AbortError") {
+          setError("网络请求失败，请检查网络连接");
+        }
         setIsLoading(false);
       });
 
@@ -279,6 +284,9 @@ export default function ResearchPage() {
 
       {/* 加载状态 */}
       {isLoading && <LoadingBanner />}
+
+      {/* 错误提示 */}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       {/* 主布局：左侧参数栏 + 右侧内容 */}
       <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">

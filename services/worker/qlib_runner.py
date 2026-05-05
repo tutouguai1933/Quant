@@ -34,6 +34,8 @@ from services.worker.qlib_features import (
     OUTLIER_POLICY_LABELS,
     PRIMARY_FEATURE_COLUMNS,
     TIMEFRAME_PROFILES,
+    evaluate_factor_ic_series,
+    evaluate_factor_quantile_nav,
 )
 from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
@@ -80,6 +82,11 @@ class QlibRunner:
             slippage_bps=self._config.backtest_slippage_bps,
             cost_model=self._config.backtest_cost_model,
         )
+
+        # 计算因子评估
+        all_rows = bundle.training_rows + bundle.validation_rows + bundle.backtest_rows
+        factor_evaluation = self._build_factor_evaluation(all_rows)
+
         run_id = self._new_run_id("train")
         generated_at = _utc_now()
         model_version = f"qlib-minimal-{generated_at.strftime('%Y%m%d%H%M%S%f')}"
@@ -113,6 +120,7 @@ class QlibRunner:
             "metrics": metrics,
             "validation": validation,
             "backtest": backtest,
+            "factor_evaluation": factor_evaluation,
             "warnings": self._build_warnings(),
             "artifact_path": str(artifact_path),
             "dataset_snapshot": dataset_snapshot,
@@ -478,11 +486,103 @@ class QlibRunner:
 
         future_returns = [_to_float(item.get("future_return_pct")) for item in rows]
         positive_rate = sum(1 for value in future_returns if value > 0) / len(future_returns)
+
+        # 计算训练曲线（通过数据分片模拟训练过程）
+        training_curve = self._build_training_curve(rows)
+
+        # 计算特征重要性（基于因子与未来收益的相关性）
+        feature_importance = self._build_feature_importance(rows)
+
         return {
             "feature_averages": {key: _format_float(value) for key, value in averages.items()},
             "positive_rate": _format_float(positive_rate),
             "avg_future_return_pct": _format_float(sum(future_returns) / len(future_returns)),
+            "training_curve": training_curve,
+            "feature_importance": feature_importance,
         }
+
+    def _build_training_curve(self, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        """构建训练曲线数据。
+
+        通过将数据分片模拟训练过程，计算每步的训练分数和验证分数。
+        """
+        if len(rows) < 10:
+            # 样本不足，返回空列表
+            return []
+
+        curve: list[dict[str, object]] = []
+        total_samples = len(rows)
+
+        # 定义训练步数（最多 10 步）
+        num_steps = min(10, total_samples // 10)
+        if num_steps < 3:
+            return []
+
+        for step in range(1, num_steps + 1):
+            # 计算当前步使用的样本比例
+            train_ratio = step / num_steps
+            train_end = int(total_samples * train_ratio * 0.8)  # 80% 用于训练
+            valid_end = int(total_samples * train_ratio)  # 剩余用于验证
+
+            if train_end < 5 or valid_end - train_end < 2:
+                continue
+
+            train_rows = rows[:train_end]
+            valid_rows = rows[train_end:valid_end]
+
+            # 计算训练分数（正收益率）
+            train_returns = [_to_float(item.get("future_return_pct")) for item in train_rows]
+            train_score = sum(1 for r in train_returns if r > 0) / len(train_returns) if train_returns else 0.0
+
+            # 计算验证分数
+            valid_returns = [_to_float(item.get("future_return_pct")) for item in valid_rows]
+            valid_score = sum(1 for r in valid_returns if r > 0) / len(valid_returns) if valid_returns else 0.0
+
+            curve.append({
+                "step": step,
+                "train_score": round(train_score, 4),
+                "validation_score": round(valid_score, 4),
+                "test_score": None,  # 测试分数在训练阶段不可用
+            })
+
+        return curve
+
+    def _build_feature_importance(self, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        """构建特征重要性数据。
+
+        基于因子值与未来收益的相关性计算特征重要性。
+        """
+        if len(rows) < 10:
+            return []
+
+        importances: list[dict[str, object]] = []
+        primary_columns = self._active_primary_feature_columns()
+        future_returns = [_to_float(item.get("future_return_pct")) for item in rows]
+
+        for column in primary_columns:
+            factor_values = [_to_float(item.get(column)) for item in rows]
+
+            # 计算皮尔逊相关系数
+            correlation = _compute_correlation(factor_values, future_returns)
+            importance = abs(correlation)
+
+            # 获取因子类别
+            metadata = FACTOR_METADATA.get(column) or {}
+            category = str(metadata.get("category", "unknown"))
+
+            importances.append({
+                "factor": column,
+                "category": category,
+                "importance": round(importance, 4),
+                "correlation": round(correlation, 4),
+            })
+
+        # 按重要性排序并添加排名
+        importances.sort(key=lambda x: x["importance"], reverse=True)
+        for rank, item in enumerate(importances, 1):
+            item["rank"] = rank
+
+        return importances
 
     def _build_validation_summary(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """构造最小验证摘要。"""
@@ -493,6 +593,39 @@ class QlibRunner:
             "sample_count": len(rows),
             "positive_rate": _format_float(positive_rate),
             "avg_future_return_pct": _format_float(sum(future_returns) / len(future_returns)) if future_returns else _format_float(0.0),
+        }
+
+    def _build_factor_evaluation(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        """构建因子评估数据。
+
+        Args:
+            rows: 所有样本行（训练+验证+测试）
+
+        Returns:
+            包含 ic_series 和 quantile_nav 的因子评估结果
+        """
+        if not rows:
+            return {
+                "ic_series": [],
+                "quantile_nav": [],
+            }
+
+        # 计算 IC 时间序列
+        ic_series = evaluate_factor_ic_series(
+            rows,
+            factor_names=list(self._active_primary_feature_columns()[:5]),  # 只计算前 5 个主因子
+        )
+
+        # 计算分组收益序列
+        quantile_nav = evaluate_factor_quantile_nav(
+            rows,
+            factor_name="ema20_gap_pct",  # 默认使用趋势因子
+            num_quantiles=5,
+        )
+
+        return {
+            "ic_series": ic_series,
+            "quantile_nav": quantile_nav,
         }
 
     def _score_signal(self, feature_row: dict[str, object], metrics: dict[str, object]) -> float:
@@ -1133,3 +1266,29 @@ def _to_float(value: object) -> float:
         return float(Decimal(str(value)))
     except (TypeError, ValueError, InvalidOperation):
         return 0.0
+
+
+def _compute_correlation(x: list[float], y: list[float]) -> float:
+    """计算两个序列的皮尔逊相关系数。"""
+
+    if not x or not y or len(x) != len(y):
+        return 0.0
+
+    n = len(x)
+    if n < 2:
+        return 0.0
+
+    # 计算均值
+    mean_x = sum(x) / n
+    mean_y = sum(y) / n
+
+    # 计算协方差和标准差
+    covariance = sum((x[i] - mean_x) * (y[i] - mean_y) for i in range(n))
+    variance_x = sum((x[i] - mean_x) ** 2 for i in range(n))
+    variance_y = sum((y[i] - mean_y) ** 2 for i in range(n))
+
+    # 避免除以零
+    if variance_x == 0 or variance_y == 0:
+        return 0.0
+
+    return covariance / (math.sqrt(variance_x) * math.sqrt(variance_y))

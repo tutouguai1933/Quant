@@ -18,6 +18,212 @@ from services.api.app.services.workbench_config_service import workbench_config_
 from services.worker.qlib_features import FEATURE_PROTOCOL
 
 
+# 因子详情字典：包含常见因子的完整描述信息
+FACTOR_DETAILS = {
+    # ========== 趋势类因子 ==========
+    "ema20_gap_pct": {
+        "formula": "(close - ema(close, 20)) / ema(close, 20)",
+        "why_effective": "衡量价格相对20日均线的偏离程度，偏离越大说明趋势越强或回调越深",
+        "how_to_use": "方向=+1（正值做多）。正偏离>3%时可顺势做多，回归均线附近可减仓",
+        "pitfalls": "震荡行情中频繁发出假信号，需要配合波动率过滤",
+        "recommended_with": "rsi_14, vol_20",
+    },
+    "trend_slope_20": {
+        "formula": "linear_regression_slope(close, 20) / close",
+        "why_effective": "量化价格线性趋势的斜率，正值表示上升趋势，负值表示下降趋势",
+        "how_to_use": "方向=+1。斜率>0且持续放大时可持有，斜率转负时应离场",
+        "pitfalls": "对突发跳空敏感，需要配合成交量确认",
+        "recommended_with": "ema20_gap_pct, volume_ratio",
+    },
+    "breakout_20": {
+        "formula": "close / max(high, 20) - 1",
+        "why_effective": "检测价格是否突破20日高点，突破往往预示趋势延续",
+        "how_to_use": "方向=+1。突破时买入，回踩确认加仓",
+        "pitfalls": "假突破频繁，需要放量配合",
+        "recommended_with": "volume_ratio, mom_20",
+    },
+    # ========== 动量类因子 ==========
+    "mom_20": {
+        "formula": "close / close_20 - 1",
+        "why_effective": "衡量过去20根K线的价格变化幅度，正值表示上涨动量",
+        "how_to_use": "方向=+1，动量越大越可能延续",
+        "pitfalls": "震荡市里动量信号会频繁失效",
+        "recommended_with": "vol_20, rsi_14",
+    },
+    "roc_10": {
+        "formula": "(close - close_10) / close_10 * 100",
+        "why_effective": "变化率指标，衡量短期价格变化速度",
+        "how_to_use": "方向=+1。ROC>0且加速时持有，减速时观望",
+        "pitfalls": "短期波动噪音大，需要平滑处理",
+        "recommended_with": "mom_20, ema20_gap_pct",
+    },
+    "momentum_score": {
+        "formula": "rank(mom_5, mom_10, mom_20)",
+        "why_effective": "综合多周期动量排名，平滑单一周期噪音",
+        "how_to_use": "方向=+1。排名前20%时做多，后20%时做空",
+        "pitfalls": "滞后于价格反转",
+        "recommended_with": "trend_slope_20, rsi_14",
+    },
+    # ========== 震荡类因子 ==========
+    "rsi_14": {
+        "formula": "RSI(close, 14)",
+        "why_effective": "衡量过去14根K线涨跌力量对比，>70 过热，<30 超卖",
+        "how_to_use": "方向=-1（低值做多）。RSI<30 时做多，RSI>50 时卖出",
+        "pitfalls": "趋势币种可以长期保持 RSI > 80",
+        "recommended_with": "ema20_gap_pct, vol_20",
+    },
+    "rsi_7": {
+        "formula": "RSI(close, 7)",
+        "why_effective": "更敏感的超买超卖指标，适合短线交易",
+        "how_to_use": "方向=-1。RSI<25 时做多，RSI>75 时卖出",
+        "pitfalls": "假信号比RSI_14多，需要配合趋势过滤",
+        "recommended_with": "rsi_14, trend_slope_20",
+    },
+    "kdj_k": {
+        "formula": "KDJ_K(close, high, low, 9, 3, 3)",
+        "why_effective": "随机指标K值，反映价格相对高低位置",
+        "how_to_use": "方向=-1。K<20 时做多，K>80 时卖出",
+        "pitfalls": "横盘震荡时信号密集，容易过度交易",
+        "recommended_with": "rsi_14, volume_ratio",
+    },
+    "cci_20": {
+        "formula": "CCI(close, 20)",
+        "why_effective": "商品通道指标，衡量价格偏离统计平均的程度",
+        "how_to_use": "方向=-1。CCI<-100 超卖做多，CCI>+100 超买卖出",
+        "pitfalls": "在强趋势中会持续超买/超卖",
+        "recommended_with": "rsi_14, bollinger_width",
+    },
+    "willr_14": {
+        "formula": "Williams %R(close, high, low, 14)",
+        "why_effective": "威廉指标，衡量收盘价在近期高低点范围的位置",
+        "how_to_use": "方向=-1。%R<-80 超卖做多，%R>-20 超买卖出",
+        "pitfalls": "与RSI类似，趋势行情中会长期极端",
+        "recommended_with": "rsi_14, mom_20",
+    },
+    # ========== 波动率类因子 ==========
+    "vol_20": {
+        "formula": "std(return, 20) * sqrt(252)",
+        "why_effective": "年化波动率，量化价格波动程度",
+        "how_to_use": "方向=-1。低波动时买入，高波动时减仓",
+        "pitfalls": "极端行情时波动率会飙升导致误判",
+        "recommended_with": "rsi_14, bollinger_width",
+    },
+    "vol_ratio_5_20": {
+        "formula": "std(return, 5) / std(return, 20)",
+        "why_effective": "短期/长期波动率比值，检测波动率突变",
+        "how_to_use": "方向=-1。比值>2时波动加剧应减仓",
+        "pitfalls": "波动率骤升后可能持续高企",
+        "recommended_with": "vol_20, atr_ratio",
+    },
+    "atr_ratio": {
+        "formula": "ATR(14) / close",
+        "why_effective": "真实波幅占比，衡量日内波动相对价格的比例",
+        "how_to_use": "方向=-1。比例<2%时波动小可持有，>5%时风险大",
+        "pitfalls": "不同币种基准差异大，需要标准化",
+        "recommended_with": "vol_20, bollinger_width",
+    },
+    "bollinger_width": {
+        "formula": "(upper_band - lower_band) / middle_band",
+        "why_effective": "布林带宽度，量化价格波动区间",
+        "how_to_use": "方向=-1。宽度收窄时可能突破，宽度放大时波动大",
+        "pitfalls": "收窄后方向不确定，需要成交量确认",
+        "recommended_with": "vol_20, volume_ratio",
+    },
+    # ========== 量能类因子 ==========
+    "volume_ratio": {
+        "formula": "volume / sma(volume, 20)",
+        "why_effective": "当前成交量与20日均量比，放量往往伴随趋势",
+        "how_to_use": "方向=+1。放量>1.5倍时关注，缩量<0.5时观望",
+        "pitfalls": "放量下跌也是放量，需要配合价格方向",
+        "recommended_with": "mom_20, obv_signal",
+    },
+    "obv_signal": {
+        "formula": "OBV / sma(OBV, 20) - 1",
+        "why_effective": "能量潮指标偏离，检测量价背离",
+        "how_to_use": "方向=+1。OBV上升且价格横盘时可能突破",
+        "pitfalls": "对分红、拆股敏感，需要调整",
+        "recommended_with": "volume_ratio, rsi_14",
+    },
+    "vwap_gap": {
+        "formula": "(close - VWAP) / VWAP",
+        "why_effective": "价格相对成交量加权均价偏离，机构交易参考",
+        "how_to_use": "方向=+1。正偏离可顺势，负偏离可能反弹",
+        "pitfalls": "日内指标，日线级别效果减弱",
+        "recommended_with": "volume_ratio, ema20_gap_pct",
+    },
+    "volume_spike": {
+        "formula": "volume / max(volume, 20)",
+        "why_effective": "成交量相对近期峰值比例，检测异常放量",
+        "how_to_use": "方向=+1。放量突破时买入，缩量回归时卖出",
+        "pitfalls": "异常放量可能是恐慌抛售",
+        "recommended_with": "breakout_20, mom_20",
+    },
+    # ========== 均线偏离类因子 ==========
+    "ma5_gap": {
+        "formula": "(close - ma(close, 5)) / ma(close, 5)",
+        "why_effective": "短期均线偏离，捕捉短期回调机会",
+        "how_to_use": "方向=-1。偏离<-2%时可能反弹",
+        "pitfalls": "强趋势中偏离会持续扩大",
+        "recommended_with": "ema20_gap_pct, rsi_14",
+    },
+    "ma60_gap": {
+        "formula": "(close - ma(close, 60)) / ma(close, 60)",
+        "why_effective": "长期均线偏离，衡量中期趋势强度",
+        "how_to_use": "方向=+1。正偏离持有，负偏离观望",
+        "pitfalls": "滞后性强，不适合短线",
+        "recommended_with": "trend_slope_20, vol_20",
+    },
+    "ma_cross_signal": {
+        "formula": "ma(close, 5) > ma(close, 20) ? 1 : -1",
+        "why_effective": "均线金叉死叉信号，经典趋势判断",
+        "how_to_use": "方向=+1。金叉买入，死叉卖出",
+        "pitfalls": "震荡市频繁交叉，假信号多",
+        "recommended_with": "ema20_gap_pct, volume_ratio",
+    },
+    # ========== 形态类因子 ==========
+    "higher_high": {
+        "formula": "high > max(high[1:10])",
+        "why_effective": "检测是否创新高，上升趋势特征",
+        "how_to_use": "方向=+1。创新高时持有，连续新高后注意回调",
+        "pitfalls": "假突破需要放量确认",
+        "recommended_with": "breakout_20, volume_ratio",
+    },
+    "lower_low": {
+        "formula": "low < min(low[1:10])",
+        "why_effective": "检测是否创新低，下降趋势特征",
+        "how_to_use": "方向=-1。新低后可能反弹",
+        "pitfalls": "下降趋势中会持续新低",
+        "recommended_with": "rsi_14, cci_20",
+    },
+    "gap_pct": {
+        "formula": "(open - close[-1]) / close[-1]",
+        "why_effective": "跳空缺口幅度，反映市场情绪突变",
+        "how_to_use": "方向=+1。向上跳空>2%可能加速，向下跳空谨慎",
+        "pitfalls": "缺口可能回补，不宜追涨",
+        "recommended_with": "volume_ratio, mom_20",
+    },
+}
+
+
+def get_factor_detail(factor_name: str) -> dict[str, str]:
+    """获取因子详情，未定义的因子返回默认值。
+
+    Args:
+        factor_name: 因子名称
+
+    Returns:
+        包含 formula, why_effective, how_to_use, pitfalls, recommended_with 的字典
+    """
+    detail = FACTOR_DETAILS.get(factor_name, {})
+    return {
+        "formula": detail.get("formula", "暂无公式说明"),
+        "why_effective": detail.get("why_effective", "暂无有效性说明"),
+        "how_to_use": detail.get("how_to_use", "暂无使用说明"),
+        "pitfalls": detail.get("pitfalls", "暂无注意事项"),
+        "recommended_with": detail.get("recommended_with", "暂无推荐搭配"),
+    }
+
+
 class FeatureWorkspaceService:
     """聚合因子协议、分类、角色和周期参数。"""
 
@@ -121,6 +327,7 @@ class FeatureWorkspaceService:
                     "category": str(item.get("category", "")),
                     "role": str(item.get("role", "")),
                     "description": str(item.get("description", "")),
+                    **get_factor_detail(str(item.get("name", ""))),
                 }
                 for item in factors
                 if isinstance(item, dict)
@@ -190,6 +397,7 @@ class FeatureWorkspaceService:
                     "category": str(item.get("category", "")),
                     "role": str(item.get("role", "")),
                     "description": str(item.get("description", "")),
+                    **get_factor_detail(str(item.get("name", ""))),
                 }
                 for item in factors
                 if isinstance(item, dict)
@@ -754,16 +962,31 @@ class FeatureWorkspaceService:
         for factor in factors:
             name = factor.get("name", "")
             selection_info = selection_map.get(name, {})
+            detail = get_factor_detail(name)
             factor_cards.append({
                 "name": name,
                 "category": factor.get("category", ""),
                 "role": factor.get("role", ""),
                 "current_role": selection_info.get("current_role", "未启用"),
                 "description": factor.get("description", ""),
+                "formula": detail.get("formula", "暂无公式说明"),
+                "why_effective": detail.get("why_effective", "暂无有效性说明"),
+                "how_to_use": detail.get("how_to_use", "暂无使用说明"),
+                "pitfalls": detail.get("pitfalls", "暂无注意事项"),
+                "recommended_with": detail.get("recommended_with", "暂无推荐搭配"),
             })
 
-        # 因子详情（暂为空列表）
-        factor_details: list[dict[str, object]] = []
+        # 因子详情：包含完整的因子信息
+        factor_details = [
+            {
+                "name": factor.get("name", ""),
+                "category": factor.get("category", ""),
+                "role": factor.get("role", ""),
+                "description": factor.get("description", ""),
+                **get_factor_detail(factor.get("name", "")),
+            }
+            for factor in factors
+        ]
 
         return {
             "metrics": metrics,
