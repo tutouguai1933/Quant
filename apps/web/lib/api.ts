@@ -1488,7 +1488,12 @@ export async function getStrategyWorkspace(
 ): Promise<ApiEnvelope<StrategyWorkspaceModel>> {
   const response = await fetchJson<Record<string, unknown>>("/strategies/workspace", token, signal);
   if (response.error) {
-    return response as ApiEnvelope<StrategyWorkspaceModel>;
+    // Return fallback data instead of error for unauthorized/not logged in
+    return {
+      data: getStrategyWorkspaceFallback(),
+      error: null,
+      meta: { fallback: true, source: "strategy-workspace" },
+    };
   }
 
   const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
@@ -1735,9 +1740,14 @@ export async function getAutomationStatus(
   }
 
   if (response.error) {
+    // Return fallback data instead of error for unauthorized/not logged in
     return {
-      ...response,
       data: getAutomationStatusFallback(),
+      error: null,
+      meta: {
+        source: "automation-status",
+        fallback: true,
+      },
     };
   }
   const item = isPlainObject(response.data.item) ? response.data.item : {};
