@@ -6,15 +6,29 @@
 
 ## 当前进度
 
-**状态**：系统优化完成 ✅ 运行正常
+**状态**：前端终端风格重构完成 ✅ 运行正常
 
-**本次新增（2026-05-05）**：
+**本次新增（2026-05-05 晚）**：
+- **前端 UI 优化完成**：
+  - 侧边栏导航修复：添加缺失入口（/ops、/analytics、/config）
+  - 命名统一：/signals→"信号"、/strategies→"策略中心"
+  - 添加 protected 标记到需要认证的页面
+  - 空状态优化：market、balances、orders 页面添加错误提示和引导
+  - market/[symbol] 页面改用 TerminalShell 统一风格
+  - 面包屑命名与侧边栏分组一致
+- **新增参数优化页面**：
+  - `/hyperopt` 页面支持 Freqtrade Hyperopt 参数调优
+  - 后端新增 `/api/v1/hyperopt/*` API 路由
+- **全局 loading 优化**：
+  - 更新 `loading.tsx` 使用终端风格骨架屏
+  - 优化页面切换体验
+
+**本次新增（2026-05-05 早）**：
 - 已读取项目文档、前端页面、API 封装和参考图目录。
 - 已提取 5 张参考图的信息，形成终端化前端复刻规划。
 - 新增规划文档：`docs/2026-05-05-frontend-terminal-reference-rebuild-plan.md`。
 - 已阅读后端 API、workspace 聚合服务、worker 研究输出和测试结构，形成前端终端化所需的后端配套规划。
 - 新增后端规划文档：`docs/2026-05-05-backend-terminal-frontend-support-plan.md`。
-- 当前只完成规划文档，未修改后端业务源码。
 
 **最近完成（2026-05-04）**：
 - **策略参数优化**：
@@ -58,6 +72,31 @@
 | Grafana | http://127.0.0.1:3000 | ✅ Healthy |
 | 飞书推送 | Webhook已配置 | ✅ **测试成功，推送正常** |
 
+### 前端页面清单
+| 路由 | 页面名称 | 分组 | 认证 |
+|------|----------|------|------|
+| `/` | 工作台 | 研究 | - |
+| `/research` | 模型训练 | 研究 | ✓ |
+| `/backtest` | 回测训练 | 研究 | ✓ |
+| `/evaluation` | 选币回测 | 研究 | ✓ |
+| `/features` | 因子研究 | 研究 | ✓ |
+| `/signals` | 信号 | 研究 | - |
+| `/hyperopt` | 参数优化 | 研究 | ✓ |
+| `/analytics` | 数据分析 | 研究 | - |
+| `/data` | 数据管理 | 数据与知识 | - |
+| `/factor-knowledge` | 因子知识库 | 数据与知识 | - |
+| `/config` | 配置管理 | 数据与知识 | - |
+| `/strategies` | 策略中心 | 运营 | ✓ |
+| `/ops` | 运维监控 | 运营 | - |
+| `/tasks` | 任务 | 运营 | ✓ |
+| `/market` | 市场 | 工具 | - |
+| `/market/[symbol]` | 市场详情 | 工具 | - |
+| `/balances` | 余额 | 工具 | - |
+| `/positions` | 持仓 | 工具 | - |
+| `/orders` | 订单 | 工具 | - |
+| `/risk` | 风险 | 工具 | ✓ |
+| `/login` | 登录 | - | - |
+
 ### Freqtrade配置
 | 项目 | 值 |
 |------|------|
@@ -75,7 +114,7 @@
 | 风控 | 日亏损8.3%限额，连续亏损4次暂停 |
 | API端口 | **9013**（9011~9020端口范围）|
 | API认证 | Freqtrader:jianyu0.0. |
-| 余额 | **20.84 USDT** |
+| 余额 | **~21 USDT** |
 
 ---
 
@@ -271,8 +310,9 @@ from config_helper import get_config
 | 节点 | 出口IP | 是否在白名单 |
 |------|--------|-------------|
 | JP1 | 154.31.113.7 | ✅ 已添加 |
-| JP2 | 45.95.212.82 | ❌ |
-| JP3 | 151.242.36.38 | ❌ |
+| JP2 | 45.95.212.82 | ✅ 已添加 |
+| JP3 | 151.242.36.38 | ✅ 已添加 |
+| JP4 | 151.242.36.39 | ✅ 已添加 |
 
 ### Q6: mihomo健康检查显示unhealthy
 
@@ -410,13 +450,13 @@ docker run -d --name quant-freqtrade \
 ## 开发阶段里程碑
 
 ```
-P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅ → P11 ✅ → P12 ✅ → 运维完善 ✅
+P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 ✅ → P9 ✅ → WebSocket ✅ → P10 ✅ → P11 ✅ → P12 ✅ → 运维完善 ✅ → 终端风格重构 ✅
 ```
 
-核心开发阶段P1-P12全部完成，运维能力达成100%。
+核心开发阶段P1-P12全部完成，运维能力达成100%，前端终端风格重构完成。
 
 **运维功能清单**：
-- ✅ Docker容器健康监控（8/8 healthy）
+- ✅ Docker容器健康监控（5/5 healthy）
 - ✅ 容器自动重启（unless-stopped策略）
 - ✅ Grafana可视化监控（5条告警规则）
 - ✅ 飞书告警推送（Webhook已配置）
@@ -424,6 +464,7 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 - ✅ mihomo代理正常（JP1节点）
 - ✅ Freqtrade Live交易运行
 - ✅ 日志轮转（max-size: 50m）
+- ✅ 前端终端风格统一
 
 ---
 
@@ -463,6 +504,7 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 |------|------|
 | docs/feishu-webhook-setup.md | 飞书配置 |
 | docs/ccxt-async-proxy-solution.md | CCXT代理方案 |
+| docs/2026-05-05-frontend-terminal-reference-rebuild-plan.md | 终端风格重构规划 |
 
 ---
 
@@ -470,7 +512,8 @@ P1 ✅ → P2 ✅ → P3 ✅ → P4 ✅ → P5 ✅ → P6 ✅ → P7 ✅ → P8 
 
 - **Freqtrade**: Live模式运行，无持仓，等待入场信号
 - **mihomo**: Healthy，JP1节点，出口IP 154.31.113.7
-- **余额**: ~20.5 USDT
+- **余额**: ~21 USDT
 - **系统**: 5/5核心容器healthy，运维能力100%
 - **安全**: SSH密钥认证，可疑公钥已清理
 - **飞书**: Webhook已配置，推送正常，VPN告警已修复
+- **前端**: 终端风格重构完成，21个页面已迁移

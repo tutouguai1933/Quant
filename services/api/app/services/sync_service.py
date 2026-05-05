@@ -95,6 +95,10 @@ class SyncService:
         snapshot = self.sync_execution_state()
         return list(snapshot["positions"])[:limit]
 
+    def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
+        snapshot = self.sync_execution_state()
+        return list(snapshot.get("balances", []))[:limit]
+
     def list_strategies(self, limit: int = 50) -> list[dict[str, object]]:
         snapshot = self.sync_execution_state()
         return list(snapshot["strategies"])[:limit]
