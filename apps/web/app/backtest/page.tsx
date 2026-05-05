@@ -165,6 +165,25 @@ export default function BacktestPage() {
     ];
   }, [workspace]);
 
+  // 构建净值曲线数据（从 terminal.charts.performance.series 获取）
+  const equityData = useMemo(() => {
+    const series = workspace.terminal?.charts?.performance?.series || [];
+    return series.map((item) => ({
+      date: item.date,
+      value: item.strategy_nav,
+      benchmark: item.benchmark_nav,
+    }));
+  }, [workspace]);
+
+  // 构建回撤数据
+  const drawdownData = useMemo(() => {
+    const series = workspace.terminal?.charts?.performance?.series || [];
+    return series.map((item) => ({
+      date: item.date,
+      drawdown: item.drawdown_pct || 0,
+    }));
+  }, [workspace]);
+
   // 候选币种选项
   const symbolOptions = useMemo(() => {
     const symbols = workspace.leaderboard.map((item) => item.symbol);
@@ -301,8 +320,8 @@ export default function BacktestPage() {
             <div className="pt-4">
               {activeTab === "equity" && (
                 <>
-                  <EquityCurveChart data={[]} height={320} />
-                  <DrawdownChart data={[]} height={100} className="mt-4" />
+                  <EquityCurveChart data={equityData} height={320} />
+                  <DrawdownChart data={drawdownData} height={100} className="mt-4" />
                 </>
               )}
               {activeTab === "kline" && (
@@ -326,7 +345,7 @@ export default function BacktestPage() {
           {/* 资金对比 */}
           <FundsBridge
             initialFunds={1000}
-            returnPct="--"
+            returnPct={workspace.training_backtest.metrics?.net_return_pct || "--"}
             finalFunds="--"
             currency="USDT"
           />

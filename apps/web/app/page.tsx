@@ -91,28 +91,35 @@ export default function HomePage() {
   }, []);
 
   // 系统状态指标
-  const systemMetrics = useMemo(() => [
-    {
-      label: "数据更新",
-      value: automationStatus.health?.status === "ok" ? "正常" : "异常",
-      colorType: automationStatus.health?.status === "ok" ? "positive" as const : "negative" as const,
-    },
-    {
-      label: "控程引擎",
-      value: `${automationStatus.controlActions?.length || 0} 运行中`,
-      colorType: "neutral" as const,
-    },
-    {
-      label: "实盘连接",
-      value: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "已连接" : "断开",
-      colorType: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "positive" as const : "negative" as const,
-    },
-    {
-      label: "研究状态",
-      value: researchRuntime.status || "空闲",
-      colorType: "neutral" as const,
-    },
-  ], [automationStatus, researchRuntime, strategyWorkspace]);
+  const systemMetrics = useMemo(() => {
+    // 判断健康状态：优先检查 status 字段，否则检查 active_blockers
+    const healthStatus = (automationStatus.health as Record<string, unknown>) || {};
+    const isHealthy = healthStatus.status === "ok" ||
+      (Array.isArray(healthStatus.active_blockers) && healthStatus.active_blockers.length === 0);
+
+    return [
+      {
+        label: "数据更新",
+        value: isHealthy ? "正常" : "异常",
+        colorType: isHealthy ? "positive" as const : "negative" as const,
+      },
+      {
+        label: "控程引擎",
+        value: `${automationStatus.controlActions?.length || 0} 运行中`,
+        colorType: "neutral" as const,
+      },
+      {
+        label: "实盘连接",
+        value: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "已连接" : "断开",
+        colorType: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "positive" as const : "negative" as const,
+      },
+      {
+        label: "研究状态",
+        value: researchRuntime.status || "空闲",
+        colorType: "neutral" as const,
+      },
+    ];
+  }, [automationStatus, researchRuntime, strategyWorkspace]);
 
   // 快速导航
   const quickLinks = [

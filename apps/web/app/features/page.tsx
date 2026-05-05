@@ -129,35 +129,35 @@ export default function FeaturesPage() {
     ];
   }, []);
 
-  // 构建指标卡数据
+  // 构建指标卡数据（优先使用 terminal.research.metrics）
   const metrics = useMemo(() => {
-    const eff = (workspace.effectiveness_summary as Record<string, unknown>) || {};
-    const readValue = (key: string): string => {
-      const v = eff[key];
-      if (v === null || v === undefined) return "--";
-      if (typeof v === "string" || typeof v === "number") return String(v);
-      return "--";
+    const terminalMetrics = workspace.terminal?.research?.metrics || [];
+
+    // 辅助函数：根据 key 查找指标值
+    const getMetric = (key: string): string => {
+      const m = terminalMetrics.find((item) => item.key === key);
+      return m?.value || "--";
     };
 
     return [
       {
         label: "IC 均值",
-        value: readValue("ic_mean"),
+        value: getMetric("mean_ic"),
         colorType: "neutral" as const,
       },
       {
         label: "IC 标准差",
-        value: readValue("ic_std"),
+        value: getMetric("ic_std"),
         colorType: "neutral" as const,
       },
       {
         label: "IR",
-        value: readValue("ir"),
+        value: getMetric("icir"),
         colorType: "neutral" as const,
       },
       {
         label: "IC 胜率",
-        value: readValue("ic_win_rate"),
+        value: getMetric("ic_win_rate"),
         colorType: "neutral" as const,
       },
       {
@@ -166,6 +166,25 @@ export default function FeaturesPage() {
         colorType: "neutral" as const,
       },
     ];
+  }, [workspace]);
+
+  // 构建分位净值数据（字段名映射：q1->Q1 等）
+  const quantileData = useMemo(() => {
+    const series = workspace.terminal?.research?.charts?.quantile_nav?.series || [];
+    return series.map((item) => ({
+      date: item.date,
+      Q1: item.q1,
+      Q2: item.q2,
+      Q3: item.q3,
+      Q4: item.q4,
+      Q5: item.q5,
+    }));
+  }, [workspace]);
+
+  // 构建 IC 序列数据
+  const icData = useMemo(() => {
+    const series = workspace.terminal?.research?.charts?.ic_series?.series || [];
+    return series;
   }, [workspace]);
 
   return (
@@ -225,8 +244,8 @@ export default function FeaturesPage() {
 
       {/* 图表区：左右两张图 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <QuantileNetChart data={[]} height={300} />
-        <IcBarChart data={[]} height={300} />
+        <QuantileNetChart data={quantileData} height={300} />
+        <IcBarChart data={icData} height={300} />
       </div>
     </TerminalShell>
   );

@@ -608,6 +608,32 @@ export type FeatureWorkspaceModel = {
   effectiveness_summary?: Record<string, unknown>;
   redundancy_summary?: Record<string, unknown>;
   score_story?: Record<string, unknown>;
+  /* 终端视图数据 */
+  terminal?: {
+    page?: {
+      route?: string;
+      breadcrumb?: string;
+      title?: string;
+      subtitle?: string;
+    };
+    research?: {
+      metrics?: Array<{
+        key: string;
+        label: string;
+        value: string;
+        format?: string;
+      }>;
+      charts?: {
+        ic_series?: { series: Array<{ date: string; ic: number; factor?: string; cumulative_ic?: number }>; meta?: Record<string, unknown> };
+        cumulative_ic?: { series: Array<{ date: string; cumulative_ic: number }>; meta?: Record<string, unknown> };
+        quantile_nav?: { series: Array<{ date: string; q1?: number; q2?: number; q3?: number; q4?: number; q5?: number; long_short?: number }>; meta?: Record<string, unknown> };
+      };
+    };
+    knowledge?: {
+      metrics?: Array<{ key: string; label: string; value: string | number }>;
+      factor_cards?: Array<Record<string, unknown>>;
+    };
+  };
 };
 
 export type ResearchWorkspaceModel = {
@@ -718,6 +744,37 @@ export type ResearchWorkspaceModel = {
     next_step: string;
   };
   selection_story?: Record<string, unknown>;
+  /* 终端视图数据 */
+  terminal?: {
+    page?: {
+      route?: string;
+      breadcrumb?: string;
+      title?: string;
+      subtitle?: string;
+    };
+    parameters?: {
+      groups?: Array<{
+        title?: string;
+        fields?: Array<{
+          key: string;
+          label: string;
+          value?: string;
+          unit?: string;
+          control?: string;
+        }>;
+      }>;
+    };
+    metrics?: Array<{
+      key: string;
+      label: string;
+      value: string;
+      format?: string;
+    }>;
+    charts?: {
+      training_curve?: { series: Array<{ step: number; train_score?: number; validation_score?: number }>; meta?: Record<string, unknown> };
+      feature_importance?: { series: Array<{ factor: string; importance: number; rank?: number }>; meta?: Record<string, unknown> };
+    };
+  };
 };
 
 export type BacktestWorkspaceModel = {
@@ -783,6 +840,42 @@ export type BacktestWorkspaceModel = {
     strategy_template: string;
     backtest: Record<string, string>;
   }>;
+  /* 终端视图数据 */
+  terminal?: {
+    page?: {
+      route?: string;
+      breadcrumb?: string;
+      title?: string;
+      subtitle?: string;
+    };
+    metrics?: Array<{
+      key: string;
+      label: string;
+      value: string;
+      format?: string;
+      tone?: string;
+    }>;
+    charts?: {
+      performance?: {
+        series?: Array<{
+          date: string;
+          strategy_nav: number;
+          benchmark_nav?: number;
+          drawdown_pct?: number;
+          daily_return_pct?: number;
+          turnover?: number;
+        }>;
+        meta?: {
+          data_quality?: string;
+          warnings?: string[];
+        };
+      };
+    };
+    tables?: {
+      leaderboard?: Array<Record<string, unknown>>;
+      stage_assessment?: Array<Record<string, unknown>>;
+    };
+  };
 };
 
 export type EvaluationWorkspaceModel = {
@@ -872,6 +965,39 @@ export type EvaluationWorkspaceModel = {
   stage_decision_summary?: Record<string, unknown>;
   priority_queue: PriorityQueueItemModel[];
   priority_queue_summary: PriorityQueueSummaryModel;
+  /* 终端视图数据 */
+  terminal?: {
+    page?: {
+      route?: string;
+      breadcrumb?: string;
+      title?: string;
+      subtitle?: string;
+    };
+    metrics?: Array<{
+      key: string;
+      label: string;
+      value: string;
+      format?: string;
+      tone?: string;
+    }>;
+    charts?: {
+      top_candidate_nav?: {
+        series?: Array<{
+          date: string;
+          [symbol: string]: string | number;
+        }>;
+        meta?: {
+          data_quality?: string;
+          warnings?: string[];
+        };
+      };
+    };
+    tables?: {
+      candidate_rows?: Array<Record<string, unknown>>;
+      gate_rows?: Array<Record<string, unknown>>;
+      elimination_rows?: Array<Record<string, unknown>>;
+    };
+  };
 };
 
 export type ValidationReviewItem = {
@@ -1822,10 +1948,10 @@ export async function getResearchWorkspace(signal?: AbortSignal): Promise<ApiEnv
   };
 }
 
-export async function getBacktestWorkspace(): Promise<ApiEnvelope<{ item: BacktestWorkspaceModel }>> {
+export async function getBacktestWorkspace(signal?: AbortSignal): Promise<ApiEnvelope<{ item: BacktestWorkspaceModel }>> {
   let response: ApiEnvelope<{ item: Record<string, unknown> }>;
   try {
-    response = await fetchJson<{ item: Record<string, unknown> }>("/backtest/workspace");
+    response = await fetchJson<{ item: Record<string, unknown> }>("/backtest/workspace", undefined, signal);
   } catch {
     // Fetch failed (timeout/network), but we have valid fallback data
     return {

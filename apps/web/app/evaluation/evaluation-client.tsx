@@ -97,42 +97,72 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
     }));
   }, [workspace]);
 
-  // 构建指标卡数据
+  // 构建指标卡数据（优先使用 terminal.metrics）
   const metrics = useMemo(() => {
-    const best = workspace.best_experiment || {};
-    const m = (best.metrics as Record<string, string>) || {};
+    const terminalMetrics = workspace.terminal?.metrics || [];
+
+    // 辅助函数：根据 key 查找指标值
+    const getMetric = (key: string): string => {
+      const m = terminalMetrics.find((item) => item.key === key);
+      return m?.value || "--";
+    };
+
     return [
       {
         label: "总收益",
-        value: m.net_return_pct || "--",
-        colorType: m.net_return_pct && parseFloat(m.net_return_pct) >= 0 ? "positive" as const : "negative" as const,
+        value: getMetric("best_net_return_pct"),
+        colorType: getMetric("best_net_return_pct") && parseFloat(getMetric("best_net_return_pct")) >= 0 ? "positive" as const : "negative" as const,
       },
       {
         label: "年化",
-        value: m.annual_return_pct || "--",
+        value: getMetric("annual_return_pct"),
         colorType: "neutral" as const,
       },
       {
         label: "Sharpe",
-        value: m.sharpe || "--",
+        value: getMetric("sharpe"),
         colorType: "neutral" as const,
       },
       {
         label: "最大回撤",
-        value: m.max_drawdown_pct || "--",
+        value: getMetric("best_max_drawdown_pct"),
         colorType: "negative" as const,
       },
       {
         label: "超额收益",
-        value: m.excess_return_pct || "--",
-        colorType: m.excess_return_pct && parseFloat(m.excess_return_pct) >= 0 ? "positive" as const : "negative" as const,
+        value: getMetric("excess_return_pct"),
+        colorType: getMetric("excess_return_pct") && parseFloat(getMetric("excess_return_pct")) >= 0 ? "positive" as const : "negative" as const,
       },
       {
         label: "平均换手",
-        value: m.turnover || "--",
+        value: getMetric("turnover"),
         colorType: "neutral" as const,
       },
     ];
+  }, [workspace]);
+
+  // 构建组合净值数据
+  const portfolioData = useMemo(() => {
+    const series = workspace.terminal?.charts?.top_candidate_nav?.series || [];
+    // 转换为 PortfolioEquityChart 期望的格式，过滤掉没有 portfolio 值的数据
+    return series
+      .map((item) => {
+        const result: { date: string; portfolio: number; benchmark?: number } = {
+          date: item.date,
+          portfolio: 1.0, // 默认值
+        };
+        // 提取第一个非日期字段作为 portfolio 值
+        const keys = Object.keys(item).filter((k) => k !== "date");
+        if (keys.length > 0) {
+          const val = item[keys[0]];
+          result.portfolio = typeof val === "number" ? val : parseFloat(String(val)) || 1.0;
+          if (keys.includes("benchmark") && item.benchmark !== undefined) {
+            result.benchmark = typeof item.benchmark === "number" ? item.benchmark : parseFloat(String(item.benchmark));
+          }
+        }
+        return result;
+      })
+      .filter((item) => !isNaN(item.portfolio));
   }, [workspace]);
 
   if (isLoading) {
@@ -231,7 +261,7 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
 
       {/* 组合净值图 */}
       <PortfolioEquityChart
-        data={[]}
+        data={portfolioData}
         height={400}
       />
     </div>
