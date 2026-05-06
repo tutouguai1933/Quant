@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from services.api.app.core.settings import Settings
@@ -12,6 +12,7 @@ from services.api.app.services.cache_service import cache
 from services.api.app.services.market_service import MarketService, normalize_kline_series
 from services.api.app.services.research_service import research_service
 from services.api.app.services.indicator_service import _rsi, _to_decimal
+from services.api.app.services.rsi_cache_service import rsi_cache
 
 try:
     from fastapi import APIRouter, HTTPException
@@ -109,7 +110,16 @@ def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dic
 @router.get("/rsi-summary")
 @alias_router.get("/rsi-summary")
 def get_rsi_summary(interval: str = "1d") -> dict:
-    """返回所有监控币种的最新RSI值概览（并发获取，带缓存）。"""
+    """返回所有监控币种的最新RSI值概览。
+
+    优先从缓存文件读取（由自动化程序预计算），缓存不存在时才实时计算。
+    """
+    # 优先从文件缓存读取
+    cached_summary = rsi_cache.get_summary(interval)
+    if cached_summary is not None:
+        return _success(cached_summary, {"source": "cache"})
+
+    # 缓存不存在，使用内存缓存和实时计算
     cache_key = f"rsi_summary_{interval}"
 
     def compute():
@@ -131,12 +141,20 @@ def get_rsi_summary(interval: str = "1d") -> dict:
         results = [r for r in raw_results if r is not None and not isinstance(r, Exception)]
         results.sort(key=lambda x: x["rsi"])
 
-        return {
+        result = {
             "items": results,
             "total": len(results),
             "interval": interval,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+        # 保存到文件缓存
+        try:
+            rsi_cache.set(result)
+        except Exception:
+            pass
+
+        return result
 
     result = cache.get_or_compute(cache_key, compute, ttl_seconds=60)
     return _success(result, {"source": "binance"})
@@ -155,6 +173,58 @@ def get_market_chart(symbol: str, interval: str = "4h", limit: int = 200) -> dic
     )
     chart["freqtrade_readiness"] = _build_freqtrade_readiness(settings)
     return _success(chart, {"source": "binance"})
+
+
+def refresh_rsi_cache(interval: str = "1d") -> dict[str, object]:
+    """刷新RSI缓存文件，供自动化程序调用。
+
+    Returns:
+        包含刷新结果的字典
+    """
+    settings = Settings.from_env()
+    symbols = settings.market_symbols
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        futures = [
+            loop.run_in_executor(_executor, _fetch_single_rsi, symbol, interval, symbols)
+            for symbol in symbols
+        ]
+        raw_results = loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
+    finally:
+        loop.close()
+
+    results = [r for r in raw_results if r is not None and not isinstance(r, Exception)]
+    results.sort(key=lambda x: x["rsi"])
+
+    cache_data = {
+        "items": results,
+        "total": len(results),
+        "interval": interval,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    rsi_cache.set(cache_data)
+
+    # 同时清除内存缓存，强制下次请求使用新数据
+    cache.clear(f"rsi_summary_{interval}")
+
+    return {
+        "success": True,
+        "total": len(results),
+        "interval": interval,
+        "cached_at": cache_data["updated_at"],
+    }
+
+
+@router.post("/rsi-cache/refresh")
+@alias_router.post("/rsi-cache/refresh")
+def refresh_rsi_cache_endpoint(interval: str = "1d") -> dict:
+    """手动刷新RSI缓存。需要认证。"""
+    result = refresh_rsi_cache(interval)
+    return _success(result, {"source": "manual_refresh"})
 
 
 def _build_freqtrade_readiness(settings: Settings) -> dict[str, object]:
