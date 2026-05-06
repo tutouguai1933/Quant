@@ -40,6 +40,7 @@ export default function HomePage() {
     token: null,
     isAuthenticated: false,
   });
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [automationStatus, setAutomationStatus] = useState(getAutomationStatusFallback().item);
@@ -55,12 +56,19 @@ export default function HomePage() {
           token: data.token || null,
           isAuthenticated: Boolean(data.isAuthenticated),
         });
+        setSessionLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        setSessionLoaded(true);
+      });
   }, []);
 
-  // 获取数据
+  // 获取数据 - 等 session 加载完成后执行
   useEffect(() => {
+    if (!sessionLoaded) {
+      return;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
@@ -115,7 +123,7 @@ export default function HomePage() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [session.token]);
+  }, [sessionLoaded, session.token]);
 
   // 系统状态指标
   const systemMetrics = useMemo(() => {
