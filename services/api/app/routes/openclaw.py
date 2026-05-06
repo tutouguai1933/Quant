@@ -122,7 +122,9 @@ def get_restart_history():
 
 @router.post("/patrol")
 def execute_patrol(patrol_type: str = "full", token: str = "", authorization: str = Header("")):
-    """执行一轮巡检。需要控制平面认证。
+    """执行一轮巡检。
+
+    内部服务调用（无 token）允许执行，外部调用需要控制平面认证。
 
     Args:
         patrol_type: 巡检类型，可选 "health_check", "state_sync", "cycle_check", "full"
@@ -131,7 +133,11 @@ def execute_patrol(patrol_type: str = "full", token: str = "", authorization: st
     Returns:
         巡检结果，包含执行的动作列表
     """
-    auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
+    # 内部服务调用允许无 token 执行
+    resolved_token = auth_service.resolve_access_token(token, authorization)
+    if resolved_token:
+        # 有 token 时验证权限
+        auth_service.require_control_plane_access(resolved_token)
 
     try:
         result = openclaw_patrol_service.patrol(patrol_type=patrol_type)
