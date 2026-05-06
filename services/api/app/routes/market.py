@@ -92,7 +92,8 @@ def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dic
         close_time = last_item.get("close_time", 0) / 1000
         shanghai_tz = tz_module(td(hours=8))
         dt = datetime.fromtimestamp(close_time, tz=shanghai_tz)
-        time_str = dt.strftime("%m-%d %H:%M")
+        # 包含年份，便于识别过时数据
+        time_str = dt.strftime("%Y-%m-%d %H:%M")
 
         return {
             "symbol": symbol,
