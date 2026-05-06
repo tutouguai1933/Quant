@@ -16,6 +16,7 @@ import {
 import { readFeedback } from "../lib/feedback";
 import { RsiSummaryCard } from "../components/rsi-summary-card";
 import { TradeHistorySummaryCard } from "../components/trade-history-summary-card";
+import { EntryStatusCard } from "../components/entry-status-card";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -199,6 +200,9 @@ export default function HomePage() {
 
         {/* RSI概览 */}
         <RsiSummaryCard refreshInterval={300000} />
+
+        {/* 入场状态 - 显示为什么没有买入 */}
+        <EntryStatusCard refreshInterval={60000} />
 
         {/* 交易记录汇总 */}
         <TradeHistorySummaryCard refreshInterval={60000} />
