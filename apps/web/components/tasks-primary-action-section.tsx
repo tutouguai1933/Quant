@@ -4,7 +4,6 @@ import Link from "next/link";
 
 import { AutomationControlCard } from "./automation-control-card";
 import { DetailDrawer } from "./detail-drawer";
-import { FormSubmitButton } from "./form-submit-button";
 import { SectionShell } from "./section-shell";
 import { SummaryCard } from "./summary-card";
 import { Button } from "./ui/button";
@@ -72,14 +71,12 @@ export function TasksPrimaryActionSection({
             <form action="/actions" method="post">
               <input type="hidden" name="action" value="automation_run_cycle" />
               <input type="hidden" name="returnTo" value="/tasks" />
-              <FormSubmitButton
+              <button
                 type="submit"
-                variant="terminal"
-                size="sm"
-                idleLabel="运行自动化工作流"
-                pendingLabel="运行自动化工作流运行中…"
-                pendingHint="自动化动作已提交，页面会在状态更新后自动刷新。"
-              />
+                className="px-4 py-2 text-sm rounded font-medium bg-[var(--terminal-cyan)]/20 text-[var(--terminal-cyan)] border border-[var(--terminal-cyan)]/30 hover:bg-[var(--terminal-cyan)]/30 transition-colors"
+              >
+                运行自动化工作流
+              </button>
             </form>
 
             <Button asChild variant="outline" size="sm">

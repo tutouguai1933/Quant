@@ -1,7 +1,6 @@
 /* 这个文件负责渲染自动化控制动作卡片，供任务页和策略页共用。 */
 
 import { Card, CardContent } from "./ui/card";
-import { FormSubmitButton } from "./form-submit-button";
 
 type AutomationControlCardProps = {
   action: string;
@@ -37,15 +36,17 @@ export function AutomationControlCard({
             <p className="text-sm font-semibold text-foreground">{label}</p>
             <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
           </div>
-          <FormSubmitButton
+          <button
             type="submit"
-            variant={danger ? "danger" : "terminal"}
-            size="sm"
-            idleLabel={label}
-            pendingLabel={`${label}运行中…`}
-            pendingHint="自动化动作已提交，页面会在状态更新后自动刷新。"
             disabled={disabled}
-          />
+            className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
+              danger
+                ? "bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                : "bg-[var(--terminal-cyan)]/20 text-[var(--terminal-cyan)] border border-[var(--terminal-cyan)]/30 hover:bg-[var(--terminal-cyan)]/30"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {label}
+          </button>
           {disabled && disabledHint ? <p className="text-xs leading-5 text-muted-foreground">{disabledHint}</p> : null}
         </form>
       </CardContent>
