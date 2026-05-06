@@ -1111,7 +1111,7 @@ const WEB_PROXY_BASE_URL = "/api/control";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:9011/api/v1";
 export const AUTH_STORAGE_KEY = "quant_admin_token";
 
-export const DEFAULT_API_TIMEOUT = 10000;
+export const DEFAULT_API_TIMEOUT = 30000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY_BASE = 500; // ms
 const PROTECTED_ROUTE_PATHS = [
