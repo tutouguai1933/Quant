@@ -17,6 +17,7 @@ import { readFeedback } from "../lib/feedback";
 import { RsiSummaryCard } from "../components/rsi-summary-card";
 import { TradeHistorySummaryCard } from "../components/trade-history-summary-card";
 import { EntryStatusCard } from "../components/entry-status-card";
+import { AutomationCycleHistoryCard } from "../components/automation-cycle-history-card";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -229,6 +230,9 @@ export default function HomePage() {
 
         {/* 交易记录汇总 */}
         <TradeHistorySummaryCard refreshInterval={60000} />
+
+        {/* 自动化周期历史 */}
+        <AutomationCycleHistoryCard refreshInterval={60000} />
 
         {/* 最近候选队列 */}
         <TerminalCard title="最近候选队列">

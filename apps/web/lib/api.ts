@@ -121,6 +121,27 @@ export type PublicExecutorStatus = {
   detail?: string;
 };
 
+/** 自动化周期历史记录 */
+export type AutomationCycleRecord = {
+  recorded_at: string;
+  status: string;
+  mode: string;
+  recommended_symbol: string;
+  next_action: string;
+  message: string;
+  failure_reason: string;
+  armed_symbol: string;
+};
+
+export type AutomationCycleHistorySummary = {
+  total: number;
+  success_count: number;
+  waiting_count: number;
+  failed_count: number;
+  last_run_at: string;
+  last_status: string;
+};
+
 const DEFAULT_EVALUATION_ALIGNMENT_DETAILS = {
   research_symbol: "",
   research_action: "continue_research",
@@ -1732,6 +1753,19 @@ export async function listTasks(
 /** 获取公开的执行器状态（无需认证） */
 export async function getPublicExecutorStatus(signal?: AbortSignal): Promise<ApiEnvelope<PublicExecutorStatus>> {
   const response = await fetchJson<PublicExecutorStatus>("/strategies/public/status", undefined, signal);
+  return response;
+}
+
+/** 获取自动化周期历史（无需认证） */
+export async function getAutomationCycleHistory(
+  limit: number = 50,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ items: AutomationCycleRecord[]; summary: AutomationCycleHistorySummary }>> {
+  const response = await fetchJson<{ items: AutomationCycleRecord[]; summary: AutomationCycleHistorySummary }>(
+    `/strategies/public/cycle-history?limit=${limit}`,
+    undefined,
+    signal,
+  );
   return response;
 }
 

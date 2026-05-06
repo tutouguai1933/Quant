@@ -84,6 +84,22 @@ def get_public_status() -> dict:
         )
 
 
+@router.get("/public/cycle-history")
+def get_public_cycle_history(limit: int = 50) -> dict:
+    """公开的自动化周期历史端点，无需认证。用于查看系统运行记录。"""
+    from services.api.app.services.automation_cycle_history_service import automation_cycle_history_service
+
+    history = automation_cycle_history_service.get_history(limit=limit)
+    summary = automation_cycle_history_service.get_summary()
+    return _success(
+        {
+            "items": history,
+            "summary": summary,
+        },
+        {"source": "automation-cycle-history"},
+    )
+
+
 def _unsupported_scope(strategy_id: int) -> dict:
     return {
         "data": None,

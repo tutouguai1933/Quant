@@ -14,6 +14,7 @@ from typing import Any
 
 from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.core.settings import Settings
+from services.api.app.services.automation_cycle_history_service import automation_cycle_history_service
 from services.api.app.services.risk_service import risk_service
 from services.api.app.services.workbench_config_service import (
     _build_automation_preset_catalog,
@@ -363,6 +364,9 @@ class AutomationService:
             next_action=str(payload.get("next_action", "") or ""),
             message=str(payload.get("message", "") or ""),
         )
+
+        # 记录到历史
+        automation_cycle_history_service.record_cycle(payload)
 
     def record_alert(self, *, level: str, code: str, message: str, source: str, detail: str = "") -> dict[str, object]:
         """记录自动化告警。"""
