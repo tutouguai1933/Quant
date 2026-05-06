@@ -17,6 +17,19 @@ type ActionConfig = {
   successMessage: string;
 };
 
+/* GET 请求重定向到任务页面，显示错误提示。 */
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const returnTo = normalizeAppPath(url.searchParams.get("returnTo")?.toString(), "/tasks");
+  return NextResponse.redirect(
+    buildRedirectUrl(
+      request,
+      `${returnTo}?tone=error&title=${encodeURIComponent("操作失败")}&message=${encodeURIComponent("请通过页面按钮执行操作，不要直接访问此链接。")}`,
+    ),
+    303,
+  );
+}
+
 /* 处理控制面动作提交。 */
 export async function POST(request: Request) {
   const params = new URLSearchParams(await request.text());
