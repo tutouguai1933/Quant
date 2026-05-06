@@ -109,6 +109,18 @@ export type StrategyWorkspaceModel = {
   configuration: Record<string, unknown>;
 };
 
+/** 公开执行器状态（无需认证） */
+export type PublicExecutorStatus = {
+  executor: string;
+  connection_status: string;
+  mode: string;
+  status: string;
+  strategy_count: number;
+  order_count: number;
+  position_count: number;
+  detail?: string;
+};
+
 const DEFAULT_EVALUATION_ALIGNMENT_DETAILS = {
   research_symbol: "",
   research_action: "continue_research",
@@ -1715,6 +1727,12 @@ export async function listTasks(
       })),
     },
   };
+}
+
+/** 获取公开的执行器状态（无需认证） */
+export async function getPublicExecutorStatus(signal?: AbortSignal): Promise<ApiEnvelope<PublicExecutorStatus>> {
+  const response = await fetchJson<PublicExecutorStatus>("/strategies/public/status", undefined, signal);
+  return response;
 }
 
 export async function getOpenclawSnapshot(

@@ -24,7 +24,9 @@ import {
   getResearchRuntimeStatusFallback,
   getStrategyWorkspace,
   getStrategyWorkspaceFallback,
+  getPublicExecutorStatus,
 } from "../lib/api";
+import type { PublicExecutorStatus } from "../lib/api";
 import { FeedbackBanner } from "../components/feedback-banner";
 import { LoadingBanner } from "../components/loading-banner";
 import { ErrorBanner } from "../components/error-banner";
@@ -46,6 +48,7 @@ export default function HomePage() {
   const [automationStatus, setAutomationStatus] = useState(getAutomationStatusFallback().item);
   const [researchRuntime, setResearchRuntime] = useState(getResearchRuntimeStatusFallback());
   const [strategyWorkspace, setStrategyWorkspace] = useState(getStrategyWorkspaceFallback());
+  const [executorStatus, setExecutorStatus] = useState<PublicExecutorStatus | null>(null);
 
   // 获取会话状态
   useEffect(() => {
@@ -79,8 +82,9 @@ export default function HomePage() {
       getAutomationStatus(token, controller.signal),
       getResearchRuntimeStatus(controller.signal),
       getStrategyWorkspace(token, controller.signal),
+      getPublicExecutorStatus(controller.signal),
     ])
-      .then(([automationRes, runtimeRes, strategyRes]) => {
+      .then(([automationRes, runtimeRes, strategyRes, executorRes]) => {
         clearTimeout(timeoutId);
 
         const errors: string[] = [];
@@ -101,6 +105,10 @@ export default function HomePage() {
           setStrategyWorkspace(strategyRes.value.data);
         } else if (strategyRes.status === "fulfilled" && strategyRes.value.error) {
           errors.push(`策略工作区加载失败: ${strategyRes.value.error.message}`);
+        }
+
+        if (executorRes.status === "fulfilled" && !executorRes.value.error) {
+          setExecutorStatus(executorRes.value.data);
         }
 
         if (errors.length > 0) {
@@ -132,6 +140,10 @@ export default function HomePage() {
     const isHealthy = healthStatus.status === "ok" ||
       (Array.isArray(healthStatus.active_blockers) && healthStatus.active_blockers.length === 0);
 
+    // 优先使用公开 API 的执行器状态，否则使用 workspace 的状态
+    const connectionStatus = executorStatus?.connection_status || strategyWorkspace.executor_runtime?.connection_status || "unknown";
+    const isConnected = connectionStatus === "connected";
+
     return [
       {
         label: "数据更新",
@@ -140,13 +152,13 @@ export default function HomePage() {
       },
       {
         label: "控程引擎",
-        value: `${automationStatus.controlActions?.length || 0} 运行中`,
+        value: executorStatus ? `${executorStatus.position_count || 0} 持仓` : `${automationStatus.controlActions?.length || 0} 运行中`,
         colorType: "neutral" as const,
       },
       {
         label: "实盘连接",
-        value: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "已连接" : "断开",
-        colorType: strategyWorkspace.executor_runtime?.connection_status === "connected" ? "positive" as const : "negative" as const,
+        value: isConnected ? "已连接" : "断开",
+        colorType: isConnected ? "positive" as const : "negative" as const,
       },
       {
         label: "研究状态",
@@ -154,7 +166,7 @@ export default function HomePage() {
         colorType: "neutral" as const,
       },
     ];
-  }, [automationStatus, researchRuntime, strategyWorkspace]);
+  }, [automationStatus, researchRuntime, strategyWorkspace, executorStatus]);
 
   // 快速导航
   const quickLinks = [

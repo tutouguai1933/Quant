@@ -51,6 +51,39 @@ def _unauthorized() -> dict:
     }
 
 
+@router.get("/public/status")
+def get_public_status() -> dict:
+    """公开的执行器状态端点，无需认证。用于首页显示系统状态。"""
+    try:
+        runtime = sync_service.get_runtime_snapshot()
+        return _success(
+            {
+                "executor": runtime.get("executor", "freqtrade"),
+                "connection_status": runtime.get("connection_status", "error"),
+                "mode": runtime.get("mode", "unknown"),
+                "status": runtime.get("status", "unavailable"),
+                "strategy_count": runtime.get("strategy_count", 0),
+                "order_count": runtime.get("order_count", 0),
+                "position_count": runtime.get("position_count", 0),
+            },
+            {"source": "freqtrade"},
+        )
+    except Exception as exc:
+        return _success(
+            {
+                "executor": "freqtrade",
+                "connection_status": "error",
+                "mode": "unknown",
+                "status": "error",
+                "strategy_count": 0,
+                "order_count": 0,
+                "position_count": 0,
+                "detail": str(exc),
+            },
+            {"source": "freqtrade", "error": True},
+        )
+
+
 def _unsupported_scope(strategy_id: int) -> dict:
     return {
         "data": None,
