@@ -89,25 +89,13 @@ def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dic
             signal = "potential_buy"
 
         last_item = items[-1]
-        # 显示K线收盘时间（RSI计算基于这根K线）
-        close_time = last_item.get("close_time", 0) / 1000
+        # 显示K线开盘时间（RSI基于这根K线的收盘价计算）
         open_time = last_item.get("open_time", 0) / 1000
         shanghai_tz = tz_module(td(hours=8))
-        close_dt = datetime.fromtimestamp(close_time, tz=shanghai_tz)
         open_dt = datetime.fromtimestamp(open_time, tz=shanghai_tz)
 
-        # 时间显示：日线显示"日期 时间（进行中/已完成）"，其他周期显示完整时间
-        now = datetime.now(shanghai_tz)
-        if interval in ("1d", "1D", "1day"):
-            # 判断这根K线是否已完成
-            if close_dt > now:
-                status = "进行中"
-                time_str = f"{open_dt.strftime('%m-%d %H:%M')} {status}"
-            else:
-                status = "已完成"
-                time_str = f"{open_dt.strftime('%m-%d')} {status}"
-        else:
-            time_str = close_dt.strftime("%m-%d %H:%M")
+        # 时间显示：精确到分钟
+        time_str = open_dt.strftime("%m-%d %H:%M")
 
         return {
             "symbol": symbol,
@@ -365,13 +353,11 @@ def _build_rsi_history(items: list[dict], period: int = 14, interval: str = "4h"
 
 
 def _format_timestamp(ms: int, interval: str = "4h") -> str:
-    """格式化毫秒时间戳为可读字符串（北京时间）。"""
+    """格式化毫秒时间戳为可读字符串（北京时间），精确到分钟。"""
     try:
         shanghai_tz = timezone(timedelta(hours=8))
         dt = datetime.fromtimestamp(ms / 1000, tz=shanghai_tz)
-        # 日线只显示日期
-        if interval in ("1d", "1D", "1day"):
-            return dt.strftime("%Y-%m-%d")
-        return dt.strftime("%Y-%m-%d %H:%M")
+        # 所有周期都精确到分钟
+        return dt.strftime("%m-%d %H:%M")
     except Exception:
         return str(ms)
