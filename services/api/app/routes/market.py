@@ -89,15 +89,25 @@ def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dic
             signal = "potential_buy"
 
         last_item = items[-1]
-        # 使用开盘时间，更直观（日线显示当天日期）
+        # 显示K线收盘时间（RSI计算基于这根K线）
+        close_time = last_item.get("close_time", 0) / 1000
         open_time = last_item.get("open_time", 0) / 1000
         shanghai_tz = tz_module(td(hours=8))
-        dt = datetime.fromtimestamp(open_time, tz=shanghai_tz)
-        # 日线只显示日期，其他周期显示日期时间
+        close_dt = datetime.fromtimestamp(close_time, tz=shanghai_tz)
+        open_dt = datetime.fromtimestamp(open_time, tz=shanghai_tz)
+
+        # 时间显示：日线显示"日期 时间（进行中/已完成）"，其他周期显示完整时间
+        now = datetime.now(shanghai_tz)
         if interval in ("1d", "1D", "1day"):
-            time_str = dt.strftime("%Y-%m-%d")
+            # 判断这根K线是否已完成
+            if close_dt > now:
+                status = "进行中"
+                time_str = f"{open_dt.strftime('%m-%d %H:%M')} {status}"
+            else:
+                status = "已完成"
+                time_str = f"{open_dt.strftime('%m-%d')} {status}"
         else:
-            time_str = dt.strftime("%Y-%m-%d %H:%M")
+            time_str = close_dt.strftime("%m-%d %H:%M")
 
         return {
             "symbol": symbol,
