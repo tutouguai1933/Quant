@@ -64,7 +64,7 @@ class OpenclawActionService:
         snapshot_id = str(snapshot.get("snapshot_id", ""))
 
         # 验证前置条件
-        allowed, reason = openclaw_action_policy_service.validate_action_preconditions(
+        allowed, reason, auto_execute = openclaw_action_policy_service.validate_action_preconditions(
             action=action,
             snapshot=snapshot,
         )
