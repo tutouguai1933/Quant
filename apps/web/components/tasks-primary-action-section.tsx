@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { ActionForm } from "./action-form";
 import { AutomationControlCard } from "./automation-control-card";
 import { DetailDrawer } from "./detail-drawer";
 import { SectionShell } from "./section-shell";
@@ -68,16 +69,11 @@ export function TasksPrimaryActionSection({
         detail={restoreDetail}
         actions={(
           <>
-            <form action="/actions" method="post">
-              <input type="hidden" name="action" value="automation_run_cycle" />
-              <input type="hidden" name="returnTo" value="/tasks" />
-              <button
-                type="submit"
-                className="px-4 py-2 text-sm rounded font-medium bg-[var(--terminal-cyan)]/20 text-[var(--terminal-cyan)] border border-[var(--terminal-cyan)]/30 hover:bg-[var(--terminal-cyan)]/30 transition-colors"
-              >
-                运行自动化工作流
-              </button>
-            </form>
+            <ActionForm
+              action="automation_run_cycle"
+              returnTo="/tasks"
+              label="运行自动化工作流"
+            />
 
             <Button asChild variant="outline" size="sm">
               <Link href={targetActionHref}>{targetActionLabel}</Link>
