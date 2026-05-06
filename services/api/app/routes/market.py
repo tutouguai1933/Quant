@@ -118,8 +118,10 @@ def get_rsi_history(symbol: str, interval: str = "4h", limit: int = 200) -> dict
             {"source": "binance", "reason": "insufficient_data"},
         )
 
-    # 计算RSI历史序列
+    # 计算RSI历史序列（从旧到新）
     rsi_items = _build_rsi_history(items, period=14)
+    # 反转排序，让最新数据排在前面
+    rsi_items.reverse()
 
     return _success(
         {"items": rsi_items, "symbol": normalized_symbol, "interval": interval, "total": len(rsi_items)},
@@ -181,9 +183,10 @@ def _build_rsi_history(items: list[dict], period: int = 14) -> list[dict]:
 
 
 def _format_timestamp(ms: int) -> str:
-    """格式化毫秒时间戳为可读字符串。"""
+    """格式化毫秒时间戳为可读字符串（北京时间）。"""
     try:
-        dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+        shanghai_tz = timezone(timedelta(hours=8))
+        dt = datetime.fromtimestamp(ms / 1000, tz=shanghai_tz)
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(ms)

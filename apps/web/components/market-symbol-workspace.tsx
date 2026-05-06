@@ -493,7 +493,7 @@ function PnlBadge({ value }: { value: string }) {
   return <StatusBadge value={label} />;
 }
 
-/* 格式化交易时间 */
+/* 格式化交易时间（北京时间） */
 function formatTradeTime(isoString: string): string {
   try {
     const dt = new Date(isoString);
@@ -503,6 +503,7 @@ function formatTradeTime(isoString: string): string {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Shanghai",
     });
   } catch {
     return isoString;

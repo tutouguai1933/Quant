@@ -294,7 +294,7 @@ function DetailItem({ label, value, valueClassName = "" }: { label: string; valu
   );
 }
 
-/* 格式化时间戳为本地时间字符串。 */
+/* 格式化时间戳为本地时间字符串（北京时间）。 */
 function formatTimestamp(timestamp: string): string {
   if (!timestamp) return "未知时间";
   try {
@@ -306,6 +306,7 @@ function formatTimestamp(timestamp: string): string {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
+      timeZone: "Asia/Shanghai",
     });
   } catch {
     return timestamp;

@@ -10,6 +10,7 @@
   "cancel_open_orders_on_exit": true,
   "trading_mode": "spot",
   "margin_mode": "",
+  "timezone": "Asia/Shanghai",
   "unfilledtimeout": {
     "entry": 10,
     "exit": 10,

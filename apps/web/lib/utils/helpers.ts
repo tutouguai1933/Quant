@@ -21,7 +21,7 @@ export function readText(value: unknown, fallback: string): string {
 }
 
 /**
- * 格式化时间
+ * 格式化时间（北京时间）
  */
 export function formatTime(value: string): string {
   try {
@@ -31,6 +31,7 @@ export function formatTime(value: string): string {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Asia/Shanghai",
     });
   } catch {
     return value;

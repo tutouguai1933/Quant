@@ -185,7 +185,7 @@ function ScoreGauge({ score, threshold }: { score: number; threshold: number }) 
 function FactorContributionBar({ factor }: { factor: FactorResult }) {
   const IconComponent = factorIcons[factor.name] || Activity;
   const label = factorLabels[factor.name] || factor.name;
-  const bgColor = factorColors[factor.name] || "bg-gray-500";
+  const bgColor = factorColors[factor.name] || "bg-[var(--terminal-muted)]";
   const contributionPercent = Math.round(factor.contribution * 100);
   const scorePercent = Math.round(factor.score * 100);
 
@@ -269,7 +269,7 @@ export function ScoringConfigPanel({
               <div key={name} className="space-y-1.5">
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2">
-                    <span className={`size-2 rounded-full ${factorColors[name] || "bg-gray-500"}`} />
+                    <span className={`size-2 rounded-full ${factorColors[name] || "bg-[var(--terminal-muted)]"}`} />
                     <span>{factorLabels[name] || name}</span>
                   </div>
                   <span className="font-medium">{weight.toFixed(1)}</span>

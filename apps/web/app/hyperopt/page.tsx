@@ -215,7 +215,7 @@ export default function HyperoptPage() {
                 <InfoBlock
                   label="开始时间"
                   value={status.started_at
-                    ? new Date(status.started_at).toLocaleString("zh-CN")
+                    ? new Date(status.started_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
                     : "--"}
                 />
               </div>
@@ -282,7 +282,7 @@ export default function HyperoptPage() {
                           <StatusBadge value={job.status} />
                         </td>
                         <td className="py-2 px-2 text-center text-[var(--terminal-muted)]">
-                          {new Date(job.created_at).toLocaleString("zh-CN")}
+                          {new Date(job.created_at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}
                         </td>
                       </tr>
                     ))}
