@@ -40,7 +40,10 @@ class AutomationService:
 
     def __init__(self) -> None:
         self._state_path = self._resolve_state_path()
-        self._mode = "manual"
+        # 默认模式从环境变量读取，如果没有配置则使用 auto_live
+        self._mode = os.environ.get("QUANT_AUTOMATION_DEFAULT_MODE", "auto_live")
+        if self._mode not in AUTOMATION_MODES:
+            self._mode = "auto_live"
         self._paused = False
         self._paused_reason = ""
         self._manual_takeover = False
