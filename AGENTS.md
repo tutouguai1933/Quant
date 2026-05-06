@@ -31,7 +31,24 @@ conda activate quant
                                              ├── quant-api (FastAPI) - 端口9011
                                              ├── quant-web (Next.js) - 端口9012
                                              ├── quant-freqtrade - API端口9013 (内部)
-                                             └── ...其他服务
+                                             ├── quant-mihomo - 代理端口7890
+                                             ├── quant-prometheus - 端口9090
+                                             ├── quant-grafana - 端口3000
+                                             └── quant-openclaw - 巡检服务
+```
+
+### SSH连接（密钥认证）
+
+```bash
+# WSL / Linux / macOS
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
+
+# Windows PowerShell
+ssh -i C:\Users\19332\Desktop\id_aliyun_djy djy@39.106.11.65
+
+# 私钥位置
+# - WSL: ~/.ssh/id_aliyun_djy
+# - Windows桌面: id_aliyun_djy
 ```
 
 ### 标准工作流程
@@ -48,10 +65,10 @@ conda activate quant
 ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
 
 # 2. 拉取最新代码
-git --git-dir=/home/djy/Quant/.git --work-tree=/home/djy/Quant pull
+cd ~/Quant && git pull
 
 # 3. 重新构建并部署
-cd /home/djy/Quant/infra/deploy
+cd ~/Quant/infra/deploy
 docker compose build api web && docker compose up -d --no-deps api web
 
 # 4. 查看日志确认成功
