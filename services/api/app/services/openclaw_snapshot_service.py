@@ -10,6 +10,7 @@ from typing import Any
 
 from services.api.app.services.automation_service import AutomationService
 from services.api.app.services.strategy_dispatch_service import StrategyDispatchService
+from services.api.app.services.automation_workflow_service import automation_workflow_service
 from services.api.app.services.service_health_service import ServiceHealthService, service_health_service
 from services.api.app.services.openclaw_restart_history_service import OpenclawRestartHistoryService, openclaw_restart_history_service
 from services.api.app.services.openclaw_audit_service import OpenclawAuditService, openclaw_audit_service
@@ -42,7 +43,13 @@ class OpenclawSnapshotService:
         paused = bool(state.get("paused", False))
         manual_takeover = bool(state.get("manual_takeover", False))
 
-        runtime_guard = dict(state.get("runtime_guard") or {})
+        # 从 automation_workflow_service 获取完整的 runtime_guard 信息
+        try:
+            workflow_status = automation_workflow_service.get_status()
+            runtime_guard = dict(workflow_status.get("runtime_guard") or {})
+        except Exception:
+            runtime_guard = dict(state.get("runtime_guard") or {})
+
         recovery_review = dict(state.get("recovery_review") or {})
 
         executor_runtime = dict(state.get("executor_runtime") or {})
