@@ -63,6 +63,7 @@ services:
         max-file: "3"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../data/runtime:/app/.runtime
     environment:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
