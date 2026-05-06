@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from services.api.app.core.settings import Settings
+from services.api.app.services.cache_service import cache
 from services.api.app.services.market_service import MarketService, normalize_kline_series
 from services.api.app.services.research_service import research_service
 from services.api.app.services.indicator_service import _rsi, _to_decimal
@@ -108,31 +109,37 @@ def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dic
 @router.get("/rsi-summary")
 @alias_router.get("/rsi-summary")
 def get_rsi_summary(interval: str = "1d") -> dict:
-    """返回所有监控币种的最新RSI值概览（并发获取）。"""
-    settings = Settings.from_env()
-    symbols = settings.market_symbols
+    """返回所有监控币种的最新RSI值概览（并发获取，带缓存）。"""
+    cache_key = f"rsi_summary_{interval}"
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    def compute():
+        settings = Settings.from_env()
+        symbols = settings.market_symbols
 
-    try:
-        futures = [
-            loop.run_in_executor(_executor, _fetch_single_rsi, symbol, interval, symbols)
-            for symbol in symbols
-        ]
-        raw_results = loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
-    finally:
-        loop.close()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    results = [r for r in raw_results if r is not None and not isinstance(r, Exception)]
-    results.sort(key=lambda x: x["rsi"])
+        try:
+            futures = [
+                loop.run_in_executor(_executor, _fetch_single_rsi, symbol, interval, symbols)
+                for symbol in symbols
+            ]
+            raw_results = loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
+        finally:
+            loop.close()
 
-    return _success({
-        "items": results,
-        "total": len(results),
-        "interval": interval,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }, {"source": "binance"})
+        results = [r for r in raw_results if r is not None and not isinstance(r, Exception)]
+        results.sort(key=lambda x: x["rsi"])
+
+        return {
+            "items": results,
+            "total": len(results),
+            "interval": interval,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    result = cache.get_or_compute(cache_key, compute, ttl_seconds=60)
+    return _success(result, {"source": "binance"})
 
 
 @router.get("/{symbol}/chart")

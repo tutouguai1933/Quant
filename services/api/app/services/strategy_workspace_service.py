@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal, InvalidOperation
 
 from services.api.app.core.settings import Settings
 from services.api.app.services.account_sync_service import account_sync_service
+from services.api.app.services.cache_service import cache
 from services.api.app.services.market_service import MarketService
 from services.api.app.services.research_cockpit_service import build_market_research_brief
 from services.api.app.services.research_service import ResearchService, research_service
@@ -22,6 +24,9 @@ from services.api.app.services.workbench_config_service import (
     _describe_catalog_item,
     workbench_config_service,
 )
+
+# 用于并行获取账户数据
+_account_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="account_sync")
 
 
 class StrategyWorkspaceService:
@@ -84,10 +89,8 @@ class StrategyWorkspaceService:
         runtime_mode = Settings.from_env().runtime_mode
         execution_source = "freqtrade-rest-sync" if str(runtime_snapshot.get("backend", "")) == "rest" else "freqtrade-sync"
         if runtime_mode == "live":
-            balances, balance_detail = self._call_account_sync("list_balances", limit=order_limit)
-            orders, order_detail = self._call_account_sync("list_orders", limit=order_limit)
-            positions, position_detail = self._call_account_sync("list_positions", limit=order_limit)
-            detail = balance_detail or order_detail or position_detail
+            # 使用缓存和并行获取账户数据
+            balances, orders, positions, detail = self._fetch_account_data_parallel(order_limit)
             status = "unavailable" if detail else "ready"
             source = "binance-account-sync"
             truth_source = "binance"
@@ -180,23 +183,55 @@ class StrategyWorkspaceService:
             return [], ""
         return list(items), ""
 
-    def _read_execution_runtime(self) -> dict[str, object]:
-        """优先读取执行器运行状态，异常时保持固定结构。"""
+    def _fetch_account_data_parallel(self, limit: int = 5) -> tuple[list, list, list, str]:
+        """并行获取账户数据，使用缓存减少API调用。"""
 
-        try:
-            runtime_snapshot = dict(self._execution_sync.get_runtime_snapshot())
-        except Exception as exc:
-            runtime_snapshot = {
-                "executor": "freqtrade",
-                "backend": "memory",
-                "mode": Settings.from_env().runtime_mode,
-                "connection_status": "error",
-                "status": "unavailable",
-                "detail": str(exc),
-            }
-        runtime_snapshot.setdefault("status", "ready")
-        runtime_snapshot.setdefault("detail", "")
-        return runtime_snapshot
+        cache_key = f"account_state_{limit}"
+
+        def compute():
+            # 并行获取 balances, orders, positions
+            futures = {}
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures[executor.submit(self._call_account_sync, "list_balances", limit=limit)] = "balances"
+                futures[executor.submit(self._call_account_sync, "list_orders", limit=limit)] = "orders"
+                futures[executor.submit(self._call_account_sync, "list_positions", limit=limit)] = "positions"
+
+                results = {"balances": ([], ""), "orders": ([], ""), "positions": ([], "")}
+                for future in as_completed(futures):
+                    key = futures[future]
+                    try:
+                        results[key] = future.result(timeout=30)
+                    except Exception as exc:
+                        results[key] = ([], str(exc))
+
+            balances, balance_detail = results["balances"]
+            orders, order_detail = results["orders"]
+            positions, position_detail = results["positions"]
+            detail = balance_detail or order_detail or position_detail
+            return (balances, orders, positions, detail)
+
+        return cache.get_or_compute(cache_key, compute, ttl_seconds=15)
+
+    def _read_execution_runtime(self) -> dict[str, object]:
+        """优先读取执行器运行状态，异常时保持固定结构。使用缓存减少API调用。"""
+
+        def compute():
+            try:
+                runtime_snapshot = dict(self._execution_sync.get_runtime_snapshot())
+            except Exception as exc:
+                runtime_snapshot = {
+                    "executor": "freqtrade",
+                    "backend": "memory",
+                    "mode": Settings.from_env().runtime_mode,
+                    "connection_status": "error",
+                    "status": "unavailable",
+                    "detail": str(exc),
+                }
+            runtime_snapshot.setdefault("status", "ready")
+            runtime_snapshot.setdefault("detail", "")
+            return runtime_snapshot
+
+        return cache.get_or_compute("execution_runtime", compute, ttl_seconds=10)
 
     def _build_strategy_cards(
         self,
