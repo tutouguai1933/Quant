@@ -89,11 +89,15 @@ def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dic
             signal = "potential_buy"
 
         last_item = items[-1]
-        close_time = last_item.get("close_time", 0) / 1000
+        # 使用开盘时间，更直观（日线显示当天日期）
+        open_time = last_item.get("open_time", 0) / 1000
         shanghai_tz = tz_module(td(hours=8))
-        dt = datetime.fromtimestamp(close_time, tz=shanghai_tz)
-        # 包含年份，便于识别过时数据
-        time_str = dt.strftime("%Y-%m-%d %H:%M")
+        dt = datetime.fromtimestamp(open_time, tz=shanghai_tz)
+        # 日线只显示日期，其他周期显示日期时间
+        if interval in ("1d", "1D", "1day"):
+            time_str = dt.strftime("%Y-%m-%d")
+        else:
+            time_str = dt.strftime("%Y-%m-%d %H:%M")
 
         return {
             "symbol": symbol,
@@ -286,7 +290,7 @@ def get_rsi_history(symbol: str, interval: str = "4h", limit: int = 200) -> dict
         )
 
     # 计算RSI历史序列（从旧到新）
-    rsi_items = _build_rsi_history(items, period=14)
+    rsi_items = _build_rsi_history(items, period=14, interval=interval)
     # 反转排序，让最新数据排在前面
     rsi_items.reverse()
 
@@ -296,12 +300,13 @@ def get_rsi_history(symbol: str, interval: str = "4h", limit: int = 200) -> dict
     )
 
 
-def _build_rsi_history(items: list[dict], period: int = 14) -> list[dict]:
+def _build_rsi_history(items: list[dict], period: int = 14, interval: str = "4h") -> list[dict]:
     """从K线收盘价序列构建RSI历史。
 
     Args:
         items: K线数据列表
         period: RSI周期（默认14）
+        interval: K线周期
 
     Returns:
         RSI历史记录列表
@@ -335,7 +340,7 @@ def _build_rsi_history(items: list[dict], period: int = 14) -> list[dict]:
             signal = "potential_buy"
 
         close_time = items[i].get("close_time", 0)
-        time_str = _format_timestamp(close_time)
+        time_str = _format_timestamp(close_time, interval)
 
         rsi_series.append({
             "timestamp": close_time,
@@ -349,11 +354,14 @@ def _build_rsi_history(items: list[dict], period: int = 14) -> list[dict]:
     return rsi_series
 
 
-def _format_timestamp(ms: int) -> str:
+def _format_timestamp(ms: int, interval: str = "4h") -> str:
     """格式化毫秒时间戳为可读字符串（北京时间）。"""
     try:
         shanghai_tz = timezone(timedelta(hours=8))
         dt = datetime.fromtimestamp(ms / 1000, tz=shanghai_tz)
+        # 日线只显示日期
+        if interval in ("1d", "1D", "1day"):
+            return dt.strftime("%Y-%m-%d")
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return str(ms)
