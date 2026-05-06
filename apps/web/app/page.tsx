@@ -62,12 +62,15 @@ export default function HomePage() {
   // 获取数据
   useEffect(() => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    // 使用 session token 进行认证
+    const token = session.token || undefined;
 
     Promise.allSettled([
-      getAutomationStatus(undefined, controller.signal),
+      getAutomationStatus(token, controller.signal),
       getResearchRuntimeStatus(controller.signal),
-      getStrategyWorkspace(undefined, controller.signal),
+      getStrategyWorkspace(token, controller.signal),
     ])
       .then(([automationRes, runtimeRes, strategyRes]) => {
         clearTimeout(timeoutId);
@@ -112,7 +115,7 @@ export default function HomePage() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, []);
+  }, [session.token]);
 
   // 系统状态指标
   const systemMetrics = useMemo(() => {
