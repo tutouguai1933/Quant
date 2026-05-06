@@ -30,7 +30,7 @@ conda activate quant
                                              │
                                              ├── quant-api (FastAPI) - 端口9011
                                              ├── quant-web (Next.js) - 端口9012
-                                             ├── quant-freqtrade - 端口8080
+                                             ├── quant-freqtrade - API端口9013 (内部)
                                              └── ...其他服务
 ```
 
@@ -44,15 +44,15 @@ conda activate quant
 ### 部署命令（必须在服务器执行）
 
 ```bash
-# 1. SSH到服务器
-ssh djy@39.106.11.65
+# 1. SSH到服务器（使用密钥文件）
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
 
 # 2. 拉取最新代码
-cd /home/djy/Quant && git pull
+git --git-dir=/home/djy/Quant/.git --work-tree=/home/djy/Quant pull
 
 # 3. 重新构建并部署
 cd /home/djy/Quant/infra/deploy
-docker compose build api web && docker compose up -d api web
+docker compose build api web && docker compose up -d --no-deps api web
 
 # 4. 查看日志确认成功
 docker logs quant-api --tail 30
