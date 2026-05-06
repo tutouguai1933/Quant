@@ -95,6 +95,24 @@ export function TerminalSidebar({
         <div className="text-[var(--terminal-dim)] text-[10px] mt-0.5">
           v0.1
         </div>
+        {/* 登录/登出按钮 */}
+        <div className="mt-2">
+          {isAuthenticated ? (
+            <a
+              href="/login/submit"
+              className="block text-[10px] text-[var(--terminal-dim)] hover:text-[var(--terminal-cyan)]"
+            >
+              ◉ 已登录
+            </a>
+          ) : (
+            <a
+              href="/login"
+              className="block text-[10px] text-[var(--terminal-yellow)] hover:text-[var(--terminal-cyan)]"
+            >
+              ○ 点击登录
+            </a>
+          )}
+        </div>
       </div>
 
       {/* 导航区域 */}
