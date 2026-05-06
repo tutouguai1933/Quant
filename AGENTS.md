@@ -20,6 +20,65 @@ conda activate quant
 - 不再创建、依赖或建议使用 `.venv`
 - 需要执行测试、脚本、服务启动命令时，默认都基于 `conda activate quant`
 
+## ⚠️ 核心原则：本地开发 + Git推送 + 服务器部署
+
+**本项目严格禁止在本地环境运行任何Docker服务。所有服务必须在服务器上运行。**
+
+### 部署架构
+```
+本地WSL (代码编辑) --> Git Push --> 服务器 (ssh djy@39.106.11.65) --> Docker运行
+                                             │
+                                             ├── quant-api (FastAPI) - 端口9011
+                                             ├── quant-web (Next.js) - 端口9012
+                                             ├── quant-freqtrade - 端口8080
+                                             └── ...其他服务
+```
+
+### 标准工作流程
+
+1. **本地编辑**：在WSL修改代码
+2. **Git推送**：`git add . && git commit -m "xxx" && git push`
+3. **服务器部署**：SSH到服务器拉取代码并重新构建
+4. **验证效果**：在本地浏览器访问 http://39.106.11.65:9012
+
+### 部署命令（必须在服务器执行）
+
+```bash
+# 1. SSH到服务器
+ssh djy@39.106.11.65
+
+# 2. 拉取最新代码
+cd /home/djy/Quant && git pull
+
+# 3. 重新构建并部署
+cd /home/djy/Quant/infra/deploy
+docker compose build api web && docker compose up -d api web
+
+# 4. 查看日志确认成功
+docker logs quant-api --tail 30
+docker logs quant-web --tail 30
+```
+
+### 为什么不能本地部署
+
+| 原因 | 说明 |
+|------|------|
+| 网络隔离 | API需要调用Binance等外部API，本地网络可能无法访问 |
+| 外部访问 | 服务器IP 39.106.11.65 需要能被外部访问，WSL无法提供 |
+| 环境一致 | 确保开发、测试、生产环境一致 |
+
+### ❌ 常见错误
+
+```bash
+# 错误：在本地执行 docker compose up
+# 这会导致服务运行在本地，无法被外部访问
+docker compose up -d  # ❌ 不要这样做
+
+# 正确：Git推送 + 服务器部署
+git push  # 本地推送
+ssh djy@39.106.11.65 "cd /home/djy/Quant && git pull && cd infra/deploy && docker compose build api web && docker compose up -d api web"
+```
+
 ## 项目开始前
 每次开始一个新项目或新会话时：
 1. 先读 CONTEXT.md 了解当前进度和关键决定（如有），这是最轻量的启动方式

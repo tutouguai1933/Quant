@@ -14,6 +14,8 @@ import {
   TerminalCard,
 } from "../components/terminal";
 import { readFeedback } from "../lib/feedback";
+import { RsiSummaryCard } from "../components/rsi-summary-card";
+import { TradeHistorySummaryCard } from "../components/trade-history-summary-card";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -194,6 +196,12 @@ export default function HomePage() {
             </Link>
           ))}
         </div>
+
+        {/* RSI概览 */}
+        <RsiSummaryCard refreshInterval={300000} />
+
+        {/* 交易记录汇总 */}
+        <TradeHistorySummaryCard refreshInterval={60000} />
 
         {/* 最近候选队列 */}
         <TerminalCard title="最近候选队列">

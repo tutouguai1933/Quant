@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-
 from decimal import Decimal
 
 from services.api.app.core.settings import Settings
@@ -12,7 +13,7 @@ from services.api.app.services.research_service import research_service
 from services.api.app.services.indicator_service import _rsi, _to_decimal
 
 try:
-    from fastapi import APIRouter
+    from fastapi import APIRouter, HTTPException
 except ImportError:
     class APIRouter:  # pragma: no cover - lightweight local fallback
         def __init__(self, *args, **kwargs) -> None:
@@ -27,9 +28,11 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
-# 新路径别名（绕过阿里云WAF拦截）
+# 新路径别名（绕过claudeWAF拦截）
 alias_router = APIRouter(prefix="/api/v1/quotes", tags=["quotes"])
 service = MarketService(research_reader=research_service)
+
+_executor = ThreadPoolExecutor(max_workers=4)
 
 
 def _success(data: dict, meta: dict | None = None) -> dict:
@@ -44,6 +47,92 @@ def list_market() -> dict:
     settings = Settings.from_env()
     items = service.list_market_snapshots(settings.market_symbols)
     return _success({"items": items}, {"source": "binance"})
+
+
+def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dict | None:
+    """在线程池中获取单个币种的RSI数据。"""
+    from datetime import timezone as tz_module
+    from datetime import timedelta as td
+
+    try:
+        chart = service.get_symbol_chart(
+            symbol=symbol,
+            interval=interval,
+            limit=50,
+            allowed_symbols=allowed_symbols,
+        )
+        items = chart.get("items", [])
+
+        if len(items) < 15:
+            return None
+
+        closes = [item.get("close", 0) for item in items]
+        if not closes:
+            return None
+
+        period = 14
+        if len(closes) < period + 1:
+            return None
+
+        segment = closes[-(period + 1):]
+        rsi_value = _rsi([_to_decimal(c) for c in segment], period)
+
+        state = "neutral"
+        signal = "hold"
+        if rsi_value >= Decimal("70"):
+            state = "overbought"
+            signal = "potential_sell"
+        elif rsi_value <= Decimal("30"):
+            state = "oversold"
+            signal = "potential_buy"
+
+        last_item = items[-1]
+        close_time = last_item.get("close_time", 0) / 1000
+        shanghai_tz = tz_module(td(hours=8))
+        dt = datetime.fromtimestamp(close_time, tz=shanghai_tz)
+        time_str = dt.strftime("%m-%d %H:%M")
+
+        return {
+            "symbol": symbol,
+            "rsi": float(rsi_value.quantize(Decimal("0.01"))),
+            "state": state,
+            "signal": signal,
+            "close_price": closes[-1] if closes else None,
+            "time": time_str,
+            "interval": interval,
+        }
+    except Exception:
+        return None
+
+
+@router.get("/rsi-summary")
+@alias_router.get("/rsi-summary")
+def get_rsi_summary(interval: str = "1d") -> dict:
+    """返回所有监控币种的最新RSI值概览（并发获取）。"""
+    settings = Settings.from_env()
+    symbols = settings.market_symbols
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        futures = [
+            loop.run_in_executor(_executor, _fetch_single_rsi, symbol, interval, symbols)
+            for symbol in symbols
+        ]
+        raw_results = loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
+    finally:
+        loop.close()
+
+    results = [r for r in raw_results if r is not None and not isinstance(r, Exception)]
+    results.sort(key=lambda x: x["rsi"])
+
+    return _success({
+        "items": results,
+        "total": len(results),
+        "interval": interval,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }, {"source": "binance"})
 
 
 @router.get("/{symbol}/chart")

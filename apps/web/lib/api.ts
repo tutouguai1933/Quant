@@ -1880,6 +1880,70 @@ export async function listMarketSnapshots(): Promise<
   }
 }
 
+export interface RsiSummaryItem {
+  symbol: string;
+  rsi: number;
+  state: "overbought" | "neutral" | "oversold";
+  signal: "potential_buy" | "hold" | "potential_sell";
+  close_price: string | null;
+  time: string;
+  interval: string;
+}
+
+export interface RsiSummaryResponse {
+  items: RsiSummaryItem[];
+  total: number;
+  interval: string;
+  updated_at: string;
+}
+
+export async function getRsiSummary(interval: string = "1d"): Promise<ApiEnvelope<RsiSummaryResponse>> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetchJson<RsiSummaryResponse>(`/market/rsi-summary?interval=${encodeURIComponent(interval)}`, undefined, controller.signal);
+    clearTimeout(timeoutId);
+
+    if (response.error) {
+      return response as ApiEnvelope<RsiSummaryResponse>;
+    }
+
+    const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
+    const items: unknown[] = Array.isArray(data.items) ? data.items : [];
+
+    const resultItems: RsiSummaryItem[] = items.map((item) => {
+      const row = isPlainObject(item) ? item : {};
+      return {
+        symbol: String(row.symbol ?? ""),
+        rsi: Number(row.rsi ?? 0),
+        state: normalizeRsiState(row.state),
+        signal: normalizeRsiSignal(row.signal),
+        close_price: row.close_price ? String(row.close_price) : null,
+        time: String(row.time ?? ""),
+        interval: String(row.interval ?? interval),
+      };
+    });
+
+    return {
+      ...response,
+      data: {
+        items: resultItems,
+        total: (data.total as number) ?? resultItems.length,
+        interval: interval,
+        updated_at: (data.updated_at as string) ?? new Date().toISOString(),
+      },
+    };
+  } catch {
+    clearTimeout(timeoutId);
+    return {
+      data: { items: [], total: 0, interval, updated_at: "" },
+      error: null,
+      meta: { fallback: true },
+    };
+  }
+}
+
 export async function getDataWorkspace(
   symbol?: string,
   interval?: string,
