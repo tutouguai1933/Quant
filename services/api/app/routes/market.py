@@ -337,11 +337,11 @@ def _build_rsi_history(items: list[dict], period: int = 14, interval: str = "4h"
             state = "oversold"
             signal = "potential_buy"
 
-        close_time = items[i].get("close_time", 0)
-        time_str = _format_timestamp(close_time, interval)
+        open_time = items[i].get("open_time", 0)
+        time_str = _format_timestamp(open_time, interval)
 
         rsi_series.append({
-            "timestamp": close_time,
+            "timestamp": open_time,
             "time": time_str,
             "rsi_value": str(rsi_value.quantize(Decimal("0.01"))),
             "state": state,
