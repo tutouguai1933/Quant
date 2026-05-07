@@ -67,6 +67,30 @@ function getDisplayStatusLabel(displayStatus: string): string {
   }
 }
 
+// 拦截原因中文翻译
+function translateBlockReason(reason: string): string {
+  const translations: Record<string, string> = {
+    "volatility_too_high": "波动率过高",
+    "volume_not_confirmed": "成交量不足",
+    "validation_future_return_not_positive": "预测收益为负",
+    "trend_broken": "趋势破位",
+    "score_too_low": "评分过低",
+    "validation_sample_count_too_low": "样本数不足",
+    "validation_positive_rate_too_low": "胜率过低",
+    "strict_template_not_confirmed": "严格模板未确认",
+    "manual_mode_requires_target": "手动模式需指定目标",
+    "resume_checklist_pending": "恢复清单待处理",
+    "resume_requires_dry_run_only": "恢复需先dry-run",
+    "cooldown_active": "冷却中",
+    "daily_limit_reached": "已达日限额",
+    "manual_takeover_active": "人工接管中",
+    "paused_waiting_review": "暂停等待审核",
+    "manual_mode": "手动模式",
+    "candidate_blocked": "候选被拦阻",
+  };
+  return translations[reason] || reason;
+}
+
 // 状态说明
 function getStatusDescription(displayStatus: string, failureReason: string, message: string): string {
   switch (displayStatus) {
@@ -75,7 +99,7 @@ function getStatusDescription(displayStatus: string, failureReason: string, mess
     case "blocked":
       // 如果是通用拦截码，显示具体原因（message）
       const blockReason = failureReason === "candidate_blocked" ? message : failureReason;
-      return `候选被拦阻: ${blockReason || "未知原因"}`;
+      return `候选被拦阻: ${translateBlockReason(blockReason) || "未知原因"}`;
     case "cooldown":
       return "冷却窗口中，等待下次运行";
     case "failed":
