@@ -80,8 +80,9 @@ def get_system_status() -> dict[str, Any]:
     try:
         current_node = vpn_switch_service.current_node
         exit_ip = vpn_switch_service.get_current_exit_ip_sync()
+        # 有出口IP就算连接成功
         result["proxy"] = {
-            "connected": bool(current_node),
+            "connected": bool(exit_ip),
             "current_node": current_node or "",
             "exit_ip": exit_ip or "",
         }
