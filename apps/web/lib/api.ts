@@ -122,24 +122,43 @@ export type PublicExecutorStatus = {
 };
 
 /** 自动化周期历史记录 */
+export type AutomationCycleCandidate = {
+  symbol: string;
+  score: string;
+  status: string;
+  blocked_reason: string;
+};
+
+export type AutomationCycleTaskSummary = {
+  status: string;
+  duration_seconds: number;
+};
+
 export type AutomationCycleRecord = {
   recorded_at: string;
   status: string;
+  display_status: string;
   mode: string;
   recommended_symbol: string;
   next_action: string;
   message: string;
   failure_reason: string;
   armed_symbol: string;
+  candidates: AutomationCycleCandidate[];
+  rsi_snapshot: Record<string, unknown>;
+  task_summary: Record<string, AutomationCycleTaskSummary>;
 };
 
 export type AutomationCycleHistorySummary = {
   total: number;
-  success_count: number;
-  waiting_count: number;
+  succeeded_count: number;
+  blocked_count: number;
+  cooldown_count: number;
   failed_count: number;
+  waiting_count: number;
   last_run_at: string;
   last_status: string;
+  last_display_status: string;
 };
 
 const DEFAULT_EVALUATION_ALIGNMENT_DETAILS = {

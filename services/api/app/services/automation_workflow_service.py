@@ -531,6 +531,7 @@ class AutomationWorkflowService:
             "failure_policy_action": next_action if dispatch_status == "failed" else "",
             "armed_symbol": str(self._automation.get_state().get("armed_symbol", "")),
             "priority_queue_summary": dict(priority_queue_payload.get("summary") or {}),
+            "priority_queue": {"items": dispatch_queue[:5]},  # 添加前5个候选
             "train_task": train_task,
             "infer_task": infer_task,
             "signal_task": signal_task,
