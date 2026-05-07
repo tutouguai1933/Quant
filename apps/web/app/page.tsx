@@ -18,6 +18,7 @@ import { RsiSummaryCard } from "../components/rsi-summary-card";
 import { TradeHistorySummaryCard } from "../components/trade-history-summary-card";
 import { EntryStatusCard } from "../components/entry-status-card";
 import { AutomationCycleHistoryCard } from "../components/automation-cycle-history-card";
+import { SystemStatusCard } from "../components/system-status-card";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -221,6 +222,9 @@ export default function HomePage() {
             </Link>
           ))}
         </div>
+
+        {/* 系统状态 */}
+        <SystemStatusCard refreshInterval={30000} />
 
         {/* RSI概览 */}
         <RsiSummaryCard refreshInterval={300000} />

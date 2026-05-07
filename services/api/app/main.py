@@ -68,6 +68,7 @@ from services.api.app.routes.position_management import router as position_manag
 from services.api.app.routes.ai_training import router as ai_training_router
 from services.api.app.routes.trade_log import router as trade_log_router
 from services.api.app.routes.hyperopt import router as hyperopt_router
+from services.api.app.routes.system_status import router as system_status_router
 from services.api.app.websocket.manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,8 @@ app.include_router(report_router)
 app.routers.append(report_router)  # type: ignore[attr-defined]
 app.include_router(strategy_tuning_router)
 app.routers.append(strategy_tuning_router)  # type: ignore[attr-defined]
+app.include_router(system_status_router)
+app.routers.append(system_status_router)  # type: ignore[attr-defined]
 app.include_router(position_management_router)
 app.routers.append(position_management_router)  # type: ignore[attr-defined]
 app.include_router(exchange_router)

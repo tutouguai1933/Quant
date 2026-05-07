@@ -121,6 +121,39 @@ export type PublicExecutorStatus = {
   detail?: string;
 };
 
+/** 系统综合状态 */
+export type SystemStatus = {
+  patrol: {
+    running: boolean;
+    interval_minutes: number;
+    last_run_at: string | null;
+    last_run_status: string | null;
+    total_runs: number;
+    failed_runs: number;
+    error?: boolean;
+  };
+  automation: {
+    mode: string;
+    paused: boolean;
+    manual_takeover: boolean;
+    armed_symbol: string;
+    consecutive_failure_count: number;
+    last_cycle_status: string;
+    error?: boolean;
+  };
+  proxy: {
+    connected: boolean;
+    current_node: string;
+    exit_ip: string;
+    error?: boolean;
+  };
+  daily_summary: {
+    date: string;
+    cycle_count: number;
+    alert_count: number;
+  };
+};
+
 /** 自动化周期历史记录 */
 export type AutomationCycleCandidate = {
   symbol: string;
@@ -1785,6 +1818,12 @@ export async function getAutomationCycleHistory(
     undefined,
     signal,
   );
+  return response;
+}
+
+/** 获取系统综合状态（无需认证） */
+export async function getSystemStatus(signal?: AbortSignal): Promise<ApiEnvelope<SystemStatus>> {
+  const response = await fetchJson<SystemStatus>("/system/status", undefined, signal);
   return response;
 }
 
