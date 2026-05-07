@@ -68,7 +68,8 @@ services:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,api,web,freqtrade,mihomo
-      QUANT_PATROL_AUTO_START: "false"
+      QUANT_PATROL_AUTO_START: "true"
+      QUANT_PATROL_INTERVAL_MINUTES: "15"
     env_file:
       - ${QUANT_API_ENV_FILE:-./api.env}
     depends_on:
