@@ -379,9 +379,14 @@ def _normalize_rule_gate(value: object) -> dict[str, object]:
         status = "failed"
     if not status:
         status = "passed"
-    if status != "passed":
-        return {"status": "failed", "reasons": reasons or ["rule_gate_blocked"]}
-    return {"status": "passed", "reasons": []}
+    result: dict[str, object] = {"status": status, "reasons": reasons or []}
+    # 保留额外的特征值字段（如 volume_ratio, atr_pct 等）
+    for key in ("volume_ratio", "threshold", "atr_pct", "ema20_gap_pct", "ema55_gap_pct"):
+        if key in gate:
+            result[key] = gate[key]
+    if status != "passed" and not reasons:
+        result["reasons"] = ["rule_gate_blocked"]
+    return result
 
 
 def _merge_gates(*gates: dict[str, object]) -> dict[str, object]:

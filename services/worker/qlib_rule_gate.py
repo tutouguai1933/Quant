@@ -36,9 +36,9 @@ def evaluate_rule_gate(
             return {"allowed": False, "reason": "strict_template_not_confirmed"}
         return {"allowed": True, "reason": "ready"}
     if atr_pct >= resolved_thresholds["rule_max_atr_pct"]:
-        return {"allowed": False, "reason": "volatility_too_high"}
+        return {"allowed": False, "reason": "volatility_too_high", "atr_pct": str(atr_pct)}
     if volume_ratio < resolved_thresholds["rule_min_volume_ratio"]:
-        return {"allowed": False, "reason": "volume_not_confirmed"}
+        return {"allowed": False, "reason": "volume_not_confirmed", "volume_ratio": str(volume_ratio), "threshold": str(resolved_thresholds["rule_min_volume_ratio"])}
     return {"allowed": True, "reason": "ready"}
 
 
