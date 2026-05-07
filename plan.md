@@ -1,25 +1,43 @@
 # Quant 当前计划
 
-这份文件现在只保留“当前阶段在哪里”和“下一步看哪份文档”。
+这份文件只保留"当前阶段在哪里"和"下一步看哪份文档"。
 
 ## 当前阶段
 
-- `phase1`：已完成
-- `phase2`：已完成
-- `phase3`：已完成综合验收，当前处于稳定性收口和新阶段规划前的整理期
+| 阶段 | 状态 |
+|------|------|
+| phase1 | ✅ 已完成 - 主链打通 |
+| phase2 | ✅ 已完成 - 工作台可配置 |
+| phase3 | ✅ 已完成 - 综合验收 |
+| phase4 | ✅ 已完成 - 前端信息架构重构 |
+| phase-i | ✅ 已完成 - 视觉交互统一 |
+| phase-j | ✅ 已完成 - 多因子主线补强 |
+| phase-k | ✅ 已完成 - 综合验收 |
+| 运维完善 | ✅ 已完成 |
+| 性能优化 | ✅ 已完成 |
+| 周期历史增强 | ✅ 已完成 |
 
-## 当前最重要的固定工作流
+**当前状态**：系统稳定运行，功能持续优化中
 
-- [x] 固定 `dry-run -> 小额 live -> 复盘` 验证工作流
-- [x] 主链页面反馈、自动化状态和异常回退已经收口到同一套口径
+## 最近完成（2026-05-08）
 
-## 现在看哪里
+- 自动化周期历史增强（RSI快照、候选币种、任务状态）
+- 配置管理界面修复（支持环境变量）
+- 规则门控参数优化（成交量阈值 0.8）
 
-- 当前整体规划：  
-  [docs/roadmap.md](/home/djy/Quant/docs/roadmap.md)
-- 当前系统状态：  
-  [CONTEXT.md](/home/djy/Quant/CONTEXT.md)
-- 当前系统能力和入口：  
-  [README.md](/home/djy/Quant/README.md)
-- 历史阶段文档：  
-  [docs/archive/README.md](/home/djy/Quant/docs/archive/README.md)
+## 下一步待办
+
+1. **策略实现优化** - 基于研究结论的入场策略
+2. **数据分析报表** - 每日/每周交易统计
+3. **前端配置修改** - 支持在界面修改规则参数
+
+## 文档导航
+
+| 文档 | 内容 |
+|------|------|
+| [AGENTS.md](AGENTS.md) | 开发规则和部署规范 |
+| [CONTEXT.md](CONTEXT.md) | 当前系统状态 |
+| [README.md](README.md) | 项目概览 |
+| [docs/HANDOFF_SESSION.md](docs/HANDOFF_SESSION.md) | 会话接力文档 |
+| [docs/roadmap.md](docs/roadmap.md) | 整体规划 |
+| [docs/archive/README.md](docs/archive/README.md) | 历史阶段文档 |

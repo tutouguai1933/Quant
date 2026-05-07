@@ -1,83 +1,66 @@
 # Quant 项目开发任务清单
 
-> 最后更新：2026-04-29
-> 状态：所有核心任务已完成，系统可用
+> 最后更新：2026-05-08
+> 状态：核心功能完成，持续优化中
 
 ---
 
-## 一、高优先级任务（P0 - 已完成）
+## 一、已完成任务
 
-### 1. 服务器代码同步 ✅
-- **完成时间**：2026-04-28
-- **方式**：GitHub push/pull
-- **最新Commit**：8b66438
+### 2026-05-08
+| 任务 | 文件 | 状态 |
+|------|------|------|
+| 自动化周期历史增强 | automation_cycle_history_service.py | ✅ |
+| RSI 快照记录 | automation_cycle_history_service.py | ✅ |
+| 候选币种列表展示 | automation-cycle-history-card.tsx | ✅ |
+| 任务状态显示 | automation-cycle-history-card.tsx | ✅ |
+| 拦截原因中文翻译 | automation-cycle-history-card.tsx | ✅ |
+| 配置管理界面修复 | config_center_service.py | ✅ |
+| 成交量阈值调整 | api.env (0.8) | ✅ |
 
-### 2. VPN节点自动切换机制 ✅
-- **完成时间**：2026-04-27
-- **文件**：services/api/app/services/vpn_switch_service.py
-- **配置**：QUANT_VPN_WHITELIST_IPS, QUANT_VPN_HEALTH_CHECK_INTERVAL
+### 2026-05-06
+| 任务 | 文件 | 状态 |
+|------|------|------|
+| API 性能优化 | ttl_cache_service.py | ✅ |
+| RSI 缓存机制 | rsi_cache_service.py | ✅ |
+| Patrol 认证修复 | openclaw_patrol_service.py | ✅ |
+| 自动化恢复 | automation_state.json | ✅ |
 
-### 3. 研究到执行自动化 ✅
-- **完成时间**：2026-04-27
-- **文件**：services/api/app/services/auto_dispatch_service.py
-- **配置**：QUANT_AUTO_DISPATCH_ENABLED, QUANT_AUTO_DISPATCH_MIN_SCORE
+### 2026-05-05
+| 任务 | 文件 | 状态 |
+|------|------|------|
+| 前端 UI 优化 | 多个页面 | ✅ |
+| 参数优化页面 | /hyperopt | ✅ |
+| 终端风格重构 | TerminalShell | ✅ |
 
-### 4. 风控熔断机制 ✅
-- **完成时间**：2026-04-27
-- **文件**：services/api/app/services/risk_guard_service.py
-- **配置**：QUANT_RISK_DAILY_MAX_LOSS_PCT
-
-### 5. 交易告警推送 ✅
-- **完成时间**：2026-04-27
-- **文件**：services/api/app/services/alert_push_service.py
-- **支持**：Telegram + Webhook推送
-
-### 6. 门控阈值调整 ✅
-- **完成时间**：2026-04-29
-- **结果**：MIN_ENTRY_SCORE 0.70→0.60
+### 更早完成
+| 任务 | 状态 |
+|------|------|
+| 服务器代码同步 | ✅ |
+| VPN节点自动切换 | ✅ |
+| 研究到执行自动化 | ✅ |
+| 风控熔断机制 | ✅ |
+| 交易告警推送 | ✅ |
+| 门控阈值调整 | ✅ |
+| 策略引擎增强 | ✅ |
+| 模型辅助边界场景 | ✅ |
+| 运维扩展 | ✅ |
 
 ---
 
-## 二、Phase 3/4/5 开发（已完成）
+## 二、待开始任务（P2）
 
-### Phase 3 - 策略引擎增强 ✅
-| 功能 | 文件 | 状态 |
-|------|------|------|
-| 入场评分计算 | strategy_engine_service.py | ✅ |
-| RSI/MACD/成交量趋势 | indicator_service.py | ✅ |
-| 仓位动态计算 | strategy_engine_service.py | ✅ |
-| 止损追踪机制 | strategy_engine_service.py | ✅ |
-
-### Phase 4 - 模型辅助边界场景 ✅
-| 功能 | 文件 | 状态 |
-|------|------|------|
-| 边界场景检测 | model_suggestion_service.py | ✅ |
-| 模型API调用 | model_suggestion_service.py | ✅ |
-
-### Phase 5 - 运维扩展 ✅
-| 功能 | 文件 | 状态 |
-|------|------|------|
-| 性能监控 | performance_monitor_service.py | ✅ |
-| 回测验证 | backtest_validation_service.py | ✅ |
-| 多币种支持 | config_center_service.py | ✅ |
-| OpenClaw巡检 | openclaw_patrol_service.py | ✅ |
-
----
-
-## 三、低优先级任务（P2 - 待开始）
-
-### 7. 策略实现
-- **问题**：SampleStrategy无实际逻辑，交易决策随机
+### 1. 策略实现优化
+- **问题**：SampleStrategy 无实际逻辑
 - **状态**：待开始
 - **预估工时**：8小时
 - **验收标准**：
-  - 实现基于研究结论的入场策略
-  - 实现动态止损追踪
-  - 实现盈亏比触发退出
-  - 回测验证策略有效性
+  - 基于研究结论的入场策略
+  - 动态止损追踪
+  - 盈亏比触发退出
 
-### 8. 数据分析报表
-- **问题**：无历史数据分析，无法复盘优化
+### 2. 数据分析报表
+- **问题**：无历史数据分析
 - **状态**：待开始
 - **预估工时**：4小时
 - **验收标准**：
@@ -85,74 +68,76 @@
   - 盈亏归因分析
   - 策略表现对比
 
-### 9. 配置统一管理
-- **问题**：配置分散在api.env、多个JSON、docker-compose
+### 3. 前端配置修改
+- **问题**：配置管理只能查看，不能修改
 - **状态**：待开始
-- **预估工时**：2小时
+- **预估工时**：4小时
 - **验收标准**：
-  - 创建统一配置文件
-  - 环境变量注入机制
+  - 支持修改规则门控参数
+  - 支持修改自动化参数
   - 配置变更历史追踪
 
-### 10. Freqtrade Live模式
-- **问题**：ccxt async无法通过代理访问Binance私有API
-- **状态**：待研究
-- **预估工时**：4小时
-- **可能的解决方案**：
-  - 安装aiohttp-socks使用SOCKS5代理
-  - 使用其他代理方案
-  - 直接使用公网IP（需Binance白名单）
+---
+
+## 三、验收检查清单
+
+每次开发完成后需验证：
+
+- [ ] `pnpm build` 构建通过
+- [ ] 后端测试通过
+- [ ] Freqtrade 运行正常
+- [ ] VPN 节点连接稳定
+- [ ] Binance API 可访问
+- [ ] WebSocket 推送正常
+- [ ] OpenClaw 巡检正常
+- [ ] 前端页面交互验证
 
 ---
 
-## 四、验收检查清单
+## 四、关键配置参考
 
-### 每次开发完成后需验证：
-1. `pnpm build` 构建通过
-2. 后端测试通过 (`pytest services/api/tests/`)
-3. Freqtrade Dry-run模式运行正常
-4. VPN节点连接稳定（出口IP在白名单内）
-5. Binance API可正常访问（通过代理）
-6. WebSocket实时推送正常
-7. OpenClaw巡检正常
+### 环境变量（api.env）
 
----
-
-## 五、关键配置参考
-
-> 详细配置请参考：[docs/CONFIG_CHECKLIST.md](docs/CONFIG_CHECKLIST.md)
-
-### 5.1 环境变量（api.env）
 ```bash
-QUANT_RUNTIME_MODE=dry-run
-QUANT_ALLOW_LIVE_EXECUTION=false
-QUANT_LIVE_ALLOWED_SYMBOLS=DOGEUSDT
+# 规则门控
+QUANT_QLIB_RULE_MIN_VOLUME_RATIO=0.8
+QUANT_QLIB_RULE_MAX_ATR_PCT=5
+QUANT_QLIB_DRY_RUN_MIN_SHARPE=0.25
+QUANT_QLIB_DRY_RUN_MIN_WIN_RATE=0.30
+QUANT_QLIB_DRY_RUN_MIN_SCORE=0.45
+
+# 自动化
+QUANT_PATROL_AUTO_START=true
+QUANT_PATROL_INTERVAL_MINUTES=15
+
+# 交易
+QUANT_RUNTIME_MODE=live
+QUANT_ALLOW_LIVE_EXECUTION=true
 QUANT_LIVE_MAX_STAKE_USDT=6
-QUANT_STRATEGY_MIN_ENTRY_SCORE=0.60
-QUANT_VPN_WHITELIST_IPS=154.31.113.7,154.3.37.169,202.85.76.66
+QUANT_LIVE_MAX_OPEN_TRADES=1
 ```
 
-### 5.2 Freqtrade配置文件
-| 文件 | 位置 |
-|------|------|
-| config.base.json | ~/Quant/infra/freqtrade/user_data/ |
-| config.deploy.json | ~/Quant/infra/freqtrade/user_data/ |
-| config.private.json | ~/Quant/infra/freqtrade/user_data/ |
-| config.proxy.json | ~/Quant/infra/freqtrade/user_data/ |
-
----
-
-## 六、服务器状态
-
 ### 服务端口
+
 | 服务 | 端口 | 状态 |
 |------|------|------|
 | API | 9011 | ✅ |
 | Web | 9012 | ✅ |
-| Freqtrade | 9013 | ✅ Dry-run |
+| Freqtrade | 9013 | ✅ |
 | mihomo | 7890 | ✅ |
 
-### SSH连接
+---
+
+## 五、服务器状态
+
 ```bash
-sshpass -p "1933" ssh -o StrictHostKeyChecking=no djy@39.106.11.65 "命令"
+# SSH 连接
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
+
+# 查看容器状态
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+
+# 查看日志
+docker logs quant-api --tail 50
+docker logs quant-web --tail 50
 ```
