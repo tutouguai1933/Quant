@@ -16,6 +16,75 @@ interface AutomationCycleHistoryCardProps {
 
 const PAGE_SIZE = 10;
 
+// 根据 failure_reason 计算 display_status（兼容旧数据）
+function computeDisplayStatus(item: AutomationCycleRecord): string {
+  if (item.display_status) return item.display_status;
+
+  const failureReason = item.failure_reason || "";
+  const status = item.status || "";
+
+  if (status === "succeeded") return "succeeded";
+  if (status === "failed" || status === "attention_required") return "failed";
+  if (failureReason === "candidate_blocked") return "blocked";
+  if (failureReason === "cycle_cooldown_active") return "cooldown";
+  if (failureReason === "daily_limit_reached") return "limited";
+  return "waiting";
+}
+
+// 状态颜色
+function getDisplayStatusColor(displayStatus: string): string {
+  switch (displayStatus) {
+    case "succeeded":
+      return "text-green-500";
+    case "blocked":
+      return "text-orange-500";
+    case "cooldown":
+      return "text-blue-400";
+    case "failed":
+      return "text-red-500";
+    case "limited":
+      return "text-purple-400";
+    default:
+      return "text-yellow-500";
+  }
+}
+
+// 状态标签
+function getDisplayStatusLabel(displayStatus: string): string {
+  switch (displayStatus) {
+    case "succeeded":
+      return "✅ 成功";
+    case "blocked":
+      return "🚫 拦阻";
+    case "cooldown":
+      return "⏸️ 冷却";
+    case "failed":
+      return "❌ 失败";
+    case "limited":
+      return "📊 限额";
+    default:
+      return "⏳ 等待";
+  }
+}
+
+// 状态说明
+function getStatusDescription(displayStatus: string, failureReason: string, message: string): string {
+  switch (displayStatus) {
+    case "succeeded":
+      return "候选通过，已执行交易";
+    case "blocked":
+      return `候选被拦阻: ${failureReason || message}`;
+    case "cooldown":
+      return "冷却窗口中，等待下次运行";
+    case "failed":
+      return "执行失败，需要人工关注";
+    case "limited":
+      return "今日运行次数已达上限";
+    default:
+      return message || "等待条件满足";
+  }
+}
+
 export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: AutomationCycleHistoryCardProps) {
   const [items, setItems] = useState<AutomationCycleRecord[]>([]);
   const [summary, setSummary] = useState<AutomationCycleHistorySummary | null>(null);
@@ -75,44 +144,35 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
     }
   };
 
-  // 显示状态颜色
-  const getDisplayStatusColor = (displayStatus: string) => {
-    switch (displayStatus) {
-      case "succeeded":
-        return "text-green-500";
-      case "blocked":
-        return "text-orange-500";
-      case "cooldown":
-        return "text-blue-400";
-      case "failed":
-        return "text-red-500";
-      default:
-        return "text-yellow-500";
-    }
-  };
-
-  // 显示状态标签
-  const getDisplayStatusLabel = (displayStatus: string) => {
-    switch (displayStatus) {
-      case "succeeded":
-        return "✅ 成功";
-      case "blocked":
-        return "🚫 拦阻";
-      case "cooldown":
-        return "⏸️ 冷却";
-      case "failed":
-        return "❌ 失败";
-      case "limited":
-        return "📊 限额";
-      default:
-        return "⏳ 等待";
-    }
-  };
-
   // 分页
   const totalPages = Math.ceil(items.length / PAGE_SIZE);
   const startIndex = (page - 1) * PAGE_SIZE;
   const pageItems = items.slice(startIndex, startIndex + PAGE_SIZE);
+
+  // 计算统计（兼容旧数据）
+  const computedStats = items.reduce(
+    (acc, item) => {
+      const ds = computeDisplayStatus(item);
+      switch (ds) {
+        case "succeeded":
+          acc.succeeded++;
+          break;
+        case "blocked":
+          acc.blocked++;
+          break;
+        case "cooldown":
+          acc.cooldown++;
+          break;
+        case "failed":
+          acc.failed++;
+          break;
+        default:
+          acc.waiting++;
+      }
+      return acc;
+    },
+    { succeeded: 0, blocked: 0, cooldown: 0, failed: 0, waiting: 0 }
+  );
 
   if (isLoading) {
     return (
@@ -136,32 +196,37 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
   return (
     <TerminalCard title="自动化周期历史">
       {/* 摘要 */}
-      {summary && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-3 pb-3 border-b border-[var(--terminal-border)]">
-          <span className="text-[var(--terminal-muted)]">
-            总计: <span className="text-[var(--terminal-text)] font-medium">{summary.total}</span> 轮
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-3 pb-3 border-b border-[var(--terminal-border)]">
+        <span className="text-[var(--terminal-muted)]">
+          总计: <span className="text-[var(--terminal-text)] font-medium">{items.length}</span> 轮
+        </span>
+        <span className="text-green-500">
+          成功: <span className="font-medium">{computedStats.succeeded}</span>
+        </span>
+        <span className="text-orange-500">
+          拦阻: <span className="font-medium">{computedStats.blocked}</span>
+        </span>
+        {computedStats.cooldown > 0 && (
+          <span className="text-blue-400">
+            冷却: <span className="font-medium">{computedStats.cooldown}</span>
           </span>
-          <span className="text-green-500">
-            成功: <span className="font-medium">{summary.succeeded_count}</span>
+        )}
+        {computedStats.failed > 0 && (
+          <span className="text-red-500">
+            失败: <span className="font-medium">{computedStats.failed}</span>
           </span>
-          <span className="text-orange-500">
-            拦阻: <span className="font-medium">{summary.blocked_count}</span>
-          </span>
+        )}
+        {computedStats.waiting > 0 && (
           <span className="text-yellow-500">
-            等待: <span className="font-medium">{summary.waiting_count}</span>
+            等待: <span className="font-medium">{computedStats.waiting}</span>
           </span>
-          {summary.failed_count > 0 && (
-            <span className="text-red-500">
-              失败: <span className="font-medium">{summary.failed_count}</span>
-            </span>
-          )}
-          {summary.last_run_at && (
-            <span className="text-[var(--terminal-muted)]">
-              最近运行: {formatTime(summary.last_run_at)}
-            </span>
-          )}
-        </div>
-      )}
+        )}
+        {items.length > 0 && items[0].recorded_at && (
+          <span className="text-[var(--terminal-muted)]">
+            最近运行: {formatTime(items[0].recorded_at)}
+          </span>
+        )}
+      </div>
 
       {/* 历史列表 */}
       {items.length === 0 ? (
@@ -171,7 +236,10 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
           {pageItems.map((item, idx) => {
             const globalIdx = startIndex + idx;
             const isExpanded = expandedIndex === globalIdx;
-            const displayStatus = item.display_status || "waiting";
+            const displayStatus = computeDisplayStatus(item);
+            const statusColor = getDisplayStatusColor(displayStatus);
+            const statusLabel = getDisplayStatusLabel(displayStatus);
+            const statusDesc = getStatusDescription(displayStatus, item.failure_reason, item.message);
 
             return (
               <div key={`${item.recorded_at}-${idx}`} className="border border-[var(--terminal-border)]/50 rounded">
@@ -184,8 +252,8 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                     <span className="text-xs text-[var(--terminal-muted)] w-20">
                       {formatTime(item.recorded_at)}
                     </span>
-                    <span className={`text-xs font-medium ${getDisplayStatusColor(displayStatus)}`}>
-                      {getDisplayStatusLabel(displayStatus)}
+                    <span className={`text-xs font-medium ${statusColor}`}>
+                      {statusLabel}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
@@ -194,29 +262,35 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                         {item.recommended_symbol.replace("USDT", "")}
                       </span>
                     )}
-                    <span className="text-xs text-[var(--terminal-muted)] max-w-[150px] truncate">
+                    <span className="text-xs text-[var(--terminal-muted)] max-w-[150px] truncate hidden sm:block">
                       {item.message || item.failure_reason}
                     </span>
                     {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-[var(--terminal-muted)]" />
+                      <ChevronUp className="w-4 h-4 text-[var(--terminal-muted)] flex-shrink-0" />
                     ) : (
-                      <ChevronDown className="w-4 h-4 text-[var(--terminal-muted)]" />
+                      <ChevronDown className="w-4 h-4 text-[var(--terminal-muted)] flex-shrink-0" />
                     )}
                   </div>
                 </button>
 
                 {/* 详情面板 */}
                 {isExpanded && (
-                  <div className="px-3 pb-3 pt-1 border-t border-[var(--terminal-border)]/30 bg-[var(--terminal-bg)]/50">
+                  <div className="px-3 pb-3 pt-2 border-t border-[var(--terminal-border)]/30 bg-[var(--terminal-bg)]/50 text-xs">
+                    {/* 状态说明 */}
+                    <div className="mb-2">
+                      <span className="text-[var(--terminal-muted)]">状态: </span>
+                      <span className={statusColor}>{statusDesc}</span>
+                    </div>
+
                     {/* 候选币种 */}
                     {item.candidates && item.candidates.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-[var(--terminal-muted)] mb-1">候选币种:</p>
+                      <div className="mb-2">
+                        <p className="text-[var(--terminal-muted)] mb-1">候选币种:</p>
                         <div className="flex flex-wrap gap-2">
                           {item.candidates.map((c, i) => (
                             <span
                               key={i}
-                              className="text-xs px-2 py-0.5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/20"
+                              className="px-2 py-0.5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/20"
                             >
                               <span className="font-mono">{c.symbol.replace("USDT", "")}</span>
                               {c.blocked_reason && (
@@ -230,13 +304,13 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
 
                     {/* 任务执行状态 */}
                     {item.task_summary && Object.keys(item.task_summary).length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-[var(--terminal-muted)] mb-1">任务状态:</p>
+                      <div className="mb-2">
+                        <p className="text-[var(--terminal-muted)] mb-1">任务状态:</p>
                         <div className="flex flex-wrap gap-2">
                           {Object.entries(item.task_summary).map(([name, task]) => (
                             <span
                               key={name}
-                              className="text-xs px-2 py-0.5 rounded border border-[var(--terminal-border)]"
+                              className="px-2 py-0.5 rounded border border-[var(--terminal-border)]"
                             >
                               {name}:{" "}
                               <span
@@ -263,9 +337,9 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
 
                     {/* RSI 快照 */}
                     {item.rsi_snapshot && Object.keys(item.rsi_snapshot).length > 0 && (
-                      <div>
-                        <p className="text-xs text-[var(--terminal-muted)] mb-1">RSI 快照:</p>
-                        <div className="flex flex-wrap gap-2 text-xs">
+                      <div className="mb-2">
+                        <p className="text-[var(--terminal-muted)] mb-1">RSI 快照:</p>
+                        <div className="flex flex-wrap gap-2">
                           {Object.entries(item.rsi_snapshot).slice(0, 6).map(([symbol, value]) => (
                             <span
                               key={symbol}
@@ -279,10 +353,10 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                     )}
 
                     {/* 详细信息 */}
-                    <div className="mt-2 text-xs text-[var(--terminal-muted)]">
-                      <div>模式: {item.mode}</div>
-                      {item.failure_reason && <div>原因: {item.failure_reason}</div>}
-                      {item.next_action && <div>建议: {item.next_action}</div>}
+                    <div className="mt-2 pt-2 border-t border-[var(--terminal-border)]/30 text-[var(--terminal-muted)] space-y-1">
+                      <div>模式: <span className="text-[var(--terminal-text)]">{item.mode}</span></div>
+                      {item.failure_reason && <div>原因: <span className="text-[var(--terminal-text)]">{item.failure_reason}</span></div>}
+                      {item.next_action && <div>建议: <span className="text-[var(--terminal-text)]">{item.next_action}</span></div>}
                     </div>
                   </div>
                 )}
