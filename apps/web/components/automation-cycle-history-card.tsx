@@ -340,14 +340,19 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                       <div className="mb-2">
                         <p className="text-[var(--terminal-muted)] mb-1">RSI 快照:</p>
                         <div className="flex flex-wrap gap-2">
-                          {Object.entries(item.rsi_snapshot).slice(0, 6).map(([symbol, value]) => (
-                            <span
-                              key={symbol}
-                              className="px-2 py-0.5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/10"
-                            >
-                              <span className="font-mono">{symbol}</span>: {String(value)}
-                            </span>
-                          ))}
+                          {Object.entries(item.rsi_snapshot).slice(0, 6).map(([symbol, value]) => {
+                            const rsiValue = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
+                            const rsiColor = rsiValue >= 70 ? "text-red-400" : rsiValue <= 30 ? "text-green-400" : "text-[var(--terminal-text)]";
+                            return (
+                              <span
+                                key={symbol}
+                                className="px-2 py-0.5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/10"
+                              >
+                                <span className="font-mono">{symbol.replace("USDT", "")}</span>:{" "}
+                                <span className={rsiColor}>{rsiValue.toFixed(1)}</span>
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
