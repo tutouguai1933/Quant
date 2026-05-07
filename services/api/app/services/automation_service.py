@@ -340,8 +340,10 @@ class AutomationService:
         """记录最近一次工作流结果。"""
 
         self._ensure_daily_summary()
+        # 只保留必要的摘要信息，避免存储大量任务结果数据
+        slim_payload = self._slim_cycle_payload(payload)
         self._last_cycle = {
-            **dict(payload),
+            **slim_payload,
             "recorded_at": _utc_now(),
         }
         status = str(payload.get("status", "")).strip() or "unknown"
@@ -370,6 +372,37 @@ class AutomationService:
 
         # 记录到历史
         automation_cycle_history_service.record_cycle(payload)
+
+    def _slim_cycle_payload(self, payload: dict[str, object]) -> dict[str, object]:
+        """精简周期数据，只保留必要的摘要信息。
+
+        任务结果（train_task、infer_task、review_task）包含大量详细数据，
+        不需要完整存储到状态文件中。
+        """
+        result = {}
+        # 保留基本字段
+        for key in [
+            "status", "mode", "recommended_symbol", "recommended_strategy_id",
+            "next_action", "message", "failure_reason", "failure_policy_action",
+            "armed_symbol", "priority_queue_summary", "dispatch", "review_overview"
+        ]:
+            if key in payload:
+                result[key] = payload[key]
+
+        # 精简任务数据，只保留摘要
+        for task_key in ["train_task", "infer_task", "signal_task", "review_task"]:
+            if task_key in payload:
+                task = payload[task_key]
+                if isinstance(task, dict):
+                    result[task_key] = {
+                        "id": task.get("id"),
+                        "task_type": task.get("task_type"),
+                        "status": task.get("status"),
+                        "started_at": task.get("started_at"),
+                        "finished_at": task.get("finished_at"),
+                    }
+
+        return result
 
     def record_alert(self, *, level: str, code: str, message: str, source: str, detail: str = "") -> dict[str, object]:
         """记录自动化告警。"""

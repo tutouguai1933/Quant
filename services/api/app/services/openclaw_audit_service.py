@@ -52,14 +52,14 @@ class OpenclawAuditService:
             记录完成的审计记录
         """
         now = datetime.now(timezone.utc).isoformat()
+        # 不存储完整的 result，只保留成功状态
         audit_record = {
             "recorded_at": now,
             "action": record.get("action", ""),
             "snapshot_id": record.get("snapshot_id", ""),
             "success": bool(record.get("success", False)),
-            "reason": str(record.get("reason", "")),
+            "reason": str(record.get("reason", ""))[:500],  # 限制 reason 长度
             "executed_at": record.get("executed_at", now),
-            "result": record.get("result"),
         }
 
         self._records.append(audit_record)
