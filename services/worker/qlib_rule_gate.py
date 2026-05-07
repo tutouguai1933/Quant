@@ -49,7 +49,7 @@ def _resolve_thresholds(value: dict[str, object] | None) -> dict[str, Decimal]:
     base_ema20 = _to_decimal(payload.get("rule_min_ema20_gap_pct") or "0")
     base_ema55 = _to_decimal(payload.get("rule_min_ema55_gap_pct") or "0")
     base_atr = _to_decimal(payload.get("rule_max_atr_pct") or "5")
-    base_volume = _to_decimal(payload.get("rule_min_volume_ratio") or "1")
+    base_volume = _to_decimal(payload.get("rule_min_volume_ratio") or "0.8")
     return {
         "rule_min_ema20_gap_pct": base_ema20,
         "rule_min_ema55_gap_pct": base_ema55,

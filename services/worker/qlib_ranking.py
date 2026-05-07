@@ -434,7 +434,7 @@ def _resolve_thresholds(value: dict[str, object] | None, *, research_template: s
         "rule_min_ema20_gap_pct": _to_decimal(payload.get("rule_min_ema20_gap_pct") or _runtime_decimal("rule_min_ema20_gap_pct", "0")),
         "rule_min_ema55_gap_pct": _to_decimal(payload.get("rule_min_ema55_gap_pct") or _runtime_decimal("rule_min_ema55_gap_pct", "0")),
         "rule_max_atr_pct": _to_decimal(payload.get("rule_max_atr_pct") or _runtime_decimal("rule_max_atr_pct", "5")),
-        "rule_min_volume_ratio": _to_decimal(payload.get("rule_min_volume_ratio") or _runtime_decimal("rule_min_volume_ratio", "1")),
+        "rule_min_volume_ratio": _to_decimal(payload.get("rule_min_volume_ratio") or _runtime_decimal("rule_min_volume_ratio", "0.8")),
         "enable_rule_gate": _to_bool(payload.get("enable_rule_gate"), _runtime_bool("enable_rule_gate", "true")),
         "enable_validation_gate": _to_bool(payload.get("enable_validation_gate"), _runtime_bool("enable_validation_gate", "true")),
         "enable_backtest_gate": _to_bool(payload.get("enable_backtest_gate"), _runtime_bool("enable_backtest_gate", "true")),
