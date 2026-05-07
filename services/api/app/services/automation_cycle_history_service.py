@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from services.api.app.services.rsi_cache_service import rsi_cache
+
 
 class AutomationCycleHistoryService:
     """自动化周期历史记录服务。"""
@@ -126,28 +128,48 @@ class AutomationCycleHistoryService:
         return candidates
 
     def _extract_rsi_snapshot(self, summary: dict[str, Any]) -> dict[str, Any]:
-        """提取 RSI 快照数据。"""
+        """提取 RSI 快照数据。
+
+        从 RSI 缓存中获取相关币种的当前 RSI 值。
+        """
         rsi_data = {}
 
-        # 从 market_cache 或 research_report 中提取 RSI 数据
-        market_cache = summary.get("market_cache", {})
-        if market_cache and "rsi_summary" in market_cache:
-            rsi_data = market_cache.get("rsi_summary", {})
+        # 确定需要提取 RSI 的币种列表
+        symbols_to_fetch = set()
 
-        # 或者从 infer_task 结果中提取
-        if not rsi_data:
-            infer_task = summary.get("infer_task", {})
-            if infer_task and isinstance(infer_task, dict):
-                result = infer_task.get("result", {})
-                if result:
-                    # 提取关键币种的 RSI
-                    candidates = result.get("candidates", [])
-                    if isinstance(candidates, list):
-                        for c in candidates[:5]:
-                            if isinstance(c, dict):
-                                symbol = c.get("symbol", "")
-                                if symbol and "rsi" in c:
-                                    rsi_data[symbol] = c.get("rsi")
+        # 添加推荐币种
+        recommended_symbol = summary.get("recommended_symbol", "")
+        if recommended_symbol:
+            symbols_to_fetch.add(recommended_symbol)
+
+        # 添加候选币种
+        pq = summary.get("priority_queue", {})
+        items = pq.get("items", [])
+        for item in items[:5]:
+            symbol = item.get("symbol", "")
+            if symbol:
+                symbols_to_fetch.add(symbol)
+
+        if not symbols_to_fetch:
+            return rsi_data
+
+        # 从 RSI 缓存获取数据
+        try:
+            cached = rsi_cache.get(interval="1d")
+            if cached and "items" in cached:
+                # 构建符号到 RSI 的映射
+                rsi_map = {}
+                for item in cached.get("items", []):
+                    symbol = item.get("symbol", "")
+                    if symbol:
+                        rsi_map[symbol] = item.get("rsi")
+
+                # 只提取相关币种的 RSI
+                for symbol in symbols_to_fetch:
+                    if symbol in rsi_map:
+                        rsi_data[symbol] = rsi_map[symbol]
+        except Exception:
+            pass
 
         return rsi_data
 
