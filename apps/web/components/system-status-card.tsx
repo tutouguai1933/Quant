@@ -18,14 +18,13 @@ const defaultStatus: SystemStatus = {
 };
 
 // 状态指示灯
-function StatusDot({ status }: { status: "ok" | "warning" | "error" | "unknown" }) {
+function StatusDot({ status }: { status: "ok" | "warning" | "error" }) {
   const colors = {
     ok: "bg-green-500",
     warning: "bg-yellow-500",
     error: "bg-red-500",
-    unknown: "bg-gray-500",
   };
-  return <span className={`inline-block w-2 h-2 rounded-full ${colors[status]} mr-2`} />;
+  return <span className={`inline-block w-2 h-2 rounded-full ${colors[status]}`} />;
 }
 
 // 格式化时间
@@ -35,8 +34,6 @@ function formatTime(iso: string | null): string {
     const d = new Date(iso);
     return d.toLocaleString("zh-CN", {
       timeZone: "Asia/Shanghai",
-      month: "2-digit",
-      day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -107,7 +104,7 @@ export function SystemStatusCard({ refreshInterval = 30000 }: SystemStatusCardPr
       : "ok";
 
   const statusLabels = {
-    ok: "运行中",
+    ok: "正常",
     warning: "需关注",
     error: "异常",
   };
@@ -125,7 +122,7 @@ export function SystemStatusCard({ refreshInterval = 30000 }: SystemStatusCardPr
       {error && <div className="text-red-400 text-[11px] mb-2">{error}</div>}
 
       {/* 整体状态标签 */}
-      <div className="flex items-center justify-between mb-3 pb-2 border-b border-[var(--terminal-border)]/30">
+      <div className="flex items-center justify-between mb-2 pb-2 border-b border-[var(--terminal-border)]/30">
         <span className="text-[var(--terminal-muted)] text-[11px]">整体状态</span>
         <span
           className={`text-[11px] px-2 py-0.5 rounded ${
@@ -140,81 +137,61 @@ export function SystemStatusCard({ refreshInterval = 30000 }: SystemStatusCardPr
         </span>
       </div>
 
-      <div className="space-y-3">
+      {/* 状态列表 */}
+      <div className="space-y-2 text-[12px]">
         {/* 定时巡检 */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <StatusDot status={patrolStatus} />
-            <span className="text-[var(--terminal-text)] text-[12px]">定时巡检</span>
+            <span className="text-[var(--terminal-muted)]">巡检</span>
           </div>
           <div className="text-right">
-            <div className="text-[var(--terminal-text)] text-[12px]">
-              {status.patrol.running
-                ? `${status.patrol.interval_minutes}分钟间隔`
-                : "已停止"}
-            </div>
+            <span className="text-[var(--terminal-text)]">
+              {status.patrol.running ? `${status.patrol.interval_minutes}分钟` : "已停止"}
+            </span>
             {status.patrol.last_run_at && (
-              <div className="text-[var(--terminal-muted)] text-[11px]">
-                上次: {formatTime(status.patrol.last_run_at)}
-                {status.patrol.last_run_status && ` (${status.patrol.last_run_status})`}
-              </div>
+              <span className="text-[var(--terminal-dim)] text-[11px] ml-2">
+                {formatTime(status.patrol.last_run_at)}
+              </span>
             )}
           </div>
         </div>
 
         {/* 自动化 */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <StatusDot status={automationStatus} />
-            <span className="text-[var(--terminal-text)] text-[12px]">自动化</span>
+            <span className="text-[var(--terminal-muted)]">自动化</span>
           </div>
           <div className="text-right">
-            <div className="text-[var(--terminal-text)] text-[12px]">
-              {status.automation.paused
-                ? "已暂停"
-                : status.automation.mode === "auto_live"
-                ? "自动Live"
-                : status.automation.mode === "auto_dry_run"
-                ? "自动Dry-run"
-                : "手动模式"}
-            </div>
+            <span className="text-[var(--terminal-text)]">
+              {status.automation.paused ? "已暂停" : status.automation.mode === "auto_live" ? "自动Live" : status.automation.mode === "auto_dry_run" ? "自动Dry" : "手动"}
+            </span>
             {status.daily_summary.cycle_count > 0 && (
-              <div className="text-[var(--terminal-muted)] text-[11px]">
-                今日 {status.daily_summary.cycle_count} 轮
-              </div>
+              <span className="text-[var(--terminal-dim)] text-[11px] ml-2">
+                今日{status.daily_summary.cycle_count}轮
+              </span>
             )}
           </div>
         </div>
 
         {/* 代理 */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <StatusDot status={proxyStatus} />
-            <span className="text-[var(--terminal-text)] text-[12px]">代理</span>
+            <span className="text-[var(--terminal-muted)]">代理</span>
           </div>
           <div className="text-right">
-            <div className="text-[var(--terminal-text)] text-[12px]">
-              {status.proxy.connected ? status.proxy.current_node || "已连接" : "未连接"}
-            </div>
+            <span className="text-[var(--terminal-text)]">
+              {status.proxy.connected ? (status.proxy.current_node || "已连接") : "未连接"}
+            </span>
             {status.proxy.exit_ip && (
-              <div className="text-[var(--terminal-muted)] text-[11px]">
+              <span className="text-[var(--terminal-dim)] text-[11px] ml-2">
                 {status.proxy.exit_ip}
-              </div>
+              </span>
             )}
           </div>
         </div>
-
-        {/* 今日统计 */}
-        {(status.daily_summary.cycle_count > 0 || status.daily_summary.alert_count > 0) && (
-          <div className="pt-2 border-t border-[var(--terminal-border)]/30 flex justify-between text-[11px]">
-            <span className="text-[var(--terminal-muted)]">
-              周期: <span className="text-[var(--terminal-text)]">{status.daily_summary.cycle_count}</span>
-            </span>
-            <span className={status.daily_summary.alert_count > 0 ? "text-yellow-400" : "text-[var(--terminal-muted)]"}>
-              告警: <span className={status.daily_summary.alert_count > 0 ? "text-yellow-400" : "text-[var(--terminal-text)]"}>{status.daily_summary.alert_count}</span>
-            </span>
-          </div>
-        )}
       </div>
     </TerminalCard>
   );

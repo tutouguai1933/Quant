@@ -193,7 +193,7 @@ export default function HomePage() {
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       <div className="space-y-4">
-        {/* 系统状态指标 */}
+        {/* 第一行：系统状态指标 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {systemMetrics.map((metric) => (
             <MetricCard
@@ -205,7 +205,7 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* 快速导航 */}
+        {/* 第二行：快速导航 */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {quickLinks.map((link) => (
             <Link
@@ -223,73 +223,34 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* 系统状态 */}
-        <SystemStatusCard refreshInterval={30000} />
+        {/* 第三行：系统状态 + 入场状态 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SystemStatusCard refreshInterval={30000} />
+          <EntryStatusCard refreshInterval={60000} />
+        </div>
 
-        {/* RSI概览 */}
+        {/* 第四行：RSI概览 */}
         <RsiSummaryCard refreshInterval={300000} />
 
-        {/* 入场状态 - 显示为什么没有买入 */}
-        <EntryStatusCard refreshInterval={60000} />
-
-        {/* 交易记录汇总 */}
-        <TradeHistorySummaryCard refreshInterval={60000} />
-
-        {/* 自动化周期历史 */}
-        <AutomationCycleHistoryCard refreshInterval={60000} />
-
-        {/* 最近候选队列 */}
-        <TerminalCard title="最近候选队列">
-          <div className="text-[var(--terminal-muted)] text-[12px]">
-            {strategyWorkspace.research?.signal_count || 0} 个候选信号
-          </div>
-          {strategyWorkspace.whitelist?.slice(0, 5).map((symbol) => (
-            <div key={symbol} className="text-[var(--terminal-text)] text-[12px] mt-1">
-              {symbol}
-            </div>
-          ))}
-        </TerminalCard>
-
-        {/* 自动化状态 */}
+        {/* 第五行：交易记录 + 候选队列 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <TerminalCard title="自动化状态">
-            <div className="space-y-2 text-[12px]">
-              <div className="flex justify-between">
-                <span className="text-[var(--terminal-muted)]">运行模式</span>
-                <span className="text-[var(--terminal-text)]">{automationStatus.mode || "--"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--terminal-muted)]">暂停状态</span>
-                <span className={automationStatus.paused ? "text-[var(--terminal-yellow)]" : "text-[var(--terminal-green)]"}>
-                  {automationStatus.paused ? "已暂停" : "运行中"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--terminal-muted)]">告警数量</span>
-                <span className={automationStatus.alerts?.length > 0 ? "text-[var(--terminal-yellow)]" : "text-[var(--terminal-green)]"}>
-                  {automationStatus.alerts?.length || 0}
-                </span>
-              </div>
+          <TradeHistorySummaryCard refreshInterval={60000} />
+          <TerminalCard title="最近候选队列">
+            <div className="text-[var(--terminal-muted)] text-[12px]">
+              {strategyWorkspace.research?.signal_count || 0} 个候选信号
             </div>
-          </TerminalCard>
-
-          <TerminalCard title="系统状态">
-            <div className="space-y-2 text-[12px]">
-              <div className="flex justify-between">
-                <span className="text-[var(--terminal-muted)]">研究状态</span>
-                <span className="text-[var(--terminal-text)]">{strategyWorkspace.research?.status || "--"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--terminal-muted)]">执行器</span>
-                <span className="text-[var(--terminal-text)]">{strategyWorkspace.executor_runtime?.executor || "--"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--terminal-muted)]">运行模式</span>
-                <span className="text-[var(--terminal-text)]">{strategyWorkspace.executor_runtime?.mode || "--"}</span>
-              </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {strategyWorkspace.whitelist?.slice(0, 6).map((symbol) => (
+                <span key={symbol} className="px-2 py-0.5 rounded bg-[var(--terminal-border)]/30 text-[var(--terminal-text)] text-[11px]">
+                  {symbol.replace("USDT", "")}
+                </span>
+              ))}
             </div>
           </TerminalCard>
         </div>
+
+        {/* 第六行：自动化周期历史 */}
+        <AutomationCycleHistoryCard refreshInterval={60000} />
       </div>
     </TerminalShell>
   );
