@@ -142,10 +142,12 @@ class AutomationCycleHistoryService:
                 if result:
                     # 提取关键币种的 RSI
                     candidates = result.get("candidates", [])
-                    for c in candidates[:5]:
-                        symbol = c.get("symbol", "")
-                        if symbol and "rsi" in c:
-                            rsi_data[symbol] = c.get("rsi")
+                    if isinstance(candidates, list):
+                        for c in candidates[:5]:
+                            if isinstance(c, dict):
+                                symbol = c.get("symbol", "")
+                                if symbol and "rsi" in c:
+                                    rsi_data[symbol] = c.get("rsi")
 
         return rsi_data
 
