@@ -316,7 +316,12 @@ class ConfigCenterService:
             CONFIG_HISTORY_PATH.write_text("[]", encoding="utf-8")
 
     def _read_env_file(self, path: Path) -> dict[str, str]:
-        """读取环境变量文件。
+        """读取环境变量文件或从系统环境变量获取。
+
+        在 Docker 容器中，配置通过 docker-compose 的 env_file 注入为环境变量，
+        文件本身可能不存在。此方法会：
+        1. 尝试读取文件
+        2. 合并系统环境变量（覆盖文件中的值）
 
         Args:
             path: 环境变量文件路径
@@ -324,22 +329,32 @@ class ConfigCenterService:
         Returns:
             解析后的键值对字典
         """
-        if not path.exists():
-            return {}
-
         result: dict[str, str] = {}
-        content = path.read_text(encoding="utf-8")
 
-        for line in content.splitlines():
-            line = line.strip()
-            # 跳过空行和注释
-            if not line or line.startswith("#"):
-                continue
+        # 尝试读取文件
+        if path.exists():
+            content = path.read_text(encoding="utf-8")
+            for line in content.splitlines():
+                line = line.strip()
+                # 跳过空行和注释
+                if not line or line.startswith("#"):
+                    continue
+                # 解析 KEY=VALUE 格式
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    result[key.strip()] = value.strip()
 
-            # 解析 KEY=VALUE 格式
-            if "=" in line:
-                key, _, value = line.partition("=")
-                result[key.strip()] = value.strip()
+        # 从系统环境变量覆盖（docker-compose 注入的环境变量优先）
+        # 遍历所有配置分组中定义的键
+        for section_info in CONFIG_SECTIONS.values():
+            for key in section_info["keys"]:
+                if key in os.environ:
+                    result[key] = os.environ[key]
+
+        # 同时检查环境变量中是否有多出的配置项
+        for key in os.environ:
+            if key.startswith(("QUANT_", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "BINANCE_")):
+                result[key] = os.environ[key]
 
         return result
 
