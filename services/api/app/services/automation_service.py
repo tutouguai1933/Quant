@@ -408,13 +408,15 @@ class AutomationService:
         """记录自动化告警。"""
 
         self._ensure_daily_summary()
+        # 限制 detail 长度，避免存储大量数据
+        detail_str = str(detail)[:1000] if detail else ""
         item = {
             "id": self._next_alert_id,
             "level": level,
             "code": code,
             "message": message,
             "source": source,
-            "detail": detail,
+            "detail": detail_str,
             "created_at": _utc_now(),
         }
         self._next_alert_id += 1
