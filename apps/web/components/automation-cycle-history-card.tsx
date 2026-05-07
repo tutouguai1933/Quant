@@ -73,7 +73,9 @@ function getStatusDescription(displayStatus: string, failureReason: string, mess
     case "succeeded":
       return "候选通过，已执行交易";
     case "blocked":
-      return `候选被拦阻: ${failureReason || message}`;
+      // 如果是通用拦截码，显示具体原因（message）
+      const blockReason = failureReason === "candidate_blocked" ? message : failureReason;
+      return `候选被拦阻: ${blockReason || "未知原因"}`;
     case "cooldown":
       return "冷却窗口中，等待下次运行";
     case "failed":
