@@ -188,6 +188,8 @@ class AutomationCycleHistoryService:
         Returns:
             历史记录列表，按时间倒序
         """
+        # 每次都从文件重新加载，确保获取最新数据
+        self._load()
         with self._lock:
             return list(self._records[:limit])
 
