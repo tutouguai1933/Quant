@@ -5093,10 +5093,32 @@ export type FreqtradeStatus = {
   error?: string;
 };
 
+export type FreqtradeSourceStats = {
+  trade_count: number;
+  winning_trades: number;
+  losing_trades: number;
+  total_profit: number;
+  winrate: number;
+  open_trades: number;
+  open_symbols: string[];
+};
+
+export type FreqtradeProfitBySource = {
+  enhanced_strategy: FreqtradeSourceStats;
+  automation_cycle: FreqtradeSourceStats;
+  total: FreqtradeSourceStats;
+};
+
 export async function getFreqtradeStatus(
   signal?: AbortSignal,
 ): Promise<ApiEnvelope<FreqtradeStatus>> {
   return fetchJson<FreqtradeStatus>("/freqtrade/status", undefined, signal);
+}
+
+export async function getFreqtradeProfitBySource(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<FreqtradeProfitBySource>> {
+  return fetchJson<FreqtradeProfitBySource>("/freqtrade/profit-by-source", undefined, signal);
 }
 
 export async function getHyperoptResult(

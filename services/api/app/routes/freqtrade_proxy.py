@@ -124,3 +124,110 @@ async def get_freqtrade_trades(limit: int = 10) -> dict[str, Any]:
     except Exception as e:
         logger.exception("Freqtrade 交易记录获取异常: %s", e)
         return _error(f"Freqtrade 连接失败: {e}")
+
+
+@router.get("/profit-by-source")
+async def get_freqtrade_profit_by_source() -> dict[str, Any]:
+    """按策略来源分组的收益统计。
+
+    通过 enter_tag 字段区分交易来源：
+    - 空字符串 "" = EnhancedStrategy (Freqtrade 自主决策)
+    - "quant-control-plane" = 自动化周期派发
+    """
+    try:
+        auth = _get_auth()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 获取已平仓交易
+            trades_resp = await client.get(
+                f"{FREQTRADE_HOST}/api/v1/trades",
+                params={"limit": 100},
+                auth=auth,
+            )
+            trades_resp.raise_for_status()
+            trades_data = trades_resp.json()
+            trades = list(trades_data.get("trades") or [])
+
+            # 获取当前持仓
+            status_resp = await client.get(f"{FREQTRADE_HOST}/api/v1/status", auth=auth)
+            status_resp.raise_for_status()
+            open_trades = status_resp.json() or []
+
+            # 按来源分组统计
+            enhanced = _init_source_stats()
+            automation = _init_source_stats()
+
+            for trade in trades:
+                enter_tag = str(trade.get("enter_tag") or "")
+                profit = float(trade.get("close_profit_abs") or 0)
+                is_win = profit > 0
+
+                if enter_tag == "quant-control-plane":
+                    automation["trade_count"] += 1
+                    automation["total_profit"] += profit
+                    if is_win:
+                        automation["winning_trades"] += 1
+                    else:
+                        automation["losing_trades"] += 1
+                else:
+                    enhanced["trade_count"] += 1
+                    enhanced["total_profit"] += profit
+                    if is_win:
+                        enhanced["winning_trades"] += 1
+                    else:
+                        enhanced["losing_trades"] += 1
+
+            # 统计当前持仓
+            for trade in open_trades:
+                enter_tag = str(trade.get("enter_tag") or "")
+                symbol = str(trade.get("pair", "")).replace("/USDT", "")
+                if enter_tag == "quant-control-plane":
+                    automation["open_trades"] += 1
+                    automation["open_symbols"].append(symbol)
+                else:
+                    enhanced["open_trades"] += 1
+                    enhanced["open_symbols"].append(symbol)
+
+            # 计算胜率
+            enhanced["winrate"] = (
+                enhanced["winning_trades"] / enhanced["trade_count"]
+                if enhanced["trade_count"] > 0 else 0
+            )
+            automation["winrate"] = (
+                automation["winning_trades"] / automation["trade_count"]
+                if automation["trade_count"] > 0 else 0
+            )
+
+            # 计算总计
+            total = {
+                "trade_count": enhanced["trade_count"] + automation["trade_count"],
+                "winning_trades": enhanced["winning_trades"] + automation["winning_trades"],
+                "losing_trades": enhanced["losing_trades"] + automation["losing_trades"],
+                "total_profit": enhanced["total_profit"] + automation["total_profit"],
+                "winrate": 0.0,
+            }
+            total["winrate"] = (
+                total["winning_trades"] / total["trade_count"]
+                if total["trade_count"] > 0 else 0
+            )
+
+            return _success({
+                "enhanced_strategy": enhanced,
+                "automation_cycle": automation,
+                "total": total,
+            })
+    except Exception as e:
+        logger.exception("Freqtrade 收益统计获取异常: %s", e)
+        return _error(f"Freqtrade 连接失败: {e}")
+
+
+def _init_source_stats() -> dict[str, Any]:
+    """初始化来源统计数据结构。"""
+    return {
+        "trade_count": 0,
+        "winning_trades": 0,
+        "losing_trades": 0,
+        "total_profit": 0.0,
+        "winrate": 0.0,
+        "open_trades": 0,
+        "open_symbols": [],
+    }
