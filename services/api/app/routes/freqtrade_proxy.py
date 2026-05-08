@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from services.api.app.services.config_center_service import config_center_service
+from services.api.app.services.workbench_config_service import workbench_config_service
 
 try:
     from fastapi import APIRouter
@@ -29,7 +29,7 @@ FREQTRADE_HOST = "http://127.0.0.1:9013"
 
 def _get_auth() -> tuple[str, str]:
     """获取 Freqtrade 认证信息。"""
-    config = config_center_service.get_thresholds_config()
+    config = workbench_config_service.get_config_section("thresholds")
     username = str(config.get("freqtrade_username") or "Freqtrader")
     password = str(config.get("freqtrade_password") or "jianyu0.0.")
     return (username, password)
