@@ -5068,6 +5068,37 @@ export async function stopHyperopt(
   }
 }
 
+// ========== Freqtrade API ==========
+
+export type FreqtradeProfit = {
+  total_percent: number;
+  total_ratio: number;
+  winrate: number;
+  trade_count: number;
+  winning_trades: number;
+  losing_trades: number;
+  best_pair: string;
+  best_rate: number;
+  sharpe: number;
+};
+
+export type FreqtradeStatus = {
+  running: boolean;
+  strategy: string;
+  open_trades: number;
+  open_symbols: string[];
+  profit: FreqtradeProfit;
+  latest_trade: string;
+  bot_start_date: string;
+  error?: string;
+};
+
+export async function getFreqtradeStatus(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<FreqtradeStatus>> {
+  return fetchJson<FreqtradeStatus>("/freqtrade/status", undefined, signal);
+}
+
 export async function getHyperoptResult(
   jobId: string,
   signal?: AbortSignal,

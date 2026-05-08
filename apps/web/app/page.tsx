@@ -18,7 +18,7 @@ import { RsiSummaryCard } from "../components/rsi-summary-card";
 import { TradeHistorySummaryCard } from "../components/trade-history-summary-card";
 import { EntryStatusCard } from "../components/entry-status-card";
 import { AutomationCycleHistoryCard } from "../components/automation-cycle-history-card";
-import { SystemStatusCard } from "../components/system-status-card";
+import { DualStrategyCard } from "../components/dual-strategy-card";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -223,9 +223,9 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* 第三行：系统状态 + 入场状态 */}
+        {/* 第三行：双策略状态 + 入场状态 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SystemStatusCard refreshInterval={30000} />
+          <DualStrategyCard refreshInterval={30000} />
           <EntryStatusCard refreshInterval={60000} />
         </div>
 
