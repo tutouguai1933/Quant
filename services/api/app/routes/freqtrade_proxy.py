@@ -6,11 +6,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 import httpx
-
-from services.api.app.services.workbench_config_service import workbench_config_service
 
 try:
     from fastapi import APIRouter
@@ -28,10 +27,12 @@ FREQTRADE_HOST = "http://127.0.0.1:9013"
 
 
 def _get_auth() -> tuple[str, str]:
-    """获取 Freqtrade 认证信息。"""
-    config = workbench_config_service.get_config_section("thresholds")
-    username = str(config.get("freqtrade_username") or "Freqtrader")
-    password = str(config.get("freqtrade_password") or "jianyu0.0.")
+    """获取 Freqtrade 认证信息。
+
+    TODO: 从配置中心读取，目前使用默认值。
+    """
+    username = os.getenv("FREQTRADE_USERNAME", "Freqtrader")
+    password = os.getenv("FREQTRADE_PASSWORD", "jianyu0.0.")
     return (username, password)
 
 
