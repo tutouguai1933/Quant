@@ -36,7 +36,12 @@ class ValidationWorkflowService:
         # 检查缓存是否有效
         now = time.time()
         if self._report_cache is not None and (now - self._report_cache_time) < self._REPORT_CACHE_TTL:
+            import logging
+            logging.getLogger(__name__).info("build_report() 使用缓存，TTL剩余 %.1fs", self._REPORT_CACHE_TTL - (now - self._report_cache_time))
             return self._report_cache
+
+        import logging
+        logging.getLogger(__name__).info("build_report() 缓存未命中，开始计算...")
 
         if limit is None or int(limit or 0) <= 0:
             limit = self._resolve_review_limit()

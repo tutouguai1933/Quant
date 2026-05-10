@@ -61,7 +61,12 @@ class AutomationWorkflowService:
         # 检查缓存是否有效
         now = time.time()
         if self._status_cache is not None and (now - self._status_cache_time) < self._STATUS_CACHE_TTL:
+            import logging
+            logging.getLogger(__name__).info("get_status() 使用缓存，TTL剩余 %.1fs", self._STATUS_CACHE_TTL - (now - self._status_cache_time))
             return self._status_cache
+
+        import logging
+        logging.getLogger(__name__).info("get_status() 缓存未命中，开始计算...")
 
         task_health = self._scheduler.get_health_summary()
         automation_status = self._automation.get_status(task_health=task_health)
