@@ -43,9 +43,8 @@ class OpenclawSnapshotService:
     def get_snapshot(self) -> dict[str, Any]:
         """获取统一运维快照（带缓存）。"""
         # 检查缓存是否有效
-        now = time.time()
-        if self._snapshot_cache is not None and (now - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
-            print(f"[CACHE] OpenclawSnapshotService.get_snapshot() 使用缓存，TTL剩余 {self._SNAPSHOT_CACHE_TTL - (now - self._snapshot_cache_time):.1f}s")
+        if self._snapshot_cache is not None and (time.time() - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
+            print(f"[CACHE] OpenclawSnapshotService.get_snapshot() 使用缓存，TTL剩余 {self._SNAPSHOT_CACHE_TTL - (time.time() - self._snapshot_cache_time):.1f}s")
             return self._snapshot_cache
 
         print("[CACHE] OpenclawSnapshotService.get_snapshot() 缓存未命中，开始计算...")
@@ -162,9 +161,9 @@ class OpenclawSnapshotService:
                 "restart_cooldown_seconds": 300,
             },
         }
-        # 保存到缓存
+        # 保存到缓存（使用当前时间，而不是方法开始时的时间）
         self._snapshot_cache = result
-        self._snapshot_cache_time = now
+        self._snapshot_cache_time = time.time()
         return result
 
     def _resolve_overall_status(

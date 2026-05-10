@@ -59,9 +59,8 @@ class AutomationWorkflowService:
         """返回自动化状态和健康摘要（带缓存）。"""
 
         # 检查缓存是否有效
-        now = time.time()
-        if self._status_cache is not None and (now - self._status_cache_time) < self._STATUS_CACHE_TTL:
-            print(f"[CACHE] get_status() 使用缓存，TTL剩余 {self._STATUS_CACHE_TTL - (now - self._status_cache_time):.1f}s")
+        if self._status_cache is not None and (time.time() - self._status_cache_time) < self._STATUS_CACHE_TTL:
+            print(f"[CACHE] get_status() 使用缓存，TTL剩余 {self._STATUS_CACHE_TTL - (time.time() - self._status_cache_time):.1f}s")
             return self._status_cache
 
         print("[CACHE] get_status() 缓存未命中，开始计算...")
@@ -168,9 +167,9 @@ class AutomationWorkflowService:
                 automation_status=status_payload,
                 evaluation_workspace={},
             )
-        # 保存到缓存
+        # 保存到缓存（使用当前时间）
         self._status_cache = status_payload
-        self._status_cache_time = now
+        self._status_cache_time = time.time()
         return status_payload
 
     def run_cycle(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:

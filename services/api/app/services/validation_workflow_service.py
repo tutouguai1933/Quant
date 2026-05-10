@@ -34,9 +34,8 @@ class ValidationWorkflowService:
         """返回固定验证工作流复盘（带缓存）。"""
 
         # 检查缓存是否有效
-        now = time.time()
-        if self._report_cache is not None and (now - self._report_cache_time) < self._REPORT_CACHE_TTL:
-            print(f"[CACHE] build_report() 使用缓存，TTL剩余 {self._REPORT_CACHE_TTL - (now - self._report_cache_time):.1f}s")
+        if self._report_cache is not None and (time.time() - self._report_cache_time) < self._REPORT_CACHE_TTL:
+            print(f"[CACHE] build_report() 使用缓存，TTL剩余 {self._REPORT_CACHE_TTL - (time.time() - self._report_cache_time):.1f}s")
             return self._report_cache
 
         print("[CACHE] build_report() 缓存未命中，开始计算...")
@@ -96,9 +95,9 @@ class ValidationWorkflowService:
             "recent_tasks": recent_tasks,
             "account_snapshot": account_snapshot,
         }
-        # 保存到缓存
+        # 保存到缓存（使用当前时间）
         self._report_cache = result
-        self._report_cache_time = now
+        self._report_cache_time = time.time()
         return result
 
     @staticmethod
