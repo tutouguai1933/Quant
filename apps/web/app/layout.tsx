@@ -3,6 +3,7 @@
 import "./globals.css";
 import { ErrorBoundary } from "../components/error-boundary";
 import { WebSocketProvider } from "../lib/websocket-context";
+import { RsiDataProvider } from "../lib/rsi-data-context";
 
 export const metadata = {
   title: "Quant Control Plane",
@@ -18,7 +19,9 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body className="dark min-h-screen bg-background text-foreground antialiased">
         <WebSocketProvider>
-          <ErrorBoundary>{children}</ErrorBoundary>
+          <RsiDataProvider>
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </RsiDataProvider>
         </WebSocketProvider>
       </body>
     </html>

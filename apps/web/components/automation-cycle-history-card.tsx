@@ -118,6 +118,7 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<Record<number, "basic" | "candidates" | "tasks" | "rsi">>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -302,93 +303,131 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                 {/* 详情面板 */}
                 {isExpanded && (
                   <div className="px-3 pb-3 pt-2 border-t border-[var(--terminal-border)]/30 bg-[var(--terminal-bg)]/50 text-xs">
-                    {/* 状态说明 */}
-                    <div className="mb-2">
-                      <span className="text-[var(--terminal-muted)]">状态: </span>
-                      <span className={statusColor}>{statusDesc}</span>
+                    {/* 标签页导航 */}
+                    <div className="flex gap-1 mb-3 pb-2 border-b border-[var(--terminal-border)]/30">
+                      {[
+                        { key: "basic", label: "基础" },
+                        { key: "candidates", label: "候选" },
+                        { key: "tasks", label: "任务" },
+                        { key: "rsi", label: "RSI" },
+                      ].map((tab) => (
+                        <button
+                          key={tab.key}
+                          onClick={() => setActiveTab((prev) => ({ ...prev, [globalIdx]: tab.key as "basic" | "candidates" | "tasks" | "rsi" }))}
+                          className={`px-2 py-1 rounded text-[11px] transition-colors ${
+                            (activeTab[globalIdx] || "basic") === tab.key
+                              ? "bg-[var(--terminal-cyan)]/20 text-[var(--terminal-cyan)] border border-[var(--terminal-cyan)]/50"
+                              : "bg-[var(--terminal-border)]/30 text-[var(--terminal-muted)] hover:bg-[var(--terminal-border)]/50"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
                     </div>
 
-                    {/* 候选币种 */}
-                    {item.candidates && item.candidates.length > 0 && (
-                      <div className="mb-2">
-                        <p className="text-[var(--terminal-muted)] mb-1">候选币种:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {item.candidates.map((c, i) => (
-                            <span
-                              key={i}
-                              className="px-2 py-0.5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/20"
-                            >
-                              <span className="font-mono">{c.symbol.replace("USDT", "")}</span>
-                              {c.blocked_reason && (
-                                <span className="text-[var(--terminal-muted)] ml-1">({c.blocked_reason})</span>
-                              )}
-                            </span>
-                          ))}
+                    {/* 基础信息标签页 */}
+                    {(!activeTab[globalIdx] || activeTab[globalIdx] === "basic") && (
+                      <div className="space-y-2">
+                        {/* 状态说明 */}
+                        <div>
+                          <span className="text-[var(--terminal-muted)]">状态: </span>
+                          <span className={statusColor}>{statusDesc}</span>
+                        </div>
+
+                        {/* 详细信息 */}
+                        <div className="space-y-1 text-[var(--terminal-muted)]">
+                          <div>模式: <span className="text-[var(--terminal-text)]">{item.mode}</span></div>
+                          {item.failure_reason && <div>原因: <span className="text-[var(--terminal-text)]">{item.failure_reason}</span></div>}
+                          {item.next_action && <div>建议: <span className="text-[var(--terminal-text)]">{item.next_action}</span></div>}
                         </div>
                       </div>
                     )}
 
-                    {/* 任务执行状态 */}
-                    {item.task_summary && Object.keys(item.task_summary).length > 0 && (
-                      <div className="mb-2">
-                        <p className="text-[var(--terminal-muted)] mb-1">任务状态:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {Object.entries(item.task_summary).map(([name, task]) => (
-                            <span
-                              key={name}
-                              className="px-2 py-0.5 rounded border border-[var(--terminal-border)]"
-                            >
-                              {name}:{" "}
+                    {/* 候选币种标签页 */}
+                    {activeTab[globalIdx] === "candidates" && (
+                      <div>
+                        {item.candidates && item.candidates.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {item.candidates.map((c, i) => (
                               <span
-                                className={
-                                  task.status === "succeeded"
-                                    ? "text-green-500"
-                                    : task.status === "failed"
-                                    ? "text-red-500"
-                                    : "text-yellow-500"
-                                }
+                                key={i}
+                                className="px-2 py-1 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/20"
                               >
-                                {task.status}
+                                <span className="font-mono">{c.symbol.replace("USDT", "")}</span>
+                                {c.blocked_reason && (
+                                  <span className="text-orange-400 ml-1">({translateBlockReason(c.blocked_reason)})</span>
+                                )}
                               </span>
-                              {task.duration_seconds > 0 && (
-                                <span className="text-[var(--terminal-muted)] ml-1">
-                                  ({Math.round(task.duration_seconds)}s)
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[var(--terminal-muted)]">无候选币种</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 任务执行状态标签页 */}
+                    {activeTab[globalIdx] === "tasks" && (
+                      <div>
+                        {item.task_summary && Object.keys(item.task_summary).length > 0 ? (
+                          <div className="space-y-1">
+                            {Object.entries(item.task_summary).map(([name, task]) => (
+                              <div
+                                key={name}
+                                className="flex items-center justify-between px-2 py-1.5 rounded border border-[var(--terminal-border)]/50"
+                              >
+                                <span className="text-[var(--terminal-text)]">{name}</span>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={
+                                      task.status === "succeeded"
+                                        ? "text-green-500"
+                                        : task.status === "failed"
+                                        ? "text-red-500"
+                                        : "text-yellow-500"
+                                    }
+                                  >
+                                    {task.status}
+                                  </span>
+                                  {task.duration_seconds > 0 && (
+                                    <span className="text-[var(--terminal-muted)]">
+                                      {Math.round(task.duration_seconds)}s
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[var(--terminal-muted)]">无任务记录</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* RSI 快照标签页 */}
+                    {activeTab[globalIdx] === "rsi" && (
+                      <div>
+                        {item.rsi_snapshot && Object.keys(item.rsi_snapshot).length > 0 ? (
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                            {Object.entries(item.rsi_snapshot).map(([symbol, value]) => {
+                              const rsiValue = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
+                              const rsiColor = rsiValue >= 70 ? "text-red-400" : rsiValue <= 30 ? "text-green-400" : "text-[var(--terminal-text)]";
+                              return (
+                                <span
+                                  key={symbol}
+                                  className="px-2 py-1 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/10 text-center"
+                                >
+                                  <span className="font-mono text-[var(--terminal-muted)]">{symbol.replace("USDT", "")}</span>:{" "}
+                                  <span className={rsiColor}>{rsiValue.toFixed(1)}</span>
                                 </span>
-                              )}
-                            </span>
-                          ))}
-                        </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-[var(--terminal-muted)]">无RSI快照</div>
+                        )}
                       </div>
                     )}
-
-                    {/* RSI 快照 */}
-                    {item.rsi_snapshot && Object.keys(item.rsi_snapshot).length > 0 && (
-                      <div className="mb-2">
-                        <p className="text-[var(--terminal-muted)] mb-1">RSI 快照:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {Object.entries(item.rsi_snapshot).slice(0, 6).map(([symbol, value]) => {
-                            const rsiValue = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
-                            const rsiColor = rsiValue >= 70 ? "text-red-400" : rsiValue <= 30 ? "text-green-400" : "text-[var(--terminal-text)]";
-                            return (
-                              <span
-                                key={symbol}
-                                className="px-2 py-0.5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/10"
-                              >
-                                <span className="font-mono">{symbol.replace("USDT", "")}</span>:{" "}
-                                <span className={rsiColor}>{rsiValue.toFixed(1)}</span>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 详细信息 */}
-                    <div className="mt-2 pt-2 border-t border-[var(--terminal-border)]/30 text-[var(--terminal-muted)] space-y-1">
-                      <div>模式: <span className="text-[var(--terminal-text)]">{item.mode}</span></div>
-                      {item.failure_reason && <div>原因: <span className="text-[var(--terminal-text)]">{item.failure_reason}</span></div>}
-                      {item.next_action && <div>建议: <span className="text-[var(--terminal-text)]">{item.next_action}</span></div>}
-                    </div>
                   </div>
                 )}
               </div>

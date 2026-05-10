@@ -2,58 +2,46 @@
 
 /**
  * RSI概览卡片
- * 显示所有币种的RSI状态，点击可查看历史记录
+ * 显示所有币种的RSI状态，支持筛选和排序
+ * 使用共享 RsiDataContext 避免重复请求
  */
 
-import { useEffect, useState } from "react";
-import { getRsiSummary, type RsiSummaryItem } from "../lib/api";
+import { useState, useMemo } from "react";
+import { type RsiSummaryItem } from "../lib/api";
+import { useRsiData } from "../lib/rsi-data-context";
 import { TerminalCard } from "./terminal";
 import { RsiHistoryDialog } from "./rsi-history-dialog";
 
 interface RsiSummaryCardProps {
-  refreshInterval?: number; // 毫秒
+  // refreshInterval 参数已弃用，使用共享上下文的刷新间隔
+  refreshInterval?: number;
 }
 
-export function RsiSummaryCard({ refreshInterval = 300000 }: RsiSummaryCardProps) {
-  const [items, setItems] = useState<RsiSummaryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastUpdate, setLastUpdate] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
+type FilterType = "all" | "overbought" | "oversold" | "neutral";
+type SortType = "default" | "rsi_asc" | "rsi_desc";
+
+export function RsiSummaryCard({ refreshInterval }: RsiSummaryCardProps) {
+  // 使用共享 RSI 数据上下文
+  const { items, isLoading, error, lastUpdate } = useRsiData();
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  // 筛选和排序状态
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [sortBy, setSortBy] = useState<SortType>("default");
 
-    async function fetchData() {
-      try {
-        const response = await getRsiSummary("1d");
-        if (cancelled) return;
-
-        if (response.error) {
-          setError(response.error.message || "获取RSI概览失败");
-        } else {
-          setItems(response.data.items || []);
-          setLastUpdate(new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai" }));
-          setError(null);
-        }
-      } catch {
-        if (!cancelled) {
-          setError("网络请求失败");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    fetchData();
-    const interval = setInterval(fetchData, refreshInterval);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [refreshInterval]);
+  // 筛选和排序后的数据
+  const filteredItems = useMemo(() => {
+    return items
+      .filter((item) => {
+        if (filter === "all") return true;
+        return item.state === filter;
+      })
+      .sort((a, b) => {
+        if (sortBy === "rsi_asc") return a.rsi - b.rsi;
+        if (sortBy === "rsi_desc") return b.rsi - a.rsi;
+        return 0;
+      });
+  }, [items, filter, sortBy]);
 
   const getStateColor = (state: string) => {
     switch (state) {
@@ -126,6 +114,44 @@ export function RsiSummaryCard({ refreshInterval = 300000 }: RsiSummaryCardProps
           </div>
         </div>
 
+        {/* 筛选和排序控件 */}
+        <div className="flex flex-wrap items-center gap-2 mb-3 pb-3 border-b border-[var(--terminal-border)]/30">
+          {/* 状态筛选 */}
+          <div className="flex gap-1">
+            {(["all", "overbought", "oversold", "neutral"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-2 py-1 text-[11px] rounded transition-colors ${
+                  filter === f
+                    ? "bg-[var(--terminal-cyan)]/20 text-[var(--terminal-cyan)] border border-[var(--terminal-cyan)]/50"
+                    : "bg-[var(--terminal-border)]/30 text-[var(--terminal-muted)] hover:bg-[var(--terminal-border)]/50"
+                }`}
+              >
+                {f === "all" ? "全部" : f === "overbought" ? "超买" : f === "oversold" ? "超卖" : "中性"}
+              </button>
+            ))}
+          </div>
+
+          {/* 排序选择 */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortType)}
+            className="px-2 py-1 text-[11px] rounded bg-[var(--terminal-bg)] border border-[var(--terminal-border)] text-[var(--terminal-text)] focus:border-[var(--terminal-cyan)] focus:outline-none"
+          >
+            <option value="default">默认排序</option>
+            <option value="rsi_asc">RSI 升序</option>
+            <option value="rsi_desc">RSI 降序</option>
+          </select>
+
+          {/* 筛选结果数量 */}
+          {filter !== "all" && (
+            <span className="text-[10px] text-[var(--terminal-muted)]">
+              显示 {filteredItems.length} 个结果
+            </span>
+          )}
+        </div>
+
         {/* 提示 */}
         <div className="text-xs text-[var(--terminal-muted)] mb-3">
           💡 点击币种查看RSI历史记录
@@ -133,7 +159,7 @@ export function RsiSummaryCard({ refreshInterval = 300000 }: RsiSummaryCardProps
 
         {/* RSI列表 */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-          {items.map((item) => (
+          {filteredItems.map((item) => (
             <button
               key={item.symbol}
               onClick={() => setSelectedSymbol(item.symbol)}
@@ -157,8 +183,10 @@ export function RsiSummaryCard({ refreshInterval = 300000 }: RsiSummaryCardProps
           ))}
         </div>
 
-        {items.length === 0 && (
-          <div className="text-sm text-[var(--terminal-muted)]">暂无数据</div>
+        {filteredItems.length === 0 && (
+          <div className="text-sm text-[var(--terminal-muted)] text-center py-4">
+            没有符合条件的币种
+          </div>
         )}
       </TerminalCard>
 

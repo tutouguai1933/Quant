@@ -6,9 +6,18 @@
 
 ## 当前进度
 
-**状态**：系统稳定运行，性能优化完成
+**状态**：系统稳定运行，前端优化完成
 
 **本次更新（2026-05-11）**：
+- **前端优化**：
+  - 新增 `RsiDataContext` 共享 RSI 数据，避免重复 API 请求
+  - `EntryStatusCard` 和 `RsiSummaryCard` 共享 RSI 数据源
+  - `AutomationCycleHistoryCard` 添加标签页导航（基础/候选/任务/RSI）
+  - `RsiSummaryCard` 添加筛选和排序功能
+  - `EntryStatusCard` 增强显示 RSI、趋势、策略指标
+  - `CandidateQueueCard` 新增候选队列卡片
+  - `BalancesPage` 添加 USD 估值和资产分布可视化
+  - `OpsPage` 添加巡检统计（总运行次数、成功率、平均耗时）
 - **Patrol接口性能优化**：响应时间从100+秒降至1-3秒
   - FreqtradeRestClient.get_snapshot(): 5秒TTL缓存
   - AutomationWorkflowService.get_status(): 60秒TTL缓存
@@ -198,6 +207,45 @@ with open(path, 'r+') as f:
 | ETH | 0.0001947 | dust |
 | XRP | 0.0958 | dust |
 | ADA | 0.0759 | dust |
+
+---
+
+## 前端组件架构
+
+### 共享数据上下文
+
+| Context | 说明 | 刷新间隔 |
+|---------|------|---------|
+| `WebSocketContext` | 实时状态推送 | WebSocket |
+| `RsiDataContext` | RSI 数据共享 | 5分钟 |
+
+### 工作台卡片组件
+
+| 组件 | 说明 | 数据源 |
+|------|------|--------|
+| `DualStrategyCard` | 双策略运行状态和收益 | Freqtrade API + System Status |
+| `EntryStatusCard` | 入场条件指标（RSI、趋势、策略） | RsiDataContext + Market Snapshots |
+| `RsiSummaryCard` | RSI 概览（支持筛选/排序） | RsiDataContext |
+| `CandidateQueueCard` | 候选币种队列 | Candidate API |
+| `TradeHistorySummaryCard` | 交易历史摘要 | Trade History API |
+| `AutomationCycleHistoryCard` | 自动化周期历史（标签页导航） | Cycle History API |
+
+### 组件使用示例
+
+```tsx
+// RsiDataContext 已集成在 layout.tsx 中
+// EntryStatusCard 和 RsiSummaryCard 自动共享 RSI 数据
+
+import { RsiDataProvider } from "../lib/rsi-data-context";
+import { EntryStatusCard } from "../components/entry-status-card";
+import { RsiSummaryCard } from "../components/rsi-summary-card";
+
+// 在页面中使用
+<RsiDataProvider>
+  <EntryStatusCard />
+  <RsiSummaryCard />
+</RsiDataProvider>
+```
 
 ---
 

@@ -19,6 +19,7 @@ import { TradeHistorySummaryCard } from "../components/trade-history-summary-car
 import { EntryStatusCard } from "../components/entry-status-card";
 import { AutomationCycleHistoryCard } from "../components/automation-cycle-history-card";
 import { DualStrategyCard } from "../components/dual-strategy-card";
+import { CandidateQueueCard } from "../components/candidate-queue-card";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -235,18 +236,10 @@ export default function HomePage() {
         {/* 第五行：交易记录 + 候选队列 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <TradeHistorySummaryCard refreshInterval={60000} />
-          <TerminalCard title="最近候选队列">
-            <div className="text-[var(--terminal-muted)] text-[12px]">
-              {strategyWorkspace.research?.signal_count || 0} 个候选信号
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {strategyWorkspace.whitelist?.slice(0, 6).map((symbol) => (
-                <span key={symbol} className="px-2 py-0.5 rounded bg-[var(--terminal-border)]/30 text-[var(--terminal-text)] text-[11px]">
-                  {symbol.replace("USDT", "")}
-                </span>
-              ))}
-            </div>
-          </TerminalCard>
+          <CandidateQueueCard
+            refreshInterval={60000}
+            fallbackSymbols={strategyWorkspace.whitelist || []}
+          />
         </div>
 
         {/* 第六行：自动化周期历史 */}

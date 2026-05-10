@@ -51,6 +51,7 @@ type PatrolSchedule = {
   total_runs?: number;
   failed_runs?: number;
   success_rate?: number;
+  avg_duration_ms?: number;
 };
 
 export default function OpsPage() {
@@ -256,6 +257,30 @@ export default function OpsPage() {
                     }`}>
                       {patrolStatus.is_running ? "正在运行" : patrolStatus.schedule_enabled ? "已调度" : "待机"}
                     </span>
+                  </div>
+                </div>
+
+                {/* 巡检统计 */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="rounded border border-[var(--terminal-border)]/50 p-2 text-center">
+                    <div className="text-[10px] text-[var(--terminal-muted)]">总运行次数</div>
+                    <div className="text-sm font-medium text-[var(--terminal-text)]">{patrolSchedule.total_runs || 0}</div>
+                  </div>
+                  <div className="rounded border border-[var(--terminal-border)]/50 p-2 text-center">
+                    <div className="text-[10px] text-[var(--terminal-muted)]">成功率</div>
+                    <div className={`text-sm font-medium ${((patrolSchedule.success_rate || 0) >= 0.9) ? "text-green-400" : ((patrolSchedule.success_rate || 0) >= 0.7) ? "text-yellow-400" : "text-red-400"}`}>
+                      {((patrolSchedule.success_rate || 0) * 100).toFixed(0)}%
+                    </div>
+                  </div>
+                  <div className="rounded border border-[var(--terminal-border)]/50 p-2 text-center">
+                    <div className="text-[10px] text-[var(--terminal-muted)]">失败次数</div>
+                    <div className="text-sm font-medium text-red-400">{patrolSchedule.failed_runs || 0}</div>
+                  </div>
+                  <div className="rounded border border-[var(--terminal-border)]/50 p-2 text-center">
+                    <div className="text-[10px] text-[var(--terminal-muted)]">平均耗时</div>
+                    <div className="text-sm font-medium text-[var(--terminal-text)]">
+                      {patrolSchedule.avg_duration_ms ? `${(patrolSchedule.avg_duration_ms / 1000).toFixed(1)}s` : "--"}
+                    </div>
                   </div>
                 </div>
 
