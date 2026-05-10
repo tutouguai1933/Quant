@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from services.api.app.services.candidate_priority_service import candidate_priority_service
 from services.api.app.core.settings import Settings
@@ -24,6 +26,9 @@ from services.api.app.services.cycle_lock import CycleLock
 
 class AutomationWorkflowService:
     """按当前自动化模式执行统一工作流。"""
+
+    # get_status() 缓存 TTL（秒）
+    _STATUS_CACHE_TTL = 10.0
 
     def __init__(
         self,
@@ -46,9 +51,17 @@ class AutomationWorkflowService:
         self._syncer = syncer or sync_service
         self._arbiter = arbiter or research_execution_arbitration_service
         self._cycle_lock = CycleLock()
+        # get_status() 缓存
+        self._status_cache: dict[str, Any] | None = None
+        self._status_cache_time: float = 0.0
 
     def get_status(self) -> dict[str, object]:
-        """返回自动化状态和健康摘要。"""
+        """返回自动化状态和健康摘要（带缓存）。"""
+
+        # 检查缓存是否有效
+        now = time.time()
+        if self._status_cache is not None and (now - self._status_cache_time) < self._STATUS_CACHE_TTL:
+            return self._status_cache
 
         task_health = self._scheduler.get_health_summary()
         automation_status = self._automation.get_status(task_health=task_health)
@@ -152,6 +165,9 @@ class AutomationWorkflowService:
                 automation_status=status_payload,
                 evaluation_workspace={},
             )
+        # 保存到缓存
+        self._status_cache = status_payload
+        self._status_cache_time = now
         return status_payload
 
     def run_cycle(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:
