@@ -112,11 +112,17 @@ class FreqtradeRestError(RuntimeError):
 class FreqtradeRestClient:
     """面向 Freqtrade REST API 的最小客户端。"""
 
+    # 快照缓存 TTL（秒）
+    _SNAPSHOT_CACHE_TTL = 5.0
+
     def __init__(self, config: FreqtradeRestConfig) -> None:
         self._config = config
         self._access_token: str | None = None
         self._next_order_id = 1
         self._opener = request.build_opener(request.ProxyHandler({}))
+        # 快照缓存
+        self._snapshot_cache: Any = None
+        self._snapshot_cache_time: float = 0.0
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "FreqtradeRestClient":
@@ -257,16 +263,24 @@ class FreqtradeRestClient:
         return parsed
 
     def get_snapshot(self) -> Any:
-        """读取余额、持仓、订单和策略列表。"""
+        """读取余额、持仓、订单和策略列表（带缓存）。"""
+
+        # 检查缓存是否有效
+        now = time.time()
+        if self._snapshot_cache is not None and (now - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
+            return self._snapshot_cache
 
         from services.api.app.adapters.freqtrade.client import FreqtradeSnapshot
 
-        return FreqtradeSnapshot(
+        snapshot = FreqtradeSnapshot(
             balances=self._get_balances(),
             positions=self._get_positions(),
             orders=self._get_orders(),
             strategies=self._get_strategies(),
         )
+        self._snapshot_cache = snapshot
+        self._snapshot_cache_time = now
+        return snapshot
 
     def get_runtime_snapshot(self) -> dict[str, object]:
         """返回执行器运行视图。"""
