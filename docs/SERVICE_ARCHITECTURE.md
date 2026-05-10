@@ -1,6 +1,6 @@
 # 服务架构文档
 
-> 最后更新：2026-05-06
+> 最后更新：2026-05-11
 
 ---
 
@@ -44,6 +44,22 @@
 
 ## 缓存机制
 
+### API层缓存（2026-05-11优化）
+
+以下缓存解决了Patrol接口超时问题（原100+秒 → 现在1-3秒）：
+
+| 服务 | 方法 | TTL | 说明 |
+|------|------|-----|------|
+| `FreqtradeRestClient` | `get_snapshot()` | 5秒 | Freqtrade状态快照 |
+| `AutomationWorkflowService` | `get_status()` | 60秒 | 自动化工作流状态 |
+| `ValidationWorkflowService` | `build_report()` | 60秒 | 验证报告 |
+| `OpenClawSnapshotService` | `get_snapshot()` | 60秒 | OpenClaw巡检快照 |
+
+**缓存实现要点**：
+- 使用 `time.time()` 在保存缓存时获取当前时间，而非方法开始时
+- 多线程场景使用 `threading.Lock()` + 双重检查锁定
+- 缓存变量: `_xxx_cache` / `_xxx_cache_time`
+
 ### RSI 缓存
 
 **文件位置**: `/app/.runtime/rsi_cache.json`
@@ -53,25 +69,6 @@
 **API 端点**:
 - `GET /api/v1/market/rsi-summary?interval=1d` - 获取 RSI 摘要
 - `POST /api/v1/market/rsi-cache/refresh?interval=1d` - 手动刷新缓存
-
-**数据结构**:
-```json
-{
-  "items": [
-    {
-      "symbol": "BTCUSDT",
-      "rsi": 68.2,
-      "state": "neutral",
-      "signal": "hold",
-      "time": "05-06 08:00 进行中"
-    }
-  ],
-  "total": 16,
-  "interval": "1d",
-  "updated_at": "2026-05-06T12:00:00Z",
-  "cached_at": "2026-05-06T12:00:00Z"
-}
-```
 
 ### 执行器运行状态缓存
 

@@ -1,31 +1,27 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-05-08
+> 最后更新：2026-05-11
 
 ---
 
 ## 当前进度
 
-**状态**：系统稳定运行，功能持续优化中
+**状态**：系统稳定运行，性能优化完成
 
-**本次更新（2026-05-08）**：
-- **自动化周期历史增强**：
-  - 新增 RSI 快照记录（从缓存获取相关币种 RSI 值）
-  - 新增候选币种列表展示（TOP 5）
-  - 新增任务执行状态显示（train/infer/signal/review）
-  - 拦截原因显示中文翻译
-  - RSI 显示颜色指示（红色超买/绿色超卖）
-- **配置管理界面修复**：
-  - 修复 Docker 环境下配置不显示的问题
-  - `_read_env_file` 方法支持从系统环境变量读取
-- **规则门控参数调整**：
-  - 成交量阈值从 1.0 调整为 0.8
+**本次更新（2026-05-11）**：
+- **Patrol接口性能优化**：响应时间从100+秒降至1-3秒
+  - FreqtradeRestClient.get_snapshot(): 5秒TTL缓存
+  - AutomationWorkflowService.get_status(): 60秒TTL缓存
+  - ValidationWorkflowService.build_report(): 60秒TTL缓存
+  - OpenClawSnapshotService.get_snapshot(): 60秒TTL缓存 + 线程锁
+- **BTC持仓卡住问题解决**：买入补足后一起卖出，dust转BNB
+- **自动化状态恢复**：修复paused/manual_takeover状态
+- **文档更新**：DEPLOYMENT_GUIDE.md, SERVICE_ARCHITECTURE.md, ops-troubleshooting.md
 
-**上次更新（2026-05-06）**：
-- API 性能优化（TTLCache、并行获取、响应时间降至 20ms）
-- RSI 缓存文件机制
-- Patrol 认证修复
-- 自动化恢复运行
+**上次更新（2026-05-08）**：
+- 自动化周期历史增强（RSI快照、候选币种、任务状态）
+- 配置管理界面修复
+- 规则门控参数调整（成交量阈值0.8）
 
 **运维能力达成**：100%，所有核心容器 healthy
 
@@ -51,16 +47,17 @@
 ```
 服务器 (39.106.11.65)
 ├── quant-api (FastAPI) - 端口 9011
+│   ├── 缓存层: 多级TTL缓存（5秒/60秒）
 │   ├── RSI缓存: /app/.runtime/rsi_cache.json
 │   ├── 自动化状态: /app/.runtime/automation_state.json
 │   ├── 周期历史: /app/.runtime/automation_cycle_history.json
-│   └── 并行获取账户数据，响应时间 ~20ms
+│   └── 响应时间: Patrol ~1-3秒（优化前100+秒）
 ├── quant-web (Next.js) - 端口 9012
-├── quant-freqtrade - API端口 9013 (内部)
+├── quant-freqtrade - API端口 8080 (内部), stake_amount=10 USDT
 ├── quant-mihomo - 代理端口 7890, 控制端口 9090
 ├── quant-prometheus - 端口 9090
 ├── quant-grafana - 端口 3000
-└── quant-openclaw - 巡检服务
+└── quant-openclaw - 巡检服务 (health_check/state_sync/cycle_check)
 ```
 
 ### 状态文件位置
@@ -72,35 +69,43 @@
 | `.runtime/workbench_config.json` | 工作台配置 |
 | `.runtime/rsi_cache.json` | RSI 缓存数据 |
 | `.runtime/openclaw_patrol_records.json` | 巡检记录 |
+| `.runtime/openclaw_audit_records.json` | 审计记录 |
 
 ---
 
-## 核心功能模块
+## 双策略架构
 
-### 自动化工作流
+### 1. Freqtrade EnhancedStrategy
 
-| 文件 | 说明 |
-|------|------|
-| `services/api/app/services/automation_workflow_service.py` | 自动化工作流主服务 |
-| `services/api/app/services/automation_service.py` | 自动化状态管理 |
-| `services/api/app/services/automation_cycle_history_service.py` | 历史记录服务 |
-| `services/api/app/services/scheduled_patrol_service.py` | 定时巡检服务 |
-| `services/api/app/services/openclaw_patrol_service.py` | 巡检执行服务 |
+- **类型**: 实时交易策略
+- **运行位置**: quant-freqtrade 容器
+- **配置**: `infra/freqtrade/user_data/config.live.base.json`
+- **stake_amount**: 10 USDT
+- **交易对**: 16个
 
-### 规则门控
+### 2. Automation Cycle
 
-| 文件 | 说明 |
-|------|------|
-| `services/worker/qlib_rule_gate.py` | 规则门控（趋势/波动/量能过滤） |
-| `services/worker/qlib_ranking.py` | 候选评分与验证 |
-| `services/worker/qlib_config.py` | Qlib 配置加载 |
+- **类型**: 自动化周期策略
+- **运行位置**: quant-api + quant-openclaw
+- **模式**: auto_live
+- **状态**: waiting（候选币种未通过验证）
 
-### 前端组件
+### 为何近期无交易
 
-| 文件 | 说明 |
-|------|------|
-| `apps/web/components/automation-cycle-history-card.tsx` | 自动化周期历史卡片 |
-| `apps/web/app/config/page.tsx` | 配置管理页面 |
+系统运行正常，但候选币种未通过验证检查：
+1. **BONKUSDT**: 成交量不足以进入live模式，停留在dry-run
+2. **LINKUSDT**: validation_future_return_not_positive（预测收益非正）
+
+---
+
+## 缓存配置
+
+| 服务 | 方法 | TTL | 文件 |
+|------|------|-----|------|
+| FreqtradeRestClient | get_snapshot() | 5秒 | `services/api/app/adapters/freqtrade/rest_client.py` |
+| AutomationWorkflowService | get_status() | 60秒 | `services/api/app/services/automation_workflow_service.py` |
+| ValidationWorkflowService | build_report() | 60秒 | `services/api/app/services/validation_workflow_service.py` |
+| OpenClawSnapshotService | get_snapshot() | 60秒 | `services/api/app/services/openclaw_snapshot_service.py` |
 
 ---
 
@@ -125,6 +130,7 @@
 | `validation_future_return_not_positive` | 预测收益为负 | 回测预测收益不满足要求 |
 | `trend_broken` | 趋势破位 | EMA 趋势线破位 |
 | `score_too_low` | 评分过低 | 综合评分低于 0.45 |
+| `candidate_not_live_ready` | 候选未放量 | 成交量不足以进入live模式 |
 
 ---
 
@@ -142,68 +148,26 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra
 ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra/deploy && docker compose build web && docker compose up -d --no-deps web"
 ```
 
-### 重建并部署 API 和 Web
+### 查看系统状态
 
 ```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra/deploy && docker compose build api web && docker compose up -d --no-deps api web"
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 'curl -s http://localhost:9011/api/v1/system/status | python3 -m json.tool'
 ```
 
-### 启动定时巡检服务
+### 恢复自动化运行
 
-```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 'docker exec quant-api python3 -c "
-import sys
-sys.path.insert(0, \"/app/services/api\")
-from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
-result = scheduled_patrol_service.start_schedule(interval_minutes=15)
-print(result)
-"'
+```python
+# 如果自动化被暂停，执行以下代码恢复
+import json
+path = "/home/djy/Quant/infra/data/runtime/automation_state.json"
+with open(path, 'r+') as f:
+    state = json.load(f)
+    state['paused'] = False
+    state['manual_takeover'] = False
+    f.seek(0)
+    json.dump(state, f, indent=2)
+    f.truncate()
 ```
-
-### 手动触发自动化周期
-
-```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 'docker exec quant-api python3 -c "
-import sys
-sys.path.insert(0, \"/app/services/api\")
-from services.api.app.services.automation_workflow_service import automation_workflow_service
-result = automation_workflow_service.run_cycle(source=\"manual_trigger\")
-print(\"status:\", result.get(\"status\"))
-print(\"recommended_symbol:\", result.get(\"recommended_symbol\"))
-"'
-```
-
-### 查看历史记录
-
-```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "docker exec quant-api cat .runtime/automation_cycle_history.json | python3 -m json.tool | head -50"
-```
-
----
-
-## 前端页面清单
-
-| 路由 | 页面名称 | 分组 | 认证 |
-|------|----------|------|------|
-| `/` | 工作台 | 研究 | - |
-| `/research` | 模型训练 | 研究 | ✓ |
-| `/backtest` | 回测训练 | 研究 | ✓ |
-| `/evaluation` | 选币回测 | 研究 | ✓ |
-| `/features` | 因子研究 | 研究 | ✓ |
-| `/signals` | 信号 | 研究 | - |
-| `/hyperopt` | 参数优化 | 研究 | ✓ |
-| `/analytics` | 数据分析 | 研究 | - |
-| `/data` | 数据管理 | 数据与知识 | - |
-| `/factor-knowledge` | 因子知识库 | 数据与知识 | - |
-| `/config` | 配置管理 | 数据与知识 | - |
-| `/strategies` | 策略中心 | 运营 | ✓ |
-| `/ops` | 运维监控 | 运营 | - |
-| `/tasks` | 任务 | 运营 | ✓ |
-| `/market` | 市场 | 工具 | - |
-| `/balances` | 余额 | 工具 | - |
-| `/positions` | 持仓 | 工具 | - |
-| `/orders` | 订单 | 工具 | - |
-| `/risk` | 风险 | 工具 | ✓ |
 
 ---
 
@@ -213,7 +177,7 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "docker exec quant-api cat .runtime
 |------|------|
 | 模式 | **live** (dry_run=false) |
 | 交易对 | BTC/ETH/SOL/XRP/BNB/DOGE/ADA/AVAX/LINK/DOT/POL/PEPE/SHIB/WIF/ORDI/BONK (**16个**) |
-| stake_amount | **6 USDT** (单笔投入) |
+| stake_amount | **10 USDT** (单笔投入) |
 | max_open_trades | **1** (并行仓位) |
 | stoploss | -8% |
 | 止盈目标 | 8%主目标，120分钟后最低 3% |
@@ -225,25 +189,15 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "docker exec quant-api cat .runtime
 
 ---
 
-## 常见问题
+## 当前持仓
 
-### Q1: 配置管理页面显示为空
-
-**原因**：Docker 容器中没有 api.env 文件，配置通过 docker-compose 的 env_file 注入为环境变量
-
-**解决**：已修复，`_read_env_file` 方法现在同时读取系统环境变量
-
-### Q2: 自动化周期历史 RSI 为空
-
-**原因**：旧记录在代码修改前创建，没有保存 RSI 数据
-
-**解决**：新记录会自动从 RSI 缓存获取数据
-
-### Q3: 频繁拦截"成交量不足"
-
-**原因**：市场成交量偏低，低于历史平均
-
-**解决**：已将 `QUANT_QLIB_RULE_MIN_VOLUME_RATIO` 从 1.0 调整为 0.8
+| 资产 | 数量 | 状态 |
+|------|------|------|
+| USDT | 14.71700681 | 可交易 |
+| BNB | 0.00843852 | 部分dust |
+| ETH | 0.0001947 | dust |
+| XRP | 0.0958 | dust |
+| ADA | 0.0759 | dust |
 
 ---
 
@@ -253,17 +207,18 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "docker exec quant-api cat .runtime
 |------|------|------|
 | [AGENTS.md](AGENTS.md) | 开发规则和部署规范 | 开发指南 |
 | [README.md](README.md) | 项目概览和使用动线 | 快速了解 |
-| [docs/HANDOFF_SESSION.md](docs/HANDOFF_SESSION.md) | 会话接力文档 | 任务交接 |
 | [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) | 部署详细说明 | 运维参考 |
+| [docs/SERVICE_ARCHITECTURE.md](docs/SERVICE_ARCHITECTURE.md) | 服务架构和缓存配置 | 架构参考 |
+| [docs/ops-troubleshooting.md](docs/ops-troubleshooting.md) | 运维踩坑记录 | 问题排查 |
 
 ---
 
 ## 当前状态
 
-- **Freqtrade**: Live模式运行
+- **Freqtrade**: Live模式运行，无持仓
 - **mihomo**: Healthy，JP1节点
 - **系统**: 所有核心容器 healthy
-- **自动化**: 运行中，15分钟间隔巡检
+- **自动化**: auto_live模式，waiting状态（候选未通过验证）
 - **飞书**: 推送正常
 - **前端**: 终端风格，功能完善
-- **API**: 性能优化完成
+- **API**: 性能优化完成，Patrol响应1-3秒

@@ -2,11 +2,84 @@
 
 > 本文档记录运维过程中遇到的问题和解决方案，避免重复踩坑。
 >
-> **最后更新：2026-05-05**
+> **最后更新：2026-05-11**
 
 ---
 
-## 0. 最新变更（2026-05-05）
+## 0. 最新变更（2026-05-11）
+
+### 0.1 Patrol接口性能优化
+
+**问题**：Patrol接口响应时间超过60秒，导致超时
+
+**原因**：多个服务串行调用，每个服务又串行调用多个下游API
+
+**解决方案**：添加缓存层
+
+| 服务 | 方法 | TTL | 效果 |
+|------|------|-----|------|
+| FreqtradeRestClient | get_snapshot() | 5秒 | 减少Freqtrade API调用 |
+| AutomationWorkflowService | get_status() | 60秒 | 主性能瓶颈，111秒→缓存命中 |
+| ValidationWorkflowService | build_report() | 60秒 | 56秒→缓存命中 |
+| OpenClawSnapshotService | get_snapshot() | 60秒 | 巡检快照缓存 |
+
+**关键实现细节**：
+```python
+# 错误：使用方法开始时的时间
+def get_data(self):
+    now = time.time()  # ❌ 这里的now在计算后可能已过期
+    if self._cache and (now - self._cache_time) < TTL:
+        return self._cache
+    data = expensive_operation()  # 耗时操作
+    self._cache_time = now  # ❌ 使用旧的now
+    return data
+
+# 正确：使用保存时的时间
+def get_data(self):
+    if self._cache and (time.time() - self._cache_time) < TTL:
+        return self._cache
+    data = expensive_operation()
+    self._cache_time = time.time()  # ✅ 使用当前时间
+    return data
+```
+
+**多线程场景**：使用 `threading.Lock()` + 双重检查锁定
+
+### 0.2 BTC持仓卡住问题（已解决）
+
+**问题**：0.00006993 BTC（约5.58 USDT）无法卖出
+
+**原因**：Binance NOTIONAL过滤器要求最小交易金额5 USDT，刚好在边界
+
+**解决方案**：
+1. 买入5 USDT BTC
+2. 一起卖出
+3. 剩余dust使用Binance Dust Transfer API转为BNB
+
+**预防措施**：stake_amount调整为10 USDT
+
+### 0.3 自动化状态异常（已解决）
+
+**问题**：自动化系统停止运行
+
+**原因**：`automation_state.json`中 `paused=true`, `manual_takeover=true`
+
+**解决方案**：
+```python
+import json
+path = "/home/djy/Quant/infra/data/runtime/automation_state.json"
+with open(path, 'r+') as f:
+    state = json.load(f)
+    state['paused'] = False
+    state['manual_takeover'] = False
+    f.seek(0)
+    json.dump(state, f, indent=2)
+    f.truncate()
+```
+
+---
+
+## 1. 历史变更（2026-05-05）
 
 ### 0.1 开发环境架构规范
 
