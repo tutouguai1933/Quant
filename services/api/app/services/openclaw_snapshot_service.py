@@ -4,6 +4,7 @@
 输出给 Openclaw 的唯一结构化快照。
 """
 
+import time
 from datetime import datetime, timezone
 import uuid
 from typing import Any
@@ -19,6 +20,9 @@ from services.api.app.services.openclaw_audit_service import OpenclawAuditServic
 class OpenclawSnapshotService:
     """Openclaw 统一快照服务。"""
 
+    # get_snapshot() 缓存 TTL（秒）
+    _SNAPSHOT_CACHE_TTL = 60.0
+
     def __init__(
         self,
         automation: AutomationService,
@@ -32,9 +36,19 @@ class OpenclawSnapshotService:
         self._health_service = health_service or service_health_service
         self._restart_history = restart_history_service or openclaw_restart_history_service
         self._audit_service = audit_service or openclaw_audit_service
+        # get_snapshot() 缓存
+        self._snapshot_cache: dict[str, Any] | None = None
+        self._snapshot_cache_time: float = 0.0
 
     def get_snapshot(self) -> dict[str, Any]:
-        """获取统一运维快照。"""
+        """获取统一运维快照（带缓存）。"""
+        # 检查缓存是否有效
+        now = time.time()
+        if self._snapshot_cache is not None and (now - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
+            print(f"[CACHE] OpenclawSnapshotService.get_snapshot() 使用缓存，TTL剩余 {self._SNAPSHOT_CACHE_TTL - (now - self._snapshot_cache_time):.1f}s")
+            return self._snapshot_cache
+
+        print("[CACHE] OpenclawSnapshotService.get_snapshot() 缓存未命中，开始计算...")
         snapshot_id = str(uuid.uuid4())
         generated_at = datetime.now(timezone.utc).isoformat()
 
@@ -106,7 +120,7 @@ class OpenclawSnapshotService:
                 "precondition_reason": precondition_reason,
             })
 
-        return {
+        result = {
             "snapshot_id": snapshot_id,
             "generated_at": generated_at,
             "overall_status": overall_status,
@@ -148,6 +162,10 @@ class OpenclawSnapshotService:
                 "restart_cooldown_seconds": 300,
             },
         }
+        # 保存到缓存
+        self._snapshot_cache = result
+        self._snapshot_cache_time = now
+        return result
 
     def _resolve_overall_status(
         self,
