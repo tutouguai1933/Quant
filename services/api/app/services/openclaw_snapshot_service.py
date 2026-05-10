@@ -46,17 +46,14 @@ class OpenclawSnapshotService:
         """获取统一运维快照（带缓存）。"""
         # 先检查缓存（无锁）
         if self._snapshot_cache is not None and (time.time() - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
-            print(f"[CACHE] OpenclawSnapshotService.get_snapshot() 使用缓存，TTL剩余 {self._SNAPSHOT_CACHE_TTL - (time.time() - self._snapshot_cache_time):.1f}s")
             return self._snapshot_cache
 
         # 获取锁后再检查一次（双重检查锁定模式）
         with self._cache_lock:
             # 再次检查缓存，可能在等待锁时已被其他线程更新
             if self._snapshot_cache is not None and (time.time() - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
-                print(f"[CACHE] OpenclawSnapshotService.get_snapshot() 使用缓存（锁内），TTL剩余 {self._SNAPSHOT_CACHE_TTL - (time.time() - self._snapshot_cache_time):.1f}s")
                 return self._snapshot_cache
 
-            print("[CACHE] OpenclawSnapshotService.get_snapshot() 缓存未命中，开始计算...")
             snapshot_id = str(uuid.uuid4())
             generated_at = datetime.now(timezone.utc).isoformat()
 

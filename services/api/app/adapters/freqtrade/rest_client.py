@@ -268,10 +268,7 @@ class FreqtradeRestClient:
         # 检查缓存是否有效
         now = time.time()
         if self._snapshot_cache is not None and (now - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
-            print(f"[CACHE] get_snapshot() 使用缓存，TTL剩余 {self._SNAPSHOT_CACHE_TTL - (now - self._snapshot_cache_time):.1f}s")
             return self._snapshot_cache
-
-        print("[CACHE] get_snapshot() 缓存未命中，开始计算...")
 
         from services.api.app.adapters.freqtrade.client import FreqtradeSnapshot
 
