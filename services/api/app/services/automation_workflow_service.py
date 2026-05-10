@@ -28,7 +28,7 @@ class AutomationWorkflowService:
     """按当前自动化模式执行统一工作流。"""
 
     # get_status() 缓存 TTL（秒）
-    _STATUS_CACHE_TTL = 10.0
+    _STATUS_CACHE_TTL = 30.0
 
     def __init__(
         self,

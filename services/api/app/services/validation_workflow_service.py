@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from typing import Any
 
@@ -18,13 +19,24 @@ from services.api.app.tasks.scheduler import task_scheduler
 class ValidationWorkflowService:
     """构造 dry-run -> 小额 live -> 复盘 的统一摘要。"""
 
+    # build_report() 缓存 TTL（秒）
+    _REPORT_CACHE_TTL = 30.0
+
     def __init__(self, *, research_reader=None, sync_reader=None, scheduler=None) -> None:
         self._research_reader = research_reader or research_service
         self._sync_reader = sync_reader or sync_service
         self._scheduler = scheduler or task_scheduler
+        # build_report() 缓存
+        self._report_cache: dict[str, Any] | None = None
+        self._report_cache_time: float = 0.0
 
     def build_report(self, limit: int | None = None) -> dict[str, object]:
-        """返回固定验证工作流复盘。"""
+        """返回固定验证工作流复盘（带缓存）。"""
+
+        # 检查缓存是否有效
+        now = time.time()
+        if self._report_cache is not None and (now - self._report_cache_time) < self._REPORT_CACHE_TTL:
+            return self._report_cache
 
         if limit is None or int(limit or 0) <= 0:
             limit = self._resolve_review_limit()
@@ -53,7 +65,7 @@ class ValidationWorkflowService:
             execution_health=execution_health,
         )
         recent_tasks = self._serialize_recent_tasks(raw_recent_tasks)
-        return {
+        result = {
             "overview": {
                 "recommended_symbol": str(research_report.get("overview", {}).get("recommended_symbol", "")),
                 "recommended_action": str(research_report.get("overview", {}).get("recommended_action", "")),
@@ -81,6 +93,10 @@ class ValidationWorkflowService:
             "recent_tasks": recent_tasks,
             "account_snapshot": account_snapshot,
         }
+        # 保存到缓存
+        self._report_cache = result
+        self._report_cache_time = now
+        return result
 
     @staticmethod
     def _resolve_review_limit() -> int:
