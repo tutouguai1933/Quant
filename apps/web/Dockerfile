@@ -23,8 +23,8 @@ RUN npm install --legacy-peer-deps
 
 COPY apps/web /app/apps/web
 
-RUN pnpm build
+RUN npm run build
 
 ENV NODE_ENV=production
 
-CMD ["pnpm", "start", "--hostname", "0.0.0.0", "--port", "9012"]
+CMD ["npm", "start", "--", "--hostname", "0.0.0.0", "--port", "9012"]
