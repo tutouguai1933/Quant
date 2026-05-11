@@ -109,13 +109,13 @@ export function DualStrategyCard({ refreshInterval = 30000 }: DualStrategyCardPr
 
         if (cancelled) return;
 
-        if (!ftRes.error) {
+        if (!ftRes.error && ftRes.data && ftRes.data.running !== undefined) {
           setFreqtradeStatus(ftRes.data);
         }
-        if (!profitRes.error) {
+        if (!profitRes.error && profitRes.data && profitRes.data.total) {
           setProfitBySource(profitRes.data);
         }
-        if (!sysRes.error) {
+        if (!sysRes.error && sysRes.data && sysRes.data.automation) {
           setSystemStatus(sysRes.data);
         }
       } catch {
@@ -178,7 +178,7 @@ export function DualStrategyCard({ refreshInterval = 30000 }: DualStrategyCardPr
             策略: {freqtradeStatus.strategy}
           </div>
           <div className="text-[11px] text-[var(--terminal-muted)]">
-            持仓: {freqtradeStatus.open_symbols.map(s => s.replace("/USDT", "")).join(", ") || "无"}
+            持仓: {(freqtradeStatus.open_symbols || []).map(s => s.replace("/USDT", "")).join(", ") || "无"}
           </div>
         </div>
 
@@ -222,7 +222,7 @@ export function DualStrategyCard({ refreshInterval = 30000 }: DualStrategyCardPr
               胜率: {formatWinrate(enhanced_strategy.winrate)}
             </div>
             <div className="text-[11px] text-[var(--terminal-muted)]">
-              当前持仓: {enhanced_strategy.open_symbols.join(", ") || "无"}
+              当前持仓: {(enhanced_strategy.open_symbols || []).join(", ") || "无"}
             </div>
           </div>
 
@@ -239,7 +239,7 @@ export function DualStrategyCard({ refreshInterval = 30000 }: DualStrategyCardPr
               胜率: {formatWinrate(automation_cycle.winrate)}
             </div>
             <div className="text-[11px] text-[var(--terminal-muted)]">
-              当前持仓: {automation_cycle.open_symbols.join(", ") || "无"}
+              当前持仓: {(automation_cycle.open_symbols || []).join(", ") || "无"}
             </div>
           </div>
         </div>
