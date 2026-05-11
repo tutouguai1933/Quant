@@ -52,6 +52,55 @@ def list_ml_models(
     })
 
 
+# 注意：特定路径必须在参数化路径之前定义
+@router.get("/production")
+def get_production_model() -> dict:
+    """获取当前生产模型。"""
+    from services.worker.model_registry import get_model_registry
+
+    registry = get_model_registry()
+    model = registry.get_production_model()
+
+    if model is None:
+        return _success(None, {"status": "no_production_model"})
+
+    return _success({
+        "version_id": model.version_id,
+        "model_type": model.model_type,
+        "model_path": str(model.model_path),
+        "metrics": model.metrics,
+        "training_context": model.training_context,
+        "tags": model.tags,
+        "stage": model.stage,
+        "created_at": model.created_at.isoformat(),
+        "updated_at": model.updated_at.isoformat(),
+        "description": model.description,
+    })
+
+
+@router.get("/compare")
+def compare_ml_models(
+    a: str,
+    b: str,
+) -> dict:
+    """比较两个 ML 模型版本。"""
+    from services.worker.model_registry import get_model_registry
+
+    registry = get_model_registry()
+    comparison = registry.compare(a, b)
+
+    if comparison is None:
+        return _error("comparison_failed", f"无法比较模型 {a} 和 {b}")
+
+    return _success({
+        "version_a": comparison.version_a,
+        "version_b": comparison.version_b,
+        "metrics_diff": comparison.metrics_diff,
+        "winner": comparison.winner,
+        "recommendation": comparison.recommendation,
+    })
+
+
 @router.get("/{version_id}")
 def get_ml_model(version_id: str) -> dict:
     """获取指定 ML 模型版本。"""
@@ -101,29 +150,6 @@ def promote_ml_model(
     return _success({"success": True, "version_id": version_id, "stage": stage})
 
 
-@router.get("/compare")
-def compare_ml_models(
-    a: str,
-    b: str,
-) -> dict:
-    """比较两个 ML 模型版本。"""
-    from services.worker.model_registry import get_model_registry
-
-    registry = get_model_registry()
-    comparison = registry.compare(a, b)
-
-    if comparison is None:
-        return _error("comparison_failed", f"无法比较模型 {a} 和 {b}")
-
-    return _success({
-        "version_a": comparison.version_a,
-        "version_b": comparison.version_b,
-        "metrics_diff": comparison.metrics_diff,
-        "winner": comparison.winner,
-        "recommendation": comparison.recommendation,
-    })
-
-
 @router.delete("/{version_id}")
 def delete_ml_model(
     version_id: str,
@@ -142,28 +168,3 @@ def delete_ml_model(
         return _error("delete_failed", f"无法删除模型 {version_id}，可能不存在或为生产模型")
 
     return _success({"success": True, "version_id": version_id})
-
-
-@router.get("/production")
-def get_production_model() -> dict:
-    """获取当前生产模型。"""
-    from services.worker.model_registry import get_model_registry
-
-    registry = get_model_registry()
-    model = registry.get_production_model()
-
-    if model is None:
-        return _success(None, {"status": "no_production_model"})
-
-    return _success({
-        "version_id": model.version_id,
-        "model_type": model.model_type,
-        "model_path": str(model.model_path),
-        "metrics": model.metrics,
-        "training_context": model.training_context,
-        "tags": model.tags,
-        "stage": model.stage,
-        "created_at": model.created_at.isoformat(),
-        "updated_at": model.updated_at.isoformat(),
-        "description": model.description,
-    })
