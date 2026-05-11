@@ -12,7 +12,7 @@ ENV PYTHONUNBUFFERED=1
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
     pip config set install.trusted-host mirrors.aliyun.com
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl docker-cli && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl docker-cli libgomp1 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
