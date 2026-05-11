@@ -102,18 +102,30 @@ class AutomationCycleHistoryService:
         return "waiting"
 
     def _extract_candidates(self, summary: dict[str, Any]) -> list[dict[str, Any]]:
-        """提取候选币种列表（TOP 5）。"""
+        """提取候选币种列表（TOP 5），包含 gate 验证详情。"""
         candidates = []
         # 从 priority_queue 或 candidates 中提取
         pq = summary.get("priority_queue", {})
         items = pq.get("items", [])
         if items:
             for item in items[:5]:
+                live_gate = item.get("live_gate", {})
+                dry_run_gate = item.get("dry_run_gate", {})
+
                 candidates.append({
                     "symbol": str(item.get("symbol", "")),
                     "score": str(item.get("score", "")),
                     "status": str(item.get("status", "")),
                     "blocked_reason": str(item.get("blocked_reason", "")),
+                    # Gate 验证状态
+                    "allowed_to_dry_run": bool(item.get("allowed_to_dry_run")),
+                    "allowed_to_live": bool(item.get("allowed_to_live")),
+                    # Live Gate 详情
+                    "live_gate_status": str(live_gate.get("status", "")) if live_gate else "",
+                    "live_gate_reasons": list(live_gate.get("reasons", [])) if live_gate else [],
+                    # Dry-Run Gate 详情
+                    "dry_run_gate_status": str(dry_run_gate.get("status", "")) if dry_run_gate else "",
+                    "dry_run_gate_reasons": list(dry_run_gate.get("reasons", [])) if dry_run_gate else [],
                 })
 
         # 如果没有 priority_queue，尝试从其他字段提取
@@ -123,6 +135,12 @@ class AutomationCycleHistoryService:
                 "score": "",
                 "status": "recommended",
                 "blocked_reason": str(summary.get("failure_reason", "")),
+                "allowed_to_dry_run": False,
+                "allowed_to_live": False,
+                "live_gate_status": "",
+                "live_gate_reasons": [],
+                "dry_run_gate_status": "",
+                "dry_run_gate_reasons": [],
             })
 
         return candidates

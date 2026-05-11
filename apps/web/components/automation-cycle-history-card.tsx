@@ -91,6 +91,41 @@ function translateBlockReason(reason: string): string {
   return translations[reason] || reason;
 }
 
+// Gate 失败原因中文翻译
+function translateGateReason(reason: string): string {
+  const translations: Record<string, string> = {
+    // Live Gate
+    "dry_run_gate_not_passed": "dry-run 未通过",
+    "live_score_too_low": "评分过低",
+    "live_validation_positive_rate_too_low": "验证正确率过低",
+    "live_net_return_too_low": "净收益率过低",
+    "live_win_rate_too_low": "胜率过低",
+    "live_turnover_too_high": "换手率过高",
+    "live_sample_count_too_low": "样本数不足",
+    // Dry-Run Gate
+    "dry_run_score_too_low": "评分过低",
+    "dry_run_positive_rate_too_low": "验证正确率过低",
+    "dry_run_net_return_too_low": "净收益率过低",
+    "dry_run_sharpe_too_low": "夏普比率过低",
+    "dry_run_drawdown_too_high": "回撤过高",
+    "dry_run_loss_streak_too_long": "连续亏损过长",
+    "dry_run_win_rate_too_low": "胜率过低",
+    "dry_run_turnover_too_high": "换手率过高",
+    "dry_run_sample_count_too_low": "样本数不足",
+    // Rule Gate
+    "rule_volatility_too_high": "波动率过高",
+    "rule_volume_not_confirmed": "成交量不足",
+    "rule_trend_broken": "趋势破位",
+    // Validation Gate
+    "validation_sample_count_too_low": "验证样本不足",
+    "validation_future_return_not_positive": "预测收益非正",
+    // Consistency Gate
+    "consistency_backtest_validation_gap_too_large": "回测验证差距过大",
+    "consistency_training_validation_gap_too_large": "训练验证差距过大",
+  };
+  return translations[reason] || reason;
+}
+
 // 状态说明
 function getStatusDescription(displayStatus: string, failureReason: string, message: string): string {
   switch (displayStatus) {
@@ -347,18 +382,59 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                     {activeTab[globalIdx] === "candidates" && (
                       <div>
                         {item.candidates && item.candidates.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {item.candidates.map((c, i) => (
-                              <span
-                                key={i}
-                                className="px-2 py-1 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/20"
-                              >
-                                <span className="font-mono">{c.symbol.replace("USDT", "")}</span>
-                                {c.blocked_reason && (
-                                  <span className="text-orange-400 ml-1">({translateBlockReason(c.blocked_reason)})</span>
-                                )}
-                              </span>
-                            ))}
+                          <div className="space-y-2">
+                            {item.candidates.map((c, i) => {
+                              // 判断 gate 状态
+                              const dryRunPassed = c.allowed_to_dry_run || c.dry_run_gate_status === "passed";
+                              const livePassed = c.allowed_to_live || c.live_gate_status === "passed";
+                              const liveReasons = c.live_gate_reasons || [];
+                              const dryRunReasons = c.dry_run_gate_reasons || [];
+
+                              return (
+                                <div
+                                  key={i}
+                                  className="p-2 rounded border border-[var(--terminal-border)] bg-[var(--terminal-border)]/10"
+                                >
+                                  {/* 币种和评分 */}
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-mono font-medium">{c.symbol.replace("USDT", "")}</span>
+                                    <span className="text-[var(--terminal-muted)]">评分: {c.score}</span>
+                                  </div>
+
+                                  {/* Gate 状态 */}
+                                  <div className="flex flex-wrap gap-2 text-[11px]">
+                                    {/* Dry-Run Gate */}
+                                    <span className={dryRunPassed ? "text-green-400" : "text-red-400"}>
+                                      {dryRunPassed ? "✅ Dry-Run 通过" : "❌ Dry-Run 未通过"}
+                                    </span>
+
+                                    {/* Live Gate */}
+                                    <span className={livePassed ? "text-green-400" : "text-red-400"}>
+                                      {livePassed ? "✅ Live 通过" : "❌ Live 未通过"}
+                                    </span>
+                                  </div>
+
+                                  {/* 失败原因 */}
+                                  {!livePassed && liveReasons.length > 0 && (
+                                    <div className="mt-1 text-[11px] text-[var(--terminal-muted)]">
+                                      Live 失败: {liveReasons.map(translateGateReason).join(", ")}
+                                    </div>
+                                  )}
+                                  {!dryRunPassed && dryRunReasons.length > 0 && (
+                                    <div className="mt-1 text-[11px] text-[var(--terminal-muted)]">
+                                      Dry-Run 失败: {dryRunReasons.map(translateGateReason).join(", ")}
+                                    </div>
+                                  )}
+
+                                  {/* 兼容旧数据的 blocked_reason */}
+                                  {c.blocked_reason && !liveReasons.length && !dryRunReasons.length && (
+                                    <div className="mt-1 text-[11px] text-orange-400">
+                                      {translateBlockReason(c.blocked_reason)}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
                           <div className="text-[var(--terminal-muted)]">无候选币种</div>

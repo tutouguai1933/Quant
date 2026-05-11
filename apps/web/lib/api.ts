@@ -160,6 +160,13 @@ export type AutomationCycleCandidate = {
   score: string;
   status: string;
   blocked_reason: string;
+  // Gate 验证状态
+  allowed_to_dry_run?: boolean;
+  allowed_to_live?: boolean;
+  live_gate_status?: string;
+  live_gate_reasons?: string[];
+  dry_run_gate_status?: string;
+  dry_run_gate_reasons?: string[];
 };
 
 export type AutomationCycleTaskSummary = {

@@ -450,16 +450,21 @@ class AutomationWorkflowService:
             cycle_message = "自动 live 已开启，但当前运行模式不是 live"
             failure_reason = "runtime_not_live"
         elif mode == "auto_live" and not live_ready:
+            # 获取具体的 live gate 失败原因
+            live_gate = focus_candidate.get("live_gate", {})
+            live_reasons = list(live_gate.get("reasons", [])) if live_gate else []
+            reason_detail = ", ".join(live_reasons) if live_reasons else "未通过 live 门槛"
+
             next_action = "continue_dry_run"
             self._automation.record_alert(
                 level="warning",
                 code="live_gate_blocked",
-                message="当前候选还没有通过 live 门槛",
+                message=f"当前候选还没有通过 live 门槛: {reason_detail}",
                 source=source,
                 detail=recommended_symbol,
             )
             dispatch_status = "blocked"
-            cycle_message = "当前候选还没有通过 live 门槛"
+            cycle_message = f"当前候选还没有通过 live 门槛: {reason_detail}"
             failure_reason = "live_gate_blocked"
         elif mode == "auto_live" and armed_symbol != recommended_symbol:
             next_action = "continue_dry_run"
