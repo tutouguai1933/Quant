@@ -18,7 +18,8 @@ WORKDIR /app/apps/web
 COPY apps/web/package.json /app/apps/web/package.json
 COPY apps/web/pnpm-lock.yaml /app/apps/web/pnpm-lock.yaml
 COPY apps/web/.npmrc /app/apps/web/.npmrc
-RUN pnpm install --frozen-lockfile --prod=false
+# 使用 npm 安装避免 pnpm 的 sharp 构建问题
+RUN npm install --legacy-peer-deps
 
 COPY apps/web /app/apps/web
 
