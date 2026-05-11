@@ -2,7 +2,7 @@
 
 > **开发快速参考** - 代码结构、API、开发流程
 >
-> 最后更新：2026-05-11
+> 最后更新：2026-05-12
 
 ---
 
@@ -149,6 +149,7 @@ pnpm dev --hostname 0.0.0.0 --port 9012
 | 前端 | Next.js 15 + React 19 + TailwindCSS |
 | 后端 | FastAPI + Python 3.12 |
 | 交易引擎 | Freqtrade + EnhancedStrategy |
+| ML 模型 | LightGBM + Optuna |
 | 数据库 | SQLite（Freqtrade） |
 | 监控 | Prometheus + Grafana |
 | 代理 | mihomo（Clash Meta） |
@@ -165,12 +166,33 @@ services/api/
 │   ├── routes/              # API路由
 │   │   ├── market.py        # 市场数据
 │   │   ├── feishu.py        # 飞书推送
-│   │   └── health.py        # 健康检查
+│   │   ├── health.py        # 健康检查
+│   │   ├── ml_models.py     # ML模型管理
+│   │   ├── ml_retrain.py    # 重训练检查
+│   │   └── ml_hyperopt.py   # 超参数优化
 │   ├── services/            # 业务逻辑
 │   │   ├── market_service.py
-│   │   └── alert_push_service.py
+│   │   ├── alert_push_service.py
+│   │   └── hyperopt_schedule_service.py
 │   └── adapters/            # 外部适配
 └── requirements.txt
+```
+
+### Worker服务 (services/worker/)
+```
+services/worker/
+├── qlib_runner.py           # 研究运行器
+├── qlib_config.py           # 配置管理
+├── qlib_features.py         # 特征计算
+├── qlib_backtest.py         # 回测评估
+├── optuna_optimizer.py      # 超参数优化
+├── auto_retrain.py          # 自动重训练
+├── model_registry.py        # 模型注册表
+├── best_params_store.py     # 最优参数存储
+└── ml/                      # ML 模块
+    ├── model.py             # 模型封装
+    ├── trainer.py           # 训练器
+    └── predictor.py         # 推理器
 ```
 
 ### Web前端 (apps/web/)
@@ -195,6 +217,17 @@ apps/web/
 | `/api/v1/market/{symbol}/rsi-history` | RSI历史 |
 | `/api/v1/trade-log/history` | 交易历史 |
 
+### ML 模型端点
+| 路径 | 作用 |
+|------|------|
+| `/api/v1/ml/models` | 模型版本列表 |
+| `/api/v1/ml/models/production` | 当前生产模型 |
+| `/api/v1/ml/retrain/status` | 重训练状态 |
+| `/api/v1/ml/retrain/check` | 检查是否需要重训练 |
+| `/api/v1/ml/hyperopt/start` | 启动超参数优化 |
+| `/api/v1/ml/hyperopt/status` | 优化进度 |
+| `/api/v1/ml/hyperopt/schedule/status` | 调度状态 |
+
 ### Freqtrade端点（端口9013）
 | 路径 | 作用 |
 |------|------|
@@ -216,6 +249,13 @@ QUANT_FREQTRADE_API_PASSWORD=jianyu0.0.
 
 HTTP_PROXY=http://127.0.0.1:7890
 HTTPS_PROXY=http://127.0.0.1:7890
+
+# ML 自动优化
+QUANT_RETRAIN_INTERVAL_DAYS=7
+QUANT_PERFORMANCE_DROP_THRESHOLD=0.05
+QUANT_MIN_RETRAIN_INTERVAL_HOURS=6
+QUANT_HYPEROPT_ENABLED=true
+QUANT_HYPEROPT_INTERVAL_HOURS=24
 ```
 
 ---
