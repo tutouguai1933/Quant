@@ -270,43 +270,58 @@ def _load_training_data_from_snapshot() -> tuple[list[dict[str, Any]] | None, li
         tuple: (training_rows, validation_rows, feature_columns) 或 (None, None, None)
     """
     import json
+    from pathlib import Path
     from services.worker.qlib_config import load_qlib_config
-    from services.worker.qlib_dataset import deserialize_dataset_bundle
 
     config = load_qlib_config()
-    snapshot_path = config.paths.latest_dataset_snapshot_path
 
-    if not snapshot_path.exists():
-        # 尝试从最新训练结果加载
-        training_path = config.paths.latest_training_path
-        if training_path.exists():
-            try:
-                training_payload = json.loads(training_path.read_text(encoding="utf-8"))
-                feature_columns = tuple(training_payload.get("feature_columns", []))
+    # 先从最新训练结果获取特征列
+    feature_columns: tuple[str, ...] = ()
+    training_path = config.paths.latest_training_path
+    if training_path.exists():
+        try:
+            training_payload = json.loads(training_path.read_text(encoding="utf-8"))
+            feature_columns = tuple(training_payload.get("feature_columns", []))
+        except Exception:
+            pass
 
-                # 检查是否有 dataset_snapshot_path
-                dataset_snapshot_path_str = training_payload.get("dataset_snapshot_path")
-                if dataset_snapshot_path_str:
-                    dataset_snapshot_path = config.paths.runtime_root / "dataset" / "snapshots" / Path(dataset_snapshot_path_str).name
-                    if dataset_snapshot_path.exists():
-                        snapshot_path = dataset_snapshot_path
-            except Exception:
-                pass
+    # 从缓存文件加载训练数据
+    cache_dir = config.paths.dataset_cache_dir
+    if not cache_dir.exists():
+        return None, None, feature_columns if feature_columns else None
 
-    if not snapshot_path.exists():
-        return None, None, None
+    all_training_rows: list[dict[str, Any]] = []
+    all_validation_rows: list[dict[str, Any]] = []
 
     try:
-        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
-        bundle = deserialize_dataset_bundle(payload)
+        for cache_file in cache_dir.glob("*.json"):
+            try:
+                with open(cache_file, encoding="utf-8") as f:
+                    payload = json.load(f)
 
-        training_rows = list(bundle.training_rows)
-        validation_rows = list(bundle.validation_rows) if bundle.validation_rows else []
-        feature_columns = tuple(bundle.feature_columns)
+                # 每个 cache 文件包含一个 symbol 的数据
+                training_rows = payload.get("training_rows", [])
+                validation_rows = payload.get("validation_rows", [])
 
-        return training_rows, validation_rows, feature_columns
+                all_training_rows.extend(training_rows)
+                all_validation_rows.extend(validation_rows)
+
+                # 从第一个有数据的文件获取特征列
+                if not feature_columns and training_rows:
+                    # 排除标签列
+                    label_columns = {"symbol", "generated_at", "future_return_pct", "label", "holding_window", "is_trainable"}
+                    feature_columns = tuple(k for k in training_rows[0].keys() if k not in label_columns)
+
+            except Exception:
+                continue
+
+        if len(all_training_rows) < 20:
+            return None, None, feature_columns if feature_columns else None
+
+        return all_training_rows, all_validation_rows, feature_columns
+
     except Exception:
-        return None, None, None
+        return None, None, feature_columns if feature_columns else None
 
 
 def _save_best_params(params: dict[str, Any], auc: float, n_trials: int, model_type: str) -> bool:
