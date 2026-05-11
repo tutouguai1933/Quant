@@ -369,6 +369,9 @@ class ModelRegistry:
 # 全局注册表实例
 _registry: ModelRegistry | None = None
 
+# 默认 registry 路径：优先使用 /app/.runtime（Docker 挂载），否则使用 /tmp
+DEFAULT_REGISTRY_ROOT = Path("/app/.runtime")
+
 
 def get_model_registry(registry_dir: Path | None = None) -> ModelRegistry:
     """获取模型注册表实例。
@@ -381,7 +384,11 @@ def get_model_registry(registry_dir: Path | None = None) -> ModelRegistry:
     """
     global _registry
     if _registry is None or registry_dir is not None:
-        from services.worker.qlib_config import DEFAULT_RUNTIME_ROOT
-        dir_path = registry_dir or Path(DEFAULT_RUNTIME_ROOT) / "registry"
+        # 优先使用 Docker 挂载的持久化目录
+        if DEFAULT_REGISTRY_ROOT.exists():
+            dir_path = registry_dir or DEFAULT_REGISTRY_ROOT / "registry"
+        else:
+            from services.worker.qlib_config import DEFAULT_RUNTIME_ROOT
+            dir_path = registry_dir or Path(DEFAULT_RUNTIME_ROOT) / "registry"
         _registry = ModelRegistry(dir_path)
     return _registry

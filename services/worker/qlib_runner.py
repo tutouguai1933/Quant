@@ -571,7 +571,8 @@ class QlibRunner:
         for i, item in enumerate(feature_importance):
             item["rank"] = i + 1
 
-        return {
+        # 基础返回数据
+        base_result = {
             "model_type": model_type,
             "model_path": str(model_path),
             "model_version": result.model_version,
@@ -590,6 +591,117 @@ class QlibRunner:
             },
             "training_context": result.training_context,
         }
+
+        # 注册模型到版本管理
+        registry_result = self._register_model(
+            model_path=model_path,
+            model_type=model_type,
+            model_version=result.model_version,
+            metrics=result.metrics,
+            training_context=result.training_context,
+        )
+        if registry_result:
+            base_result["registry_version_id"] = registry_result.get("version_id")
+            base_result["promotion"] = registry_result.get("promotion")
+
+        return base_result
+
+    def _register_model(
+        self,
+        *,
+        model_path: Path,
+        model_type: str,
+        model_version: str,
+        metrics: dict[str, float],
+        training_context: dict[str, object],
+    ) -> dict[str, object] | None:
+        """注册模型到版本管理并评估是否提升。"""
+        try:
+            from services.worker.model_registry import get_model_registry
+
+            registry = get_model_registry()
+
+            # 注册新模型
+            version_id = registry.register(
+                model_path=model_path,
+                model_type=model_type,
+                metrics={
+                    "train_auc": metrics.get("train_auc", 0.0),
+                    "val_auc": metrics.get("val_auc", 0.0),
+                    "train_f1": metrics.get("train_f1", 0.0),
+                    "val_f1": metrics.get("val_f1", 0.0),
+                },
+                training_context=training_context,
+                tags=["auto_train", str(self._config.research_template)],
+                description=f"自动化周期训练 - {model_version}",
+            )
+
+            # 评估是否应该提升
+            promotion = self._evaluate_and_promote(registry, version_id, metrics)
+
+            return {
+                "version_id": version_id,
+                "promotion": promotion,
+            }
+        except Exception as e:
+            # 注册失败不影响训练结果
+            import logging
+            logging.getLogger("qlib_runner").warning(f"模型注册失败: {e}")
+            return None
+
+    def _evaluate_and_promote(
+        self,
+        registry,
+        new_version_id: str,
+        new_metrics: dict[str, float],
+    ) -> dict[str, object]:
+        """评估是否应该提升新模型到生产环境。"""
+        promote_threshold = 0.01  # AUC 提升 1%
+
+        new_auc = new_metrics.get("val_auc", 0.0)
+
+        # 获取当前生产模型
+        production_model = registry.get_production_model()
+
+        # 没有生产模型，直接提升
+        if production_model is None:
+            registry.promote(new_version_id, "production")
+            return {
+                "should_promote": True,
+                "reason": "无生产模型，直接提升",
+                "promoted": True,
+                "improvement": None,
+            }
+
+        # 对比 AUC
+        prod_auc = production_model.metrics.get("val_auc", 0.0)
+        improvement = new_auc - prod_auc
+
+        if improvement > promote_threshold:
+            # AUC 提升超过阈值，自动提升
+            success = registry.promote(new_version_id, "production")
+            return {
+                "should_promote": True,
+                "reason": f"AUC 提升 {improvement:.4f}，超过阈值 {promote_threshold}",
+                "promoted": success,
+                "improvement": improvement,
+            }
+        elif improvement > 0:
+            # AUC 提升但未达阈值
+            return {
+                "should_promote": False,
+                "reason": f"AUC 提升 {improvement:.4f}，未达阈值 {promote_threshold}",
+                "promoted": False,
+                "improvement": improvement,
+            }
+        else:
+            # AUC 下降
+            return {
+                "should_promote": False,
+                "reason": f"AUC 下降 {-improvement:.4f}，不提升",
+                "promoted": False,
+                "improvement": improvement,
+            }
 
     def _get_factor_category(self, factor_name: str) -> str:
         """获取因子类别。"""
