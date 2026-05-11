@@ -27,12 +27,10 @@ FREQTRADE_HOST = "http://127.0.0.1:9013"
 
 
 def _get_auth() -> tuple[str, str]:
-    """获取 Freqtrade 认证信息。
-
-    TODO: 从配置中心读取，目前使用默认值。
-    """
-    username = os.getenv("FREQTRADE_USERNAME", "Freqtrader")
-    password = os.getenv("FREQTRADE_PASSWORD", "jianyu0.0.")
+    """获取 Freqtrade 认证信息。"""
+    # 支持两种环境变量格式
+    username = os.getenv("FREQTRADE_USERNAME") or os.getenv("QUANT_FREQTRADE_API_USERNAME", "Freqtrader")
+    password = os.getenv("FREQTRADE_PASSWORD") or os.getenv("QUANT_FREQTRADE_API_PASSWORD", "jianyu0.0.")
     return (username, password)
 
 
