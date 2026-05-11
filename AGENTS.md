@@ -76,6 +76,16 @@ docker logs quant-api --tail 30
 docker logs quant-web --tail 30
 ```
 
+### Python 包安装（使用中国镜像加速）
+
+```bash
+# 在服务器上安装 Python 包时，使用清华镜像加速
+pip3 install --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/simple <package_name>
+
+# 示例：安装 ML 相关依赖
+pip3 install --break-system-packages -i https://pypi.tuna.tsinghua.edu.cn/simple lightgbm xgboost optuna joblib scikit-learn
+```
+
 ### 为什么不能本地部署
 
 | 原因 | 说明 |
