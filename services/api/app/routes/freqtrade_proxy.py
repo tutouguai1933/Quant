@@ -23,7 +23,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/freqtrade", tags=["freqtrade"])
 
 # Freqtrade API 配置
-FREQTRADE_HOST = "http://127.0.0.1:9013"
+# 优先使用环境变量，否则自动检测 Docker 网关或使用 localhost
+def _get_freqtrade_host() -> str:
+    """获取 Freqtrade API 地址。"""
+    host = os.getenv("QUANT_FREQTRADE_API_URL") or os.getenv("FREQTRADE_HOST")
+    if host:
+        return host
+
+    # 尝试检测 Docker 环境
+    try:
+        import json
+        with open("/proc/1/cgroup", "r") as f:
+            if "docker" in f.read():
+                # 在 Docker 中运行，使用网关地址
+                return "http://172.17.0.1:9013"
+    except Exception:
+        pass
+
+    return "http://127.0.0.1:9013"
+
+FREQTRADE_HOST = _get_freqtrade_host()
 
 
 def _get_auth() -> tuple[str, str]:
