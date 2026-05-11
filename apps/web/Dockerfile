@@ -1,6 +1,6 @@
 # WebUI 容器镜像。
 # 这个镜像在服务器上构建并启动 Next.js 控制台。
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 # 接受 API URL 作为构建参数
 ARG QUANT_API_BASE_URL=http://127.0.0.1:9011/api/v1
