@@ -104,6 +104,42 @@ ssh djy@39.106.11.65 "cd /home/djy/Quant && git pull && cd infra/deploy && docke
 4. 查看 README.md 里是否已有搜索记录，有则跳过搜索；没有且是新功能或新项目，才访问 https://skills.sh/ 和 GitHub 搜索可参考方案，并把搜索结论更新到 README.md 的搜索记录章节
 5. 简单任务读完 CONTEXT.md 即可直接开始；复杂任务或新功能才需要读完整文档
 
+## 📚 核心文档索引
+
+### 第一层：必读文档（每次会话）
+| 文档 | 用途 | 更新频率 |
+|------|------|----------|
+| [CONTEXT.md](CONTEXT.md) | 项目当前状态、关键决定 | 每次会话必须更新 |
+| [AGENTS.md](AGENTS.md) | 开发规则和部署规范 | 规则变更时更新 |
+
+### 第二层：架构文档（理解系统）
+| 文档 | 用途 | 更新频率 |
+|------|------|----------|
+| [architecture.md](docs/architecture.md) | 系统分层架构 | 架构变更时更新 |
+| [DUAL_STRATEGY_ARCHITECTURE.md](docs/DUAL_STRATEGY_ARCHITECTURE.md) | 双策略详解（RSI策略+AI策略） | 策略变更时更新 |
+| [SERVICE_ARCHITECTURE.md](docs/SERVICE_ARCHITECTURE.md) | 服务架构和缓存配置 | 服务变更时更新 |
+
+### 第三层：运维文档（部署和排查）
+| 文档 | 用途 | 更新频率 |
+|------|------|----------|
+| [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) | 部署指南 | 部署方式变更时更新 |
+| [ops-troubleshooting.md](docs/ops-troubleshooting.md) | 运维踩坑记录 | 遇到新问题时更新 |
+| [DEV_HANDBOOK.md](docs/DEV_HANDBOOK.md) | 开发手册 | 开发流程变更时更新 |
+
+### 第四层：专项文档（特定领域）
+| 文档 | 用途 |
+|------|------|
+| [roadmap.md](docs/roadmap.md) | 项目路线图 |
+| [system-flow-guide.md](docs/system-flow-guide.md) | 系统流程导览 |
+| [user-handbook.md](docs/user-handbook.md) | 使用手册 |
+| [ops-freqtrade.md](docs/ops-freqtrade.md) | Freqtrade 接入说明 |
+| [ops-qlib.md](docs/ops-qlib.md) | Qlib 研究层说明 |
+| [grafana-setup.md](docs/grafana-setup.md) | Grafana 监控配置 |
+| [feishu-webhook-setup.md](docs/feishu-webhook-setup.md) | 飞书告警配置 |
+| [retry-and-degradation.md](docs/retry-and-degradation.md) | 重试和降级策略 |
+| [FRONTEND_OPTIMIZATION_PLAN.md](docs/FRONTEND_OPTIMIZATION_PLAN.md) | 前端优化计划 |
+| [HANDOFF_SESSION.md](docs/HANDOFF_SESSION.md) | 会话接力文档 |
+
 ## 项目记录
 每次阶段性完成后同步更新以下文件：
 
