@@ -40,8 +40,11 @@ def call_patrol(patrol_type: str) -> dict:
     """
     url = f"{QUANT_API_BASE_URL}/openclaw/patrol?patrol_type={patrol_type}"
 
+    # cycle_check 和 full 需要更长的超时时间，因为涉及训练和推理
+    timeout = 180 if patrol_type in ("cycle_check", "full") else 60
+
     try:
-        response = requests.post(url, timeout=60)
+        response = requests.post(url, timeout=timeout)
         if response.status_code == 200:
             result = response.json()
             logger.info(f"Patrol {patrol_type}: status={result.get('status')}, actions={len(result.get('actions_taken', []))}")
@@ -50,7 +53,7 @@ def call_patrol(patrol_type: str) -> dict:
             logger.error(f"Patrol {patrol_type} failed: HTTP {response.status_code}")
             return {"patrolled": False, "error": f"HTTP {response.status_code}"}
     except requests.exceptions.Timeout:
-        logger.error(f"Patrol {patrol_type} timeout after 60s")
+        logger.error(f"Patrol {patrol_type} timeout after {timeout}s")
         return {"patrolled": False, "error": "timeout"}
     except requests.exceptions.RequestException as e:
         logger.error(f"Patrol {patrol_type} error: {e}")
