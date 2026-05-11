@@ -33,6 +33,7 @@ import type { PublicExecutorStatus } from "../lib/api";
 import { FeedbackBanner } from "../components/feedback-banner";
 import { LoadingBanner } from "../components/loading-banner";
 import { ErrorBanner } from "../components/error-banner";
+import { OpenPositionsCard } from "../components/open-positions-card";
 
 /* 页面主组件 */
 export default function HomePage() {
@@ -230,7 +231,10 @@ export default function HomePage() {
           <EntryStatusCard refreshInterval={60000} />
         </div>
 
-        {/* 第四行：RSI概览 */}
+        {/* 第四行：当前持仓详情 */}
+        <OpenPositionsCard refreshInterval={30000} />
+
+        {/* 第五行：RSI概览 */}
         <RsiSummaryCard refreshInterval={300000} />
 
         {/* 第五行：两个策略的交易记录 */}

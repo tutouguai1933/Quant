@@ -234,3 +234,58 @@ def _init_source_stats() -> dict[str, Any]:
         "open_trades": 0,
         "open_symbols": [],
     }
+
+
+@router.get("/open-trades")
+async def get_freqtrade_open_trades() -> dict[str, Any]:
+    """获取 Freqtrade 当前持仓详情。"""
+    try:
+        auth = _get_auth()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            status_resp = await client.get(f"{FREQTRADE_HOST}/api/v1/status", auth=auth)
+            status_resp.raise_for_status()
+            trades = status_resp.json()
+
+            open_trades = [t for t in trades if t.get("is_open")]
+
+            items = []
+            for t in open_trades:
+                enter_tag = str(t.get("enter_tag") or "")
+                items.append({
+                    "trade_id": t.get("trade_id"),
+                    "symbol": t.get("pair", "").replace("/USDT", ""),
+                    "pair": t.get("pair"),
+                    "side": "short" if t.get("is_short") else "long",
+                    "open_rate": t.get("open_rate"),
+                    "amount": t.get("amount"),
+                    "stake_amount": t.get("stake_amount"),
+                    "profit_pct": t.get("profit_pct"),
+                    "profit_abs": t.get("profit_abs"),
+                    "open_date": t.get("open_date"),
+                    "source": "automation_cycle" if enter_tag == "quant-control-plane" else "enhanced_strategy",
+                })
+
+            total_stake = sum(float(t.get("stake_amount", 0) or 0) for t in open_trades)
+            total_profit = sum(float(t.get("profit_abs", 0) or 0) for t in open_trades)
+            total_profit_pct = (total_profit / total_stake * 100) if total_stake > 0 else 0
+
+            return _success({
+                "items": items,
+                "total_stake": round(total_stake, 2),
+                "total_profit": round(total_profit, 4),
+                "total_profit_pct": round(total_profit_pct, 2),
+                "count": len(items),
+            })
+    except httpx.HTTPError as e:
+        logger.warning("Freqtrade API 请求失败: %s", e)
+        return _success({
+            "items": [],
+            "total_stake": 0,
+            "total_profit": 0,
+            "total_profit_pct": 0,
+            "count": 0,
+            "error": str(e),
+        })
+    except Exception as e:
+        logger.exception("Freqtrade 持仓获取异常: %s", e)
+        return _error(f"Freqtrade 连接失败: {e}")
