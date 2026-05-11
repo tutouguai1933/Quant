@@ -84,26 +84,107 @@
 
 ## 双策略架构
 
-### 1. Freqtrade EnhancedStrategy
+系统运行两个独立的交易策略，同时监控市场：
 
-- **类型**: 实时交易策略
-- **运行位置**: quant-freqtrade 容器
-- **配置**: `infra/freqtrade/user_data/config.live.base.json`
-- **stake_amount**: 10 USDT
-- **交易对**: 16个
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        量化交易系统架构                           │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────┐     ┌─────────────────────────────┐   │
+│  │  Freqtrade 独立策略  │     │    自动化周期策略            │   │
+│  │  (EnhancedStrategy) │     │  (机器学习模型选币)          │   │
+│  │                     │     │                             │   │
+│  │  • 实时监控16个交易对 │     │  • 每15分钟运行一次          │   │
+│  │  • RSI < 45 入场     │     │  • AI模型评分排序            │   │
+│  │  • RSI > 80 出场     │     │  • 只选TOP1候选              │   │
+│  └──────────┬──────────┘     └──────────────┬──────────────┘   │
+│             └───────────────┬───────────────┘                   │
+│                             ▼                                   │
+│                    ┌─────────────────┐                          │
+│                    │   Binance 交易所 │                          │
+│                    └─────────────────┘                          │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### 2. Automation Cycle
+### 1. Freqtrade 独立策略 (EnhancedStrategy)
 
-- **类型**: 自动化周期策略
-- **运行位置**: quant-api + quant-openclaw
-- **模式**: auto_live
-- **状态**: waiting（候选币种未通过验证）
+| 项目 | 值 |
+|------|------|
+| 类型 | 实时交易策略 |
+| 运行位置 | quant-freqtrade 容器 |
+| 配置文件 | `infra/freqtrade/user_data/config.live.base.json` |
+| 监控频率 | 每小时检查 |
+| 交易对 | 16个（固定白名单） |
+| stake_amount | 8 USDT |
+| max_open_trades | 3 |
+| RSI入场阈值 | 45 |
+| RSI出场阈值 | 80 |
+| 止损 | -8% |
+
+**入场条件（必须全部满足）**：
+1. 1H RSI < 45（超卖）
+2. 4H价格 > SMA200（趋势向上）
+3. 4H RSI < 70（非超买）
+4. 成交量 > 20日平均 × 0.8
+
+**出场条件（满足任一）**：
+- ROI止盈：0分钟8% → 30分钟5% → 60分钟4% → 120分钟3%
+- RSI > 80（超买）
+- 价格跌破 SMA50 × 0.98
+- 亏损 ≥ 8%（止损）
+- 追踪止盈：利润5%后回撤3%
+
+### 2. 自动化周期策略 (Automation Cycle)
+
+| 项目 | 值 |
+|------|------|
+| 类型 | AI驱动的周期策略 |
+| 运行位置 | quant-api + quant-openclaw |
+| 运行频率 | 每15分钟 |
+| 模式 | auto_live |
+| 候选选择 | 只选TOP1 |
+
+**执行流程**：
+```
+每15分钟运行:
+  1. 训练阶段 - 机器学习模型用过去30天数据训练
+  2. 推理阶段 - 对16个币种评分（0-1），排序
+  3. Gate验证 - 检查TOP1候选是否满足条件
+  4. 执行阶段 - 通过验证则买入，否则等待
+```
+
+**Gate 验证门槛**：
+
+| Gate | 参数 | Dry-Run阈值 | Live阈值 |
+|------|------|-------------|----------|
+| 评分 | score | ≥ 0.45 | ≥ 0.65 |
+| 胜率 | win_rate | ≥ 30% | ≥ 55% |
+| 净收益率 | net_return | - | ≥ 20% |
+| 样本数 | sample_count | ≥ 12 | ≥ 24 |
+| 夏普比率 | sharpe | ≥ 0.25 | - |
+| 换手率 | turnover | - | ≤ 45% |
+
+### 两个策略的关系
+
+| 对比项 | Freqtrade 独立策略 | 自动化周期策略 |
+|--------|-------------------|---------------|
+| 选币方式 | 固定白名单（16个币） | AI动态评分选TOP1 |
+| 运行频率 | 实时（每小时） | 周期（每15分钟） |
+| 决策依据 | RSI技术指标 | 机器学习预测 |
+| 风险控制 | 内置止损/止盈 | Gate验证门槛 |
+| 当前状态 | ✅ 正常运行 | ⚠️ 候选未通过Gate |
 
 ### 为何近期无交易
 
-系统运行正常，但候选币种未通过验证检查：
-1. **BONKUSDT**: 成交量不足以进入live模式，停留在dry-run
-2. **LINKUSDT**: validation_future_return_not_positive（预测收益非正）
+**历史统计（79轮运行）**：
+- waiting: 43次（候选未放行到live）
+- blocked: 32次（候选被Gate拦下）
+- cooldown: 5次（冷却中）
+- succeeded: 0次
+
+**根本原因**：
+1. **Freqtrade策略**：RSI入场阈值45太严格，当前市场大多数币RSI在50-70之间
+2. **自动化周期策略**：Live Gate门槛高（胜率≥55%、样本数≥24），TOP1候选未通过
 
 ---
 
@@ -186,15 +267,33 @@ with open(path, 'r+') as f:
 |------|------|
 | 模式 | **live** (dry_run=false) |
 | 交易对 | BTC/ETH/SOL/XRP/BNB/DOGE/ADA/AVAX/LINK/DOT/POL/PEPE/SHIB/WIF/ORDI/BONK (**16个**) |
-| stake_amount | **10 USDT** (单笔投入) |
-| max_open_trades | **1** (并行仓位) |
+| stake_amount | **8 USDT** (单笔投入) |
+| max_open_trades | **3** (并行仓位) |
 | stoploss | -8% |
 | 止盈目标 | 8%主目标，120分钟后最低 3% |
 | 订单类型 | **IOC** (Immediate Or Cancel) |
 | 策略 | EnhancedStrategy |
 | RSI入场阈值 | **45** |
-| RSI出场阈值 | **74** |
-| 时间框架 | 1H |
+| RSI出场阈值 | **80** |
+| 时间框架 | 1H（主）+ 4H（趋势确认） |
+
+### 策略参数详解
+
+```python
+# 入场条件
+rsi_entry_threshold = 45      # RSI < 45 触发买入
+rsi_exit_threshold = 80       # RSI > 80 触发卖出
+
+# 止损止盈
+stoploss = -0.08              # 8% 固定止损
+trailing_stop = True          # 启用追踪止盈
+trailing_stop_positive = 0.03 # 利润3%后开始追踪
+trailing_stop_positive_offset = 0.05  # 利润5%时激活
+
+# 风控
+max_day_loss_pct = 0.045      # 日亏损上限 4.5%
+max_consecutive_losses = 5    # 连续亏损5次暂停
+```
 
 ---
 
@@ -263,10 +362,62 @@ import { RsiSummaryCard } from "../components/rsi-summary-card";
 
 ## 当前状态
 
-- **Freqtrade**: Live模式运行，无持仓
+- **Freqtrade**: Live模式运行，无持仓，4笔交易（3胜1负，胜率75%，总收益+13.94%）
 - **mihomo**: Healthy，JP1节点
 - **系统**: 所有核心容器 healthy
 - **自动化**: auto_live模式，waiting状态（候选未通过验证）
 - **飞书**: 推送正常
 - **前端**: 终端风格，功能完善
 - **API**: 性能优化完成，Patrol响应1-3秒
+
+---
+
+## 优化建议
+
+### 问题诊断
+
+**Freqtrade 独立策略无交易原因**：
+- RSI入场阈值45过于严格
+- 当前市场RSI大多在50-70之间（无超卖信号）
+- 需要等待市场回调才能触发入场
+
+**自动化周期策略无交易原因**：
+- Live Gate门槛过高（胜率≥55%、样本数≥24）
+- TOP1候选（BONK评分0.77）通过了评分门槛
+- 但可能未通过胜率/样本数/净收益率门槛
+
+### 优化方案对比
+
+| 方案 | 操作 | 效果 | 风险 |
+|------|------|------|------|
+| A. 放宽RSI阈值 | 45 → 50 | 更多入场信号 | 可能买在较高位置 |
+| B. 降低Live Gate | 胜率55%→45%，样本24→18 | 自动化策略可执行 | 选币质量下降 |
+| C. 禁用Live Gate | 临时跳过验证 | 立即开始交易 | 无保护机制 |
+| D. 保持现状 | 等待市场回调 | 风险最低 | 可能长期无交易 |
+
+### 推荐方案
+
+**第一阶段**：放宽Freqtrade RSI阈值（方案A）
+- 这是独立策略，不依赖AI模型
+- RSI 50仍然是合理的入场点（中性偏弱）
+- 让系统先跑起来，积累交易经验
+
+**第二阶段**：根据交易情况调整自动化策略
+- 观察Freqtrade交易效果
+- 如果效果好，考虑放宽Live Gate（方案B）
+- 如果效果一般，保持较高门槛
+
+### 参数调整命令
+
+```bash
+# 方案A：修改Freqtrade RSI阈值（需要修改策略文件）
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
+cd /home/djy/Quant/infra/freqtrade/user_data/strategies
+# 修改 EnhancedStrategy.py 中的 rsi_entry_threshold 默认值
+
+# 方案B：降低Live Gate阈值（添加环境变量）
+cd /home/djy/Quant/infra/deploy
+echo 'QUANT_QLIB_LIVE_MIN_WIN_RATE=0.45' >> api.env
+echo 'QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT=18' >> api.env
+docker compose up -d --no-deps api
+```
