@@ -380,6 +380,8 @@
 
 ## 相关文档
 
+- **双策略架构**：  
+  [docs/DUAL_STRATEGY_ARCHITECTURE.md](/home/djy/Quant/docs/DUAL_STRATEGY_ARCHITECTURE.md) - Freqtrade独立策略 + 自动化周期策略详解
 - 使用动线：  
   [docs/user-handbook.md](/home/djy/Quant/docs/user-handbook.md)
 - 系统流程解释：  
