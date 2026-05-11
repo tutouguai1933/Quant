@@ -17,7 +17,7 @@ WORKDIR /app/apps/web
 
 COPY apps/web/package.json /app/apps/web/package.json
 COPY apps/web/pnpm-lock.yaml /app/apps/web/pnpm-lock.yaml
-RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm install --frozen-lockfile --prod=false --ignore-scripts=false
 
 COPY apps/web /app/apps/web
 
