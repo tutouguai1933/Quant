@@ -224,7 +224,7 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* 第三行：双策略状态 + 入场状态 */}
+        {/* 第三行：双策略状态 + 市场入场信号 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <DualStrategyCard refreshInterval={30000} />
           <EntryStatusCard refreshInterval={60000} />
@@ -233,16 +233,19 @@ export default function HomePage() {
         {/* 第四行：RSI概览 */}
         <RsiSummaryCard refreshInterval={300000} />
 
-        {/* 第五行：交易记录 + 候选队列 */}
+        {/* 第五行：两个策略的交易记录 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <TradeHistorySummaryCard refreshInterval={60000} />
-          <CandidateQueueCard
-            refreshInterval={60000}
-            fallbackSymbols={strategyWorkspace.whitelist || []}
-          />
+          <TradeHistorySummaryCard strategyType="enhanced" refreshInterval={60000} />
+          <TradeHistorySummaryCard strategyType="automation" refreshInterval={60000} />
         </div>
 
-        {/* 第六行：自动化周期历史 */}
+        {/* 第六行：自动化周期候选 */}
+        <CandidateQueueCard
+          refreshInterval={60000}
+          fallbackSymbols={strategyWorkspace.whitelist || []}
+        />
+
+        {/* 第七行：自动化周期历史 */}
         <AutomationCycleHistoryCard refreshInterval={60000} />
       </div>
     </TerminalShell>

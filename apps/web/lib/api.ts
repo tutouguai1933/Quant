@@ -5366,6 +5366,76 @@ export type FreqtradeProfitBySource = {
   total: FreqtradeSourceStats;
 };
 
+export type FreqtradeTrade = {
+  trade_id: number;
+  pair: string;
+  base_currency: string;
+  quote_currency: string;
+  is_open: boolean;
+  strategy: string;
+  enter_tag: string;
+  open_date: string;
+  close_date: string | null;
+  open_rate: number;
+  close_rate: number | null;
+  profit_pct: number;
+  profit_abs: number;
+  stake_amount: number;
+  amount: number;
+  exit_reason: string | null;
+};
+
+export type FreqtradeTradesData = {
+  trades: FreqtradeTrade[];
+  trades_count: number;
+  total_trades: number;
+};
+
+export async function getFreqtradeTrades(
+  limit: number = 50,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<FreqtradeTradesData>> {
+  const response = await fetchJson<FreqtradeTradesData>(
+    `/freqtrade/trades?limit=${limit}`,
+    undefined,
+    signal
+  );
+  if (response.error) {
+    return response as ApiEnvelope<FreqtradeTradesData>;
+  }
+
+  const data: Record<string, unknown> = isPlainObject(response.data) ? response.data : {};
+  const rawTrades = Array.isArray(data.trades) ? data.trades : [];
+
+  const trades: FreqtradeTrade[] = rawTrades.map((item: Record<string, unknown>) => ({
+    trade_id: Number(item.trade_id ?? 0),
+    pair: String(item.pair ?? ""),
+    base_currency: String(item.base_currency ?? ""),
+    quote_currency: String(item.quote_currency ?? ""),
+    is_open: Boolean(item.is_open),
+    strategy: String(item.strategy ?? ""),
+    enter_tag: String(item.enter_tag ?? ""),
+    open_date: String(item.open_date ?? ""),
+    close_date: item.close_date ? String(item.close_date) : null,
+    open_rate: Number(item.open_rate ?? 0),
+    close_rate: item.close_rate ? Number(item.close_rate) : null,
+    profit_pct: Number(item.close_profit_pct ?? item.profit_pct ?? 0),
+    profit_abs: Number(item.close_profit_abs ?? item.profit_abs ?? 0),
+    stake_amount: Number(item.stake_amount ?? 0),
+    amount: Number(item.amount ?? 0),
+    exit_reason: item.exit_reason ? String(item.exit_reason) : null,
+  }));
+
+  return {
+    ...response,
+    data: {
+      trades,
+      trades_count: trades.length,
+      total_trades: Number(data.total_trades ?? trades.length),
+    },
+  };
+}
+
 export async function getFreqtradeStatus(
   signal?: AbortSignal,
 ): Promise<ApiEnvelope<FreqtradeStatus>> {

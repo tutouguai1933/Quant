@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * 候选队列卡片
- * 显示最新的候选币种及其评分和状态
+ * 自动化周期候选卡片
+ * 显示ML模型评分的候选币种及其入场状态
+ * 数据来源：自动化周期历史的 candidates 字段
  */
 
 import { useEffect, useState } from "react";
@@ -19,6 +20,8 @@ interface CandidateWithScore {
   score: number;
   status: string;
   blocked_reason: string;
+  dry_run_gate_status: string;
+  live_gate_status: string;
 }
 
 export function CandidateQueueCard({
@@ -40,19 +43,18 @@ export function CandidateQueueCard({
 
         if (response.error) {
           setError(response.error.message || "获取候选数据失败");
-          // 使用fallback数据
           if (fallbackSymbols.length > 0) {
             setCandidates(fallbackSymbols.map(symbol => ({
               symbol,
               score: 0,
               status: "unknown",
-              blocked_reason: ""
+              blocked_reason: "",
+              dry_run_gate_status: "",
+              live_gate_status: "",
             })));
           }
         } else {
           const items = response.data.items || [];
-
-          // 从最新的记录中提取候选
           let latestCandidates: CandidateWithScore[] = [];
 
           for (const item of items) {
@@ -61,19 +63,22 @@ export function CandidateQueueCard({
                 symbol: c.symbol,
                 score: parseFloat(c.score) || 0,
                 status: c.status || "unknown",
-                blocked_reason: c.blocked_reason || ""
+                blocked_reason: c.blocked_reason || "",
+                dry_run_gate_status: c.dry_run_gate_status || "",
+                live_gate_status: c.live_gate_status || "",
               }));
               break;
             }
           }
 
-          // 如果没有候选数据，使用fallback
           if (latestCandidates.length === 0 && fallbackSymbols.length > 0) {
             latestCandidates = fallbackSymbols.map(symbol => ({
               symbol,
               score: 0,
               status: "pending",
-              blocked_reason: ""
+              blocked_reason: "",
+              dry_run_gate_status: "",
+              live_gate_status: "",
             }));
           }
 
@@ -89,7 +94,9 @@ export function CandidateQueueCard({
               symbol,
               score: 0,
               status: "unknown",
-              blocked_reason: ""
+              blocked_reason: "",
+              dry_run_gate_status: "",
+              live_gate_status: "",
             })));
           }
         }
@@ -108,48 +115,29 @@ export function CandidateQueueCard({
     };
   }, [refreshInterval, fallbackSymbols]);
 
-  // 获取状态颜色
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "ready":
-      case "live_ready":
-        return "text-green-400";
-      case "blocked":
-        return "text-red-400";
-      case "skipped":
-        return "text-yellow-400";
-      default:
-        return "text-[var(--terminal-muted)]";
-    }
+  const getStatusColor = (status: string, dryRunGate: string, liveGate: string) => {
+    if (liveGate === "passed") return "text-green-400";
+    if (dryRunGate === "passed") return "text-yellow-400";
+    if (dryRunGate === "failed" || liveGate === "failed") return "text-red-400";
+    return "text-[var(--terminal-muted)]";
   };
 
-  // 获取状态标签
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case "ready":
-      case "live_ready":
-        return "可入场";
-      case "blocked":
-        return "已阻止";
-      case "skipped":
-        return "已跳过";
-      case "pending":
-        return "待评估";
-      default:
-        return "未知";
-    }
+  const getStatusLabel = (status: string, dryRunGate: string, liveGate: string) => {
+    if (liveGate === "passed") return "可Live";
+    if (dryRunGate === "passed") return "可Dry";
+    if (dryRunGate === "failed" || liveGate === "failed") return "已阻止";
+    return "待评估";
   };
 
-  // 获取评分颜色
   const getScoreColor = (score: number) => {
-    if (score >= 0.7) return "text-green-400";
-    if (score >= 0.5) return "text-yellow-400";
+    if (score >= 0.9) return "text-green-400";
+    if (score >= 0.7) return "text-yellow-400";
     return "text-[var(--terminal-muted)]";
   };
 
   if (isLoading) {
     return (
-      <TerminalCard title="最近候选队列">
+      <TerminalCard title="自动化周期候选">
         <div className="animate-pulse space-y-2">
           <div className="h-4 w-32 bg-[var(--terminal-border)] rounded" />
           <div className="flex gap-2">
@@ -162,11 +150,13 @@ export function CandidateQueueCard({
   }
 
   return (
-    <TerminalCard title="最近候选队列">
-      {/* 候选数量 */}
-      <div className="text-[var(--terminal-muted)] text-[12px] mb-3">
-        {candidates.length} 个候选币种
-        {lastUpdate && <span className="ml-2 opacity-60">更新: {lastUpdate}</span>}
+    <TerminalCard title="自动化周期候选">
+      <div className="text-[var(--terminal-muted)] text-[12px] mb-3 flex justify-between">
+        <span>
+          {candidates.length} 个候选币种
+          <span className="ml-2 text-[var(--terminal-cyan)]">ML模型评分</span>
+        </span>
+        {lastUpdate && <span className="opacity-60">更新: {lastUpdate}</span>}
       </div>
 
       {error && candidates.length === 0 ? (
@@ -175,33 +165,46 @@ export function CandidateQueueCard({
         <div className="text-sm text-[var(--terminal-muted)]">暂无候选数据</div>
       ) : (
         <div className="space-y-2">
-          {candidates.slice(0, 6).map((candidate) => (
-            <div
-              key={candidate.symbol}
-              className="flex items-center justify-between p-2 rounded border border-[var(--terminal-border)]/50 hover:border-[var(--terminal-cyan)]/50 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-sm text-[var(--terminal-text)]">
-                  {candidate.symbol.replace("USDT", "")}
-                </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${getStatusColor(candidate.status)} bg-current/10`}>
-                  {getStatusLabel(candidate.status)}
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                {candidate.score > 0 && (
-                  <span className="text-[var(--terminal-muted)]">
-                    评分: <span className={getScoreColor(candidate.score)}>{candidate.score.toFixed(2)}</span>
+          {candidates.slice(0, 6).map((candidate) => {
+            const statusColor = getStatusColor(
+              candidate.status,
+              candidate.dry_run_gate_status,
+              candidate.live_gate_status
+            );
+            const statusLabel = getStatusLabel(
+              candidate.status,
+              candidate.dry_run_gate_status,
+              candidate.live_gate_status
+            );
+
+            return (
+              <div
+                key={candidate.symbol}
+                className="flex items-center justify-between p-2 rounded border border-[var(--terminal-border)]/50 hover:border-[var(--terminal-cyan)]/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-sm text-[var(--terminal-text)]">
+                    {candidate.symbol.replace("USDT", "")}
                   </span>
-                )}
-                {candidate.blocked_reason && (
-                  <span className="text-red-400/70 text-[10px] max-w-[100px] truncate" title={candidate.blocked_reason}>
-                    {candidate.blocked_reason}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${statusColor} bg-current/10`}>
+                    {statusLabel}
                   </span>
-                )}
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  {candidate.score > 0 && (
+                    <span className="text-[var(--terminal-muted)]">
+                      ML评分: <span className={getScoreColor(candidate.score)}>{candidate.score.toFixed(2)}</span>
+                    </span>
+                  )}
+                  {candidate.blocked_reason && (
+                    <span className="text-red-400/70 text-[10px] max-w-[100px] truncate" title={candidate.blocked_reason}>
+                      {candidate.blocked_reason}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </TerminalCard>
