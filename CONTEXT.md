@@ -115,14 +115,14 @@
 | 配置文件 | `infra/freqtrade/user_data/config.live.base.json` |
 | 监控频率 | 每小时检查 |
 | 交易对 | 16个（固定白名单） |
-| stake_amount | 8 USDT |
+| stake_amount | 7 USDT（基础值，动态调整） |
 | max_open_trades | 3 |
-| RSI入场阈值 | 45 |
+| RSI入场阈值 | 50 |
 | RSI出场阈值 | 80 |
 | 止损 | -8% |
 
 **入场条件（必须全部满足）**：
-1. 1H RSI < 45（超卖）
+1. 1H RSI < 50（中性偏弱）
 2. 4H价格 > SMA200（趋势向上）
 3. 4H RSI < 70（非超买）
 4. 成交量 > 20日平均 × 0.8
@@ -171,20 +171,30 @@
 | 选币方式 | 固定白名单（16个币） | AI动态评分选TOP1 |
 | 运行频率 | 实时（每小时） | 周期（每15分钟） |
 | 决策依据 | RSI技术指标 | 机器学习预测 |
-| 风险控制 | 内置止损/止盈 | Gate验证门槛 |
+| 风险控制 | 内置止损/止盈 + 动态仓位 | Gate验证门槛 |
 | 当前状态 | ✅ 正常运行 | ⚠️ 候选未通过Gate |
 
-### 为何近期无交易
+### 动态仓位调整
 
-**历史统计（79轮运行）**：
-- waiting: 43次（候选未放行到live）
-- blocked: 32次（候选被Gate拦下）
-- cooldown: 5次（冷却中）
-- succeeded: 0次
+EnhancedStrategy 根据信号评分动态调整仓位：
 
-**根本原因**：
-1. **Freqtrade策略**：RSI入场阈值45太严格，当前市场大多数币RSI在50-70之间
-2. **自动化周期策略**：Live Gate门槛高（胜率≥55%、样本数≥24），TOP1候选未通过
+| 信号评分 | 仓位倍数 | 说明 |
+|----------|----------|------|
+| > 80% | ×1.5 | 强信号加仓 |
+| 50% - 80% | ×1.0 | 正常仓位 |
+| < 50% | ×0.5 | 弱信号减仓 |
+
+**注意**：币安最小下单金额为 5 USDT，低于此金额会自动调整。
+
+### 近期优化（2026-05-11）
+
+已完成优化：
+- RSI入场阈值：45 → 50
+- stake_amount：8 → 7 USDT
+- tradable_balance_ratio：50% → 100%
+- 策略：SampleStrategy → EnhancedStrategy
+
+**优化结果**：系统已开始正常交易
 
 ---
 
@@ -362,62 +372,11 @@ import { RsiSummaryCard } from "../components/rsi-summary-card";
 
 ## 当前状态
 
-- **Freqtrade**: Live模式运行，无持仓，4笔交易（3胜1负，胜率75%，总收益+13.94%）
+- **Freqtrade**: Live模式运行，EnhancedStrategy 策略，RSI阈值50
 - **mihomo**: Healthy，JP1节点
 - **系统**: 所有核心容器 healthy
 - **自动化**: auto_live模式，waiting状态（候选未通过验证）
 - **飞书**: 推送正常
 - **前端**: 终端风格，功能完善
 - **API**: 性能优化完成，Patrol响应1-3秒
-
----
-
-## 优化建议
-
-### 问题诊断
-
-**Freqtrade 独立策略无交易原因**：
-- RSI入场阈值45过于严格
-- 当前市场RSI大多在50-70之间（无超卖信号）
-- 需要等待市场回调才能触发入场
-
-**自动化周期策略无交易原因**：
-- Live Gate门槛过高（胜率≥55%、样本数≥24）
-- TOP1候选（BONK评分0.77）通过了评分门槛
-- 但可能未通过胜率/样本数/净收益率门槛
-
-### 优化方案对比
-
-| 方案 | 操作 | 效果 | 风险 |
-|------|------|------|------|
-| A. 放宽RSI阈值 | 45 → 50 | 更多入场信号 | 可能买在较高位置 |
-| B. 降低Live Gate | 胜率55%→45%，样本24→18 | 自动化策略可执行 | 选币质量下降 |
-| C. 禁用Live Gate | 临时跳过验证 | 立即开始交易 | 无保护机制 |
-| D. 保持现状 | 等待市场回调 | 风险最低 | 可能长期无交易 |
-
-### 推荐方案
-
-**第一阶段**：放宽Freqtrade RSI阈值（方案A）
-- 这是独立策略，不依赖AI模型
-- RSI 50仍然是合理的入场点（中性偏弱）
-- 让系统先跑起来，积累交易经验
-
-**第二阶段**：根据交易情况调整自动化策略
-- 观察Freqtrade交易效果
-- 如果效果好，考虑放宽Live Gate（方案B）
-- 如果效果一般，保持较高门槛
-
-### 参数调整命令
-
-```bash
-# 方案A：修改Freqtrade RSI阈值（需要修改策略文件）
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
-cd /home/djy/Quant/infra/freqtrade/user_data/strategies
-# 修改 EnhancedStrategy.py 中的 rsi_entry_threshold 默认值
-
-# 方案B：降低Live Gate阈值（添加环境变量）
-cd /home/djy/Quant/infra/deploy
-echo 'QUANT_QLIB_LIVE_MIN_WIN_RATE=0.45' >> api.env
-echo 'QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT=18' >> api.env
-docker compose up -d --no-deps api
-```
+- **最近交易**: BNB/USDT @ 652.2 USDT（2026-05-11）
