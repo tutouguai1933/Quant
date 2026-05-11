@@ -67,6 +67,44 @@ DEFAULT_VOLUME_WEIGHT = Decimal("1.1")
 DEFAULT_OSCILLATOR_WEIGHT = Decimal("0.7")
 DEFAULT_VOLATILITY_WEIGHT = Decimal("0.9")
 DEFAULT_STRICT_PENALTY_WEIGHT = Decimal("1")
+
+# ML 模型相关默认值
+DEFAULT_MODEL_TYPE = "lightgbm"
+DEFAULT_MODEL_LABEL_THRESHOLD = Decimal("0.0")
+DEFAULT_HYPEROPT_N_TRIALS = 50
+DEFAULT_HYPEROPT_TIMEOUT_SECONDS = 300
+SUPPORTED_MODEL_TYPES = ("lightgbm", "xgboost", "heuristic")
+
+# LightGBM 默认参数
+DEFAULT_LIGHTGBM_PARAMS = {
+    "objective": "binary",
+    "metric": "auc",
+    "boosting_type": "gbdt",
+    "num_leaves": 31,
+    "learning_rate": 0.05,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "verbose": -1,
+    "n_estimators": 100,
+    "early_stopping_rounds": 10,
+    "random_state": 42,
+}
+
+# XGBoost 默认参数
+DEFAULT_XGBOOST_PARAMS = {
+    "objective": "binary:logistic",
+    "eval_metric": "auc",
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "n_estimators": 100,
+    "early_stopping_rounds": 10,
+    "random_state": 42,
+    "verbosity": 0,
+}
+
 SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only", "window_majority")
 SUPPORTED_LABEL_TRIGGER_BASES = ("close", "high_low")
@@ -182,6 +220,13 @@ class QlibRuntimeConfig:
     oscillator_weight: Decimal
     volatility_weight: Decimal
     strict_penalty_weight: Decimal
+    # ML 模型相关配置
+    model_type: str
+    model_params: dict[str, object]
+    model_label_threshold: Decimal
+    enable_ml_training: bool
+    hyperopt_n_trials: int
+    hyperopt_timeout_seconds: int
     paths: QlibRuntimePaths
 
     def ensure_ready(self) -> None:
@@ -539,6 +584,32 @@ def load_qlib_config(
         minimum=Decimal("0"),
     )
 
+    # ML 模型配置
+    model_type = _read_choice(
+        values.get("QUANT_QLIB_MODEL_TYPE"),
+        default=DEFAULT_MODEL_TYPE,
+        allowed=SUPPORTED_MODEL_TYPES,
+    )
+    model_params = _read_model_params(values.get("QUANT_QLIB_MODEL_PARAMS"), model_type=model_type)
+    model_label_threshold = _read_decimal(
+        values.get("QUANT_QLIB_MODEL_LABEL_THRESHOLD"),
+        default=DEFAULT_MODEL_LABEL_THRESHOLD,
+        env_name="QUANT_QLIB_MODEL_LABEL_THRESHOLD",
+    )
+    enable_ml_training = _read_bool(values.get("QUANT_QLIB_ENABLE_ML_TRAINING"), default=True)
+    hyperopt_n_trials = _read_int(
+        values.get("QUANT_QLIB_HYPEROPT_N_TRIALS"),
+        default=DEFAULT_HYPEROPT_N_TRIALS,
+        env_name="QUANT_QLIB_HYPEROPT_N_TRIALS",
+        minimum=10,
+    )
+    hyperopt_timeout_seconds = _read_int(
+        values.get("QUANT_QLIB_HYPEROPT_TIMEOUT_SECONDS"),
+        default=DEFAULT_HYPEROPT_TIMEOUT_SECONDS,
+        env_name="QUANT_QLIB_HYPEROPT_TIMEOUT_SECONDS",
+        minimum=60,
+    )
+
     _publish_runtime_hints(
         {
             "train_split_ratio": format(train_split_ratio.normalize(), "f"),
@@ -582,6 +653,9 @@ def load_qlib_config(
             "oscillator_weight": format(oscillator_weight.normalize(), "f"),
             "volatility_weight": format(volatility_weight.normalize(), "f"),
             "strict_penalty_weight": format(strict_penalty_weight.normalize(), "f"),
+            "model_type": model_type,
+            "enable_ml_training": "true" if enable_ml_training else "false",
+            "hyperopt_n_trials": str(hyperopt_n_trials),
         }
     )
 
@@ -661,6 +735,12 @@ def load_qlib_config(
             oscillator_weight=oscillator_weight,
             volatility_weight=volatility_weight,
             strict_penalty_weight=strict_penalty_weight,
+            model_type=model_type,
+            model_params=model_params,
+            model_label_threshold=model_label_threshold,
+            enable_ml_training=enable_ml_training,
+            hyperopt_n_trials=hyperopt_n_trials,
+            hyperopt_timeout_seconds=hyperopt_timeout_seconds,
         )
 
     if runtime_root_raw:
@@ -744,6 +824,12 @@ def load_qlib_config(
         oscillator_weight=oscillator_weight,
         volatility_weight=volatility_weight,
         strict_penalty_weight=strict_penalty_weight,
+        model_type=model_type,
+        model_params=model_params,
+        model_label_threshold=model_label_threshold,
+        enable_ml_training=enable_ml_training,
+        hyperopt_n_trials=hyperopt_n_trials,
+        hyperopt_timeout_seconds=hyperopt_timeout_seconds,
     )
 
 
@@ -823,6 +909,12 @@ def _build_config(
     oscillator_weight: Decimal,
     volatility_weight: Decimal,
     strict_penalty_weight: Decimal,
+    model_type: str,
+    model_params: dict[str, object],
+    model_label_threshold: Decimal,
+    enable_ml_training: bool,
+    hyperopt_n_trials: int,
+    hyperopt_timeout_seconds: int,
 ) -> QlibRuntimeConfig:
     """构造配置对象。"""
 
@@ -917,6 +1009,12 @@ def _build_config(
         oscillator_weight=oscillator_weight,
         volatility_weight=volatility_weight,
         strict_penalty_weight=strict_penalty_weight,
+        model_type=model_type,
+        model_params=model_params,
+        model_label_threshold=model_label_threshold,
+        enable_ml_training=enable_ml_training,
+        hyperopt_n_trials=hyperopt_n_trials,
+        hyperopt_timeout_seconds=hyperopt_timeout_seconds,
         paths=paths,
     )
 
@@ -1109,3 +1207,25 @@ def get_runtime_hint(name: str, default: str | None = None, *, consume: bool = F
     if consume:
         return _RUNTIME_HINTS.pop(name, default)
     return _RUNTIME_HINTS.get(name, default)
+
+
+def _read_model_params(value: str | None, *, model_type: str) -> dict[str, object]:
+    """读取模型参数。
+
+    优先使用用户提供的 JSON 参数，否则返回对应模型类型的默认参数。
+    """
+    raw = str(value or "").strip()
+    if raw:
+        try:
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                return {str(k): v for k, v in payload.items()}
+        except json.JSONDecodeError:
+            pass
+
+    # 返回默认参数
+    if model_type == "lightgbm":
+        return dict(DEFAULT_LIGHTGBM_PARAMS)
+    elif model_type == "xgboost":
+        return dict(DEFAULT_XGBOOST_PARAMS)
+    return {}

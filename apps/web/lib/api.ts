@@ -5075,6 +5075,256 @@ export async function stopHyperopt(
   }
 }
 
+// ========== ML Model Training API ==========
+
+export type MLTrainingCurvePoint = {
+  step: number;
+  train_score?: number;
+  validation_score?: number;
+  train_loss?: number;
+  validation_loss?: number;
+};
+
+export type MLFeatureImportance = {
+  feature: string;
+  importance: number;
+  category?: string;
+  rank: number;
+};
+
+export type MLTrainingMetrics = {
+  train_auc?: number;
+  validation_auc?: number;
+  train_accuracy?: number;
+  validation_accuracy?: number;
+  train_f1?: number;
+  validation_f1?: number;
+  best_iteration?: number;
+  n_features?: number;
+  n_samples_train?: number;
+  n_samples_validation?: number;
+};
+
+export type MLTrainingResult = {
+  model_path: string;
+  model_type: string;
+  training_curve: MLTrainingCurvePoint[];
+  feature_importance: MLFeatureImportance[];
+  metrics: MLTrainingMetrics;
+  duration_seconds: number;
+  created_at: string;
+};
+
+export type MLModelRecord = {
+  version_id: string;
+  model_type: string;
+  model_path: string;
+  metrics: Record<string, number>;
+  training_context: Record<string, unknown>;
+  tags: string[];
+  stage: "staging" | "production" | "archived";
+  created_at: string;
+  updated_at: string;
+  description: string;
+};
+
+export type MLModelComparison = {
+  version_a: string;
+  version_b: string;
+  metrics_diff: Record<string, number>;
+  winner: "a" | "b" | null;
+  recommendation: string;
+};
+
+export type MLHyperoptProgress = {
+  status: "idle" | "running" | "completed" | "failed";
+  current_trial: number;
+  total_trials: number;
+  best_value: number;
+  best_params: Record<string, unknown> | null;
+  elapsed_seconds: number;
+  message: string;
+};
+
+export type MLHyperoptResult = {
+  study_name: string;
+  best_params: Record<string, unknown>;
+  best_value: number;
+  n_trials: number;
+  duration_seconds: number;
+  param_importance: Record<string, number>;
+  generated_at: string;
+};
+
+export type MLHyperoptHistory = {
+  optimizations: Array<{
+    optimizer_id: string;
+    status: string;
+    best_value?: number;
+    n_trials?: number;
+    created_at?: string;
+  }>;
+  total: number;
+};
+
+export async function getMLTrainingResult(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<MLTrainingResult | null>> {
+  return fetchJson<MLTrainingResult | null>("/research/training-result", undefined, signal);
+}
+
+export async function getMLModels(
+  limit: number = 20,
+  stage?: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ models: MLModelRecord[]; total: number }>> {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  if (stage) {
+    query.set("stage", stage);
+  }
+  return fetchJson<{ models: MLModelRecord[]; total: number }>(`/ml/models?${query.toString()}`, undefined, signal);
+}
+
+export async function getMLModel(
+  versionId: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<MLModelRecord>> {
+  return fetchJson<MLModelRecord>(`/ml/models/${versionId}`, undefined, signal);
+}
+
+export async function promoteMLModel(
+  versionId: string,
+  stage: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ success: boolean }>> {
+  try {
+    const url = await resolveControlPlaneUrl(`/ml/models/${versionId}/promote`);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) {
+      return {
+        data: { success: false },
+        error: { code: `http_${response.status}`, message: `API 请求失败: ${response.statusText}` },
+        meta: { status: response.status },
+      };
+    }
+    return response.json();
+  } catch (error) {
+    return {
+      data: { success: false },
+      error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" },
+      meta: {},
+    };
+  }
+}
+
+export async function compareMLModels(
+  versionIdA: string,
+  versionIdB: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<MLModelComparison>> {
+  return fetchJson<MLModelComparison>(
+    `/ml/models/compare?a=${versionIdA}&b=${versionIdB}`,
+    undefined,
+    signal,
+  );
+}
+
+export async function getMLHyperoptStatus(
+  optimizerId: string = "default",
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<MLHyperoptProgress>> {
+  return fetchJson<MLHyperoptProgress>(`/ml/hyperopt/status?optimizer_id=${optimizerId}`, undefined, signal);
+}
+
+export async function startMLHyperopt(
+  modelType: string = "lightgbm",
+  nTrials: number = 50,
+  timeoutSeconds?: number,
+  optimizerId: string = "default",
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ status: string; optimizer_id: string }>> {
+  try {
+    const url = await resolveControlPlaneUrl("/ml/hyperopt/start");
+    const params = new URLSearchParams();
+    params.set("model_type", modelType);
+    params.set("n_trials", String(nTrials));
+    if (timeoutSeconds !== undefined) {
+      params.set("timeout_seconds", String(timeoutSeconds));
+    }
+    params.set("optimizer_id", optimizerId);
+    const response = await fetch(`${url}?${params.toString()}`, {
+      method: "POST",
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) {
+      return {
+        data: { status: "idle", optimizer_id: optimizerId },
+        error: { code: `http_${response.status}`, message: `API 请求失败: ${response.statusText}` },
+        meta: { status: response.status },
+      };
+    }
+    return response.json();
+  } catch (error) {
+    return {
+      data: { status: "idle", optimizer_id: optimizerId },
+      error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" },
+      meta: {},
+    };
+  }
+}
+
+export async function stopMLHyperopt(
+  optimizerId: string = "default",
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ status: string }>> {
+  try {
+    const url = await resolveControlPlaneUrl("/ml/hyperopt/stop");
+    const params = new URLSearchParams();
+    params.set("optimizer_id", optimizerId);
+    const response = await fetch(`${url}?${params.toString()}`, {
+      method: "POST",
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok) {
+      return {
+        data: { status: "idle" },
+        error: { code: `http_${response.status}`, message: `API 请求失败: ${response.statusText}` },
+        meta: { status: response.status },
+      };
+    }
+    return response.json();
+  } catch (error) {
+    return {
+      data: { status: "idle" },
+      error: { code: "network_error", message: error instanceof Error ? error.message : "网络连接失败" },
+      meta: {},
+    };
+  }
+}
+
+export async function getMLHyperoptResult(
+  optimizerId: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<MLHyperoptResult>> {
+  return fetchJson<MLHyperoptResult>(`/ml/hyperopt/result/${optimizerId}`, undefined, signal);
+}
+
+export async function getMLHyperoptHistory(
+  limit: number = 20,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<MLHyperoptHistory>> {
+  return fetchJson<MLHyperoptHistory>(`/ml/hyperopt/history?limit=${limit}`, undefined, signal);
+}
+
 // ========== Freqtrade API ==========
 
 export type FreqtradeProfit = {

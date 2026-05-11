@@ -73,7 +73,7 @@ class QlibRunner:
             generated_at=_utc_now(),
             snapshot_label="training",
         )
-        metrics = self._fit_model(bundle.training_rows)
+        metrics = self._fit_model(bundle.training_rows, bundle.validation_rows)
         validation = self._build_validation_summary(bundle.validation_rows)
         backtest = run_backtest(
             rows=bundle.backtest_rows,
@@ -475,8 +475,22 @@ class QlibRunner:
             return "4h"
         return "1h"
 
-    def _fit_model(self, rows: list[dict[str, object]]) -> dict[str, object]:
-        """拟合最小启发式模型。"""
+    def _fit_model(self, rows: list[dict[str, object]], validation_rows: list[dict[str, object]] | None = None) -> dict[str, object]:
+        """拟合模型。
+
+        根据配置选择启发式模型或真正的 ML 模型（LightGBM/XGBoost）。
+        """
+        model_type = str(self._config.model_type)
+
+        # 如果配置为启发式模型或样本不足，使用启发式方法
+        if model_type == "heuristic" or not self._config.enable_ml_training or len(rows) < 20:
+            return self._fit_heuristic_model(rows)
+
+        # 使用真正的 ML 模型
+        return self._fit_ml_model(rows, validation_rows or [])
+
+    def _fit_heuristic_model(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        """拟合启发式模型（原有逻辑）。"""
 
         numeric_columns = self._active_primary_feature_columns()
         averages: dict[str, float] = {}
@@ -494,12 +508,94 @@ class QlibRunner:
         feature_importance = self._build_feature_importance(rows)
 
         return {
+            "model_type": "heuristic",
             "feature_averages": {key: _format_float(value) for key, value in averages.items()},
             "positive_rate": _format_float(positive_rate),
             "avg_future_return_pct": _format_float(sum(future_returns) / len(future_returns)),
             "training_curve": training_curve,
             "feature_importance": feature_importance,
         }
+
+    def _fit_ml_model(self, training_rows: list[dict[str, object]], validation_rows: list[dict[str, object]]) -> dict[str, object]:
+        """拟合真正的 ML 模型。"""
+        from services.worker.ml.trainer import ModelTrainer
+
+        model_type = str(self._config.model_type)
+        trainer = ModelTrainer(
+            model_type=model_type,
+            model_params=dict(self._config.model_params),
+            label_column="future_return_pct",
+            label_threshold=float(self._config.model_label_threshold),
+        )
+
+        # 训练模型
+        result = trainer.train(
+            training_rows=training_rows,
+            validation_rows=validation_rows,
+            feature_columns=self._active_primary_feature_columns(),
+        )
+
+        # 保存模型
+        model_path = self._config.paths.artifacts_dir / f"{result.model_version}.model"
+        result.model.save(model_path)
+
+        # 构建训练曲线数据
+        training_curve = [
+            {
+                "step": step,
+                "train_score": train_score,
+                "validation_score": val_score,
+            }
+            for step, train_score, val_score in zip(
+                result.training_curve.steps,
+                result.training_curve.train_scores,
+                result.training_curve.validation_scores,
+            )
+        ]
+
+        # 构建特征重要性数据
+        feature_importance = [
+            {
+                "factor": name,
+                "importance": imp,
+                "rank": rank + 1,
+                "category": self._get_factor_category(name),
+            }
+            for rank, (name, imp) in enumerate(zip(
+                result.feature_importance.feature_names,
+                result.feature_importance.importances,
+            ))
+        ]
+        # 按重要性排序
+        feature_importance.sort(key=lambda x: x["importance"], reverse=True)
+        for i, item in enumerate(feature_importance):
+            item["rank"] = i + 1
+
+        return {
+            "model_type": model_type,
+            "model_path": str(model_path),
+            "model_version": result.model_version,
+            "feature_averages": {},  # ML 模型不需要特征平均值
+            "positive_rate": _format_float(result.metrics.get("train_positive_rate", 0.0)),
+            "avg_future_return_pct": _format_float(result.training_context.get("avg_future_return_pct", 0.0)),
+            "training_curve": training_curve,
+            "feature_importance": feature_importance,
+            "ml_metrics": {
+                "train_auc": result.metrics.get("train_auc", 0.0),
+                "val_auc": result.metrics.get("val_auc", 0.0),
+                "train_accuracy": result.metrics.get("train_accuracy", 0.0),
+                "val_accuracy": result.metrics.get("val_accuracy", 0.0),
+                "train_f1": result.metrics.get("train_f1", 0.0),
+                "val_f1": result.metrics.get("val_f1", 0.0),
+            },
+            "training_context": result.training_context,
+        }
+
+    def _get_factor_category(self, factor_name: str) -> str:
+        """获取因子类别。"""
+        from services.worker.qlib_features import FACTOR_METADATA
+        metadata = FACTOR_METADATA.get(factor_name) or {}
+        return str(metadata.get("category", "unknown"))
 
     def _build_training_curve(self, rows: list[dict[str, object]]) -> list[dict[str, object]]:
         """构建训练曲线数据。
@@ -629,8 +725,41 @@ class QlibRunner:
         }
 
     def _score_signal(self, feature_row: dict[str, object], metrics: dict[str, object]) -> float:
-        """根据特征和训练统计生成分数。"""
+        """根据特征和训练统计生成分数。
 
+        优先使用 ML 模型推理，如果不可用则回退到启发式方法。
+        """
+        model_type = str(metrics.get("model_type", "heuristic"))
+        model_path = str(metrics.get("model_path", ""))
+
+        # 如果有 ML 模型路径且模型类型不是启发式，尝试使用 ML 模型
+        if model_type in ("lightgbm", "xgboost") and model_path:
+            try:
+                return self._score_with_ml_model(feature_row, model_path)
+            except Exception:
+                # ML 模型推理失败，回退到启发式
+                pass
+
+        # 使用启发式方法
+        return self._score_with_heuristic(feature_row, metrics)
+
+    def _score_with_ml_model(self, feature_row: dict[str, object], model_path: str) -> float:
+        """使用 ML 模型进行推理。"""
+        from services.worker.ml.predictor import ModelPredictor
+
+        predictor = ModelPredictor(
+            model_path=Path(model_path),
+            confidence_floor=float(self._config.signal_confidence_floor),
+        )
+
+        result = predictor.predict(
+            feature_row=feature_row,
+            feature_columns=self._active_primary_feature_columns(),
+        )
+        return result.score
+
+    def _score_with_heuristic(self, feature_row: dict[str, object], metrics: dict[str, object]) -> float:
+        """使用启发式方法计算分数。"""
         averages = dict(metrics.get("feature_averages") or {})
         raw_score = 0.0
         primary_columns = self._active_primary_feature_columns()
@@ -766,6 +895,11 @@ class QlibRunner:
                 "strict_rule_min_volume_ratio": str(self._config.strict_rule_min_volume_ratio),
                 "primary_factors": list(self._config.primary_feature_columns),
                 "auxiliary_factors": list(self._config.auxiliary_feature_columns),
+                # ML 模型参数
+                "model_type": str(self._config.model_type),
+                "enable_ml_training": self._config.enable_ml_training,
+                "model_label_threshold": str(self._config.model_label_threshold),
+                "hyperopt_n_trials": self._config.hyperopt_n_trials,
             },
             "dataset_snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
         }
