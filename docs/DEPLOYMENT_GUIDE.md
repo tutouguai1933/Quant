@@ -1,6 +1,6 @@
 # 部署指南
 
-> 最后更新：2026-05-11
+> 最后更新：2026-05-12
 
 本文档记录项目部署的完整流程和常见问题解决方案。
 
@@ -30,14 +30,36 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
 # 1. 拉取代码
 cd /home/djy/Quant && git pull
 
-# 2. 重建并部署
-cd infra/deploy
-docker compose build api web
-docker compose up -d api web
+# 2. 重建镜像
+docker build -f services/api/Dockerfile -t quant-api:latest .
 
-# 3. 查看日志
+# 3. 部署 API（使用 host 网络模式）
+docker stop quant-api && docker rm quant-api
+docker run -d --name quant-api --network host \
+  --env-file /home/djy/Quant/infra/deploy/api.env \
+  -v /home/djy/Quant/.runtime:/app/.runtime \
+  quant-api:latest
+
+# 4. 查看日志
 docker logs quant-api --tail 50
-docker logs quant-web --tail 50
+```
+
+### 重要：Docker 网络配置
+
+**必须使用 `--network host` 模式**，原因：
+
+1. Freqtrade 使用 host 网络模式，监听 `0.0.0.0:9013`
+2. API 容器需要访问 Freqtrade API
+3. 桥接模式下 `127.0.0.1` 指向容器内部，无法访问宿主机服务
+
+**错误示例**（会导致 Freqtrade 连接失败）：
+```bash
+docker run -d --name quant-api -p 9011:9011 ...  # ❌ 桥接模式
+```
+
+**正确示例**：
+```bash
+docker run -d --name quant-api --network host ...  # ✅ host 模式
 ```
 
 ### 常用命令
@@ -312,8 +334,128 @@ curl -X POST http://localhost:9011/api/v1/feishu/test
 ### 关键环境变量
 
 ```bash
-QUANT_RUNTIME_MODE=dry-run  # 或 live
+# 运行模式
+QUANT_RUNTIME_MODE=live  # live | dry-run | demo
+
+# 市场配置
 QUANT_MARKET_SYMBOLS=BTCUSDT,ETHUSDT,...
+
+# Binance API
 BINANCE_API_KEY=xxx
 BINANCE_API_SECRET=xxx
+
+# Freqtrade API（必须配置才能连接）
+QUANT_FREQTRADE_API_URL=http://127.0.0.1:9013
+QUANT_FREQTRADE_API_USERNAME=Freqtrader
+QUANT_FREQTRADE_API_PASSWORD=xxx
 ```
+
+---
+
+## 十一、ML 自动优化模块
+
+### 功能概述
+
+系统已集成 ML 自动优化模块，包括：
+
+| 功能 | API 端点 | 说明 |
+|------|----------|------|
+| 模型注册表 | `/api/v1/ml/models` | 版本管理、对比、提升 |
+| 重训练检查 | `/api/v1/ml/retrain/status` | 自动触发条件检查 |
+| 超参数优化 | `/api/v1/ml/hyperopt/start` | Optuna 自动调参 |
+| 后台调度 | `/api/v1/ml/hyperopt/schedule` | 定期自动优化 |
+
+### 相关配置
+
+```bash
+# 重训练配置
+QUANT_RETRAIN_INTERVAL_DAYS=7
+QUANT_PERFORMANCE_DROP_THRESHOLD=0.05
+QUANT_MIN_RETRAIN_INTERVAL_HOURS=6
+
+# 超参数优化配置
+QUANT_HYPEROPT_ENABLED=true
+QUANT_HYPEROPT_INTERVAL_HOURS=24
+QUANT_HYPEROPT_N_TRIALS=50
+```
+
+### 持久化目录
+
+```
+/home/djy/Quant/.runtime/
+├── registry/              # 模型注册表
+│   └── model_index.json
+├── best_params.json       # 最优参数存储
+└── dataset/               # 数据集缓存
+    └── cache/
+```
+
+### 常用命令
+
+```bash
+# 查看模型列表
+curl -s http://localhost:9011/api/v1/ml/models | jq '.data.total'
+
+# 查看生产模型
+curl -s http://localhost:9011/api/v1/ml/models/production | jq '.data.version_id'
+
+# 启动超参数优化
+TOKEN=$(curl -s -X POST 'http://localhost:9011/api/v1/auth/login?username=admin&password=xxx' | jq -r '.data.item.token')
+curl -X POST "http://localhost:9011/api/v1/ml/hyperopt/start?token=$TOKEN&n_trials=10"
+
+# 查看重训练状态
+curl -s http://localhost:9011/api/v1/ml/retrain/status | jq '.data'
+```
+
+---
+
+## 十二、故障排查清单
+
+### Freqtrade 连接失败
+
+**症状**: 首页显示"实盘连接断开"
+
+**排查步骤**:
+
+1. 检查 Freqtrade 是否运行：
+```bash
+docker ps | grep freqtrade
+curl -u 'Freqtrader:xxx' http://127.0.0.1:9013/api/v1/ping
+```
+
+2. 检查 API 容器网络模式：
+```bash
+docker inspect quant-api --format '{{.HostConfig.NetworkMode}}'
+# 应该显示 "host"
+```
+
+3. 检查环境变量是否加载：
+```bash
+docker exec quant-api env | grep FREQTRADE
+```
+
+4. 检查代理代码使用的地址：
+```bash
+docker exec quant-api python3 -c "from services.api.app.routes.freqtrade_proxy import FREQTRADE_HOST; print(FREQTRADE_HOST)"
+# 应该显示 http://127.0.0.1:9013 或 http://172.17.0.1:9013
+```
+
+### 环境变量未生效
+
+**原因**: 使用 `-v` 挂载 `.env` 文件不会自动加载到进程环境
+
+**解决**: 使用 `--env-file` 参数：
+```bash
+docker run -d --name quant-api --network host \
+  --env-file /home/djy/Quant/infra/deploy/api.env \
+  ...
+```
+
+### 模型注册表为空
+
+**原因**: 训练后模型未自动注册
+
+**排查**:
+1. 检查持久化目录是否存在：`ls /home/djy/Quant/.runtime/registry/`
+2. 触发一次训练：`POST /api/v1/tasks/train`
+3. 检查训练日志中是否有注册相关警告

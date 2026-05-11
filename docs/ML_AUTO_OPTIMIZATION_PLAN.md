@@ -646,15 +646,119 @@ DEFAULT_HYPEROPT_N_TRIALS = 50
 
 ## 八、实施顺序
 
-| 阶段 | 内容 | 预计时间 | 优先级 |
-|------|------|----------|--------|
-| Phase 1 | 训练后自动注册模型 | 0.5 天 | P0 |
-| Phase 4 | 模型自动对比与提升 | 0.5 天 | P0 |
-| Phase 2 | 集成自动重训练检查 | 1 天 | P1 |
-| Phase 3 | 集成超参数优化 | 1 天 | P1 |
-| Phase 5 | 定期后台优化 | 0.5 天 | P2 |
-| 测试 | 单元测试和集成测试 | 1 天 | P0 |
-| **总计** | | **4.5 天** | |
+| 阶段 | 内容 | 预计时间 | 优先级 | 状态 |
+|------|------|----------|--------|------|
+| Phase 1 | 训练后自动注册模型 | 0.5 天 | P0 | ✅ 已完成 |
+| Phase 4 | 模型自动对比与提升 | 0.5 天 | P0 | ✅ 已完成 |
+| Phase 2 | 集成自动重训练检查 | 1 天 | P1 | ✅ 已完成 |
+| Phase 3 | 集成超参数优化 | 1 天 | P1 | ✅ 已完成 |
+| Phase 5 | 定期后台优化 | 0.5 天 | P2 | ✅ 已完成 |
+| 测试 | 单元测试和集成测试 | 1 天 | P0 | 🔄 进行中 |
+| **总计** | | **4.5 天** | | |
+
+---
+
+## 实施完成报告（2026-05-11~05-12）
+
+### 已完成功能
+
+#### Phase 1 & 4: 模型注册与自动提升
+
+**新增文件**:
+- `services/worker/model_registry.py` - 模型版本管理
+- `services/api/app/routes/ml_models.py` - ML 模型 API
+
+**API 端点**:
+- `GET /api/v1/ml/models` - 列出模型
+- `GET /api/v1/ml/models/production` - 获取生产模型
+- `POST /api/v1/ml/models/{id}/promote` - 提升模型
+
+**自动提升逻辑**:
+- 训练后自动注册到版本管理
+- AUC 比当前生产模型高 1% 以上自动提升
+
+#### Phase 2: 自动重训练检查
+
+**新增文件**:
+- `services/api/app/routes/ml_retrain.py` - 重训练 API
+
+**API 端点**:
+- `GET /api/v1/ml/retrain/status` - 重训练状态
+- `GET /api/v1/ml/retrain/check` - 检查是否需要重训练
+- `POST /api/v1/ml/retrain/trigger` - 手动触发
+
+**触发条件**:
+- 7 天未训练
+- 性能下降超过 5%
+- 样本数量增加超过 1000
+
+#### Phase 3: 超参数优化集成
+
+**新增文件**:
+- `services/worker/best_params_store.py` - 最优参数存储
+
+**修改文件**:
+- `services/api/app/routes/ml_hyperopt.py` - 使用真实数据
+- `services/worker/qlib_runner.py` - 训练时加载最优参数
+
+**数据流**:
+```
+训练请求 → 加载 BestParamsStore → 使用优化参数（AUC>0.55）→ 训练 → 注册
+```
+
+#### Phase 5: 后台优化调度
+
+**新增文件**:
+- `services/api/app/services/hyperopt_schedule_service.py`
+
+**API 端点**:
+- `GET /api/v1/ml/hyperopt/schedule/status` - 调度状态
+- `GET /api/v1/ml/hyperopt/schedule/check` - 检查是否应运行
+
+**集成点**:
+- `services/openclaw/openclaw_scheduler.py` - 每小时检查
+
+### 提交记录
+
+```
+a8f5485 fix: 简化 Freqtrade API 地址配置
+6133f13 fix: 修复 Docker 容器内访问 Freqtrade API 的网络问题
+7eaec45 fix: 修复 Freqtrade 代理认证环境变量匹配问题
+0f109cc fix: 修复 hyperopt 从缓存文件加载训练数据
+c1af225 feat: ML自动优化Phase 2/3/5集成
+bc1428d fix: 修复模型管理API路由顺序问题
+5bbeaa6 feat: ML模型自动注册与提升集成
+```
+
+### 验证结果
+
+```bash
+# 模型注册表
+$ curl -s http://localhost:9011/api/v1/ml/models | jq '{total: .data.total}'
+{"total": 8}
+
+# 生产模型
+$ curl -s http://localhost:9011/api/v1/ml/models/production | jq '.data.version_id'
+"v_20260511164441_01cdecd7"
+
+# 重训练状态
+$ curl -s http://localhost:9011/api/v1/ml/retrain/status | jq '.data.config'
+{
+  "performance_drop_threshold": 0.05,
+  "schedule_interval_days": 7,
+  "sample_increase_threshold": 1000,
+  "min_retrain_interval_hours": 6
+}
+
+# 超参数调度
+$ curl -s http://localhost:9011/api/v1/ml/hyperopt/schedule/status | jq '.data'
+{
+  "enabled": true,
+  "running": false,
+  "interval_hours": 24,
+  "next_run_in_hours": 0.0
+}
+```
 
 ---
 
