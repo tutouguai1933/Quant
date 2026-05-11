@@ -519,11 +519,29 @@ class QlibRunner:
     def _fit_ml_model(self, training_rows: list[dict[str, object]], validation_rows: list[dict[str, object]]) -> dict[str, object]:
         """拟合真正的 ML 模型。"""
         from services.worker.ml.trainer import ModelTrainer
+        from services.worker.best_params_store import BestParamsStore
 
         model_type = str(self._config.model_type)
+
+        # 尝试加载最优参数
+        model_params = dict(self._config.model_params)
+        best_params_source = "default"
+
+        try:
+            store = BestParamsStore(self._config.paths.best_params_path)
+            best_params = store.load()
+
+            if best_params and best_params.auc > 0.55:
+                # 使用优化过的参数
+                model_params = best_params.params
+                best_params_source = f"optimized (AUC={best_params.auc:.4f}, trials={best_params.n_trials})"
+                logger.info(f"使用优化参数训练模型: AUC={best_params.auc:.4f}, trials={best_params.n_trials}")
+        except Exception as e:
+            logger.debug(f"加载最优参数失败，使用默认参数: {e}")
+
         trainer = ModelTrainer(
             model_type=model_type,
-            model_params=dict(self._config.model_params),
+            model_params=model_params,
             label_column="future_return_pct",
             label_threshold=float(self._config.model_label_threshold),
         )
@@ -590,6 +608,7 @@ class QlibRunner:
                 "val_f1": result.metrics.get("val_f1", 0.0),
             },
             "training_context": result.training_context,
+            "best_params_source": best_params_source,
         }
 
         # 注册模型到版本管理

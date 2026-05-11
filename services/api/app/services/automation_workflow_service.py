@@ -333,6 +333,17 @@ class AutomationWorkflowService:
             self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
+        # 检查是否需要重训练
+        retrain_check = self._check_and_prepare_retrain(source=source)
+        if retrain_check.get("should_retrain"):
+            self._automation.record_alert(
+                level="info",
+                code="auto_retrain_triggered",
+                message=f"触发自动重训练: {retrain_check.get('reason', '')}",
+                source=source,
+                detail=str(retrain_check),
+            )
+
         train_task = self._scheduler.run_named_task(task_type="research_train", source=source, target_type="system")
         if train_task["status"] != "succeeded":
             self._automation.record_alert(
@@ -636,6 +647,51 @@ class AutomationWorkflowService:
         }
         self._automation.record_cycle(summary)
         return summary
+
+    def _check_and_prepare_retrain(self, *, source: str) -> dict[str, object]:
+        """检查是否需要重训练，并准备训练参数。
+
+        Returns:
+            dict: 包含 should_retrain, trigger, reason 等字段
+        """
+        try:
+            from services.worker.auto_retrain import get_auto_retrainer
+            from services.worker.model_registry import get_model_registry
+
+            auto_retrainer = get_auto_retrainer()
+            registry = get_model_registry()
+
+            # 获取当前生产模型指标
+            production_model = registry.get_production_model()
+            current_metrics = {}
+            if production_model:
+                current_metrics = {
+                    "val_auc": production_model.metrics.get("val_auc", 0.0),
+                    "val_f1": production_model.metrics.get("val_f1", 0.0),
+                }
+
+            # 检查重训练需求
+            decision = auto_retrainer.check_retrain_needed(
+                current_metrics=current_metrics,
+                current_sample_count=None,  # TODO: 从实际数据源获取
+            )
+
+            return {
+                "should_retrain": decision.should_retrain,
+                "trigger": decision.trigger,
+                "reason": decision.reason,
+                "metrics": decision.metrics,
+                "thresholds": decision.thresholds,
+            }
+        except Exception as e:
+            # 检查失败不影响工作流
+            return {
+                "should_retrain": False,
+                "trigger": "error",
+                "reason": f"重训练检查失败: {e}",
+                "metrics": {},
+                "thresholds": {},
+            }
 
     @staticmethod
     def _build_scheduler_plan(*, review_limit: int) -> list[dict[str, str]]:

@@ -138,6 +138,7 @@ class QlibRuntimePaths:
     latest_inference_path: Path
     latest_dataset_snapshot_path: Path
     experiment_index_path: Path
+    best_params_path: Path
 
 
 @dataclass(frozen=True)
@@ -931,6 +932,7 @@ def _build_config(
         latest_inference_path=runtime_root / "latest_inference.json",
         latest_dataset_snapshot_path=runtime_root / "dataset" / "latest_dataset_snapshot.json",
         experiment_index_path=runtime_root / "runs" / "experiment_index.json",
+        best_params_path=runtime_root / "best_params.json",
     )
     return QlibRuntimeConfig(
         status=status,
