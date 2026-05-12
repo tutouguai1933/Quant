@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { TerminalCard } from "./terminal";
+import { fetchJson } from "../lib/api";
 
 type OpenTrade = {
   trade_id: number;
@@ -62,10 +63,9 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
 
     async function fetchData() {
       try {
-        const res = await fetch("/api/v1/freqtrade/open-trades");
-        const json = await res.json();
-        if (!cancelled && !json.error) {
-          setData(json.data);
+        const response = await fetchJson<OpenTradesResponse>("/freqtrade/open-trades");
+        if (!cancelled && !response.error) {
+          setData(response.data);
           setUpdatedAt(
             new Date().toLocaleTimeString("zh-CN", {
               hour: "2-digit",
