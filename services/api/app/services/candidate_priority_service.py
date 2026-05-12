@@ -89,7 +89,21 @@ class CandidatePriorityService:
                 elif recommended_stage != "live":
                     dispatch_status = "skipped"
                     dispatch_code = "candidate_not_live_ready"
-                    dispatch_reason = "当前还没放行到 live，先留在 dry-run。"
+                    # 提供更具体的原因
+                    requested_stage = str(row.get("requested_stage", "research"))
+                    allowed_to_live = bool(row.get("allowed_to_live"))
+                    live_gate = dict(row.get("live_gate") or {})
+                    live_reasons = list(live_gate.get("reasons", [])) if live_gate else []
+
+                    if not allowed_to_live:
+                        if live_reasons:
+                            dispatch_reason = f"未通过 live 门槛: {', '.join(live_reasons)}"
+                        else:
+                            dispatch_reason = "未通过 live 门槛验证"
+                    elif requested_stage != "live":
+                        dispatch_reason = f"当前阶段是 {requested_stage}，需要先完成 dry-run 验证"
+                    else:
+                        dispatch_reason = "当前还没放行到 live，先留在 dry-run。"
                 elif not target_armed_symbol:
                     dispatch_status = "skipped"
                     dispatch_code = "awaiting_dry_run_confirmation"
