@@ -12,6 +12,7 @@ import { getSystemStatus, type SystemStatus } from "../lib/api";
 // 默认状态（用于加载中或出错时）
 const defaultStatus: SystemStatus = {
   patrol: { running: false, interval_minutes: 0, last_run_at: null, last_run_status: null, total_runs: 0, failed_runs: 0 },
+  openclaw: { cycle_check_interval_minutes: 15 },
   automation: { mode: "manual", paused: false, manual_takeover: false, armed_symbol: "", consecutive_failure_count: 0, last_cycle_status: "" },
   proxy: { connected: false, current_node: "", exit_ip: "" },
   daily_summary: { date: "", cycle_count: 0, alert_count: 0 },
