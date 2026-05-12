@@ -133,7 +133,7 @@ services:
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PROXY_CONFIG:-config.proxy.mihomo.json}
       --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}
     healthcheck:
-      test: ["CMD", "curl", "-f", "-u", "freqtrader:freqtrade123", "http://localhost:8080/api/v1/ping"]
+      test: ["CMD", "curl", "-f", "-u", "freqtrader:freqtrade123", "http://localhost:9013/api/v1/ping"]
       interval: 30s
       timeout: 10s
       retries: 3
