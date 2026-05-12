@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter
@@ -14,6 +15,9 @@ from services.api.app.services.automation_service import automation_service
 from services.api.app.services.vpn_switch_service import vpn_switch_service
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
+
+# OpenClaw 调度间隔（秒）
+OPENCLAW_CYCLE_CHECK_INTERVAL = int(os.getenv("CYCLE_CHECK_INTERVAL", "900"))  # 默认 15 分钟
 
 
 def _success(data: dict[str, Any]) -> dict[str, Any]:
@@ -35,6 +39,9 @@ def get_system_status() -> dict[str, Any]:
     result: dict[str, Any] = {
         "patrol": {},
         "automation": {},
+        "openclaw": {
+            "cycle_check_interval_minutes": OPENCLAW_CYCLE_CHECK_INTERVAL // 60,
+        },
         "proxy": {},
         "daily_summary": {},
     }

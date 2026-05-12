@@ -55,6 +55,7 @@ const defaultProfitBySource: FreqtradeProfitBySource = {
 
 const defaultSystemStatus: SystemStatus = {
   patrol: { running: false, interval_minutes: 0, last_run_at: null, last_run_status: null, total_runs: 0, failed_runs: 0 },
+  openclaw: { cycle_check_interval_minutes: 15 },
   automation: { mode: "manual", paused: false, manual_takeover: false, armed_symbol: "", consecutive_failure_count: 0, last_cycle_status: "" },
   proxy: { connected: false, current_node: "", exit_ip: "" },
   daily_summary: { date: "", cycle_count: 0, alert_count: 0 },
@@ -200,7 +201,7 @@ export function DualStrategyCard({ refreshInterval = 30000 }: DualStrategyCardPr
                    systemStatus.automation.mode === "auto_dry_run" ? "自动Dry" : "手动"}
           </div>
           <div className="text-[11px] text-[var(--terminal-muted)]">
-            巡检间隔: {systemStatus.patrol.running ? `${systemStatus.patrol.interval_minutes}分钟` : "未启动"} | 代理: {systemStatus.proxy.current_node || "无"}
+            周期间隔: {systemStatus.openclaw?.cycle_check_interval_minutes || 15}分钟 | 代理: {systemStatus.proxy.current_node || "无"}
           </div>
         </div>
       </div>

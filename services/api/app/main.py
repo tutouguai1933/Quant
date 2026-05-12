@@ -221,9 +221,9 @@ async def setup_event_loop() -> None:
     health_monitor_service.start_monitoring(interval_seconds=60)
     logger.info("健康监控服务已启动")
 
-    # 启动定时巡检（可通过环境变量 QUANT_PATROL_AUTO_START 控制）
+    # 启动定时巡检（默认禁用，由 OpenClaw 容器统一调度）
     import os
-    auto_start = os.getenv("QUANT_PATROL_AUTO_START", "true").lower() == "true"
+    auto_start = os.getenv("QUANT_PATROL_AUTO_START", "false").lower() == "true"
     interval_minutes = int(os.getenv("QUANT_PATROL_INTERVAL_MINUTES", "60"))
 
     if auto_start:

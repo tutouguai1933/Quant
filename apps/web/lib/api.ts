@@ -132,6 +132,9 @@ export type SystemStatus = {
     failed_runs: number;
     error?: boolean;
   };
+  openclaw: {
+    cycle_check_interval_minutes: number;
+  };
   automation: {
     mode: string;
     paused: boolean;

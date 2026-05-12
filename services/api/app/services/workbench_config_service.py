@@ -69,7 +69,7 @@ OPERATIONS_PRESET_VALUES = {
         "review_limit": "10",
         "comparison_run_limit": "5",
         "cycle_cooldown_minutes": "15",
-        "max_daily_cycle_count": "8",
+        "max_daily_cycle_count": "999",  # 移除每日限制，只保留冷却时间
     },
     "strict_guard": {
         "pause_after_consecutive_failures": "1",
@@ -78,7 +78,7 @@ OPERATIONS_PRESET_VALUES = {
         "review_limit": "12",
         "comparison_run_limit": "6",
         "cycle_cooldown_minutes": "20",
-        "max_daily_cycle_count": "6",
+        "max_daily_cycle_count": "999",  # 移除每日限制，只保留冷却时间
     },
     "extended_observation": {
         "pause_after_consecutive_failures": "3",
@@ -87,7 +87,7 @@ OPERATIONS_PRESET_VALUES = {
         "review_limit": "15",
         "comparison_run_limit": "8",
         "cycle_cooldown_minutes": "10",
-        "max_daily_cycle_count": "10",
+        "max_daily_cycle_count": "999",  # 移除每日限制，只保留冷却时间
     },
 }
 
