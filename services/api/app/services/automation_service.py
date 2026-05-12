@@ -64,6 +64,7 @@ class AutomationService:
     def get_state(self) -> dict[str, object]:
         """返回当前自动化状态。"""
 
+        self._ensure_daily_summary()  # 每次获取状态时检查日期变化
         settings = Settings.from_env()
         last_cycle = self._build_cycle_summary(self._last_cycle)
         recovery_review = self._build_recovery_review()
@@ -2020,6 +2021,7 @@ class AutomationService:
         current_date = _utc_now()[:10]
         if str(self._daily_summary.get("date", "")) != current_date:
             self._daily_summary = self._new_daily_summary()
+            self._persist_state()  # 确保日期变更后立即持久化
 
 
 automation_service = AutomationService()
