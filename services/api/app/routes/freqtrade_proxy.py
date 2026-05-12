@@ -259,19 +259,25 @@ async def get_freqtrade_open_trades() -> dict[str, Any]:
                     "open_rate": t.get("open_rate"),
                     "amount": t.get("amount"),
                     "stake_amount": t.get("stake_amount"),
+                    "current_rate": t.get("current_rate"),
+                    "open_trade_value": t.get("open_trade_value"),
                     "profit_pct": t.get("profit_pct"),
                     "profit_abs": t.get("profit_abs"),
                     "open_date": t.get("open_date"),
+                    "stop_loss_abs": t.get("stop_loss_abs"),
+                    "strategy": str(t.get("strategy") or ""),
                     "source": "automation_cycle" if enter_tag == "quant-control-plane" else "enhanced_strategy",
                 })
 
             total_stake = sum(float(t.get("stake_amount", 0) or 0) for t in open_trades)
             total_profit = sum(float(t.get("profit_abs", 0) or 0) for t in open_trades)
             total_profit_pct = (total_profit / total_stake * 100) if total_stake > 0 else 0
+            total_market_value = sum(float(t.get("open_trade_value", 0) or 0) for t in open_trades)
 
             return _success({
                 "items": items,
                 "total_stake": round(total_stake, 2),
+                "total_market_value": round(total_market_value, 2),
                 "total_profit": round(total_profit, 4),
                 "total_profit_pct": round(total_profit_pct, 2),
                 "count": len(items),
