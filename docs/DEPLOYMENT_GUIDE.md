@@ -1,6 +1,6 @@
 # 部署指南
 
-> 最后更新：2026-05-12
+> 最后更新：2026-05-13
 
 本文档记录项目部署的完整流程和常见问题解决方案。
 
@@ -86,7 +86,7 @@ docker system prune -f && docker builder prune -f
 |------|----------|----------|
 | API | 9011 | http://39.106.11.65:9011 |
 | Web | 9012 | http://39.106.11.65:9012 |
-| Freqtrade | 8080 | 仅内部访问 |
+| Freqtrade | 9013 | 仅内部访问 |
 | Grafana | 3000 | 需SSH隧道 |
 | Prometheus | 9090 | 需SSH隧道 |
 
@@ -102,7 +102,7 @@ curl http://localhost:9011/health
 curl http://localhost:9012/
 
 # Freqtrade健康检查
-curl -u 'Freqtrader:jianyu0.0.' http://localhost:8080/api/v1/ping
+curl -u 'Freqtrader:jianyu0.0.' http://localhost:9013/api/v1/ping
 
 # 系统状态
 curl http://localhost:9011/api/v1/system/status
@@ -157,7 +157,7 @@ curl -X POST "http://localhost:9011/api/v1/openclaw/patrol?patrol_type=cycle_che
 - **类型**: 实时交易策略
 - **运行位置**: quant-freqtrade 容器
 - **配置**: `/home/djy/Quant/infra/freqtrade/user_data/config.live.base.json`
-- **stake_amount**: 10 USDT（避免NOTIONAL过滤器问题）
+- **stake_amount**: 8 USDT（避免NOTIONAL过滤器问题）
 
 ### 2. Automation Cycle
 
@@ -203,11 +203,16 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
 
 **原因**: 多个服务串行调用导致响应时间超过60秒
 
-**解决方案**: 已添加缓存层
+**优化历程**:
+1. 添加缓存层（初始60s TTL）
+2. 发现缓存频繁失效：OpenClaw health_check 间隔60s 与缓存 TTL 60s 匹配，导致每次巡检都命中空缓存
+3. 将 3 个核心缓存 TTL 从 60s 提高到 120s，避免与 OpenClaw 60s 巡检间隔冲突
+
+**当前缓存配置**:
 - `FreqtradeRestClient.get_snapshot()`: 5秒TTL
-- `AutomationWorkflowService.get_status()`: 60秒TTL
-- `ValidationWorkflowService.build_report()`: 60秒TTL
-- `OpenClawSnapshotService.get_snapshot()`: 60秒TTL + 线程锁
+- `AutomationWorkflowService.get_status()`: 120秒TTL
+- `ValidationWorkflowService.build_report()`: 120秒TTL
+- `OpenClawSnapshotService.get_snapshot()`: 120秒TTL + 线程锁
 
 ### 3. 自动化暂停/手动接管
 
@@ -216,7 +221,22 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
 curl -s http://localhost:9011/api/v1/system/status | python3 -m json.tool
 ```
 
-**恢复自动运行**:
+**恢复自动运行（推荐：API 方式）**:
+```bash
+TOKEN=$(curl -s -X POST 'http://localhost:9011/api/v1/auth/login?username=admin&password=<password>' | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['item']['token'])")
+
+# 先切到 dry_run_only 清除异常状态
+curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"dry_run_only"}'
+
+# 再切回 auto_live
+curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"auto_live"}'
+```
+
+**备选：直接编辑状态文件**:
 ```python
 import json
 path = "/home/djy/Quant/infra/data/runtime/automation_state.json"
@@ -259,9 +279,9 @@ docker builder prune -f
 | 服务 | 方法 | TTL | 文件 |
 |------|------|-----|------|
 | FreqtradeRestClient | get_snapshot() | 5秒 | `services/api/app/adapters/freqtrade/rest_client.py` |
-| AutomationWorkflowService | get_status() | 60秒 | `services/api/app/services/automation_workflow_service.py` |
-| ValidationWorkflowService | build_report() | 60秒 | `services/api/app/services/validation_workflow_service.py` |
-| OpenClawSnapshotService | get_snapshot() | 60秒 | `services/api/app/services/openclaw_snapshot_service.py` |
+| AutomationWorkflowService | get_status() | 120秒 | `services/api/app/services/automation_workflow_service.py` |
+| ValidationWorkflowService | build_report() | 120秒 | `services/api/app/services/validation_workflow_service.py` |
+| OpenClawSnapshotService | get_snapshot() | 120秒 | `services/api/app/services/openclaw_snapshot_service.py` |
 
 ### 缓存实现模式
 

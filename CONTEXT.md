@@ -1,31 +1,20 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-05-11
+> 最后更新：2026-05-13
 
 ---
 
 ## 当前进度
 
-**状态**：系统稳定运行，前端优化完成
+**状态**：系统稳定运行，调度统一为 OpenClaw
 
-**本次更新（2026-05-11）**：
-- **前端优化**：
-  - 新增 `RsiDataContext` 共享 RSI 数据，避免重复 API 请求
-  - `EntryStatusCard` 和 `RsiSummaryCard` 共享 RSI 数据源
-  - `AutomationCycleHistoryCard` 添加标签页导航（基础/候选/任务/RSI）
-  - `RsiSummaryCard` 添加筛选和排序功能
-  - `EntryStatusCard` 增强显示 RSI、趋势、策略指标
-  - `CandidateQueueCard` 新增候选队列卡片
-  - `BalancesPage` 添加 USD 估值和资产分布可视化
-  - `OpsPage` 添加巡检统计（总运行次数、成功率、平均耗时）
-- **Patrol接口性能优化**：响应时间从100+秒降至1-3秒
-  - FreqtradeRestClient.get_snapshot(): 5秒TTL缓存
-  - AutomationWorkflowService.get_status(): 60秒TTL缓存
-  - ValidationWorkflowService.build_report(): 60秒TTL缓存
-  - OpenClawSnapshotService.get_snapshot(): 60秒TTL缓存 + 线程锁
-- **BTC持仓卡住问题解决**：买入补足后一起卖出，dust转BNB
-- **自动化状态恢复**：修复paused/manual_takeover状态
-- **文档更新**：DEPLOYMENT_GUIDE.md, SERVICE_ARCHITECTURE.md, ops-troubleshooting.md
+**本次更新（2026-05-13）**：
+- **调度统一**：移除 API 内部 60 分钟巡检，统一由 OpenClaw 的 15 分钟 cycle_check 驱动
+- **周期性调度优化**：移除每日轮次限制（原 8 轮/天），由 15 分钟 cooldown 控制频率
+- **缓存优化**：Patrol 相关缓存 TTL 从 60s 增加到 120s，避免与 OpenClaw 健康检查间隔冲突
+- **Freqtrade 健康检查**：修正端口配置 8080 → 9013，容器恢复 healthy
+- **前端修复**：自动化周期状态不再依赖 patrol.running，未暂停即显示运行中；周期间隔显示为 15 分钟
+- **错误信息改进**：candidate_not_live_ready 现在显示具体原因（live 门槛未通过 / 当前阶段 / requested_stage）
 
 **上次更新（2026-05-08）**：
 - 自动化周期历史增强（RSI快照、候选币种、任务状态）
@@ -56,13 +45,13 @@
 ```
 服务器 (39.106.11.65)
 ├── quant-api (FastAPI) - 端口 9011
-│   ├── 缓存层: 多级TTL缓存（5秒/60秒）
+│   ├── 缓存层: 多级TTL缓存（5秒/120秒）
 │   ├── RSI缓存: /app/.runtime/rsi_cache.json
 │   ├── 自动化状态: /app/.runtime/automation_state.json
 │   ├── 周期历史: /app/.runtime/automation_cycle_history.json
 │   └── 响应时间: Patrol ~1-3秒（优化前100+秒）
 ├── quant-web (Next.js) - 端口 9012
-├── quant-freqtrade - API端口 8080 (内部), stake_amount=10 USDT
+├── quant-freqtrade - API端口 9013 (内部), stake_amount=8 USDT
 ├── quant-mihomo - 代理端口 7890, 控制端口 9090
 ├── quant-prometheus - 端口 9090
 ├── quant-grafana - 端口 3000
@@ -172,7 +161,7 @@
 | 运行频率 | 实时（每小时） | 周期（每15分钟） |
 | 决策依据 | RSI技术指标 | 机器学习预测 |
 | 风险控制 | 内置止损/止盈 + 动态仓位 | Gate验证门槛 |
-| 当前状态 | ✅ 正常运行 | ⚠️ 候选未通过Gate |
+| 当前状态 | ✅ 正常运行 | ✅ auto_live 运行中 |
 
 ### 动态仓位调整
 
@@ -203,9 +192,9 @@ EnhancedStrategy 根据信号评分动态调整仓位：
 | 服务 | 方法 | TTL | 文件 |
 |------|------|-----|------|
 | FreqtradeRestClient | get_snapshot() | 5秒 | `services/api/app/adapters/freqtrade/rest_client.py` |
-| AutomationWorkflowService | get_status() | 60秒 | `services/api/app/services/automation_workflow_service.py` |
-| ValidationWorkflowService | build_report() | 60秒 | `services/api/app/services/validation_workflow_service.py` |
-| OpenClawSnapshotService | get_snapshot() | 60秒 | `services/api/app/services/openclaw_snapshot_service.py` |
+| AutomationWorkflowService | get_status() | 120秒 | `services/api/app/services/automation_workflow_service.py` |
+| ValidationWorkflowService | build_report() | 120秒 | `services/api/app/services/validation_workflow_service.py` |
+| OpenClawSnapshotService | get_snapshot() | 120秒 | `services/api/app/services/openclaw_snapshot_service.py` |
 
 ---
 
@@ -230,7 +219,7 @@ EnhancedStrategy 根据信号评分动态调整仓位：
 | `validation_future_return_not_positive` | 预测收益为负 | 回测预测收益不满足要求 |
 | `trend_broken` | 趋势破位 | EMA 趋势线破位 |
 | `score_too_low` | 评分过低 | 综合评分低于 0.45 |
-| `candidate_not_live_ready` | 候选未放量 | 成交量不足以进入live模式 |
+| `candidate_not_live_ready` | 候选未放量 | 未通过live门槛验证 / 当前阶段非live / 指定阶段非live |
 
 ---
 
@@ -256,8 +245,25 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 'curl -s http://localhost:9011/api/
 
 ### 恢复自动化运行
 
+**方法1：API 恢复（推荐）**
+
+```bash
+TOKEN=$(curl -s -X POST 'http://localhost:9011/api/v1/auth/login?username=admin&password=<admin_password>' | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['item']['token'])")
+
+# 先切到 dry_run_only 清除异常状态
+curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"dry_run_only"}'
+
+# 再切回 auto_live
+curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"auto_live"}'
+```
+
+**方法2：直接编辑状态文件**
+
 ```python
-# 如果自动化被暂停，执行以下代码恢复
 import json
 path = "/home/djy/Quant/infra/data/runtime/automation_state.json"
 with open(path, 'r+') as f:
@@ -375,7 +381,7 @@ import { RsiSummaryCard } from "../components/rsi-summary-card";
 - **Freqtrade**: Live模式运行，EnhancedStrategy 策略，RSI阈值50
 - **mihomo**: Healthy，JP1节点
 - **系统**: 所有核心容器 healthy
-- **自动化**: auto_live模式，waiting状态（候选未通过验证）
+- **自动化**: auto_live模式，正常运行中
 - **飞书**: 推送正常
 - **前端**: 终端风格，功能完善
 - **API**: 性能优化完成，Patrol响应1-3秒

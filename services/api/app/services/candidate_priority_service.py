@@ -103,7 +103,10 @@ class CandidatePriorityService:
                     elif requested_stage != "live":
                         dispatch_reason = f"当前阶段是 {requested_stage}，需要先完成 dry-run 验证"
                     else:
-                        dispatch_reason = "当前还没放行到 live，先留在 dry-run。"
+                        # allowed_to_live=True 且 requested_stage=live，但 recommended_stage!=live
+                        # 原因在 scope 校验阶段（符号不在 live 子集 / 候选池未就绪等）
+                        specific = str(row.get("why_selected", "") or row.get("why_blocked", "") or "")
+                        dispatch_reason = specific or "当前还没放行到 live，先留在 dry-run。"
                 elif not target_armed_symbol:
                     dispatch_status = "skipped"
                     dispatch_code = "awaiting_dry_run_confirmation"

@@ -176,6 +176,7 @@ class AutomationService:
     def configure_mode(self, mode: str, *, actor: str = "user") -> dict[str, object]:
         """兼容路由层的模式切换入口。"""
 
+        self._consecutive_failure_count = 0
         self.record_alert(level="info", code="automation_mode_changed", message=f"自动化模式已切到 {mode}", source=actor)
         return {
             **self.set_mode(mode),
@@ -191,6 +192,7 @@ class AutomationService:
         self._manual_takeover = False
         self._paused_at = ""
         self._manual_takeover_at = ""
+        self._consecutive_failure_count = 0
         self._updated_at = _utc_now()
         self.record_alert(level="warning", code="dry_run_only_enabled", message="系统已切到 dry-run only", source=actor)
         self._persist_state()

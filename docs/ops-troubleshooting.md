@@ -2,50 +2,49 @@
 
 > 本文档记录运维过程中遇到的问题和解决方案，避免重复踩坑。
 >
-> **最后更新：2026-05-11**
+> **最后更新：2026-05-13**
 
 ---
 
-## 0. 最新变更（2026-05-11）
+## 0. 最新变更（2026-05-13）
 
-### 0.1 Patrol接口性能优化
+### 0.1 缓存 TTL 与 OpenClaw 巡检间隔冲突修复
 
-**问题**：Patrol接口响应时间超过60秒，导致超时
+**问题**：Patrol 响应仍然较慢（~30s），尽管已添加缓存层
 
-**原因**：多个服务串行调用，每个服务又串行调用多个下游API
+**根因**：3 个核心缓存 TTL 均为 60s，与 OpenClaw health_check 间隔（60s）精确匹配，导致每次巡检都刚好缓存过期，缓存命中率极低
 
-**解决方案**：添加缓存层
+**解决方案**：将缓存 TTL 从 60s 提高到 120s
 
-| 服务 | 方法 | TTL | 效果 |
-|------|------|-----|------|
-| FreqtradeRestClient | get_snapshot() | 5秒 | 减少Freqtrade API调用 |
-| AutomationWorkflowService | get_status() | 60秒 | 主性能瓶颈，111秒→缓存命中 |
-| ValidationWorkflowService | build_report() | 60秒 | 56秒→缓存命中 |
-| OpenClawSnapshotService | get_snapshot() | 60秒 | 巡检快照缓存 |
+| 服务 | 方法 | 旧TTL | 新TTL |
+|------|------|-------|-------|
+| AutomationWorkflowService | get_status() | 60秒 | **120秒** |
+| ValidationWorkflowService | build_report() | 60秒 | **120秒** |
+| OpenClawSnapshotService | get_snapshot() | 60秒 | **120秒** |
 
-**关键实现细节**：
-```python
-# 错误：使用方法开始时的时间
-def get_data(self):
-    now = time.time()  # ❌ 这里的now在计算后可能已过期
-    if self._cache and (now - self._cache_time) < TTL:
-        return self._cache
-    data = expensive_operation()  # 耗时操作
-    self._cache_time = now  # ❌ 使用旧的now
-    return data
+### 0.2 Freqtrade 健康检查端口修复
 
-# 正确：使用保存时的时间
-def get_data(self):
-    if self._cache and (time.time() - self._cache_time) < TTL:
-        return self._cache
-    data = expensive_operation()
-    self._cache_time = time.time()  # ✅ 使用当前时间
-    return data
+**问题**：Freqtrade 容器显示 unhealthy，健康检查失败
+
+**原因**：docker-compose.yml 中 Freqtrade 健康检查端口配置为 8080，实际 Freqtrade 监听 9013（config.live.base.json 配置）
+
+**解决**：修改 docker-compose.yml 第 136 行，健康检查端口 8080 → 9013
+
+### 0.3 自动化恢复 API 方法
+
+**问题**：自动化被暂停/手动接管后，直接编辑状态文件恢复需要重启容器
+
+**解决**：使用 API 方式恢复，无需重启：
+```bash
+TOKEN=$(curl -s -X POST 'http://localhost:9011/api/v1/auth/login?username=admin&password=<password>' | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['item']['token'])")
+# 先 dry_run_only 清除异常，再切回 auto_live
+curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" -H 'Content-Type: application/json' -d '{"mode":"dry_run_only"}'
+curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" -H 'Content-Type: application/json' -d '{"mode":"auto_live"}'
 ```
 
-**多线程场景**：使用 `threading.Lock()` + 双重检查锁定
+---
 
-### 0.2 BTC持仓卡住问题（已解决）
+### 0.4 BTC持仓卡住问题（历史，已解决）
 
 **问题**：0.00006993 BTC（约5.58 USDT）无法卖出
 
@@ -57,25 +56,6 @@ def get_data(self):
 3. 剩余dust使用Binance Dust Transfer API转为BNB
 
 **预防措施**：stake_amount调整为10 USDT
-
-### 0.3 自动化状态异常（已解决）
-
-**问题**：自动化系统停止运行
-
-**原因**：`automation_state.json`中 `paused=true`, `manual_takeover=true`
-
-**解决方案**：
-```python
-import json
-path = "/home/djy/Quant/infra/data/runtime/automation_state.json"
-with open(path, 'r+') as f:
-    state = json.load(f)
-    state['paused'] = False
-    state['manual_takeover'] = False
-    f.seek(0)
-    json.dump(state, f, indent=2)
-    f.truncate()
-```
 
 ---
 
