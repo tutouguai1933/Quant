@@ -141,12 +141,10 @@ export function DualStrategyCard({ refreshInterval = 30000 }: DualStrategyCardPr
     ? freqtradeStatus.profit.total_percent >= 0 ? "ok" : "warning"
     : "error";
 
-  // 计算自动化周期状态
+  // 计算自动化周期状态（OpenClaw 是独立容器，只要未暂停就是运行中）
   const autoStatus: "ok" | "warning" | "error" = systemStatus.automation.paused
     ? "warning"
-    : systemStatus.patrol.running
-    ? "ok"
-    : "error";
+    : "ok";
 
   const { enhanced_strategy, automation_cycle, total } = profitBySource;
 
@@ -193,7 +191,7 @@ export function DualStrategyCard({ refreshInterval = 30000 }: DualStrategyCardPr
               autoStatus === "warning" ? "bg-yellow-500/20 text-yellow-400" :
               "bg-red-500/20 text-red-400"
             }`}>
-              {systemStatus.automation.paused ? "已暂停" : systemStatus.patrol.running ? "运行中" : "已停止"}
+              {systemStatus.automation.paused ? "已暂停" : "运行中"}
             </span>
           </div>
           <div className="text-[11px] text-[var(--terminal-muted)]">
