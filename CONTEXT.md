@@ -251,14 +251,10 @@ ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 'curl -s http://localhost:9011/api/
 TOKEN=$(curl -s -X POST 'http://localhost:9011/api/v1/auth/login?username=admin&password=<admin_password>' | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['item']['token'])")
 
 # 先切到 dry_run_only 清除异常状态
-curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"mode":"dry_run_only"}'
+curl -s -X POST "http://localhost:9011/api/v1/tasks/automation/dry-run-only?token=$TOKEN"
 
 # 再切回 auto_live
-curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"mode":"auto_live"}'
+curl -s -X POST "http://localhost:9011/api/v1/tasks/automation/configure?token=$TOKEN&mode=auto_live"
 ```
 
 **方法2：直接编辑状态文件**

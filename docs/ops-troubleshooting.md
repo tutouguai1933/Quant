@@ -38,8 +38,8 @@
 ```bash
 TOKEN=$(curl -s -X POST 'http://localhost:9011/api/v1/auth/login?username=admin&password=<password>' | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['item']['token'])")
 # 先 dry_run_only 清除异常，再切回 auto_live
-curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" -H 'Content-Type: application/json' -d '{"mode":"dry_run_only"}'
-curl -X POST "http://localhost:9011/api/v1/automation/configure?token=$TOKEN" -H 'Content-Type: application/json' -d '{"mode":"auto_live"}'
+curl -s -X POST "http://localhost:9011/api/v1/tasks/automation/dry-run-only?token=$TOKEN"
+curl -s -X POST "http://localhost:9011/api/v1/tasks/automation/configure?token=$TOKEN&mode=auto_live"
 ```
 
 ---
