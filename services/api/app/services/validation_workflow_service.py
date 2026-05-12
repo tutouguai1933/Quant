@@ -20,7 +20,7 @@ class ValidationWorkflowService:
     """构造 dry-run -> 小额 live -> 复盘 的统一摘要。"""
 
     # build_report() 缓存 TTL（秒）- 设为 60 秒以覆盖多个连续调用
-    _REPORT_CACHE_TTL = 60.0
+    _REPORT_CACHE_TTL = 120.0
 
     def __init__(self, *, research_reader=None, sync_reader=None, scheduler=None) -> None:
         self._research_reader = research_reader or research_service

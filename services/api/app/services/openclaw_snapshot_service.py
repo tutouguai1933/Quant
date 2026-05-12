@@ -22,7 +22,7 @@ class OpenclawSnapshotService:
     """Openclaw 统一快照服务。"""
 
     # get_snapshot() 缓存 TTL（秒）
-    _SNAPSHOT_CACHE_TTL = 60.0
+    _SNAPSHOT_CACHE_TTL = 120.0
 
     def __init__(
         self,
