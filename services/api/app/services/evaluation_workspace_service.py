@@ -129,10 +129,13 @@ class EvaluationWorkspaceService:
         if evaluation or leaderboard or reviews:
             status = "ready"
 
+        top_ml_prediction = self._build_top_ml_prediction(leaderboard)
+
         return {
             "status": status,
             "backend": str(report.get("backend", "qlib-fallback") or "qlib-fallback"),
             "config_alignment": dict(report.get("config_alignment") or {}),
+            "top_ml_prediction": top_ml_prediction,
             "overview": {
                 "recommended_symbol": str(overview.get("recommended_symbol", "")),
                 "recommended_action": str(overview.get("recommended_action", "")),
@@ -506,6 +509,31 @@ class EvaluationWorkspaceService:
         return max(value, 1)
 
     @staticmethod
+    def _build_top_ml_prediction(leaderboard: list[dict[str, object]]) -> dict[str, object] | None:
+        """提取 ML 预测分数最高的候选摘要。"""
+        best: dict[str, object] | None = None
+        best_proba = -1.0
+        for row in leaderboard:
+            ml = row.get("ml_prediction")
+            if not ml:
+                continue
+            proba = float(str(ml.get("probability", 0)))
+            if proba > best_proba:
+                best_proba = proba
+                best = row
+        if not best:
+            return None
+        ml = dict(best.get("ml_prediction") or {})
+        return {
+            "symbol": str(best.get("symbol", "")),
+            "score": str(best.get("score", "")),
+            "probability": str(ml.get("probability", "")),
+            "model_version": str(ml.get("model_version", "")),
+            "confidence": str(ml.get("confidence", "")),
+            "feature_contributions": list(ml.get("feature_contributions") or [])[:5],
+        }
+
+    @staticmethod
     def _build_leaderboard(
         report: dict[str, object],
         *,
@@ -550,6 +578,10 @@ class EvaluationWorkspaceService:
             row["template_fit_status"] = str(template_fit.get("status", "unavailable"))
             row["template_fit_headline"] = str(template_fit.get("headline", "当前还没有模板适配结论"))
             row["template_fit_detail"] = str(template_fit.get("detail", "当前还没有模板适配说明"))
+            # 传递 ML 预测数据
+            ml_prediction = row.get("ml_prediction") or candidate.get("ml_prediction")
+            if ml_prediction:
+                row["ml_prediction"] = dict(ml_prediction)
             rows.append(row)
         return rows
 

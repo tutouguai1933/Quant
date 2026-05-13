@@ -260,6 +260,50 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
       {/* 指标卡 */}
       <MetricStrip metrics={metrics} />
 
+      {/* ML 预测 */}
+      {workspace.top_ml_prediction && (
+        <div className="terminal-card p-4">
+          <div className="text-[var(--terminal-muted)] text-[11px] mb-2 uppercase tracking-wider">
+            ML 预测 · 最佳候选
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--terminal-dim)] text-sm">币种:</span>
+              <span className="terminal-badge">{workspace.top_ml_prediction.symbol}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--terminal-dim)] text-sm">预测概率:</span>
+              <span className="text-green-400 font-mono text-lg font-bold">
+                {workspace.top_ml_prediction.probability}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--terminal-dim)] text-sm">模型:</span>
+              <span className="text-[var(--terminal-muted)] font-mono text-xs">
+                {workspace.top_ml_prediction.model_version}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--terminal-dim)] text-sm">综合评分:</span>
+              <span className="text-foreground font-mono">{workspace.top_ml_prediction.score}</span>
+            </div>
+          </div>
+          {workspace.top_ml_prediction.feature_contributions && workspace.top_ml_prediction.feature_contributions.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--terminal-muted)]">
+              <span className="text-[var(--terminal-dim)]">Top 特征:</span>
+              {workspace.top_ml_prediction.feature_contributions.map((fc) => (
+                <span key={fc.feature} className="font-mono">
+                  {fc.feature}
+                  <span className={parseFloat(fc.contribution) >= 0 ? "text-green-400 ml-1" : "text-red-400 ml-1"}>
+                    ({parseFloat(fc.contribution) >= 0 ? "+" : ""}{fc.contribution})
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 组合净值图 */}
       <PortfolioEquityChart
         data={portfolioData}

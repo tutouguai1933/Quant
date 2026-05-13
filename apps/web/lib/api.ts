@@ -1018,6 +1018,7 @@ export type EvaluationWorkspaceModel = {
   config_alignment?: Record<string, unknown>;
   selection_story?: Record<string, unknown>;
   threshold_catalog?: Array<Record<string, unknown>>;
+  top_ml_prediction?: MLPredictionData & { symbol: string; score: string } | null;
   overview: {
     recommended_symbol: string;
     recommended_action: string;
@@ -2602,6 +2603,7 @@ export function getEvaluationWorkspaceFallback(): EvaluationWorkspaceModel {
   return {
     status: "unavailable",
     backend: "qlib-fallback",
+    top_ml_prediction: null,
     overview: {
       recommended_symbol: "",
       recommended_action: "",

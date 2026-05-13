@@ -101,7 +101,8 @@ def _normalize_candidate(
         recommendation_context=recommendation_context,
         allowed_to_dry_run=allowed_to_dry_run,
     )
-    return {
+    ml_prediction = item.get("ml_prediction")
+    result = {
         "rank": index,
         "symbol": str(item.get("symbol", "")).strip().upper(),
         "strategy_template": str(item.get("strategy_template", "")).strip() or "trend_breakout_timing",
@@ -125,6 +126,9 @@ def _normalize_candidate(
         "recommendation_score": _format_decimal(recommendation_score),
         "recommendation_reason": recommendation_reason,
     }
+    if ml_prediction:
+        result["ml_prediction"] = dict(ml_prediction)
+    return result
 
 
 def _apply_force_validation_override(items: list[dict[str, object]]) -> list[dict[str, object]]:
