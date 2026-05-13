@@ -37,6 +37,13 @@ type OpenTradesResponse = {
   count: number;
 };
 
+type SpotBalance = {
+  symbol: string;
+  quantity: string;
+  side: string;
+  source: string;
+};
+
 interface OpenPositionsCardProps {
   refreshInterval?: number;
 }
@@ -57,7 +64,8 @@ const STRATEGY_CONFIG: Record<string, { name: string; color: string; border: str
 };
 
 export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCardProps) {
-  const [data, setData] = useState<OpenTradesResponse | null>(null);
+  const [tradesData, setTradesData] = useState<OpenTradesResponse | null>(null);
+  const [spotBalances, setSpotBalances] = useState<SpotBalance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string>("");
 
@@ -66,17 +74,45 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
 
     async function fetchData() {
       try {
-        const response = await fetchJson<OpenTradesResponse>("/freqtrade/open-trades");
-        if (!cancelled && !response.error) {
-          setData(response.data);
-          setUpdatedAt(
-            new Date().toLocaleTimeString("zh-CN", {
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            })
-          );
+        const [tradesRes, positionsRes] = await Promise.all([
+          fetchJson<OpenTradesResponse>("/freqtrade/open-trades"),
+          fetchJson<{ items: Array<Record<string, unknown>> }>("/positions"),
+        ]);
+
+        if (cancelled) return;
+
+        if (!tradesRes.error) {
+          setTradesData(tradesRes.data);
         }
+
+        // 解析 Binance 余额
+        if (!positionsRes.error && positionsRes.data?.items) {
+          const tradeSymbols = new Set(
+            (tradesRes.data?.items || []).map((t) => (t.pair || t.symbol || "").replace("/USDT", "").toUpperCase())
+          );
+          const balances: SpotBalance[] = [];
+          for (const item of positionsRes.data.items) {
+            const sym = String(item.symbol || "").toUpperCase();
+            const qty = parseFloat(String(item.quantity || "0"));
+            if (sym === "USDT" || qty <= 0) continue;
+            if (tradeSymbols.has(sym)) continue; // 已在策略持仓中显示
+            balances.push({
+              symbol: sym,
+              quantity: item.quantity as string,
+              side: "spot",
+              source: "binance",
+            });
+          }
+          setSpotBalances(balances);
+        }
+
+        setUpdatedAt(
+          new Date().toLocaleTimeString("zh-CN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          })
+        );
       } catch {
         // 忽略错误
       } finally {
@@ -100,7 +136,11 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
     );
   }
 
-  if (!data || data.count === 0) {
+  const hasTrades = tradesData && tradesData.count > 0;
+  const hasSpot = spotBalances.length > 0;
+  const totalCount = (tradesData?.count || 0) + spotBalances.length;
+
+  if (!hasTrades && !hasSpot) {
     return (
       <TerminalCard title="当前持仓">
         <div className="flex justify-between items-center">
@@ -113,8 +153,8 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
     );
   }
 
-  const esTrades = data.items.filter((t) => t.source === "enhanced_strategy");
-  const acTrades = data.items.filter((t) => t.source === "automation_cycle");
+  const esTrades = (tradesData?.items || []).filter((t) => t.source === "enhanced_strategy");
+  const acTrades = (tradesData?.items || []).filter((t) => t.source === "automation_cycle");
 
   const groups = [
     { key: "enhanced_strategy", trades: esTrades },
@@ -122,7 +162,7 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
   ].filter((g) => g.trades.length > 0);
 
   return (
-    <TerminalCard title={`当前持仓 (${data.count})`}>
+    <TerminalCard title={`当前持仓 (${totalCount})`}>
       <div className="space-y-3">
         {groups.map((group) => {
           const cfg = STRATEGY_CONFIG[group.key];
@@ -226,23 +266,49 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
         })}
       </div>
 
-      {/* 底部汇总 */}
-      <div className="mt-3 pt-2 border-t border-[var(--terminal-border)]/30 flex justify-between items-center text-[11px]">
-        <div className="flex items-center gap-3">
-          <span className="text-[var(--terminal-muted)]">
-            总成本: <span className="text-[var(--terminal-text)] font-mono">{data.total_stake.toFixed(2)}</span> USDT
-          </span>
-          <span className="text-[var(--terminal-dim)]">|</span>
-          <span className="text-[var(--terminal-muted)]">
-            总市值: <span className="text-[var(--terminal-text)] font-mono">{data.total_market_value?.toFixed(2) || "-"}</span> USDT
-          </span>
-          <span className="text-[var(--terminal-dim)]">|</span>
-          <span className={data.total_profit >= 0 ? "text-green-400" : "text-red-400"}>
-            浮盈: {data.total_profit >= 0 ? "+" : ""}{data.total_profit.toFixed(3)} USDT ({data.total_profit_pct >= 0 ? "+" : ""}{data.total_profit_pct.toFixed(2)}%)
-          </span>
+      {/* 现货余额（非策略持仓） */}
+      {spotBalances.length > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[12px] font-semibold text-amber-400">交易所现货余额</span>
+            <span className="text-[10px] text-[var(--terminal-dim)]">{spotBalances.length} 笔</span>
+          </div>
+          <div className="space-y-1.5">
+            {spotBalances.map((bal) => (
+              <div
+                key={bal.symbol}
+                className="bg-[var(--terminal-bg)]/60 rounded px-3 py-1.5 text-[11px] flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[var(--terminal-text)] font-semibold text-[13px]">{bal.symbol}</span>
+                  <span className="text-[var(--terminal-muted)] font-mono">{bal.quantity}</span>
+                </div>
+                <span className="text-[10px] text-[var(--terminal-dim)]">非策略持有</span>
+              </div>
+            ))}
+          </div>
         </div>
-        {updatedAt && <span className="text-[var(--terminal-dim)]">{updatedAt}</span>}
-      </div>
+      )}
+
+      {/* 底部汇总 */}
+      {tradesData && (
+        <div className="mt-3 pt-2 border-t border-[var(--terminal-border)]/30 flex justify-between items-center text-[11px]">
+          <div className="flex items-center gap-3">
+            <span className="text-[var(--terminal-muted)]">
+              总成本: <span className="text-[var(--terminal-text)] font-mono">{tradesData.total_stake.toFixed(2)}</span> USDT
+            </span>
+            <span className="text-[var(--terminal-dim)]">|</span>
+            <span className="text-[var(--terminal-muted)]">
+              总市值: <span className="text-[var(--terminal-text)] font-mono">{tradesData.total_market_value?.toFixed(2) || "-"}</span> USDT
+            </span>
+            <span className="text-[var(--terminal-dim)]">|</span>
+            <span className={tradesData.total_profit >= 0 ? "text-green-400" : "text-red-400"}>
+              浮盈: {tradesData.total_profit >= 0 ? "+" : ""}{tradesData.total_profit.toFixed(3)} USDT ({tradesData.total_profit_pct >= 0 ? "+" : ""}{tradesData.total_profit_pct.toFixed(2)}%)
+            </span>
+          </div>
+          {updatedAt && <span className="text-[var(--terminal-dim)]">{updatedAt}</span>}
+        </div>
+      )}
     </TerminalCard>
   );
 }
