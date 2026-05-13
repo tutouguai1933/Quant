@@ -117,6 +117,56 @@ FACTOR_DEFINITIONS = (
         "neutral": "0",
         "clip": ("-100", "100"),
     },
+    # 新增因子 - 趋势强度
+    {
+        "name": "trend_strength",
+        "category": "trend",
+        "role": "primary",
+        "kind": "composite",
+        "description": "趋势强度指标，基于 EMA 斜率和方向一致性计算。",
+        "neutral": "0",
+        "clip": ("-100", "100"),
+    },
+    # 新增因子 - 动量加速度
+    {
+        "name": "momentum_accel",
+        "category": "momentum",
+        "role": "primary",
+        "kind": "composite",
+        "description": "动量加速度，判断趋势是否在加速或减速。",
+        "neutral": "0",
+        "clip": ("-100", "100"),
+    },
+    # 新增因子 - 波动收缩
+    {
+        "name": "volatility_contraction",
+        "category": "volatility",
+        "role": "primary",
+        "kind": "composite",
+        "description": "波动收缩因子，识别突破前的能量积累。",
+        "neutral": "0",
+        "clip": ("0", "100"),
+    },
+    # 新增因子 - 量价背离
+    {
+        "name": "volume_price_divergence",
+        "category": "volume",
+        "role": "primary",
+        "kind": "composite",
+        "description": "量价背离因子，识别趋势衰竭信号。",
+        "neutral": "0",
+        "clip": ("-100", "100"),
+    },
+    # 新增因子 - 多空力量对比
+    {
+        "name": "bull_bear_ratio",
+        "category": "momentum",
+        "role": "primary",
+        "kind": "composite",
+        "description": "多空力量对比，基于上涨下跌 K 线数量和强度。",
+        "neutral": "1",
+        "clip": ("0", "10"),
+    },
     {
         "name": "rsi14",
         "category": "oscillator",
@@ -256,6 +306,13 @@ def build_feature_rows(
         cci20 = _cci(valid_candles[: index + 1], profile["cci_period"])
         stoch_k14 = _stoch_k(valid_candles[: index + 1], profile["stoch_period"])
 
+        # 新增因子计算
+        trend_strength = _trend_strength(rolling_closes, 20)
+        momentum_accel = _momentum_accel(rolling_closes, 6)
+        volatility_contraction = _volatility_contraction(valid_candles[: index + 1], 14)
+        volume_price_divergence = _volume_price_divergence(rolling_closes, rolling_volumes, 10)
+        bull_bear_ratio = _bull_bear_ratio(valid_candles[: index + 1], 10)
+
         raw_row = {
             "symbol": symbol.strip().upper(),
             "generated_at": int(candle["close_time"]),
@@ -269,6 +326,11 @@ def build_feature_rows(
             "atr_pct": atr_pct,
             "breakout_strength": breakout_strength,
             "roc6": roc6,
+            "trend_strength": trend_strength,
+            "momentum_accel": momentum_accel,
+            "volatility_contraction": volatility_contraction,
+            "volume_price_divergence": volume_price_divergence,
+            "bull_bear_ratio": bull_bear_ratio,
             "rsi14": rsi14,
             "cci20": cci20,
             "stoch_k14": stoch_k14,
@@ -557,6 +619,150 @@ def _recent_high(values: list[Decimal], lookback: int) -> Decimal:
     if not values:
         return Decimal("0")
     return max(values[-lookback:])
+
+
+def _trend_strength(closes: list[Decimal], period: int) -> Decimal:
+    """计算趋势强度指标。
+
+    基于 EMA 斜率和方向一致性，值域 [-100, 100]。
+    正值表示上涨趋势强度，负值表示下跌趋势强度。
+    """
+    if len(closes) < period:
+        return Decimal("0")
+
+    # 计算 EMA
+    ema_values: list[Decimal] = []
+    multiplier = Decimal("2") / Decimal(str(period + 1))
+    ema_values.append(closes[0])
+
+    for close in closes[1:]:
+        ema = (close - ema_values[-1]) * multiplier + ema_values[-1]
+        ema_values.append(ema)
+
+    if len(ema_values) < 2:
+        return Decimal("0")
+
+    # 计算 EMA 斜率（变化方向）
+    recent_emas = ema_values[-period:]
+    up_count = sum(1 for i in range(1, len(recent_emas)) if recent_emas[i] > recent_emas[i - 1])
+    down_count = sum(1 for i in range(1, len(recent_emas)) if recent_emas[i] < recent_emas[i - 1])
+
+    # 方向一致性得分
+    direction_score = Decimal(str(up_count - down_count)) / Decimal(str(period - 1)) * Decimal("100")
+
+    return direction_score
+
+
+def _momentum_accel(closes: list[Decimal], period: int) -> Decimal:
+    """计算动量加速度。
+
+    判断趋势是否在加速或减速。正值表示加速上涨，负值表示加速下跌。
+    """
+    if len(closes) < period * 2:
+        return Decimal("0")
+
+    # 计算两段时期的 ROC
+    recent_closes = closes[-period:]
+    previous_closes = closes[-period * 2:-period]
+
+    if not recent_closes or not previous_closes:
+        return Decimal("0")
+
+    recent_roc = (recent_closes[-1] - recent_closes[0]) / recent_closes[0] * Decimal("100") if recent_closes[0] != 0 else Decimal("0")
+    previous_roc = (previous_closes[-1] - previous_closes[0]) / previous_closes[0] * Decimal("100") if previous_closes[0] != 0 else Decimal("0")
+
+    # 加速度 = 当前 ROC - 之前 ROC
+    return recent_roc - previous_roc
+
+
+def _volatility_contraction(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
+    """计算波动收缩因子。
+
+    识别突破前的能量积累。值越小表示波动越收缩，可能即将突破。
+    返回当前 ATR 相对于历史平均 ATR 的比例。
+    """
+    if len(candles) < period * 2:
+        return Decimal("50")
+
+    # 计算当前 ATR
+    current_atr = _atr(candles, period)
+
+    # 计算历史 ATR 均值
+    atr_values: list[Decimal] = []
+    for i in range(period, len(candles)):
+        atr = _atr(candles[:i + 1], period)
+        atr_values.append(atr)
+
+    if not atr_values:
+        return Decimal("50")
+
+    avg_atr = sum(atr_values) / len(atr_values)
+
+    if avg_atr == 0:
+        return Decimal("50")
+
+    # 返回当前 ATR 相对于历史的比例（归一化到 0-100）
+    ratio = current_atr / avg_atr
+    return min(ratio * Decimal("50"), Decimal("100"))
+
+
+def _volume_price_divergence(closes: list[Decimal], volumes: list[Decimal], period: int) -> Decimal:
+    """计算量价背离因子。
+
+    识别趋势衰竭信号。
+    正值表示量价同向（健康趋势），负值表示量价背离（趋势可能衰竭）。
+    """
+    if len(closes) < period or len(volumes) < period:
+        return Decimal("0")
+
+    recent_closes = closes[-period:]
+    recent_volumes = volumes[-period:]
+
+    # 计算价格变化方向
+    price_change = recent_closes[-1] - recent_closes[0]
+
+    # 计算成交量变化
+    avg_volume = sum(recent_volumes[:-1]) / len(recent_volumes[:-1]) if len(recent_volumes) > 1 else recent_volumes[0]
+    current_volume = recent_volumes[-1]
+    volume_change = current_volume - avg_volume
+
+    if avg_volume == 0:
+        return Decimal("0")
+
+    # 量价同向得正分，反向得负分
+    price_direction = 1 if price_change > 0 else -1 if price_change < 0 else 0
+    volume_direction = 1 if volume_change > 0 else -1 if volume_change < 0 else 0
+
+    divergence = Decimal(str(price_direction * volume_direction)) * Decimal("50")
+
+    return divergence
+
+
+def _bull_bear_ratio(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
+    """计算多空力量对比。
+
+    基于上涨下跌 K 线数量和强度。
+    值 > 1 表示多头占优，值 < 1 表示空头占优。
+    """
+    if len(candles) < period:
+        return Decimal("1")
+
+    window = candles[-period:]
+
+    bull_strength = Decimal("0")
+    bear_strength = Decimal("0")
+
+    for candle in window:
+        body = candle["close"] - candle["open"]
+        if body > 0:
+            bull_strength += body
+        else:
+            bear_strength += abs(body)
+
+    if bear_strength == 0:
+        return Decimal("10")  # 全阳线
+
+    return bull_strength / bear_strength
 
 
 def evaluate_factor_ic_series(
