@@ -66,6 +66,7 @@ const STRATEGY_CONFIG: Record<string, { name: string; color: string; border: str
 export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCardProps) {
   const [tradesData, setTradesData] = useState<OpenTradesResponse | null>(null);
   const [spotBalances, setSpotBalances] = useState<SpotBalance[]>([]);
+  const [usdtBalance, setUsdtBalance] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string>("");
 
@@ -91,10 +92,15 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
             (tradesRes.data?.items || []).map((t) => (t.pair || t.symbol || "").replace("/USDT", "").toUpperCase())
           );
           const balances: SpotBalance[] = [];
+          let usdtBalance = "";
           for (const item of positionsRes.data.items) {
             const sym = String(item.symbol || "").toUpperCase();
             const qty = parseFloat(String(item.quantity || "0"));
-            if (sym === "USDT" || qty <= 0) continue;
+            if (qty <= 0) continue;
+            if (sym === "USDT") {
+              usdtBalance = String(item.quantity || "");
+              continue;
+            }
             if (tradeSymbols.has(sym)) continue; // 已在策略持仓中显示
             balances.push({
               symbol: sym,
@@ -104,6 +110,7 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
             });
           }
           setSpotBalances(balances);
+          setUsdtBalance(usdtBalance);
         }
 
         setUpdatedAt(
@@ -266,11 +273,23 @@ export function OpenPositionsCard({ refreshInterval = 30000 }: OpenPositionsCard
         })}
       </div>
 
+      {/* 可用资金池 */}
+      {usdtBalance && (
+        <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-semibold text-green-400">可用 USDT</span>
+            <span className="font-mono text-[16px] font-semibold text-green-400">
+              {parseFloat(usdtBalance).toFixed(2)} USDT
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* 现货余额（非策略持仓） */}
       {spotBalances.length > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[12px] font-semibold text-amber-400">交易所现货余额</span>
+            <span className="text-[12px] font-semibold text-amber-400">其他现货</span>
             <span className="text-[10px] text-[var(--terminal-dim)]">{spotBalances.length} 笔</span>
           </div>
           <div className="space-y-1.5">
