@@ -71,6 +71,7 @@ from services.api.app.routes.hyperopt import router as hyperopt_router
 from services.api.app.routes.ml_hyperopt import router as ml_hyperopt_router
 from services.api.app.routes.ml_models import router as ml_models_router
 from services.api.app.routes.ml_retrain import router as ml_retrain_router
+from services.api.app.routes.ml_tracking import router as ml_tracking_router
 from services.api.app.routes.system_status import router as system_status_router
 from services.api.app.routes.freqtrade_proxy import router as freqtrade_proxy_router
 from services.api.app.websocket.manager import connection_manager
@@ -177,6 +178,8 @@ app.include_router(ml_models_router)
 app.routers.append(ml_models_router)  # type: ignore[attr-defined]
 app.include_router(ml_retrain_router)
 app.routers.append(ml_retrain_router)  # type: ignore[attr-defined]
+app.include_router(ml_tracking_router)
+app.routers.append(ml_tracking_router)  # type: ignore[attr-defined]
 
 
 # 性能监控中间件

@@ -216,6 +216,16 @@ class QlibRunner:
                     "ml_prediction": ml_prediction_data,
                 }
             )
+
+            # 记录 ML 预测用于实盘追踪
+            if ml_prediction_data and signal == "buy":
+                self._track_ml_prediction(
+                    symbol=symbol,
+                    probability=float(str(ml_prediction_data["probability"])),
+                    score=float(str(score)),
+                    model_version=str(ml_prediction_data["model_version"]),
+                    signal_source="ml" if model_type in ("lightgbm", "xgboost") else "heuristic",
+                )
             candidates.append(
                 {
                     "symbol": symbol,
@@ -343,6 +353,29 @@ class QlibRunner:
             label_columns=LABEL_COLUMNS,
             factor_protocol=self._build_factor_protocol(),
         )
+
+    @staticmethod
+    def _track_ml_prediction(
+        symbol: str,
+        probability: float,
+        score: float,
+        model_version: str,
+        signal_source: str = "ml",
+    ) -> None:
+        """记录 ML 预测到追踪器用于实盘校准分析。"""
+        try:
+            from services.worker.ml_prediction_tracker import get_prediction_tracker
+            tracker = get_prediction_tracker()
+            tracker.record_prediction(
+                symbol=symbol,
+                probability=probability,
+                score=score,
+                model_version=model_version,
+                side="buy",
+                signal_source=signal_source,
+            )
+        except Exception:
+            pass
 
     def _build_candidate_backtest(self, *, rows: list[dict[str, object]]) -> dict[str, object]:
         """为单个候选生成独立回测摘要。"""
