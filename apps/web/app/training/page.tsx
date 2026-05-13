@@ -23,10 +23,12 @@ import {
   getMLHyperoptStatus,
   getProductionModel,
   getTrainingHistory,
+  getABComparison,
   type MLTrainingResult,
   type MLHyperoptProgress,
   type MLModelRecord,
   type TrainingHistoryItem,
+  type ABComparisonData,
 } from "../../lib/api";
 
 export default function TrainingPage() {
@@ -36,6 +38,7 @@ export default function TrainingPage() {
   const [hyperoptStatus, setHyperoptStatus] = useState<MLHyperoptProgress | null>(null);
   const [productionModel, setProductionModel] = useState<MLModelRecord | null>(null);
   const [trainingHistory, setTrainingHistory] = useState<TrainingHistoryItem[]>([]);
+  const [abComparison, setAbComparison] = useState<ABComparisonData | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
@@ -75,6 +78,13 @@ export default function TrainingPage() {
       if (!historyRes.error && historyRes.data) {
         setTrainingHistory(historyRes.data.items || []);
       }
+
+      // A/B 对比（后台静默加载，失败不影响主流程）
+      getABComparison().then((abRes) => {
+        if (!abRes.error && abRes.data) {
+          setAbComparison(abRes.data);
+        }
+      }).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "未知错误");
     } finally {
@@ -350,6 +360,46 @@ export default function TrainingPage() {
               </div>
             )}
           </TerminalCard>
+
+          {/* A/B 对比 */}
+          {abComparison && (abComparison.ml.count > 0 || abComparison.heuristic.count > 0) && (
+            <TerminalCard className="xl:col-span-2">
+              <div className="flex items-center gap-3 mb-4">
+                <BarChart3 className="size-4 text-[var(--terminal-accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">ML vs 启发式 A/B 对比</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { label: "ML 模型", data: abComparison.ml, color: "text-green-400" },
+                  { label: "启发式规则", data: abComparison.heuristic, color: "text-amber-400" },
+                ].map(({ label, data, color }) => (
+                  <div key={label} className="p-3 rounded border border-[var(--terminal-border)] bg-[var(--terminal-bg)]/50">
+                    <p className={`text-sm font-semibold mb-2 ${color}`}>{label}</p>
+                    <div className="grid gap-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-[var(--terminal-muted)]">样本数</span>
+                        <span className="font-mono">{data.count}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[var(--terminal-muted)]">胜率</span>
+                        <span className="font-mono">{(data.win_rate * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[var(--terminal-muted)]">平均收益</span>
+                        <span className={`font-mono ${data.mean_return_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {data.mean_return_pct.toFixed(4)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[var(--terminal-muted)]">Sharpe</span>
+                        <span className="font-mono">{data.sharpe.toFixed(3)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </TerminalCard>
+          )}
         </div>
       )}
     </TerminalShell>

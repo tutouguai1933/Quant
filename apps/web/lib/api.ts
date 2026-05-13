@@ -5511,3 +5511,45 @@ export async function getHyperoptResult(
 ): Promise<ApiEnvelope<HyperoptJob>> {
   return fetchJson<HyperoptJob>(`/hyperopt/result/${jobId}`, undefined, signal);
 }
+
+// ML 预测追踪
+export type CalibrationData = {
+  total_predictions: number;
+  completed_predictions: number;
+  win_rate: number;
+  mean_return_pct: number;
+  brier_score: number;
+  probability_buckets: Array<{
+    bucket: string;
+    count: number;
+    win_rate: number;
+    mean_return_pct: number;
+  }>;
+};
+
+export type ABComparisonData = {
+  ml: {
+    count: number;
+    win_rate: number;
+    mean_return_pct: number;
+    sharpe: number;
+  };
+  heuristic: {
+    count: number;
+    win_rate: number;
+    mean_return_pct: number;
+    sharpe: number;
+  };
+};
+
+export async function getCalibration(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<CalibrationData>> {
+  return fetchJson<CalibrationData>("/ml/tracking/calibration", undefined, signal);
+}
+
+export async function getABComparison(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<ABComparisonData>> {
+  return fetchJson<ABComparisonData>("/ml/tracking/ab-comparison", undefined, signal);
+}
