@@ -86,9 +86,20 @@ def _normalize_candidate(
         thresholds=gate_thresholds,
         allowed_to_dry_run=allowed_to_dry_run,
     )
+    ml_live_gate = _evaluate_ml_live_gate(
+        ml_prediction=item.get("ml_prediction"),
+        thresholds=gate_thresholds,
+        standard_live_passed=live_gate["status"] == "passed",
+    )
+    # ML live gate 作为额外门槛：如果启用，候选人必须同时通过标准 live gate 和 ML live gate
+    if ml_live_gate["active"]:
+        effective_live_passed = live_gate["status"] == "passed" and ml_live_gate["status"] == "passed"
+    else:
+        effective_live_passed = live_gate["status"] == "passed"
     if not _gate_enabled(gate_thresholds, "enable_live_gate") and allowed_to_dry_run:
         live_gate = {"status": "passed", "reasons": [], "disabled": True}
-    allowed_to_live = live_gate["status"] == "passed"
+        effective_live_passed = True
+    allowed_to_live = effective_live_passed
     recommendation_context = _normalize_recommendation_context(item.get("recommendation_context"))
     recommendation_score = _build_recommendation_score(
         raw_score=_to_decimal(item.get("score")),
@@ -116,6 +127,7 @@ def _normalize_candidate(
         "dry_run_gate": dry_run_gate,
         "allowed_to_dry_run": allowed_to_dry_run,
         "live_gate": live_gate,
+        "ml_live_gate": ml_live_gate,
         "allowed_to_live": allowed_to_live,
         "forced_for_validation": False,
         "forced_reason": "",
@@ -271,6 +283,37 @@ def _evaluate_live_gate(
     if failures:
         return {"status": "failed", "reasons": failures}
     return {"status": "passed", "reasons": []}
+
+
+def _evaluate_ml_live_gate(
+    *,
+    ml_prediction: object,
+    thresholds: dict[str, Decimal | int],
+    standard_live_passed: bool,
+) -> dict[str, object]:
+    """ML 专属 Live Gate：要求 ML 预测概率达到最低阈值。
+
+    只有在 ML 预测可用且 ML live gate 启用时才激活。
+    如果候选没有 ML 预测，该门槛自动放行。
+    """
+    if not _gate_enabled(thresholds, "enable_ml_live_gate"):
+        return {"status": "passed", "reasons": [], "active": False}
+    if not ml_prediction:
+        return {"status": "passed", "reasons": ["no_ml_prediction"], "active": False}
+    if not standard_live_passed:
+        return {"status": "failed", "reasons": ["standard_live_not_passed"], "active": True}
+
+    ml = dict(ml_prediction) if isinstance(ml_prediction, dict) else {}
+    probability = _to_decimal(ml.get("probability", 0))
+    min_probability = Decimal(str(thresholds.get("live_min_ml_probability", "0.55")))
+
+    failures: list[str] = []
+    if probability < min_probability:
+        failures.append(f"ml_probability_too_low ({float(probability):.2f} < {float(min_probability):.2f})")
+
+    if failures:
+        return {"status": "failed", "reasons": failures, "active": True}
+    return {"status": "passed", "reasons": [], "active": True}
 
 
 def _evaluate_consistency_gate(
@@ -444,6 +487,8 @@ def _resolve_thresholds(value: dict[str, object] | None, *, research_template: s
         "enable_backtest_gate": _to_bool(payload.get("enable_backtest_gate"), _runtime_bool("enable_backtest_gate", "true")),
         "enable_consistency_gate": _to_bool(payload.get("enable_consistency_gate"), _runtime_bool("enable_consistency_gate", "true")),
         "enable_live_gate": _to_bool(payload.get("enable_live_gate"), _runtime_bool("enable_live_gate", "true")),
+        "enable_ml_live_gate": _to_bool(payload.get("enable_ml_live_gate"), True),
+        "live_min_ml_probability": _to_decimal(payload.get("live_min_ml_probability") or _runtime_decimal("live_min_ml_probability", "0.55")),
         "live_min_score": _to_decimal(payload.get("live_min_score") or _runtime_decimal("live_min_score", "0.65")),
         "live_min_positive_rate": _to_decimal(payload.get("live_min_positive_rate") or _runtime_decimal("live_min_positive_rate", "0.50")),
         "live_min_net_return_pct": _to_decimal(payload.get("live_min_net_return_pct") or _runtime_decimal("live_min_net_return_pct", "0.20")),

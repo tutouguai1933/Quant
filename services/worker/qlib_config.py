@@ -53,6 +53,8 @@ DEFAULT_LIVE_MIN_NET_RETURN_PCT = Decimal("0.20")
 DEFAULT_LIVE_MIN_WIN_RATE = Decimal("0.55")
 DEFAULT_LIVE_MAX_TURNOVER = Decimal("0.45")
 DEFAULT_LIVE_MIN_SAMPLE_COUNT = 24
+DEFAULT_LIVE_MIN_ML_PROBABILITY = Decimal("0.55")
+DEFAULT_ENABLE_ML_LIVE_GATE = True
 DEFAULT_RESEARCH_TEMPLATE = "single_asset_timing"
 DEFAULT_LABEL_MODE = "earliest_hit"
 DEFAULT_LABEL_TRIGGER_BASIS = "close"
@@ -220,6 +222,8 @@ class QlibRuntimeConfig:
     live_min_win_rate: Decimal
     live_max_turnover: Decimal
     live_min_sample_count: int
+    enable_ml_live_gate: bool
+    live_min_ml_probability: Decimal
     signal_confidence_floor: Decimal
     trend_weight: Decimal
     momentum_weight: Decimal
@@ -547,6 +551,17 @@ def load_qlib_config(
         env_name="QUANT_QLIB_LIVE_MIN_SAMPLE_COUNT",
         minimum=3,
     )
+    enable_ml_live_gate = _read_bool(
+        values.get("QUANT_QLIB_ENABLE_ML_LIVE_GATE"),
+        default=DEFAULT_ENABLE_ML_LIVE_GATE,
+    )
+    live_min_ml_probability = _read_decimal(
+        values.get("QUANT_QLIB_LIVE_MIN_ML_PROBABILITY"),
+        default=DEFAULT_LIVE_MIN_ML_PROBABILITY,
+        env_name="QUANT_QLIB_LIVE_MIN_ML_PROBABILITY",
+        minimum=Decimal("0"),
+        maximum=Decimal("1"),
+    )
     signal_confidence_floor = _read_decimal(
         values.get("QUANT_QLIB_SIGNAL_CONFIDENCE_FLOOR"),
         default=DEFAULT_SIGNAL_CONFIDENCE_FLOOR,
@@ -645,6 +660,8 @@ def load_qlib_config(
             "enable_backtest_gate": "true" if enable_backtest_gate else "false",
             "enable_consistency_gate": "true" if enable_consistency_gate else "false",
             "enable_live_gate": "true" if enable_live_gate else "false",
+            "enable_ml_live_gate": "true" if enable_ml_live_gate else "false",
+            "live_min_ml_probability": format(live_min_ml_probability.normalize(), "f"),
             "live_min_win_rate": format(live_min_win_rate.normalize(), "f"),
             "live_max_turnover": format(live_max_turnover.normalize(), "f"),
             "live_min_sample_count": str(live_min_sample_count),
@@ -735,6 +752,8 @@ def load_qlib_config(
             live_min_win_rate=live_min_win_rate,
             live_max_turnover=live_max_turnover,
             live_min_sample_count=live_min_sample_count,
+            enable_ml_live_gate=enable_ml_live_gate,
+            live_min_ml_probability=live_min_ml_probability,
             signal_confidence_floor=signal_confidence_floor,
             trend_weight=trend_weight,
             momentum_weight=momentum_weight,
