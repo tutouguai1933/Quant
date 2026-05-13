@@ -70,37 +70,43 @@ DEFAULT_STRICT_PENALTY_WEIGHT = Decimal("1")
 
 # ML 模型相关默认值
 DEFAULT_MODEL_TYPE = "lightgbm"
-DEFAULT_MODEL_LABEL_THRESHOLD = Decimal("0.0")
+DEFAULT_MODEL_LABEL_THRESHOLD = Decimal("0.5")  # 收益 > 0.5% 才算正样本，减少噪声
 DEFAULT_HYPEROPT_N_TRIALS = 50
 DEFAULT_HYPEROPT_TIMEOUT_SECONDS = 300
 SUPPORTED_MODEL_TYPES = ("lightgbm", "xgboost", "heuristic")
 
-# LightGBM 默认参数
+# LightGBM 默认参数（增加正则化防止过拟合）
 DEFAULT_LIGHTGBM_PARAMS = {
     "objective": "binary",
     "metric": "auc",
     "boosting_type": "gbdt",
-    "num_leaves": 31,
-    "learning_rate": 0.05,
-    "feature_fraction": 0.8,
-    "bagging_fraction": 0.8,
+    "num_leaves": 15,  # 减少复杂度，防止过拟合
+    "learning_rate": 0.03,  # 降低学习率
+    "feature_fraction": 0.7,  # 减少特征使用比例
+    "bagging_fraction": 0.7,  # 减少样本使用比例
     "bagging_freq": 5,
+    "min_child_samples": 20,  # 每个叶子节点最小样本数
+    "reg_alpha": 0.1,  # L1 正则化
+    "reg_lambda": 0.1,  # L2 正则化
     "verbose": -1,
     "n_estimators": 100,
-    "early_stopping_rounds": 10,
+    "early_stopping_rounds": 15,  # 增加早停耐心
     "random_state": 42,
 }
 
-# XGBoost 默认参数
+# XGBoost 默认参数（增加正则化防止过拟合）
 DEFAULT_XGBOOST_PARAMS = {
     "objective": "binary:logistic",
     "eval_metric": "auc",
-    "max_depth": 6,
-    "learning_rate": 0.05,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
+    "max_depth": 4,  # 减少深度
+    "learning_rate": 0.03,  # 降低学习率
+    "subsample": 0.7,  # 减少样本使用比例
+    "colsample_bytree": 0.7,  # 减少特征使用比例
+    "min_child_weight": 5,  # 最小样本权重
+    "reg_alpha": 0.1,  # L1 正则化
+    "reg_lambda": 0.1,  # L2 正则化
     "n_estimators": 100,
-    "early_stopping_rounds": 10,
+    "early_stopping_rounds": 15,
     "random_state": 42,
     "verbosity": 0,
 }
