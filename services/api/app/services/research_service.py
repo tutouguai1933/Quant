@@ -119,15 +119,77 @@ class ResearchService:
             "config_alignment": config_alignment,
         }
 
-    def run_training(self) -> dict[str, object]:
-        """触发一次训练。"""
+    def run_training(self, source: str = "manual") -> dict[str, object]:
+        """触发一次训练。
+
+        Args:
+            source: 训练来源标识 (manual/automation_cycle/hyperopt)
+        """
 
         config = self._load_runtime_config()
         runner = QlibRunner(config=config)
         dataset, market_cache = self._prepare_dataset()
         result = runner.train(dataset)
         result["market_cache"] = market_cache
+
+        # 训练完成后注册到模型表
+        self._register_model(result, source=source)
+
         return result
+
+    def _register_model(self, training_result: dict[str, object], source: str = "manual") -> str | None:
+        """将训练结果注册到模型注册表。
+
+        Args:
+            training_result: 训练结果
+            source: 训练来源
+
+        Returns:
+            str | None: 模型版本 ID，注册失败返回 None
+        """
+        try:
+            from services.worker.model_registry import get_model_registry
+
+            registry = get_model_registry()
+
+            # 提取训练指标
+            metrics_raw = dict(training_result.get("metrics") or {})
+            metrics = {
+                "train_auc": float(metrics_raw.get("train_auc", 0.0) or 0.0),
+                "validation_auc": float(metrics_raw.get("validation_auc", 0.0) or 0.0),
+                "train_f1": float(metrics_raw.get("train_f1", 0.0) or 0.0),
+                "validation_f1": float(metrics_raw.get("validation_f1", 0.0) or 0.0),
+            }
+
+            # 提取训练上下文
+            training_context = {
+                "source": source,
+                "sample_count": training_result.get("sample_count", 0),
+                "feature_count": len(training_result.get("feature_columns", [])),
+                "duration_seconds": training_result.get("training_context", {}).get("duration_seconds"),
+                "model_type": training_result.get("backend", "qlib"),
+                "research_template": training_result.get("research_template", ""),
+                "generated_at": training_result.get("generated_at", ""),
+            }
+
+            # 注册模型
+            artifact_path = training_result.get("artifact_path", "")
+            model_path = Path(artifact_path) if artifact_path else None
+
+            version_id = registry.register(
+                model_path=model_path,
+                model_type=str(training_result.get("backend", "qlib")),
+                metrics=metrics,
+                training_context=training_context,
+                tags=[source],
+                description=f"Trained via {source}",
+            )
+
+            return version_id
+
+        except Exception:
+            # 注册失败不影响训练结果
+            return None
 
     def run_inference(self) -> dict[str, object]:
         """触发一次推理。"""

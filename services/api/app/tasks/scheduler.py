@@ -211,7 +211,8 @@ class TaskScheduler:
         if task_type == "research_train":
             from services.api.app.services.research_service import research_service
 
-            return research_service.run_training()
+            source = str(payload.get("source", "manual"))
+            return research_service.run_training(source=source)
         if task_type == "research_infer":
             from services.api.app.services.research_service import research_service
 

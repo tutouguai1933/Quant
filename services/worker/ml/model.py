@@ -310,6 +310,56 @@ class MLModel:
             importance_type=importance_type,
         )
 
+    def get_feature_contributions(
+        self,
+        X: np.ndarray,
+        top_k: int = 5,
+    ) -> list[dict[str, Any]]:
+        """获取每个样本的特征贡献。
+
+        使用特征值 × 特征重要性作为贡献度的近似估计。
+
+        Args:
+            X: 特征矩阵，形状为 (n_samples, n_features)
+            top_k: 返回贡献最大的前 K 个特征
+
+        Returns:
+            每个样本的特征贡献列表，每个元素为 [{"feature": str, "value": float, "contribution": float}, ...]
+        """
+        if not self._is_fitted:
+            raise RuntimeError("模型尚未训练，请先调用 fit() 方法")
+
+        # 获取全局特征重要性
+        importance = self.get_feature_importance(importance_type="gain")
+        importance_dict = dict(zip(importance.feature_names, importance.importances))
+
+        # 归一化重要性
+        total_importance = sum(importance.importances) or 1.0
+        normalized_importance = {
+            name: imp / total_importance
+            for name, imp in importance_dict.items()
+        }
+
+        results = []
+        for i in range(X.shape[0]):
+            sample = X[i]
+            contributions = []
+
+            for j, name in enumerate(self.feature_names):
+                value = float(sample[j])
+                contrib = value * normalized_importance.get(name, 0.0)
+                contributions.append({
+                    "feature": name,
+                    "value": value,
+                    "contribution": contrib,
+                })
+
+            # 按贡献绝对值排序，取 top_k
+            contributions.sort(key=lambda x: abs(x["contribution"]), reverse=True)
+            results.append(contributions[:top_k])
+
+        return results
+
     def save(self, path: Path) -> None:
         """保存模型到文件。
 

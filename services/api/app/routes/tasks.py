@@ -71,6 +71,7 @@ def run_train_task(
         task_type="research_train",
         source=source,
         target_type="system",
+        payload={"source": source},
     )
     return _success({"item": item}, {"source": "task-scheduler", "action": "research-train"})
 

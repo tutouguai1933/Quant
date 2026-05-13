@@ -78,6 +78,54 @@ def get_production_model() -> dict:
     })
 
 
+@router.get("/training-history")
+def get_training_history(
+    limit: int = 20,
+    source: str | None = None,
+) -> dict:
+    """获取训练历史列表。
+
+    Args:
+        limit: 最大返回数量
+        source: 过滤来源 (manual/automation_cycle/hyperopt)
+    """
+    from services.worker.model_registry import get_model_registry
+
+    registry = get_model_registry()
+
+    # 获取所有模型
+    models = registry.list_models(limit=limit)
+
+    # 过滤来源
+    items = []
+    for m in models:
+        training_source = m.training_context.get("source", "unknown")
+        if source and training_source != source:
+            continue
+
+        items.append({
+            "version_id": m.version_id,
+            "model_type": m.model_type,
+            "source": training_source,
+            "metrics": {
+                "train_auc": m.metrics.get("train_auc"),
+                "validation_auc": m.metrics.get("validation_auc"),
+                "train_f1": m.metrics.get("train_f1"),
+                "validation_f1": m.metrics.get("validation_f1"),
+            },
+            "duration_seconds": m.training_context.get("duration_seconds"),
+            "sample_count": m.training_context.get("sample_count"),
+            "feature_count": m.training_context.get("feature_count"),
+            "stage": m.stage,
+            "created_at": m.created_at.isoformat(),
+        })
+
+    return _success({
+        "items": items,
+        "total": len(items),
+    })
+
+
 @router.get("/compare")
 def compare_ml_models(
     a: str,

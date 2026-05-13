@@ -1,11 +1,12 @@
 /**
  * 模型训练页面
- * 展示 ML 训练结果、训练曲线、特征重要性
+ * 展示 ML 训练结果、生产模型、训练曲线、特征重要性、训练历史
  */
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Brain, Clock, TrendingUp, BarChart3, RefreshCw, AlertTriangle } from "lucide-react";
+import { Brain, Clock, TrendingUp, BarChart3, RefreshCw, AlertTriangle, Zap, History, ChevronRight } from "lucide-react";
+import Link from "next/link";
 
 import {
   TerminalShell,
@@ -20,8 +21,12 @@ import { Button } from "../../components/ui/button";
 import {
   getMLTrainingResult,
   getMLHyperoptStatus,
+  getProductionModel,
+  getTrainingHistory,
   type MLTrainingResult,
   type MLHyperoptProgress,
+  type MLModelRecord,
+  type TrainingHistoryItem,
 } from "../../lib/api";
 
 export default function TrainingPage() {
@@ -29,6 +34,8 @@ export default function TrainingPage() {
   const [error, setError] = useState<string | null>(null);
   const [trainingResult, setTrainingResult] = useState<MLTrainingResult | null>(null);
   const [hyperoptStatus, setHyperoptStatus] = useState<MLHyperoptProgress | null>(null);
+  const [productionModel, setProductionModel] = useState<MLModelRecord | null>(null);
+  const [trainingHistory, setTrainingHistory] = useState<TrainingHistoryItem[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
@@ -44,9 +51,11 @@ export default function TrainingPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [trainingRes, hyperoptRes] = await Promise.all([
+      const [trainingRes, hyperoptRes, productionRes, historyRes] = await Promise.all([
         getMLTrainingResult(),
         getMLHyperoptStatus(),
+        getProductionModel(),
+        getTrainingHistory(10),
       ]);
 
       if (trainingRes.error) {
@@ -58,6 +67,14 @@ export default function TrainingPage() {
       if (!hyperoptRes.error && hyperoptRes.data) {
         setHyperoptStatus(hyperoptRes.data);
       }
+
+      if (!productionRes.error && productionRes.data) {
+        setProductionModel(productionRes.data);
+      }
+
+      if (!historyRes.error && historyRes.data) {
+        setTrainingHistory(historyRes.data.items || []);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "未知错误");
     } finally {
@@ -68,6 +85,19 @@ export default function TrainingPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const formatTime = (isoString: string) => {
+    try {
+      return new Date(isoString).toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "n/a";
+    }
+  };
 
   const metrics = [
     {
@@ -131,6 +161,45 @@ export default function TrainingPage() {
           刷新
         </Button>
       </div>
+
+      {/* 生产模型概览卡片 */}
+      {productionModel && (
+        <TerminalCard className="mb-4 border-green-500/30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Zap className="size-5 text-green-500" />
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">当前生产模型</div>
+                <div className="text-lg font-mono text-[var(--terminal-text)] mt-1">
+                  {productionModel.version_id}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="text-center">
+                <div className="text-[10px] text-[var(--terminal-muted)] uppercase">AUC</div>
+                <div className="text-sm font-mono text-green-500">
+                  {(productionModel.metrics.train_auc || 0).toFixed(4)}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-[var(--terminal-muted)] uppercase">类型</div>
+                <div className="text-sm font-mono">{productionModel.model_type}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-[var(--terminal-muted)] uppercase">训练于</div>
+                <div className="text-sm font-mono">{formatTime(productionModel.created_at)}</div>
+              </div>
+              <Link href="/models">
+                <Button variant="outline" size="sm">
+                  查看全部模型
+                  <ChevronRight className="size-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </TerminalCard>
+      )}
 
       <MetricStrip metrics={metrics} />
 
@@ -201,8 +270,67 @@ export default function TrainingPage() {
             </div>
           </TerminalCard>
 
-          {/* 超参数优化状态 */}
+          {/* 训练历史 */}
           <TerminalCard>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <History className="size-4 text-[var(--terminal-accent)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">训练历史</span>
+              </div>
+              <Link href="/models">
+                <Button variant="ghost" size="sm">
+                  查看全部
+                  <ChevronRight className="size-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+            {trainingHistory.length > 0 ? (
+              <div className="space-y-2">
+                {trainingHistory.map((item) => (
+                  <div
+                    key={item.version_id}
+                    className="flex items-center justify-between p-2 rounded border border-[var(--terminal-border)] hover:bg-[var(--terminal-bg)]/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full ${
+                        item.stage === "production" ? "bg-green-500" :
+                        item.stage === "staging" ? "bg-blue-500" : "bg-gray-500"
+                      }`} />
+                      <div>
+                        <div className="text-xs font-mono">{item.version_id}</div>
+                        <div className="text-[10px] text-[var(--terminal-muted)]">
+                          {item.source === "automation_cycle" ? "自动化周期" :
+                           item.source === "manual" ? "手动触发" :
+                           item.source === "hyperopt" ? "参数优化" : item.source}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs">
+                      <div className="text-right">
+                        <div className="text-[10px] text-[var(--terminal-muted)]">验证 AUC</div>
+                        <div className={`font-mono ${
+                          (item.metrics.validation_auc || 0) > 0.7 ? "text-green-500" : ""
+                        }`}>
+                          {(item.metrics.validation_auc || 0).toFixed(4)}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-[var(--terminal-muted)]">时间</div>
+                        <div className="font-mono">{formatTime(item.created_at)}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-32 items-center justify-center text-[var(--terminal-muted)]">
+                暂无训练历史
+              </div>
+            )}
+          </TerminalCard>
+
+          {/* 超参数优化状态 */}
+          <TerminalCard className="xl:col-span-2">
             <div className="flex items-center gap-3 mb-4">
               <Clock className="size-4 text-[var(--terminal-accent)]" />
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">超参数优化</span>

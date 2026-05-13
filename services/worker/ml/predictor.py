@@ -25,6 +25,7 @@ class PredictionResult:
     confidence: float
     feature_values: dict[str, float]
     model_version: str
+    feature_contributions: list[dict[str, float]] | None = None
 
 
 class ModelPredictor:
@@ -83,6 +84,7 @@ class ModelPredictor:
         feature_row: dict[str, Any],
         feature_columns: tuple[str, ...],
         symbol: str = "",
+        include_contributions: bool = True,
     ) -> PredictionResult:
         """执行推理。
 
@@ -90,6 +92,7 @@ class ModelPredictor:
             feature_row: 特征数据行
             feature_columns: 特征列名
             symbol: 币种符号
+            include_contributions: 是否包含特征贡献
 
         Returns:
             PredictionResult: 推理结果
@@ -116,6 +119,15 @@ class ModelPredictor:
             for col in feature_columns
         }
 
+        # 获取特征贡献
+        feature_contributions = None
+        if include_contributions:
+            try:
+                contributions = self._model.get_feature_contributions(X.reshape(1, -1), top_k=5)
+                feature_contributions = contributions[0] if contributions else None
+            except Exception:
+                feature_contributions = None
+
         return PredictionResult(
             symbol=symbol,
             score=score,
@@ -123,6 +135,7 @@ class ModelPredictor:
             confidence=confidence,
             feature_values=feature_values,
             model_version=self._model_version,
+            feature_contributions=feature_contributions,
         )
 
     def predict_batch(
@@ -130,6 +143,7 @@ class ModelPredictor:
         feature_rows: list[dict[str, Any]],
         feature_columns: tuple[str, ...],
         symbols: list[str] | None = None,
+        include_contributions: bool = True,
     ) -> list[PredictionResult]:
         """批量推理 - 使用向量化提高性能。
 
@@ -137,6 +151,7 @@ class ModelPredictor:
             feature_rows: 特征数据行列表
             feature_columns: 特征列名
             symbols: 币种符号列表
+            include_contributions: 是否包含特征贡献
 
         Returns:
             推理结果列表
@@ -159,6 +174,14 @@ class ModelPredictor:
         # 批量预测
         probas = self._model.predict_proba(X)[:, 1]  # 正类概率
 
+        # 批量获取特征贡献
+        all_contributions = None
+        if include_contributions:
+            try:
+                all_contributions = self._model.get_feature_contributions(X, top_k=5)
+            except Exception:
+                all_contributions = None
+
         # 生成结果
         results = []
         for i, (row, proba) in enumerate(zip(feature_rows, probas)):
@@ -171,6 +194,10 @@ class ModelPredictor:
                 for col in feature_columns
             }
 
+            contributions = None
+            if all_contributions and i < len(all_contributions):
+                contributions = all_contributions[i]
+
             results.append(PredictionResult(
                 symbol=symbols[i] if i < len(symbols) else "",
                 score=score,
@@ -178,6 +205,7 @@ class ModelPredictor:
                 confidence=confidence,
                 feature_values=feature_values,
                 model_version=self._model_version,
+                feature_contributions=contributions,
             ))
 
         return results

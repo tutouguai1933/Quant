@@ -344,7 +344,12 @@ class AutomationWorkflowService:
                 detail=str(retrain_check),
             )
 
-        train_task = self._scheduler.run_named_task(task_type="research_train", source=source, target_type="system")
+        train_task = self._scheduler.run_named_task(
+            task_type="research_train",
+            source=source,
+            target_type="system",
+            payload={"source": source},
+        )
         if train_task["status"] != "succeeded":
             self._automation.record_alert(
                 level="error",

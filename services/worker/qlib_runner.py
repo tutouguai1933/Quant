@@ -156,19 +156,51 @@ class QlibRunner:
         signals: list[dict[str, object]] = []
         candidates: list[dict[str, object]] = []
         symbol_bundles: dict[str, DatasetBundle] = {}
+        metrics = dict(training_payload.get("metrics") or {})
+        model_type = str(metrics.get("model_type", "heuristic"))
+        model_path = str(metrics.get("model_path", ""))
+
         for symbol, market_payload in dataset.items():
             bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
             symbol_bundles[symbol] = bundle
             latest = self._pick_latest_row(bundle)
             if latest is None:
                 continue
-            score = self._score_signal(latest, dict(training_payload.get("metrics") or {}))
+
+            # 尝试获取完整的 ML 预测结果
+            ml_prediction = None
+            if model_type in ("lightgbm", "xgboost") and model_path:
+                try:
+                    ml_prediction = self._get_ml_prediction(latest, model_path)
+                except Exception:
+                    pass
+
+            # 计算分数
+            score = ml_prediction.score if ml_prediction else self._score_signal(latest, metrics)
             confidence = max(score, 1 - score)
             signal = self._classify_signal(score)
             target_weight = self._target_weight(signal, score)
             rule_gate = self._build_rule_gate(latest)
             recommendation_context = self._build_recommendation_context(feature_row=latest)
             strategy_template = self._resolve_strategy_template(feature_row=latest)
+
+            # 构建 ML 预测信息
+            ml_prediction_data = None
+            if ml_prediction:
+                ml_prediction_data = {
+                    "probability": _format_float(ml_prediction.score),
+                    "model_version": str(ml_prediction.model_version or training_payload.get("model_version", "")),
+                    "confidence": _format_float(ml_prediction.confidence),
+                    "feature_contributions": [
+                        {
+                            "feature": item.get("feature", ""),
+                            "value": _format_float(item.get("value", 0.0)),
+                            "contribution": _format_float(item.get("contribution", 0.0)),
+                        }
+                        for item in (ml_prediction.feature_contributions or [])
+                    ],
+                }
+
             signals.append(
                 {
                     "symbol": symbol,
@@ -181,6 +213,7 @@ class QlibRunner:
                     "model_version": str(training_payload.get("model_version", "")),
                     "source": "qlib",
                     "generated_at": _utc_now().isoformat(),
+                    "ml_prediction": ml_prediction_data,
                 }
             )
             candidates.append(
@@ -191,6 +224,7 @@ class QlibRunner:
                     "backtest": self._build_candidate_backtest(rows=bundle.testing_rows),
                     "rule_gate": rule_gate,
                     "recommendation_context": recommendation_context,
+                    "ml_prediction": ml_prediction_data,
                 }
             )
 
@@ -876,6 +910,11 @@ class QlibRunner:
 
     def _score_with_ml_model(self, feature_row: dict[str, object], model_path: str) -> float:
         """使用 ML 模型进行推理。"""
+        result = self._get_ml_prediction(feature_row, model_path)
+        return result.score if result else 0.5
+
+    def _get_ml_prediction(self, feature_row: dict[str, object], model_path: str) -> object | None:
+        """获取完整的 ML 预测结果，包括特征贡献。"""
         from services.worker.ml.predictor import ModelPredictor
 
         predictor = ModelPredictor(
@@ -886,8 +925,9 @@ class QlibRunner:
         result = predictor.predict(
             feature_row=feature_row,
             feature_columns=self._active_primary_feature_columns(),
+            include_contributions=True,
         )
-        return result.score
+        return result
 
     def _score_with_heuristic(self, feature_row: dict[str, object], metrics: dict[str, object]) -> float:
         """使用启发式方法计算分数。"""

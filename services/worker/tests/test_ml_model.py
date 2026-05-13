@@ -82,6 +82,32 @@ class TestMLModel:
         assert len(importance.feature_names) == 5
         assert len(importance.importances) == 5
 
+    def test_get_feature_contributions(self) -> None:
+        """测试特征贡献计算。"""
+        pytest.importorskip("lightgbm")
+
+        model = MLModel(model_type="lightgbm", params={
+            "n_estimators": 10,
+            "verbose": -1,
+        })
+
+        np.random.seed(42)
+        X = np.random.randn(100, 5)
+        y = (X[:, 0] > 0).astype(int)
+
+        model.fit(X, y, feature_names=["a", "b", "c", "d", "e"])
+
+        # 获取单个样本的特征贡献
+        contributions = model.get_feature_contributions(X[:3], top_k=3)
+
+        assert len(contributions) == 3
+        for sample_contrib in contributions:
+            assert len(sample_contrib) == 3  # top_k=3
+            for item in sample_contrib:
+                assert "feature" in item
+                assert "value" in item
+                assert "contribution" in item
+
     def test_save_and_load(self) -> None:
         """测试模型保存和加载。"""
         pytest.importorskip("lightgbm")
@@ -185,6 +211,44 @@ class TestModelPredictor:
             assert prediction.symbol == "TESTUSDT"
             assert 0.0 <= prediction.score <= 1.0
             assert prediction.signal in ("long", "short", "flat")
+
+    def test_predict_with_contributions(self) -> None:
+        """测试带特征贡献的推理。"""
+        pytest.importorskip("lightgbm")
+
+        trainer = ModelTrainer(
+            model_type="lightgbm",
+            model_params={"n_estimators": 10, "verbose": -1},
+        )
+        training_rows = [
+            {"f1": i * 0.1, "f2": i * 0.05, "future_return_pct": 1.0 if i % 2 == 0 else -0.5}
+            for i in range(100)
+        ]
+        result = trainer.train(
+            training_rows=training_rows,
+            validation_rows=[],
+            feature_columns=("f1", "f2"),
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            model_base_path = Path(tmpdir) / "test_model"
+            result.model.save(model_base_path)
+
+            predictor = ModelPredictor(model_path=model_base_path)
+
+            prediction = predictor.predict(
+                feature_row={"f1": 0.5, "f2": 0.25},
+                feature_columns=("f1", "f2"),
+                symbol="TESTUSDT",
+                include_contributions=True,
+            )
+
+            assert prediction.feature_contributions is not None
+            assert len(prediction.feature_contributions) <= 2  # top_k=5, but only 2 features
+            for item in prediction.feature_contributions:
+                assert "feature" in item
+                assert "value" in item
+                assert "contribution" in item
 
 
 class TestModelEvaluator:

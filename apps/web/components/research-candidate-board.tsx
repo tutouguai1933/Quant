@@ -141,6 +141,31 @@ export function ResearchCandidateBoard({
                       <p>回测收益：<span className="text-foreground">{readMetric(item, "total_return_pct", "n/a")}%</span></p>
                       <p>最大回撤：<span className="text-foreground">{readMetric(item, "max_drawdown_pct", "n/a")}%</span></p>
                       <p>Sharpe：<span className="text-foreground">{readMetric(item, "sharpe", "n/a")}</span></p>
+                      {/* ML 预测数据 */}
+                      {item.ml_prediction && (
+                        <>
+                          <p className="sm:col-span-2">
+                            <span className="text-foreground font-medium">ML 预测：</span>
+                            <span className="text-green-400 font-mono ml-1">{item.ml_prediction.probability}</span>
+                            <span className="text-muted-foreground text-xs ml-2">(模型: {item.ml_prediction.model_version})</span>
+                          </p>
+                          {item.ml_prediction.feature_contributions && item.ml_prediction.feature_contributions.length > 0 && (
+                            <p className="sm:col-span-2 text-xs">
+                              <span className="text-muted-foreground">Top 特征：</span>
+                              {item.ml_prediction.feature_contributions.slice(0, 3).map((fc, idx) => (
+                                <span key={fc.feature} className="ml-2">
+                                  <span className="text-foreground">{fc.feature}</span>
+                                  <span className="text-muted-foreground">={fc.value}</span>
+                                  <span className={parseFloat(fc.contribution) >= 0 ? "text-green-400" : "text-red-400"}>
+                                    ({parseFloat(fc.contribution) >= 0 ? "+" : ""}{fc.contribution})
+                                  </span>
+                                  {idx < Math.min(item.ml_prediction!.feature_contributions!.length - 1, 2) && ","}
+                                </span>
+                              ))}
+                            </p>
+                          )}
+                        </>
+                      )}
                     </div>
                     <div className="mt-3 rounded-xl border border-border/60 bg-muted/15 p-3 text-sm text-muted-foreground">
                       失败原因：<span className="text-foreground">{formatReasons(item.dry_run_gate.reasons)}</span>

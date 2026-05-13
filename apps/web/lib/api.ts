@@ -540,6 +540,17 @@ export type LatestResearchResponse = {
   item: LatestResearchItem;
 };
 
+export type MLPredictionData = {
+  probability: string;
+  model_version: string;
+  confidence?: string;
+  feature_contributions?: Array<{
+    feature: string;
+    value: string;
+    contribution: string;
+  }>;
+};
+
 export type ResearchCandidateItem = {
   rank: number;
   symbol: string;
@@ -554,6 +565,7 @@ export type ResearchCandidateItem = {
   next_action: string;
   forced_for_validation: boolean;
   forced_reason: string;
+  ml_prediction?: MLPredictionData;
 };
 
 export type ResearchCandidateSnapshot = {
@@ -5187,6 +5199,46 @@ export async function getMLModels(
     query.set("stage", stage);
   }
   return fetchJson<{ models: MLModelRecord[]; total: number }>(`/ml/models?${query.toString()}`, undefined, signal);
+}
+
+export async function getProductionModel(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<MLModelRecord | null>> {
+  return fetchJson<MLModelRecord | null>("/ml/models/production", undefined, signal);
+}
+
+export type TrainingHistoryItem = {
+  version_id: string;
+  model_type: string;
+  source: string;
+  metrics: {
+    train_auc?: number;
+    validation_auc?: number;
+    train_f1?: number;
+    validation_f1?: number;
+  };
+  duration_seconds?: number;
+  sample_count?: number;
+  feature_count?: number;
+  stage: string;
+  created_at: string;
+};
+
+export async function getTrainingHistory(
+  limit: number = 20,
+  source?: string,
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<{ items: TrainingHistoryItem[]; total: number }>> {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  if (source) {
+    query.set("source", source);
+  }
+  return fetchJson<{ items: TrainingHistoryItem[]; total: number }>(
+    `/ml/models/training-history?${query.toString()}`,
+    undefined,
+    signal,
+  );
 }
 
 export async function getMLModel(
