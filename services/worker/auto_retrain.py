@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,6 +13,8 @@ from typing import Any
 
 from services.worker.model_registry import ModelRegistry, get_model_registry
 from services.worker.qlib_config import QlibRuntimeConfig
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -105,6 +108,8 @@ class AutoRetrainer:
                     triggers.append("performance_drop")
                     reasons.append(f"AUC 下降了 {drop:.4f}，超过阈值 {self._retrain_config.performance_drop_threshold}")
                     metrics["auc_drop"] = drop
+                    # 推送性能下降告警
+                    self._push_performance_drop_alert(last_auc, current_auc, drop)
 
         # 3. 检查样本数量增加
         if current_sample_count is not None and self._last_sample_count > 0:
@@ -149,16 +154,28 @@ class AutoRetrainer:
         self,
         sample_count: int,
         metrics: dict[str, float],
+        trigger: str = "unknown",
+        model_version: str = "",
     ) -> None:
         """记录重训练完成。
 
         Args:
             sample_count: 训练样本数量
             metrics: 训练指标
+            trigger: 触发原因
+            model_version: 模型版本
         """
         self._last_retrain_time = datetime.now(timezone.utc)
         self._last_sample_count = sample_count
         self._last_metrics = dict(metrics)
+
+        # 推送训练完成告警
+        self._push_retrain_completed_alert(
+            model_version=model_version,
+            sample_count=sample_count,
+            metrics=metrics,
+            trigger=trigger,
+        )
 
     def get_status(self) -> dict[str, Any]:
         """获取重训练状态。
@@ -183,6 +200,50 @@ class AutoRetrainer:
                 "min_retrain_interval_hours": self._retrain_config.min_retrain_interval_hours,
             },
         }
+
+    def _push_performance_drop_alert(
+        self,
+        previous_auc: float,
+        current_auc: float,
+        drop: float,
+    ) -> None:
+        """推送模型性能下降告警。"""
+        try:
+            from services.api.app.services.alert_push_service import (
+                push_model_performance_drop_alert,
+            )
+            push_model_performance_drop_alert(
+                model_version="current",
+                previous_auc=previous_auc,
+                current_auc=current_auc,
+                drop_threshold=self._retrain_config.performance_drop_threshold,
+            )
+            logger.info("已推送模型性能下降告警")
+        except Exception as e:
+            logger.warning("推送性能下降告警失败: %s", e)
+
+    def _push_retrain_completed_alert(
+        self,
+        model_version: str,
+        sample_count: int,
+        metrics: dict[str, float],
+        trigger: str,
+    ) -> None:
+        """推送模型重训练完成告警。"""
+        try:
+            from services.api.app.services.alert_push_service import (
+                push_model_retrained_alert,
+            )
+            push_model_retrained_alert(
+                model_version=model_version or "unknown",
+                train_auc=metrics.get("train_auc", 0.0),
+                val_auc=metrics.get("val_auc", 0.0),
+                sample_count=sample_count,
+                trigger=trigger,
+            )
+            logger.info("已推送模型重训练完成告警")
+        except Exception as e:
+            logger.warning("推送重训练完成告警失败: %s", e)
 
 
 # 全局自动重训练器实例

@@ -28,6 +28,9 @@ class AlertEventType(str, Enum):
     RISK_ALERT = "risk_alert"
     NODE_FAILURE = "node_failure"
     SYSTEM_ERROR = "system_error"
+    MODEL_PERFORMANCE_DROP = "model_performance_drop"
+    MODEL_RETRAINED = "model_retrained"
+    MODEL_PROMOTED = "model_promoted"
 
 
 class AlertLevel(str, Enum):
@@ -98,6 +101,9 @@ class AlertMessage:
             AlertEventType.RISK_ALERT: "\U0001F6A8",  # police car light
             AlertEventType.NODE_FAILURE: "\U0001F4A5",  # collision
             AlertEventType.SYSTEM_ERROR: "⚠️",  # warning
+            AlertEventType.MODEL_PERFORMANCE_DROP: "\U0001F4C9",  # chart decreasing
+            AlertEventType.MODEL_RETRAINED: "\U0001F4CA",  # chart
+            AlertEventType.MODEL_PROMOTED: "\U0001F680",  # rocket
         }
 
         emoji = event_emoji.get(self.event_type, "\U0001F514")
@@ -608,5 +614,80 @@ def push_system_error_alert(
         level=AlertLevel.ERROR,
         title="系统异常",
         message=f"{component} 发生异常: {error_message[:100]}",
+        details=details,
+    )
+
+
+def push_model_performance_drop_alert(
+    model_version: str,
+    previous_auc: float,
+    current_auc: float,
+    drop_threshold: float,
+) -> dict[str, Any]:
+    """推送模型性能下降告警。"""
+    drop = previous_auc - current_auc
+    details: dict[str, Any] = {
+        "model_version": model_version,
+        "previous_auc": previous_auc,
+        "current_auc": current_auc,
+        "drop": drop,
+        "threshold": drop_threshold,
+    }
+
+    return push_trade_alert(
+        event_type=AlertEventType.MODEL_PERFORMANCE_DROP,
+        level=AlertLevel.WARNING,
+        title="模型性能下降",
+        message=f"模型 {model_version} AUC 从 {previous_auc:.4f} 下降到 {current_auc:.4f}，下降 {drop:.4f}",
+        details=details,
+    )
+
+
+def push_model_retrained_alert(
+    model_version: str,
+    train_auc: float,
+    val_auc: float,
+    sample_count: int,
+    trigger: str,
+) -> dict[str, Any]:
+    """推送模型重训练完成告警。"""
+    details: dict[str, Any] = {
+        "model_version": model_version,
+        "train_auc": train_auc,
+        "val_auc": val_auc,
+        "sample_count": sample_count,
+        "trigger": trigger,
+    }
+
+    level = AlertLevel.INFO if val_auc >= 0.6 else AlertLevel.WARNING
+
+    return push_trade_alert(
+        event_type=AlertEventType.MODEL_RETRAINED,
+        level=level,
+        title="模型重训练完成",
+        message=f"模型 {model_version} 训练完成，训练集 AUC: {train_auc:.4f}，验证集 AUC: {val_auc:.4f}",
+        details=details,
+    )
+
+
+def push_model_promoted_alert(
+    model_version: str,
+    from_stage: str,
+    to_stage: str,
+    val_auc: float,
+) -> dict[str, Any]:
+    """推送模型提升告警。"""
+    details: dict[str, Any] = {
+        "model_version": model_version,
+        "from_stage": from_stage,
+        "to_stage": to_stage,
+        "val_auc": val_auc,
+    }
+
+    return push_trade_alert(
+        event_type=AlertEventType.MODEL_PROMOTED,
+        level=AlertLevel.INFO,
+        title="模型已提升",
+        message=f"模型 {model_version} 从 {from_stage} 提升到 {to_stage}，验证集 AUC: {val_auc:.4f}",
         details=details,
     )
