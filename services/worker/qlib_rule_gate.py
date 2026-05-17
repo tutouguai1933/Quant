@@ -23,22 +23,46 @@ def evaluate_rule_gate(
     volume_ratio = _to_decimal(feature_row.get("volume_ratio"))
 
     if ema20_gap <= resolved_thresholds["rule_min_ema20_gap_pct"] or ema55_gap <= resolved_thresholds["rule_min_ema55_gap_pct"]:
-        return {"allowed": False, "reason": "trend_broken"}
+        return {
+            "allowed": False,
+            "reason": f"trend_broken (EMA20 gap: {float(ema20_gap):.2f}%, EMA55 gap: {float(ema55_gap):.2f}%)",
+            "ema20_gap_pct": str(ema20_gap),
+            "ema55_gap_pct": str(ema55_gap),
+        }
     if research_template == "single_asset_timing_strict":
         if (
             ema20_gap < resolved_thresholds["strict_rule_min_ema20_gap_pct"]
             or ema55_gap < resolved_thresholds["strict_rule_min_ema55_gap_pct"]
         ):
-            return {"allowed": False, "reason": "strict_template_not_confirmed"}
+            return {
+                "allowed": False,
+                "reason": f"strict_template_not_confirmed (EMA20 gap: {float(ema20_gap):.2f}% < {float(resolved_thresholds['strict_rule_min_ema20_gap_pct']):.2f}%)",
+            }
         if atr_pct >= resolved_thresholds["strict_rule_max_atr_pct"]:
-            return {"allowed": False, "reason": "strict_template_not_confirmed"}
+            return {
+                "allowed": False,
+                "reason": f"strict_template_not_confirmed (ATR: {float(atr_pct):.2f}% >= {float(resolved_thresholds['strict_rule_max_atr_pct']):.2f}%)",
+            }
         if volume_ratio < resolved_thresholds["strict_rule_min_volume_ratio"]:
-            return {"allowed": False, "reason": "strict_template_not_confirmed"}
+            return {
+                "allowed": False,
+                "reason": f"strict_template_not_confirmed (成交量比率: {float(volume_ratio):.2f} < {float(resolved_thresholds['strict_rule_min_volume_ratio']):.2f})",
+            }
         return {"allowed": True, "reason": "ready"}
     if atr_pct >= resolved_thresholds["rule_max_atr_pct"]:
-        return {"allowed": False, "reason": "volatility_too_high", "atr_pct": str(atr_pct)}
+        return {
+            "allowed": False,
+            "reason": f"volatility_too_high (ATR: {float(atr_pct):.2f}% >= 阈值 {float(resolved_thresholds['rule_max_atr_pct']):.2f}%)",
+            "atr_pct": str(atr_pct),
+            "threshold": str(resolved_thresholds["rule_max_atr_pct"]),
+        }
     if volume_ratio < resolved_thresholds["rule_min_volume_ratio"]:
-        return {"allowed": False, "reason": "volume_not_confirmed", "volume_ratio": str(volume_ratio), "threshold": str(resolved_thresholds["rule_min_volume_ratio"])}
+        return {
+            "allowed": False,
+            "reason": f"volume_not_confirmed (成交量比率: {float(volume_ratio):.2f} < 阈值 {float(resolved_thresholds['rule_min_volume_ratio']):.2f})",
+            "volume_ratio": str(volume_ratio),
+            "threshold": str(resolved_thresholds["rule_min_volume_ratio"]),
+        }
     return {"allowed": True, "reason": "ready"}
 
 

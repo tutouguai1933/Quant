@@ -198,20 +198,29 @@ def _evaluate_backtest_gate(metrics: dict[str, object], *, thresholds: dict[str,
     max_loss_streak = _to_int_or_none(metrics.get("max_loss_streak"))
 
     failures: list[str] = []
-    if total_return_pct <= Decimal(str(thresholds["dry_run_min_net_return_pct"])):
-        failures.append("non_positive_return")
-    if max_drawdown_pct < -Decimal(str(thresholds["dry_run_max_drawdown_pct"])):
-        failures.append("drawdown_too_large")
-    if sharpe < Decimal(str(thresholds["dry_run_min_sharpe"])):
-        failures.append("sharpe_too_low")
-    if win_rate < Decimal(str(thresholds["dry_run_min_win_rate"])):
-        failures.append("win_rate_too_low")
-    if turnover > Decimal(str(thresholds["dry_run_max_turnover"])):
-        failures.append("turnover_too_high")
-    if sample_count is None or sample_count < int(thresholds["dry_run_min_sample_count"]):
-        failures.append("sample_count_too_low")
-    if max_loss_streak is not None and max_loss_streak > int(thresholds["dry_run_max_loss_streak"]):
-        failures.append("loss_streak_too_long")
+    threshold_return = Decimal(str(thresholds["dry_run_min_net_return_pct"]))
+    threshold_drawdown = Decimal(str(thresholds["dry_run_max_drawdown_pct"]))
+    threshold_sharpe = Decimal(str(thresholds["dry_run_min_sharpe"]))
+    threshold_win_rate = Decimal(str(thresholds["dry_run_min_win_rate"]))
+    threshold_turnover = Decimal(str(thresholds["dry_run_max_turnover"]))
+    threshold_sample_count = int(thresholds["dry_run_min_sample_count"])
+    threshold_loss_streak = int(thresholds["dry_run_max_loss_streak"])
+
+    if total_return_pct <= threshold_return:
+        failures.append(f"non_positive_return (收益: {float(total_return_pct):.2f}% <= 阈值 {float(threshold_return):.2f}%)")
+    if max_drawdown_pct < -threshold_drawdown:
+        failures.append(f"drawdown_too_large (最大回撤: {float(max_drawdown_pct):.2f}% < -{float(threshold_drawdown):.2f}%)")
+    if sharpe < threshold_sharpe:
+        failures.append(f"sharpe_too_low (Sharpe: {float(sharpe):.3f} < 阈值 {float(threshold_sharpe):.3f})")
+    if win_rate < threshold_win_rate:
+        failures.append(f"win_rate_too_low (胜率: {float(win_rate)*100:.1f}% < 阈值 {float(threshold_win_rate)*100:.1f}%)")
+    if turnover > threshold_turnover:
+        failures.append(f"turnover_too_high (换手率: {float(turnover)*100:.1f}% > 阈值 {float(threshold_turnover)*100:.1f}%)")
+    if sample_count is None or sample_count < threshold_sample_count:
+        actual = sample_count if sample_count is not None else 0
+        failures.append(f"sample_count_too_low (样本数: {actual} < 阈值 {threshold_sample_count})")
+    if max_loss_streak is not None and max_loss_streak > threshold_loss_streak:
+        failures.append(f"loss_streak_too_long (连亏次数: {max_loss_streak} > 阈值 {threshold_loss_streak})")
 
     if failures:
         return {"status": "failed", "reasons": failures}
@@ -229,13 +238,18 @@ def _evaluate_validation_gate(validation: dict[str, object] | None, *, threshold
     positive_rate = _to_decimal(payload.get("positive_rate"))
     avg_future_return_pct = _to_decimal(payload.get("avg_future_return_pct"))
 
+    threshold_sample_count = int(thresholds["validation_min_sample_count"])
+    threshold_positive_rate = Decimal(str(thresholds["dry_run_min_positive_rate"]))
+    threshold_future_return = Decimal(str(thresholds["validation_min_avg_future_return_pct"]))
+
     failures: list[str] = []
-    if sample_count is None or sample_count < int(thresholds["validation_min_sample_count"]):
-        failures.append("validation_sample_count_too_low")
-    if positive_rate < Decimal(str(thresholds["dry_run_min_positive_rate"])):
-        failures.append("validation_positive_rate_too_low")
-    if avg_future_return_pct < Decimal(str(thresholds["validation_min_avg_future_return_pct"])):
-        failures.append("validation_future_return_not_positive")
+    if sample_count is None or sample_count < threshold_sample_count:
+        actual = sample_count if sample_count is not None else 0
+        failures.append(f"validation_sample_count_too_low (验证样本数: {actual} < 阈值 {threshold_sample_count})")
+    if positive_rate < threshold_positive_rate:
+        failures.append(f"validation_positive_rate_too_low (正样本率: {float(positive_rate)*100:.1f}% < 阈值 {float(threshold_positive_rate)*100:.1f}%)")
+    if avg_future_return_pct < threshold_future_return:
+        failures.append(f"validation_future_return_not_positive (平均收益: {float(avg_future_return_pct):.2f}% < 阈值 {float(threshold_future_return):.2f}%)")
 
     if failures:
         return {"status": "failed", "reasons": failures}
@@ -245,8 +259,10 @@ def _evaluate_validation_gate(validation: dict[str, object] | None, *, threshold
 def _evaluate_score_gate(*, score: object, thresholds: dict[str, Decimal | int]) -> dict[str, object]:
     """根据最小分数门判断是否允许进入 dry-run。"""
 
-    if _to_decimal(score) < Decimal(str(thresholds["dry_run_min_score"])):
-        return {"status": "failed", "reasons": ["score_too_low"]}
+    score_value = _to_decimal(score)
+    threshold_score = Decimal(str(thresholds["dry_run_min_score"]))
+    if score_value < threshold_score:
+        return {"status": "failed", "reasons": [f"score_too_low (分数: {float(score_value):.3f} < 阈值 {float(threshold_score):.3f})"]}
     return {"status": "passed", "reasons": []}
 
 
@@ -262,24 +278,36 @@ def _evaluate_live_gate(
 
     if not allowed_to_dry_run:
         return {"status": "failed", "reasons": ["dry_run_gate_not_passed"]}
-    failures: list[str] = []
-    if _to_decimal(score) < Decimal(str(thresholds["live_min_score"])):
-        failures.append("live_score_too_low")
+
+    score_value = _to_decimal(score)
     positive_rate = _to_decimal(dict(validation or {}).get("positive_rate"))
-    if positive_rate < Decimal(str(thresholds["live_min_positive_rate"])):
-        failures.append("live_validation_positive_rate_too_low")
     net_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
-    if net_return_pct < Decimal(str(thresholds["live_min_net_return_pct"])):
-        failures.append("live_net_return_too_low")
     win_rate = _to_decimal(metrics.get("win_rate"))
-    if win_rate < Decimal(str(thresholds["live_min_win_rate"])):
-        failures.append("live_win_rate_too_low")
     turnover = _to_decimal(metrics.get("turnover"))
-    if turnover > Decimal(str(thresholds["live_max_turnover"])):
-        failures.append("live_turnover_too_high")
     sample_count = _to_int_or_none(metrics.get("sample_count"))
-    if sample_count is None or sample_count < int(thresholds["live_min_sample_count"]):
-        failures.append("live_sample_count_too_low")
+
+    threshold_score = Decimal(str(thresholds["live_min_score"]))
+    threshold_positive_rate = Decimal(str(thresholds["live_min_positive_rate"]))
+    threshold_net_return = Decimal(str(thresholds["live_min_net_return_pct"]))
+    threshold_win_rate = Decimal(str(thresholds["live_min_win_rate"]))
+    threshold_turnover = Decimal(str(thresholds["live_max_turnover"]))
+    threshold_sample_count = int(thresholds["live_min_sample_count"])
+
+    failures: list[str] = []
+    if score_value < threshold_score:
+        failures.append(f"live_score_too_low (分数: {float(score_value):.3f} < 阈值 {float(threshold_score):.3f})")
+    if positive_rate < threshold_positive_rate:
+        failures.append(f"live_validation_positive_rate_too_low (正样本率: {float(positive_rate)*100:.1f}% < 阈值 {float(threshold_positive_rate)*100:.1f}%)")
+    if net_return_pct < threshold_net_return:
+        failures.append(f"live_net_return_too_low (净收益: {float(net_return_pct):.2f}% < 阈值 {float(threshold_net_return):.2f}%)")
+    if win_rate < threshold_win_rate:
+        failures.append(f"live_win_rate_too_low (胜率: {float(win_rate)*100:.1f}% < 阈值 {float(threshold_win_rate)*100:.1f}%)")
+    if turnover > threshold_turnover:
+        failures.append(f"live_turnover_too_high (换手率: {float(turnover)*100:.1f}% > 阈值 {float(threshold_turnover)*100:.1f}%)")
+    if sample_count is None or sample_count < threshold_sample_count:
+        actual = sample_count if sample_count is not None else 0
+        failures.append(f"live_sample_count_too_low (样本数: {actual} < 阈值 {threshold_sample_count})")
+
     if failures:
         return {"status": "failed", "reasons": failures}
     return {"status": "passed", "reasons": []}
@@ -309,7 +337,7 @@ def _evaluate_ml_live_gate(
 
     failures: list[str] = []
     if probability < min_probability:
-        failures.append(f"ml_probability_too_low ({float(probability):.2f} < {float(min_probability):.2f})")
+        failures.append(f"ml_probability_too_low (ML预测概率: {float(probability):.2%} < 阈值 {float(min_probability):.2%})")
 
     if failures:
         return {"status": "failed", "reasons": failures, "active": True}
@@ -343,18 +371,22 @@ def _evaluate_consistency_gate(
     max_training_validation_return_gap_pct = Decimal(str(thresholds["consistency_max_training_validation_return_gap_pct"]))
 
     if validation_avg > Decimal("0") and avg_net_return_pct <= Decimal("0"):
-        failures.append("validation_backtest_drift_too_large")
+        failures.append(f"validation_backtest_drift_too_large (验证收益 {float(validation_avg):.2f}% vs 回测收益 {float(avg_net_return_pct):.2f}%)")
     elif (validation_avg - avg_net_return_pct) > max_validation_backtest_gap:
-        failures.append("validation_backtest_drift_too_large")
+        gap = float(validation_avg - avg_net_return_pct)
+        failures.append(f"validation_backtest_drift_too_large (漂移: {gap:.2f}% > 阈值 {float(max_validation_backtest_gap):.2f}%)")
+
     training_payload = dict(training_metrics or {})
     training_positive_rate = _to_decimal(training_payload.get("positive_rate"))
     validation_positive_rate = _to_decimal(payload.get("positive_rate"))
     training_avg = _to_decimal(training_payload.get("avg_future_return_pct"))
     if training_payload:
-        if (training_positive_rate - validation_positive_rate) > max_training_validation_positive_rate_gap:
-            failures.append("validation_training_drift_too_large")
-        if (training_avg - validation_avg) > max_training_validation_return_gap_pct:
-            failures.append("validation_training_drift_too_large")
+        positive_rate_gap = training_positive_rate - validation_positive_rate
+        if positive_rate_gap > max_training_validation_positive_rate_gap:
+            failures.append(f"validation_training_drift_too_large (正样本率漂移: {float(positive_rate_gap)*100:.1f}% > 阈值 {float(max_training_validation_positive_rate_gap)*100:.1f}%)")
+        return_gap = training_avg - validation_avg
+        if return_gap > max_training_validation_return_gap_pct:
+            failures.append(f"validation_training_drift_too_large (收益漂移: {float(return_gap):.2f}% > 阈值 {float(max_training_validation_return_gap_pct):.2f}%)")
 
     if failures:
         return {"status": "failed", "reasons": failures}
