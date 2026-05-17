@@ -13,6 +13,7 @@ from typing import Any
 import json
 import logging
 import threading
+import concurrent.futures
 
 from services.api.app.services.alert_push_service import (
     AlertEventType,
@@ -50,6 +51,9 @@ class OpenclawPatrolService:
     THROTTLE_WINDOW_SECONDS = 3600  # 1小时窗口
     MAX_ACTION_COUNT_PER_WINDOW = 3  # 同一动作每小时最多执行3次
     MAX_CONSECUTIVE_FAILURES = 2     # 连续失败2次后停止自动执行
+
+    # 动作执行超时配置
+    ACTION_TIMEOUT_SECONDS = 120  # 单个动作最长执行时间 2 分钟
 
     # 告警阈值
     ALERT_THRESHOLD = 5               # 告警数超过5条触发清理
@@ -358,16 +362,43 @@ class OpenclawPatrolService:
         if action == "run_cycle" and auto_run_allowed:
             can_execute, reason = self._can_execute_action("automation_run_cycle")
             if can_execute:
-                result = self._action_service.execute_action("automation_run_cycle")
-                success = bool(result.get("success"))
-                self._record_action_result("automation_run_cycle", success)
-                return {
-                    "action_taken": True,
-                    "action": "automation_run_cycle",
-                    "success": success,
-                    "message": "周期就绪，已执行自动化周期",
-                    "patrol_status": "action_taken",
-                }
+                # 使用线程池执行，带超时保护
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(
+                            self._action_service.execute_action,
+                            "automation_run_cycle"
+                        )
+                        result = future.result(timeout=self.ACTION_TIMEOUT_SECONDS)
+                        success = bool(result.get("success"))
+                        self._record_action_result("automation_run_cycle", success)
+                        return {
+                            "action_taken": True,
+                            "action": "automation_run_cycle",
+                            "success": success,
+                            "message": "周期就绪，已执行自动化周期",
+                            "patrol_status": "action_taken",
+                        }
+                except concurrent.futures.TimeoutError:
+                    logger.error("automation_run_cycle 执行超时 (%s 秒)", self.ACTION_TIMEOUT_SECONDS)
+                    self._record_action_result("automation_run_cycle", False)
+                    return {
+                        "action_taken": False,
+                        "action": "automation_run_cycle",
+                        "blocked_reason": f"执行超时 ({self.ACTION_TIMEOUT_SECONDS}秒)",
+                        "message": f"自动化周期执行超时，已终止",
+                        "patrol_status": "timeout",
+                    }
+                except Exception as e:
+                    logger.exception("automation_run_cycle 执行异常: %s", e)
+                    self._record_action_result("automation_run_cycle", False)
+                    return {
+                        "action_taken": False,
+                        "action": "automation_run_cycle",
+                        "blocked_reason": str(e),
+                        "message": f"自动化周期执行异常: {e}",
+                        "patrol_status": "error",
+                    }
             else:
                 return {
                     "action_taken": False,
