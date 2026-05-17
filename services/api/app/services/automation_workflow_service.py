@@ -266,27 +266,8 @@ class AutomationWorkflowService:
             self._automation.record_cycle(summary, count_towards_daily=False)
             return summary
 
-        daily_limit = int(operations.get("max_daily_cycle_count", 8) or 8)
-        current_cycle_count = int((state.get("daily_summary") or {}).get("cycle_count", 0) or 0)
-        if current_cycle_count >= daily_limit:
-            self._automation.record_alert(
-                level="warning",
-                code="daily_cycle_limit_reached",
-                message="今日自动化轮次已达到上限",
-                source=source,
-                detail=str(current_cycle_count),
-            )
-            summary = {
-                "status": "waiting",
-                "mode": mode,
-                "recommended_symbol": "",
-                "next_action": "wait_next_window",
-                "message": f"今日轮次上限已用完（{current_cycle_count}/{daily_limit}），先等下一轮窗口再继续。",
-                "failure_reason": "daily_cycle_limit_reached",
-                "armed_symbol": armed_symbol,
-            }
-            self._automation.record_cycle(summary, count_towards_daily=False)
-            return summary
+        # 每日轮次限制已移除，只保留冷却时间控制
+        # 每 15 分钟一次的周期不需要次数限制
 
         cooldown_minutes = int(operations.get("cycle_cooldown_minutes", 15) or 0)
         cooldown_remaining = self._resolve_cooldown_remaining_minutes(last_cycle=dict(state.get("last_cycle") or {}), cooldown_minutes=cooldown_minutes)
@@ -776,14 +757,11 @@ class AutomationWorkflowService:
             degrade_mode = "manual_only"
             status = "ready"
             degrade_reason = "手动模式下系统不会自动推进"
-        # 如果在等待窗口（冷却或日限），进入 window_wait 模式
-        elif blocked_reason in {"cooldown_active", "daily_limit_reached"}:
+        # 如果在冷却窗口，进入 window_wait 模式
+        elif blocked_reason == "cooldown_active":
             degrade_mode = "window_wait"
             status = "waiting"
-            if blocked_reason == "cooldown_active":
-                degrade_reason = "冷却窗口未结束，需等待后才能继续"
-            else:
-                degrade_reason = "今日轮次已用完，需等待下一轮时间窗口"
+            degrade_reason = "冷却窗口未结束，需等待后才能继续"
         # 否则进入 full 模式
         else:
             degrade_mode = "full"
@@ -869,12 +847,7 @@ class AutomationWorkflowService:
                 "label": "冷却窗口中",
                 "severity": "info",
             })
-        if blocked_reason == "daily_limit_reached":
-            blockers.append({
-                "code": "daily_limit_reached",
-                "label": "今日轮次已用完",
-                "severity": "info",
-            })
+        # 每日轮次限制已移除，不再检查 daily_limit_reached
         if automation_cycle_running:
             blockers.append({
                 "code": "automation_cycle_running",
@@ -905,9 +878,6 @@ class AutomationWorkflowService:
             if blocked_reason == "cooldown_active":
                 suggested_action = "wait_cooldown"
                 suggested_action_reason = "冷却窗口中，等待冷却结束后可继续"
-            elif blocked_reason == "daily_limit_reached":
-                suggested_action = "wait_next_window"
-                suggested_action_reason = "今日轮次已用完，等待下一轮时间窗口"
             else:
                 suggested_action = "wait"
                 suggested_action_reason = "等待条件满足后可继续"
@@ -972,9 +942,8 @@ class AutomationWorkflowService:
         """整理长期运行窗口，方便页面说明当前还能不能继续跑下一轮。"""
 
         daily_summary = dict(state.get("daily_summary") or {})
-        daily_limit = int(operations.get("max_daily_cycle_count", 8) or 8)
         current_cycle_count = int(daily_summary.get("cycle_count", 0) or 0)
-        remaining_daily_cycle_count = max(daily_limit - current_cycle_count, 0)
+        # 每日轮次限制已移除，只保留冷却时间控制
         cooldown_minutes = int(operations.get("cycle_cooldown_minutes", 15) or 0)
         cooldown_remaining_minutes = cls._resolve_cooldown_remaining_minutes(
             last_cycle=dict(state.get("last_cycle") or {}),
@@ -1005,9 +974,6 @@ class AutomationWorkflowService:
         elif mode == "manual":
             next_action = "manual_review"
             note = "当前处于手动模式，只有切回自动模式后系统才会继续自动推进。"
-        elif remaining_daily_cycle_count <= 0:
-            next_action = "wait_next_window"
-            note = "今日轮次已用完，先等下一轮时间窗口。"
         elif cooldown_remaining_minutes > 0:
             next_action = "wait_cooldown"
             note = f"冷却中，约 {cooldown_remaining_minutes} 分钟后可继续。"
@@ -1030,11 +996,10 @@ class AutomationWorkflowService:
             blocked_reason = "paused_waiting_review"
         elif mode == "manual":
             blocked_reason = "manual_mode"
-        elif remaining_daily_cycle_count <= 0:
-            blocked_reason = "daily_limit_reached"
         elif cooldown_remaining_minutes > 0:
             blocked_reason = "cooldown_active"
-        ready_for_cycle = not paused and mode != "manual" and remaining_daily_cycle_count > 0 and cooldown_remaining_minutes <= 0
+        # 每日轮次限制已移除，只检查冷却时间
+        ready_for_cycle = not paused and mode != "manual" and cooldown_remaining_minutes <= 0
         story = cls._build_runtime_window_story(
             next_action=next_action,
             blocked_reason=blocked_reason,
@@ -1046,8 +1011,6 @@ class AutomationWorkflowService:
         )
         return {
             "current_cycle_count": current_cycle_count,
-            "daily_limit": daily_limit,
-            "remaining_daily_cycle_count": remaining_daily_cycle_count,
             "cooldown_minutes": cooldown_minutes,
             "cooldown_remaining_minutes": cooldown_remaining_minutes,
             "long_run_seconds": long_run_seconds,
@@ -1112,14 +1075,7 @@ class AutomationWorkflowService:
                 "why_not_resume": "为什么现在不能恢复：当前不是暂停恢复问题，而是系统本来就在手动模式。",
                 "next_step": f"恢复前先做什么：{note or '先人工确认，再决定是否切回自动模式。'}",
             }
-        if blocked_reason == "daily_limit_reached":
-            return {
-                "headline": "今日自动化轮次已经用完",
-                "what_waiting_for": "系统现在在等下一个时间窗口，今天不会再自动推进更多轮次。",
-                "when_it_runs": "下一步什么时候跑：等到新的日内窗口后，才会继续下一轮。",
-                "why_not_resume": "为什么现在不能恢复：不是按钮没生效，而是今日轮次上限已经触发。",
-                "next_step": f"恢复前先做什么：{note or '先等下一轮时间窗口。'}",
-            }
+        # 每日轮次限制已移除
         if blocked_reason == "cooldown_active":
             when_text = (
                 f"下一步什么时候跑：最早 {next_run_label} 后才能继续，当前还要等约 {cooldown_remaining_minutes} 分钟。"
@@ -1194,9 +1150,7 @@ class AutomationWorkflowService:
         elif blocked_reason == "paused_waiting_review":
             waiting_for = "paused_review"
             waiting_for_label = "系统在等暂停原因复核完成"
-        elif blocked_reason == "daily_limit_reached":
-            waiting_for = "next_daily_window"
-            waiting_for_label = "系统在等下一日调度窗口"
+        # 每日轮次限制已移除
         elif blocked_reason == "cooldown_active":
             waiting_for = "cooldown_window"
             waiting_for_label = "系统在等冷却窗口结束"
@@ -1246,8 +1200,7 @@ class AutomationWorkflowService:
             cannot_resume_reason = "当前不需要点恢复按钮，系统已经可以直接继续下一轮。"
         elif not resume_needed and blocked_reason == "cooldown_active":
             cannot_resume_reason = "当前不需要点恢复按钮，系统会在冷却结束后自动具备继续条件。"
-        elif not resume_needed and blocked_reason == "daily_limit_reached":
-            cannot_resume_reason = "当前不需要点恢复按钮，系统会等下一日窗口后再继续下一轮。"
+        # 每日轮次限制已移除
         else:
             cannot_resume_reason = str(story.get("why_not_resume", "") or "当前没有额外恢复限制说明。")
         if recovery_state == "dry_run_only":
@@ -1256,8 +1209,7 @@ class AutomationWorkflowService:
             earliest_continue_text = "切回自动模式后可继续。"
         elif next_run_at:
             earliest_continue_text = f"最早可在 {cls._format_runtime_deadline(next_run_at)} 继续。"
-        elif blocked_reason == "daily_limit_reached":
-            earliest_continue_text = "需等到下一日窗口后继续。"
+        # 每日轮次限制已移除
         elif blocked_items:
             earliest_continue_text = "处理完当前阻塞后可立即继续。"
         else:
@@ -1321,7 +1273,7 @@ class AutomationWorkflowService:
             status = "ready"
         elif mode == "manual":
             status = "blocked"
-        elif runtime_guard_status in {"cooldown_active", "daily_limit_reached"}:
+        elif runtime_guard_status == "cooldown_active":
             status = "waiting"
         elif ready_for_cycle:
             status = "ready"
@@ -1338,8 +1290,7 @@ class AutomationWorkflowService:
             issue_code = "paused_review"
         elif runtime_guard_status == "cooldown_active":
             issue_code = "cooldown_active"
-        elif runtime_guard_status == "daily_limit_reached":
-            issue_code = "daily_limit_reached"
+        # 每日轮次限制已移除
         elif mode == "manual":
             issue_code = "manual_mode"
 
@@ -1350,9 +1301,7 @@ class AutomationWorkflowService:
             detail = "系统正在执行自动化工作流，请等待当前周期完成。"
         elif connection_status == "disconnected" or execution_status == "unavailable":
             detail = str(execution_health.get("detail", "执行同步暂时不可用，请先检查执行器和账户同步。"))
-        elif runtime_guard_status == "daily_limit_reached":
-            # 对于日限的情况，使用固定文本
-            detail = "需等到下一日窗口后继续。"
+        # 每日轮次限制已移除
         elif runtime_guard_status == "cooldown_active":
             # 对于冷却的情况，使用 note（包含冷却时间）
             detail = str(runtime_window.get("note", ""))
@@ -1591,7 +1540,8 @@ class AutomationWorkflowService:
             "review_limit": int(operations.get("review_limit", 10) or 10),
             "comparison_run_limit": int(operations.get("comparison_run_limit", 5) or 5),
             "cycle_cooldown_minutes": int(operations.get("cycle_cooldown_minutes", 15) or 0),
-            "max_daily_cycle_count": int(operations.get("max_daily_cycle_count", 8) or 8),
+            # 每日轮次限制已移除，保留配置字段但设为无限制
+            "max_daily_cycle_count": 999,
         }
 
     @staticmethod
