@@ -35,6 +35,7 @@ FACTOR_DEFINITIONS = (
         "description": "最近一根 K 线的收盘变化，用来观察短期动量。",
         "neutral": "0",
         "clip": ("-50", "50"),
+        "enabled": False,  # 特征重要性为 0，已禁用
     },
     {
         "name": "range_pct",
@@ -44,6 +45,7 @@ FACTOR_DEFINITIONS = (
         "description": "单根 K 线振幅，用来判断波动环境是否扩大。",
         "neutral": "0",
         "clip": ("0", "100"),
+        "enabled": False,  # 特征重要性为 0，已禁用
     },
     {
         "name": "body_pct",
@@ -98,6 +100,7 @@ FACTOR_DEFINITIONS = (
         "description": "ATR 相对价格的比例，用来评估波动与止损空间。",
         "neutral": "0",
         "clip": ("0", "100"),
+        "enabled": False,  # 特征重要性为 0，已禁用
     },
     {
         "name": "breakout_strength",
@@ -116,6 +119,7 @@ FACTOR_DEFINITIONS = (
         "description": "一段窗口内的价格变化率，用来判断推进速度是否持续。",
         "neutral": "0",
         "clip": ("-100", "100"),
+        "enabled": False,  # 特征重要性为 0，已禁用
     },
     # 新增因子 - 趋势强度
     {
@@ -136,6 +140,7 @@ FACTOR_DEFINITIONS = (
         "description": "动量加速度，判断趋势是否在加速或减速。",
         "neutral": "0",
         "clip": ("-100", "100"),
+        "enabled": False,  # 特征重要性为 0，已禁用
     },
     # 新增因子 - 波动收缩
     {
@@ -221,8 +226,8 @@ TIMEFRAME_PROFILES = {
     },
 }
 
-PRIMARY_FEATURE_COLUMNS = tuple(item["name"] for item in FACTOR_DEFINITIONS if item["role"] == "primary")
-AUXILIARY_FEATURE_COLUMNS = tuple(item["name"] for item in FACTOR_DEFINITIONS if item["role"] == "auxiliary")
+PRIMARY_FEATURE_COLUMNS = tuple(item["name"] for item in FACTOR_DEFINITIONS if item["role"] == "primary" and item.get("enabled", True))
+AUXILIARY_FEATURE_COLUMNS = tuple(item["name"] for item in FACTOR_DEFINITIONS if item["role"] == "auxiliary" and item.get("enabled", True))
 FEATURE_COLUMNS = ("symbol", "generated_at", *PRIMARY_FEATURE_COLUMNS, *AUXILIARY_FEATURE_COLUMNS)
 FACTOR_METADATA = {item["name"]: item for item in FACTOR_DEFINITIONS}
 FEATURE_PROTOCOL = {
