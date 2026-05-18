@@ -5,13 +5,16 @@
  * 支持按策略筛选交易记录：
  * - EnhancedStrategy: strategy="EnhancedStrategy" 且 enter_tag 为空
  * - 自动化周期: enter_tag="quant-control-plane"
+ * 支持分页，每页5条，倒序排列
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { getFreqtradeTrades, type FreqtradeTrade } from "../lib/api";
 import { TerminalCard } from "./terminal";
 
 type StrategyType = "enhanced" | "automation";
+
+const PAGE_SIZE = 5;
 
 interface TradeHistorySummaryCardProps {
   strategyType: StrategyType;
@@ -26,6 +29,7 @@ export function TradeHistorySummaryCard({
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const getTitle = () => {
     return strategyType === "enhanced" ? "EnhancedStrategy 交易" : "自动化周期交易";
@@ -36,7 +40,7 @@ export function TradeHistorySummaryCard({
 
     async function fetchData() {
       try {
-        const response = await getFreqtradeTrades(100);
+        const response = await getFreqtradeTrades(200);
         if (cancelled) return;
 
         if (response.error) {
@@ -55,7 +59,14 @@ export function TradeHistorySummaryCard({
             }
           });
 
-          setItems(filteredTrades);
+          // 按时间倒序排列（最新的在前）
+          const sortedTrades = filteredTrades.sort((a, b) => {
+            const dateA = new Date(a.close_date || a.open_date).getTime();
+            const dateB = new Date(b.close_date || b.open_date).getTime();
+            return dateB - dateA;
+          });
+
+          setItems(sortedTrades);
           setLastUpdate(new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai" }));
           setError(null);
         }
@@ -77,6 +88,18 @@ export function TradeHistorySummaryCard({
       clearInterval(interval);
     };
   }, [strategyType, refreshInterval]);
+
+  // 分页数据
+  const totalPages = Math.ceil(items.length / PAGE_SIZE);
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return items.slice(start, start + PAGE_SIZE);
+  }, [items, page]);
+
+  // 重置页码当数据变化
+  useEffect(() => {
+    setPage(1);
+  }, [strategyType]);
 
   const formatPnL = (pnlPct: number) => {
     const sign = pnlPct >= 0 ? "+" : "";
@@ -155,7 +178,7 @@ export function TradeHistorySummaryCard({
               </tr>
             </thead>
             <tbody>
-              {items.slice(0, 5).map((item) => (
+              {paginatedItems.map((item) => (
                 <tr key={item.trade_id} className="border-b border-[var(--terminal-border)]/50 hover:bg-[var(--terminal-border)]/10">
                   <td className="py-2 text-xs text-[var(--terminal-muted)]">
                     {item.close_date || item.open_date}
@@ -179,9 +202,29 @@ export function TradeHistorySummaryCard({
               ))}
             </tbody>
           </table>
-          {items.length > 5 && (
-            <div className="text-xs text-[var(--terminal-muted)] mt-2">
-              显示最近 5 条，共 {items.length} 条
+
+          {/* 分页控件 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-3 pt-2 border-t border-[var(--terminal-border)]/30">
+              <div className="text-xs text-[var(--terminal-muted)]">
+                第 {page}/{totalPages} 页，共 {items.length} 条
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-2 py-1 text-xs rounded border border-[var(--terminal-border)] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--terminal-border)]/20 transition-colors"
+                >
+                  上一页
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="px-2 py-1 text-xs rounded border border-[var(--terminal-border)] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[var(--terminal-border)]/20 transition-colors"
+                >
+                  下一页
+                </button>
+              </div>
             </div>
           )}
         </div>
