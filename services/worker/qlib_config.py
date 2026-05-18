@@ -72,7 +72,7 @@ DEFAULT_STRICT_PENALTY_WEIGHT = Decimal("1")
 
 # ML 模型相关默认值
 DEFAULT_MODEL_TYPE = "lightgbm"
-DEFAULT_MODEL_LABEL_THRESHOLD = Decimal("1.5")  # 收益 > 1.5% 才算正样本，减少噪声
+DEFAULT_MODEL_LABEL_THRESHOLD = Decimal("1.0")  # 收益 > 1.0% 才算正样本，减少噪声
 DEFAULT_HYPEROPT_N_TRIALS = 50
 DEFAULT_HYPEROPT_TIMEOUT_SECONDS = 300
 SUPPORTED_MODEL_TYPES = ("lightgbm", "xgboost", "heuristic")
