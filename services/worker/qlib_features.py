@@ -224,6 +224,17 @@ TIMEFRAME_PROFILES = {
         "stoch_period": 21,
         "breakout_lookback": 24,
     },
+    "15m": {
+        "profile": "intraday",
+        "trend_window": 48,  # 48 * 15min = 12小时
+        "volume_window": 48,
+        "atr_period": 96,  # 96 * 15min = 24小时
+        "rsi_period": 84,
+        "roc_period": 72,
+        "cci_period": 120,
+        "stoch_period": 84,
+        "breakout_lookback": 96,
+    },
 }
 
 PRIMARY_FEATURE_COLUMNS = tuple(item["name"] for item in FACTOR_DEFINITIONS if item["role"] == "primary" and item.get("enabled", True))
@@ -430,7 +441,9 @@ def _infer_timeframe(candles: list[dict[str, Decimal | int]]) -> str:
     step_ms = max(0, second - first)
     if step_ms >= 4 * 60 * 60 * 1000:
         return "4h"
-    return "1h"
+    if step_ms >= 60 * 60 * 1000:
+        return "1h"
+    return "15m"
 
 
 def _resolve_timeframe_profile(

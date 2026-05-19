@@ -1127,7 +1127,7 @@ def _read_timeframe_list(value: str | None) -> tuple[str, ...]:
     raw = str(value).strip()
     if not raw:
         return ()
-    items = [item.strip() for item in raw.split(",") if item.strip() in {"1h", "4h"}]
+    items = [item.strip() for item in raw.split(",") if item.strip() in {"1h", "4h", "15m"}]
     deduplicated: list[str] = []
     for item in items:
         if item not in deduplicated:

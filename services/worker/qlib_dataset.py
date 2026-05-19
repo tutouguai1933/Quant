@@ -35,6 +35,7 @@ def build_dataset_bundle(
     symbol: str,
     candles_1h: list[dict[str, object]],
     candles_4h: list[dict[str, object]],
+    candles_15m: list[dict[str, object]] | None = None,
     label_mode: str = "earliest_hit",
     trigger_basis: str = "close",
     outlier_policy: str = "clip",
@@ -59,10 +60,12 @@ def build_dataset_bundle(
     standardized_symbol = _normalize_symbol(symbol)
     fixed_window_requested = window_mode == "fixed" and bool(str(start_date or "").strip() or str(end_date or "").strip())
     candidates = []
-    if candles_4h:
-        candidates.append(("4h", candles_4h))
     if candles_1h:
         candidates.append(("1h", candles_1h))
+    if candles_15m:
+        candidates.append(("15m", candles_15m))
+    if candles_4h:
+        candidates.append(("4h", candles_4h))
     if not candidates:
         raise RuntimeError("没有可用的研究 K 线样本")
     split_ratios = _resolve_split_ratios(

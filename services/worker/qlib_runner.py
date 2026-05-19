@@ -391,8 +391,8 @@ class QlibRunner:
     def _build_symbol_dataset_bundle(self, *, symbol: str, market_payload: object) -> DatasetBundle:
         """把单个币种的输入统一转换成数据集包。"""
 
-        candles_1h, candles_4h = self._extract_timeframe_candles(market_payload)
-        cache_key = self._build_dataset_cache_key(symbol=symbol, candles_1h=candles_1h, candles_4h=candles_4h)
+        candles_1h, candles_4h, candles_15m = self._extract_timeframe_candles(market_payload)
+        cache_key = self._build_dataset_cache_key(symbol=symbol, candles_1h=candles_1h, candles_4h=candles_4h, candles_15m=candles_15m)
         cache_path = self._config.paths.dataset_cache_dir / f"{cache_key}.json"
         cached_payload = self._read_json(cache_path)
         if cached_payload:
@@ -408,6 +408,7 @@ class QlibRunner:
                 "symbol": symbol,
                 "candles_1h": candles_1h,
                 "candles_4h": candles_4h,
+                "candles_15m": candles_15m,
                 "label_mode": self._config.label_mode,
                 "trigger_basis": self._config.label_trigger_basis,
                 "missing_policy": self._config.missing_policy,
@@ -479,21 +480,24 @@ class QlibRunner:
     def _extract_timeframe_candles(
         self,
         market_payload: object,
-    ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
         """兼容旧输入和多周期输入。"""
 
         if isinstance(market_payload, dict):
             candles_1h = list(market_payload.get("candles_1h") or [])
             candles_4h = list(market_payload.get("candles_4h") or [])
-            if candles_1h or candles_4h:
-                return candles_1h, candles_4h
+            candles_15m = list(market_payload.get("candles_15m") or [])
+            if candles_1h or candles_4h or candles_15m:
+                return candles_1h, candles_4h, candles_15m
 
         candles = list(market_payload) if isinstance(market_payload, list) else []
         if not candles:
-            return [], []
+            return [], [], []
         if self._infer_timeframe(candles) == "4h":
-            return [], candles
-        return candles, []
+            return [], candles, []
+        if self._infer_timeframe(candles) == "15m":
+            return [], [], candles
+        return candles, [], []
 
     def _build_dataset_cache_key(
         self,
@@ -501,6 +505,7 @@ class QlibRunner:
         symbol: str,
         candles_1h: list[dict[str, object]],
         candles_4h: list[dict[str, object]],
+        candles_15m: list[dict[str, object]],
     ) -> str:
         """根据输入 K 线构造稳定缓存键。"""
 
@@ -508,6 +513,7 @@ class QlibRunner:
             "symbol": symbol.strip().upper(),
             "candles_1h": candles_1h,
             "candles_4h": candles_4h,
+            "candles_15m": candles_15m,
             "label_config": {
                 "research_template": self._config.research_template,
                 "label_mode": self._config.label_mode,
@@ -542,7 +548,9 @@ class QlibRunner:
         step_ms = max(0, second - first)
         if step_ms >= 4 * 60 * 60 * 1000:
             return "4h"
-        return "1h"
+        if step_ms >= 60 * 60 * 1000:
+            return "1h"
+        return "15m"
 
     def _fit_model(self, rows: list[dict[str, object]], validation_rows: list[dict[str, object]] | None = None) -> dict[str, object]:
         """拟合模型。

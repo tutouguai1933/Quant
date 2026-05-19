@@ -319,8 +319,10 @@ class ResearchService:
         for symbol in selected_symbols:
             candles_1h: list[dict[str, object]] = []
             candles_4h: list[dict[str, object]] = []
+            candles_15m: list[dict[str, object]] = []
             reused_1h = False
             reused_4h = False
+            reused_15m = False
             if "1h" in selected_timeframes:
                 limit_1h = _resolve_research_fetch_limit(
                     timeframe="1h",
@@ -359,12 +361,32 @@ class ResearchService:
                 cache_summary["request_count"] += 1
                 if not candles_4h:
                     sample_issues.append(self._build_empty_sample_issue(symbol=symbol, interval="4h", chart=chart_4h))
-            cache_summary["reused_count"] += int(reused_1h) + int(reused_4h)
-            cache_summary["fresh_count"] += int(("1h" in selected_timeframes) and not reused_1h) + int(("4h" in selected_timeframes) and not reused_4h)
-            if candles_1h or candles_4h:
+            if "15m" in selected_timeframes:
+                limit_15m = _resolve_research_fetch_limit(
+                    timeframe="15m",
+                    sample_limit=sample_limit,
+                    lookback_days=lookback_days,
+                    window_mode=window_mode,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                chart_15m, reused_15m = self._read_market_chart_cached(
+                    symbol=symbol,
+                    interval="15m",
+                    limit=limit_15m,
+                    allowed_symbols=tuple(whitelist),
+                )
+                candles_15m = list(chart_15m.get("items", []))
+                cache_summary["request_count"] += 1
+                if not candles_15m:
+                    sample_issues.append(self._build_empty_sample_issue(symbol=symbol, interval="15m", chart=chart_15m))
+            cache_summary["reused_count"] += int(reused_1h) + int(reused_4h) + int(reused_15m)
+            cache_summary["fresh_count"] += int(("1h" in selected_timeframes) and not reused_1h) + int(("4h" in selected_timeframes) and not reused_4h) + int(("15m" in selected_timeframes) and not reused_15m)
+            if candles_1h or candles_4h or candles_15m:
                 dataset[symbol] = {
                     "candles_1h": candles_1h,
                     "candles_4h": candles_4h,
+                    "candles_15m": candles_15m,
                 }
         if not dataset:
             issue_text = "；".join(sample_issues) if sample_issues else "当前没有拿到任何标的和周期的样本。"
@@ -738,7 +760,7 @@ def _resolve_research_fetch_limit(
             normalized_days = max(int(lookback_days or 0), 1)
     else:
         normalized_days = max(int(lookback_days or 0), 1)
-    bars_per_day = 24 if timeframe == "1h" else 6 if timeframe == "4h" else 1
+    bars_per_day = 96 if timeframe == "15m" else 24 if timeframe == "1h" else 6 if timeframe == "4h" else 1
     required_bars = normalized_days * bars_per_day
     return max(normalized_limit, required_bars)
 
