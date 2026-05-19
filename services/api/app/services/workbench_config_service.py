@@ -24,7 +24,7 @@ from services.worker.qlib_features import (
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_WORKBENCH_CONFIG_PATH = REPO_ROOT / ".runtime" / "workbench_config.json"
-SUPPORTED_TIMEFRAMES = ("4h", "1h")
+SUPPORTED_TIMEFRAMES = ("4h", "1h", "15m")
 SUPPORTED_MODELS = ("heuristic_v1", "trend_bias_v2", "balanced_v3", "momentum_drive_v4", "stability_guard_v5")
 SUPPORTED_RESEARCH_TEMPLATES = ("single_asset_timing", "single_asset_timing_strict")
 SUPPORTED_LABEL_MODES = ("earliest_hit", "close_only", "window_majority")
