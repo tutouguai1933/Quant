@@ -77,36 +77,36 @@ DEFAULT_HYPEROPT_N_TRIALS = 50
 DEFAULT_HYPEROPT_TIMEOUT_SECONDS = 300
 SUPPORTED_MODEL_TYPES = ("lightgbm", "xgboost", "heuristic")
 
-# LightGBM 默认参数（平衡拟合能力与泛化）
+# LightGBM 默认参数（最佳历史配置）
 DEFAULT_LIGHTGBM_PARAMS = {
     "objective": "binary",
     "metric": "auc",
     "boosting_type": "gbdt",
-    "num_leaves": 12,  # 适度复杂度
-    "learning_rate": 0.05,  # 提高学习率
+    "num_leaves": 8,  # 较低复杂度
+    "learning_rate": 0.03,  # 较低学习率
     "feature_fraction": 0.7,  # 减少特征使用比例
     "bagging_fraction": 0.7,  # 减少样本使用比例
     "bagging_freq": 5,
     "min_child_samples": 50,  # 每个叶子节点最小样本数
-    "reg_alpha": 0.2,  # L1 正则化
-    "reg_lambda": 0.2,  # L2 正则化
+    "reg_alpha": 0.5,  # L1 正则化
+    "reg_lambda": 0.5,  # L2 正则化
     "verbose": -1,
     "n_estimators": 100,
     "early_stopping_rounds": 15,  # 增加早停耐心
     "random_state": 42,
 }
 
-# XGBoost 默认参数（平衡拟合能力与泛化）
+# XGBoost 默认参数（最佳历史配置）
 DEFAULT_XGBOOST_PARAMS = {
     "objective": "binary:logistic",
     "eval_metric": "auc",
-    "max_depth": 4,  # 适度深度
-    "learning_rate": 0.05,  # 提高学习率
+    "max_depth": 3,  # 较低深度
+    "learning_rate": 0.03,  # 较低学习率
     "subsample": 0.7,  # 减少样本使用比例
     "colsample_bytree": 0.7,  # 减少特征使用比例
     "min_child_weight": 50,  # 最小样本权重
-    "reg_alpha": 0.2,  # L1 正则化
-    "reg_lambda": 0.2,  # L2 正则化
+    "reg_alpha": 0.5,  # L1 正则化
+    "reg_lambda": 0.5,  # L2 正则化
     "n_estimators": 100,
     "early_stopping_rounds": 15,
     "random_state": 42,
