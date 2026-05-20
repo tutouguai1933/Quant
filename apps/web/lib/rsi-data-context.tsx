@@ -26,7 +26,7 @@ export function RsiDataProvider({ children }: { children: React.ReactNode }) {
 
   const fetchData = useCallback(async () => {
     try {
-      const response = await getRsiSummary("1d");
+      const response = await getRsiSummary("1h");
       if (response.error) {
         setError(response.error.message || "获取RSI数据失败");
       } else {

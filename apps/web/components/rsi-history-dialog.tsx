@@ -23,7 +23,7 @@ export function RsiHistoryDialog({ symbol, open, onClose }: RsiHistoryDialogProp
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [interval, setInterval] = useState<"1d" | "4h" | "1h">("1d");
+  const [interval, setInterval] = useState<"1d" | "4h" | "1h">("1h");
 
   // 加载 RSI 历史数据
   useEffect(() => {

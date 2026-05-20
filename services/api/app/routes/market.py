@@ -112,7 +112,7 @@ def _fetch_single_rsi(symbol: str, interval: str, allowed_symbols: tuple) -> dic
 
 @router.get("/rsi-summary")
 @alias_router.get("/rsi-summary")
-def get_rsi_summary(interval: str = "1d") -> dict:
+def get_rsi_summary(interval: str = "1h") -> dict:
     """返回所有监控币种的最新RSI值概览。
 
     优先从缓存文件读取（由自动化程序预计算），缓存不存在时才实时计算。
@@ -178,7 +178,7 @@ def get_market_chart(symbol: str, interval: str = "4h", limit: int = 200) -> dic
     return _success(chart, {"source": "binance"})
 
 
-def refresh_rsi_cache(interval: str = "1d") -> dict[str, object]:
+def refresh_rsi_cache(interval: str = "1h") -> dict[str, object]:
     """刷新RSI缓存文件，供自动化程序调用。
 
     Returns:

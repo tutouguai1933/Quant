@@ -67,7 +67,7 @@ export function RsiSummaryCard({ refreshInterval }: RsiSummaryCardProps) {
 
   if (isLoading) {
     return (
-      <TerminalCard title="RSI概览 (1D周期)">
+      <TerminalCard title="RSI概览 (1H周期)">
         <div className="animate-pulse space-y-2">
           <div className="h-4 w-32 bg-[var(--terminal-border)] rounded" />
           <div className="grid grid-cols-4 gap-2">
@@ -82,7 +82,7 @@ export function RsiSummaryCard({ refreshInterval }: RsiSummaryCardProps) {
 
   if (error) {
     return (
-      <TerminalCard title="RSI概览 (1D周期)">
+      <TerminalCard title="RSI概览 (1H周期)">
         <div className="text-sm text-red-500">⚠️ {error}</div>
       </TerminalCard>
     );
@@ -90,7 +90,7 @@ export function RsiSummaryCard({ refreshInterval }: RsiSummaryCardProps) {
 
   return (
     <>
-      <TerminalCard title="RSI概览 (1D周期)">
+      <TerminalCard title="RSI概览 (1H周期)">
         <div className="flex items-center justify-between mb-3">
           <div className="space-y-1">
             {/* 统计概览 */}
