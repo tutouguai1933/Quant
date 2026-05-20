@@ -76,6 +76,14 @@ docker logs quant-api --tail 30
 docker logs quant-web --tail 30
 ```
 
+### Freqtrade 重启
+
+```bash
+# EnhancedStrategy 策略配置更新后需要重启 Freqtrade
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
+  "docker stop quant-freqtrade && docker rm quant-freqtrade && cd ~/Quant/infra/freqtrade && docker compose up -d freqtrade"
+```
+
 ### Python 包安装（使用中国镜像加速）
 
 ```bash
