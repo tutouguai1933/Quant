@@ -53,7 +53,8 @@ class OpenclawPatrolService:
     MAX_CONSECUTIVE_FAILURES = 2     # 连续失败2次后停止自动执行
 
     # 动作执行超时配置
-    ACTION_TIMEOUT_SECONDS = 120  # 单个动作最长执行时间 2 分钟
+    # 60天 + 多币种训练约需 70-120 秒，加上数据获取和特征计算
+    ACTION_TIMEOUT_SECONDS = 300  # 单个动作最长执行时间 5 分钟
 
     # 告警阈值
     ALERT_THRESHOLD = 5               # 告警数超过5条触发清理

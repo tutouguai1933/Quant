@@ -42,7 +42,8 @@ def call_patrol(patrol_type: str) -> dict:
     url = f"{QUANT_API_BASE_URL}/openclaw/patrol?patrol_type={patrol_type}"
 
     # cycle_check 和 full 需要更长的超时时间，因为涉及训练和推理
-    timeout = 180 if patrol_type in ("cycle_check", "full") else 60
+    # 60天 + 多币种训练约需 70-120 秒，加上数据获取和特征计算
+    timeout = 300 if patrol_type in ("cycle_check", "full") else 60
 
     try:
         response = requests.post(url, timeout=timeout)
