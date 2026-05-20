@@ -23,7 +23,7 @@ def utc_now() -> str:
 # Task timeout configuration in seconds
 _TASK_TIMEOUT_SECONDS: dict[str, int] = {
     "train": 300,
-    "research_train": 600,
+    "research_train": 900,  # 60天+多币种训练约需 70-120s，加数据获取预留充足时间
     "research_infer": 300,
     "signal_output": 60,
     "sync": 120,
