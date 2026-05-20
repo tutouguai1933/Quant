@@ -21,7 +21,7 @@ DEFAULT_BACKTEST_SLIPPAGE_BPS = Decimal("5")
 DEFAULT_BACKTEST_COST_MODEL = "round_trip_basis_points"
 DEFAULT_LABEL_TARGET_PCT = Decimal("1")
 DEFAULT_LABEL_STOP_PCT = Decimal("-1")
-DEFAULT_LOOKBACK_DAYS = 30
+DEFAULT_LOOKBACK_DAYS = 60
 DEFAULT_TRAIN_SPLIT_RATIO = Decimal("0.6")
 DEFAULT_VALIDATION_SPLIT_RATIO = Decimal("0.2")
 DEFAULT_TEST_SPLIT_RATIO = Decimal("0.2")
@@ -77,37 +77,37 @@ DEFAULT_HYPEROPT_N_TRIALS = 50
 DEFAULT_HYPEROPT_TIMEOUT_SECONDS = 300
 SUPPORTED_MODEL_TYPES = ("lightgbm", "xgboost", "heuristic")
 
-# LightGBM 默认参数（最佳历史配置）
+# LightGBM 默认参数（优化配置：60天+4h+多币种）
 DEFAULT_LIGHTGBM_PARAMS = {
     "objective": "binary",
     "metric": "auc",
     "boosting_type": "gbdt",
-    "num_leaves": 8,  # 较低复杂度
-    "learning_rate": 0.03,  # 较低学习率
-    "feature_fraction": 0.7,  # 减少特征使用比例
-    "bagging_fraction": 0.7,  # 减少样本使用比例
+    "num_leaves": 31,  # 适中复杂度
+    "learning_rate": 0.02,  # 较低学习率，配合更多迭代
+    "feature_fraction": 0.8,  # 特征采样比例
+    "bagging_fraction": 0.8,  # 样本采样比例
     "bagging_freq": 5,
-    "min_child_samples": 50,  # 每个叶子节点最小样本数
-    "reg_alpha": 0.5,  # L1 正则化
-    "reg_lambda": 0.5,  # L2 正则化
+    "min_child_samples": 20,  # 每个叶子节点最小样本数
+    "reg_alpha": 0.1,  # L1 正则化（降低以减少欠拟合）
+    "reg_lambda": 0.1,  # L2 正则化（降低以减少欠拟合）
     "verbose": -1,
-    "n_estimators": 100,
-    "early_stopping_rounds": 15,  # 增加早停耐心
+    "n_estimators": 200,  # 增加迭代次数
+    "early_stopping_rounds": 15,
     "random_state": 42,
 }
 
-# XGBoost 默认参数（最佳历史配置）
+# XGBoost 默认参数（优化配置：60天+4h+多币种）
 DEFAULT_XGBOOST_PARAMS = {
     "objective": "binary:logistic",
     "eval_metric": "auc",
-    "max_depth": 3,  # 较低深度
-    "learning_rate": 0.03,  # 较低学习率
-    "subsample": 0.7,  # 减少样本使用比例
-    "colsample_bytree": 0.7,  # 减少特征使用比例
-    "min_child_weight": 50,  # 最小样本权重
-    "reg_alpha": 0.5,  # L1 正则化
-    "reg_lambda": 0.5,  # L2 正则化
-    "n_estimators": 100,
+    "max_depth": 5,  # 适中深度
+    "learning_rate": 0.02,  # 较低学习率
+    "subsample": 0.8,  # 样本采样比例
+    "colsample_bytree": 0.8,  # 特征采样比例
+    "min_child_weight": 20,  # 最小样本权重
+    "reg_alpha": 0.1,  # L1 正则化
+    "reg_lambda": 0.1,  # L2 正则化
+    "n_estimators": 200,
     "early_stopping_rounds": 15,
     "random_state": 42,
     "verbosity": 0,
