@@ -160,6 +160,15 @@ class QlibRunner:
         model_type = str(metrics.get("model_type", "heuristic"))
         model_path = str(metrics.get("model_path", ""))
 
+        # 加载 ML 模型用于批量预测（回测过滤用）
+        ml_predictor = None
+        if model_type in ("lightgbm", "xgboost") and model_path:
+            from services.worker.ml.predictor import ModelPredictor
+            try:
+                ml_predictor = ModelPredictor(model_path=Path(model_path))
+            except Exception:
+                pass
+
         for symbol, market_payload in dataset.items():
             bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
             symbol_bundles[symbol] = bundle
@@ -226,15 +235,25 @@ class QlibRunner:
                     model_version=str(ml_prediction_data["model_version"]),
                     signal_source="ml" if model_type in ("lightgbm", "xgboost") else "heuristic",
                 )
+            backtest_rows = self._filter_backtest_rows(
+                testing_rows=bundle.testing_rows,
+                ml_predictor=ml_predictor,
+            )
+            backtest = self._build_candidate_backtest(rows=backtest_rows)
+
             candidates.append(
                 {
                     "symbol": symbol,
                     "strategy_template": strategy_template,
                     "score": _format_float(score),
-                    "backtest": self._build_candidate_backtest(rows=bundle.testing_rows),
+                    "backtest": backtest,
                     "rule_gate": rule_gate,
                     "recommendation_context": recommendation_context,
                     "ml_prediction": ml_prediction_data,
+                    "backtest_row_info": {
+                        "total_testing_rows": len(bundle.testing_rows),
+                        "ml_buy_rows": len(backtest_rows),
+                    },
                 }
             )
 
@@ -376,6 +395,34 @@ class QlibRunner:
             )
         except Exception:
             pass
+
+    def _filter_backtest_rows(
+        self,
+        *,
+        testing_rows: list[dict[str, object]],
+        ml_predictor: object | None,
+    ) -> list[dict[str, object]]:
+        """过滤测试集，只保留 ML 模型预测为"买入"的样本。
+
+        如果没有 ML 模型或测试集为空，返回全部行（保持向后兼容）。
+        """
+        if not testing_rows or ml_predictor is None:
+            return testing_rows
+
+        try:
+            predictions = ml_predictor.predict_batch(
+                feature_rows=testing_rows,
+                feature_columns=self._active_primary_feature_columns(),
+                include_contributions=False,
+            )
+            filtered = [
+                testing_rows[i]
+                for i, p in enumerate(predictions)
+                if p.score >= 0.5
+            ]
+            return filtered if filtered else testing_rows  # 如果全被过滤，回退到全部
+        except Exception:
+            return testing_rows
 
     def _build_candidate_backtest(self, *, rows: list[dict[str, object]]) -> dict[str, object]:
         """为单个候选生成独立回测摘要。"""
