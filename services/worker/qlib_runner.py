@@ -241,6 +241,9 @@ class QlibRunner:
             )
             backtest = self._build_candidate_backtest(rows=backtest_rows)
 
+            # 为每个候选生成 per-symbol validation 数据
+            per_symbol_validation = _build_per_symbol_validation(backtest_rows)
+
             candidates.append(
                 {
                     "symbol": symbol,
@@ -250,6 +253,7 @@ class QlibRunner:
                     "rule_gate": rule_gate,
                     "recommendation_context": recommendation_context,
                     "ml_prediction": ml_prediction_data,
+                    "validation": per_symbol_validation,
                     "backtest_row_info": {
                         "total_testing_rows": len(bundle.testing_rows),
                         "ml_buy_rows": len(backtest_rows),
@@ -938,13 +942,26 @@ class QlibRunner:
     def _build_validation_summary(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """构造最小验证摘要。"""
 
-        future_returns = [_to_float(item.get("future_return_pct")) for item in rows]
-        positive_rate = sum(1 for value in future_returns if value > 0) / len(future_returns) if future_returns else 0.0
+        return _build_per_symbol_validation(rows)
+
+def _build_per_symbol_validation(rows: list[dict[str, object]]) -> dict[str, object]:
+    """为单个币种构造 per-symbol 验证摘要。
+
+    用于 Validation Gate 和 Consistency Gate 的正确比较。
+    """
+    if not rows:
         return {
-            "sample_count": len(rows),
-            "positive_rate": _format_float(positive_rate),
-            "avg_future_return_pct": _format_float(sum(future_returns) / len(future_returns)) if future_returns else _format_float(0.0),
+            "sample_count": 0,
+            "positive_rate": "0.0000",
+            "avg_future_return_pct": "0.0000",
         }
+    future_returns = [_to_float(item.get("future_return_pct")) for item in rows]
+    positive_rate = sum(1 for value in future_returns if value > 0) / len(future_returns)
+    return {
+        "sample_count": len(rows),
+        "positive_rate": _format_float(positive_rate),
+        "avg_future_return_pct": _format_float(sum(future_returns) / len(future_returns)),
+    }
 
     def _build_factor_evaluation(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """构建因子评估数据。

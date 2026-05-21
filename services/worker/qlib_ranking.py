@@ -63,7 +63,10 @@ def _normalize_candidate(
     gate_thresholds = _resolve_thresholds(thresholds, research_template=research_template)
     rule_gate = _normalize_rule_gate(item.get("rule_gate"))
     score_gate = _evaluate_score_gate(score=item.get("score"), thresholds=gate_thresholds)
-    research_validation_gate = _evaluate_validation_gate(validation, thresholds=gate_thresholds)
+    # 优先使用候选自带的 per-symbol validation，其次用全局 validation
+    per_symbol_validation = item.get("validation")
+    effective_validation = dict(per_symbol_validation) if isinstance(per_symbol_validation, dict) and per_symbol_validation else validation
+    research_validation_gate = _evaluate_validation_gate(effective_validation, thresholds=gate_thresholds)
     backtest_gate = _evaluate_backtest_gate(metrics, thresholds=gate_thresholds)
     consistency_gate = _evaluate_consistency_gate(
         validation=validation,
@@ -351,42 +354,48 @@ def _evaluate_consistency_gate(
     training_metrics: dict[str, object] | None,
     thresholds: dict[str, Decimal | int],
 ) -> dict[str, object]:
-    """判断验证摘要和净回测之间是否出现明显漂移。"""
+    """判断回测指标内部一致性，以及训练/验证之间是否出现明显漂移。
 
-    payload = dict(validation or {})
-    if not payload:
-        return {"status": "passed", "reasons": []}
-
-    sample_count = _to_int_or_none(metrics.get("sample_count"))
-    if sample_count is None or sample_count <= 0:
-        return {"status": "passed", "reasons": []}
-
-    validation_avg = _to_decimal(payload.get("avg_future_return_pct"))
-    net_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
-    avg_net_return_pct = net_return_pct / Decimal(sample_count)
+    检查两项：
+    1. 回测内部一致性：胜率高但Sharpe很低 → 有问题
+    2. 训练/验证漂移（同维度数据比较）：正样本率漂移、收益漂移
+    """
 
     failures: list[str] = []
-    max_validation_backtest_gap = Decimal(str(thresholds["consistency_max_validation_backtest_return_gap_pct"]))
     max_training_validation_positive_rate_gap = Decimal(str(thresholds["consistency_max_training_validation_positive_rate_gap"]))
     max_training_validation_return_gap_pct = Decimal(str(thresholds["consistency_max_training_validation_return_gap_pct"]))
 
-    if validation_avg > Decimal("0") and avg_net_return_pct <= Decimal("0"):
-        failures.append(f"validation_backtest_drift_too_large (验证收益 {float(validation_avg):.2f}% vs 回测收益 {float(avg_net_return_pct):.2f}%)")
-    elif (validation_avg - avg_net_return_pct) > max_validation_backtest_gap:
-        gap = float(validation_avg - avg_net_return_pct)
-        failures.append(f"validation_backtest_drift_too_large (漂移: {gap:.2f}% > 阈值 {float(max_validation_backtest_gap):.2f}%)")
+    # --- 1. 回测内部一致性检查 ---
+    sample_count = _to_int_or_none(metrics.get("sample_count"))
+    if sample_count is not None and sample_count > 0:
+        win_rate = _to_decimal(metrics.get("win_rate"))
+        sharpe = _to_decimal(metrics.get("sharpe"))
+        net_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
+        max_drawdown_pct = abs(_to_decimal(metrics.get("max_drawdown_pct")))
 
+        # 胜率与Sharpe一致性：胜率>50%但Sharpe<0，表示赢小亏大
+        if win_rate > Decimal("0.5") and sharpe < Decimal("0"):
+            failures.append(f"backtest_inconsistent (胜率 {float(win_rate)*100:.0f}% 但 Sharpe {float(sharpe):.2f} 为负，赢小亏大)")
+
+        # 收益与回撤一致性：回撤远大于收益
+        if net_return_pct < Decimal("0") and max_drawdown_pct > abs(net_return_pct) * Decimal("3"):
+            failures.append(f"backtest_drawdown_disproportionate (收益 {float(net_return_pct):.1f}% 但回撤 {float(max_drawdown_pct):.1f}%)")
+
+    # --- 2. 训练/验证漂移检查（仅当两者都是同维度全局数据时） ---
+    payload = dict(validation or {})
     training_payload = dict(training_metrics or {})
-    training_positive_rate = _to_decimal(training_payload.get("positive_rate"))
-    validation_positive_rate = _to_decimal(payload.get("positive_rate"))
-    training_avg = _to_decimal(training_payload.get("avg_future_return_pct"))
-    if training_payload:
+    if payload and training_payload:
+        training_positive_rate = _to_decimal(training_payload.get("positive_rate"))
+        validation_positive_rate = _to_decimal(payload.get("positive_rate"))
         positive_rate_gap = training_positive_rate - validation_positive_rate
         if positive_rate_gap > max_training_validation_positive_rate_gap:
-            failures.append(f"validation_training_drift_too_large (正样本率漂移: {float(positive_rate_gap)*100:.1f}% > 阈值 {float(max_training_validation_positive_rate_gap)*100:.1f}%)")
+            failures.append(f"validation_training_drift (正样本率漂移: {float(positive_rate_gap)*100:.1f}% > 阈值 {float(max_training_validation_positive_rate_gap)*100:.1f}%)")
+
+        training_avg = _to_decimal(training_payload.get("avg_future_return_pct"))
+        validation_avg = _to_decimal(payload.get("avg_future_return_pct"))
         return_gap = training_avg - validation_avg
         if return_gap > max_training_validation_return_gap_pct:
-            failures.append(f"validation_training_drift_too_large (收益漂移: {float(return_gap):.2f}% > 阈值 {float(max_training_validation_return_gap_pct):.2f}%)")
+            failures.append(f"validation_training_drift (收益漂移: {float(return_gap):.2f}% > 阈值 {float(max_training_validation_return_gap_pct):.2f}%)")
 
     if failures:
         return {"status": "failed", "reasons": failures}
