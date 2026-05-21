@@ -21,8 +21,13 @@ class RsiCacheService:
         self._cache_file = self._cache_dir / "rsi_cache.json"
         self._lock = threading.RLock()
 
-    def get(self, interval: str = "1d") -> dict[str, Any] | None:
-        """读取缓存的RSI数据。"""
+    def get(self, interval: str = "1h", ttl_seconds: int = 300) -> dict[str, Any] | None:
+        """读取缓存的RSI数据。
+
+        Args:
+            interval: 数据间隔，如 "1h", "4h", "1d"
+            ttl_seconds: 缓存有效期，默认 5 分钟。过期后返回 None 触发重新计算
+        """
         with self._lock:
             if not self._cache_file.exists():
                 return None
@@ -30,6 +35,16 @@ class RsiCacheService:
                 data = json.loads(self._cache_file.read_text())
                 if data.get("interval") != interval:
                     return None
+                # 检查缓存是否过期
+                cached_at = data.get("cached_at", "")
+                if cached_at:
+                    try:
+                        cached_dt = datetime.fromisoformat(cached_at.replace("Z", "+00:00"))
+                        now = datetime.now(timezone.utc)
+                        if (now - cached_dt).total_seconds() > ttl_seconds:
+                            return None  # 缓存过期，触发重新计算
+                    except (ValueError, TypeError):
+                        pass  # 无法解析时间，使用缓存数据
                 return data
             except (json.JSONDecodeError, OSError):
                 return None
@@ -41,7 +56,7 @@ class RsiCacheService:
             data["cached_at"] = datetime.now(timezone.utc).isoformat()
             self._cache_file.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
-    def get_summary(self, interval: str = "1d") -> dict[str, Any] | None:
+    def get_summary(self, interval: str = "1h") -> dict[str, Any] | None:
         """获取缓存的RSI摘要，用于API返回。"""
         cached = self.get(interval)
         if cached is None:
