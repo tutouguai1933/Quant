@@ -228,7 +228,7 @@ export default function HomePage() {
         {/* 第三行：双策略状态 + 市场入场信号 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <DualStrategyCard refreshInterval={30000} />
-          <EntryStatusCard refreshInterval={60000} />
+          <EntryStatusCard />
         </div>
 
         {/* 第四行：当前持仓详情 */}
