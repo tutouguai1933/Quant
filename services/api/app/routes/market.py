@@ -238,10 +238,6 @@ _ENTRY_CONDITIONS_TTL = 120  # 2分钟
 
 def _fetch_entry_conditions(symbol: str, allowed_symbols: tuple) -> dict | None:
     """获取单个币种的 EnhancedStrategy 入场条件检查结果。"""
-    from services.api.app.services.market_service import MarketService
-
-    service = MarketService()
-    settings = Settings.from_env()
 
     try:
         chart_1h = service.get_symbol_chart(symbol=symbol, interval="1h", limit=200, allowed_symbols=allowed_symbols)
