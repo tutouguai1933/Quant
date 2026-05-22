@@ -2013,6 +2013,47 @@ export async function listMarketSnapshots(): Promise<
   }
 }
 
+export interface EntryConditionItem {
+  symbol: string;
+  rsi_1h: number;
+  rsi_4h: number;
+  close_4h: number;
+  sma200_4h: number;
+  gap_4h_pct: number;
+  vol_ratio: number;
+  conditions: {
+    rsi_oversold: { pass: boolean; label: string; value: string; threshold: string };
+    trend_4h: { pass: boolean; label: string; value: string; threshold: string };
+    rsi_4h_ok: { pass: boolean; label: string; value: string; threshold: string };
+    volume_ok: { pass: boolean; label: string; value: string; threshold: string };
+  };
+  all_pass: boolean;
+}
+
+export async function getEntryConditions(): Promise<
+  ApiEnvelope<{ items: EntryConditionItem[]; total: number; passed_count: number; updated_at: string }>
+> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetchJson<{ items: EntryConditionItem[]; total: number; passed_count: number }>(
+      "/market/entry-conditions",
+      undefined,
+      controller.signal
+    );
+    clearTimeout(timeoutId);
+    return response as ApiEnvelope<{ items: EntryConditionItem[]; total: number; passed_count: number; updated_at: string }>;
+  } catch {
+    clearTimeout(timeoutId);
+    return {
+      data: { items: [], total: 0, passed_count: 0, updated_at: "" },
+      error: null,
+      meta: { fallback: true },
+    };
+  }
+}
+
 export interface RsiSummaryItem {
   symbol: string;
   rsi: number;

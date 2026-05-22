@@ -2,176 +2,56 @@
 
 /**
  * 市场入场信号卡片
- * 显示通用市场入场条件：RSI、趋势、成交量
- * 注意：这是市场层面的简单分析，不等同于自动化周期ML评分
+ * 展示 EnhancedStrategy 的4个入场条件检查结果
  */
 
 import { useEffect, useState } from "react";
-import { listMarketSnapshots, type MarketSnapshot } from "../lib/api";
-import { useRsiData } from "../lib/rsi-data-context";
+import { getEntryConditions, type EntryConditionItem } from "../lib/api";
 import { TerminalCard } from "./terminal";
 
-interface EntryCondition {
-  symbol: string;
-  rsi: number;
-  rsiState: "overbought" | "oversold" | "neutral";
-  trendState: "uptrend" | "pullback" | "neutral";
-  volumeRatio: number;
-  recommendedStrategy: string;
-  entryAllowed: boolean;
-  reasons: string[];
-}
-
-interface EntryStatusCardProps {
-  refreshInterval?: number;
-}
-
-export function EntryStatusCard({ refreshInterval }: EntryStatusCardProps) {
-  const { items: rsiItems, isLoading: rsiLoading, error: rsiError } = useRsiData();
-  const [conditions, setConditions] = useState<EntryCondition[]>([]);
+export function EntryStatusCard() {
+  const [items, setItems] = useState<EntryConditionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (rsiLoading) return;
-
     let cancelled = false;
 
     async function fetchData() {
       try {
-        const marketResponse = await listMarketSnapshots();
-
+        const response = await getEntryConditions();
         if (cancelled) return;
 
-        if (rsiError) {
-          setError(rsiError);
+        if (response.error) {
+          setError(response.error.message || "获取失败");
           setIsLoading(false);
           return;
         }
 
-        const marketItems = marketResponse.error ? [] : (marketResponse.data.items || []);
-        const conditionMap = new Map<string, EntryCondition>();
-
-        rsiItems.forEach((item) => {
-          conditionMap.set(item.symbol, {
-            symbol: item.symbol,
-            rsi: item.rsi,
-            rsiState: item.state as "overbought" | "oversold" | "neutral",
-            trendState: "neutral",
-            volumeRatio: 1,
-            recommendedStrategy: "none",
-            entryAllowed: false,
-            reasons: [],
-          });
-        });
-
-        marketItems.forEach((item: MarketSnapshot) => {
-          const existing = conditionMap.get(item.symbol);
-          if (existing) {
-            existing.trendState = item.trend_state;
-            existing.recommendedStrategy = item.recommended_strategy;
-
-            if (item.research_brief) {
-              const brief = item.research_brief;
-              if (brief.research_bias) {
-                existing.recommendedStrategy = brief.recommended_strategy || existing.recommendedStrategy;
-              }
-            }
-          }
-        });
-
-        const conditionsList = Array.from(conditionMap.values()).map((cond) => {
-          const reasons: string[] = [];
-          let signalCount = 0;
-
-          if (cond.rsiState === "oversold") {
-            signalCount += 1;
-          } else if (cond.rsiState === "neutral" && cond.rsi < 50) {
-            signalCount += 0.5;
-          }
-
-          if (cond.trendState === "uptrend") {
-            signalCount += 1;
-          } else if (cond.trendState === "pullback") {
-            signalCount += 0.5;
-          }
-
-          const entryAllowed = signalCount >= 1;
-
-          if (cond.rsiState === "oversold") {
-            reasons.push("RSI超卖");
-          } else if (cond.rsi > 70) {
-            reasons.push("RSI超买");
-          }
-
-          if (cond.trendState === "uptrend") {
-            reasons.push("趋势看涨");
-          } else if (cond.trendState === "pullback") {
-            reasons.push("趋势回调中");
-          }
-
-          return {
-            ...cond,
-            entryAllowed,
-            reasons,
-          };
-        });
-
-        conditionsList.sort((a, b) => {
-          if (a.entryAllowed && !b.entryAllowed) return -1;
-          if (!a.entryAllowed && b.entryAllowed) return 1;
-          return a.rsi - b.rsi;
-        });
-
-        setConditions(conditionsList);
+        setItems(response.data.items || []);
         setLastUpdate(new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai" }));
         setError(null);
       } catch {
-        if (!cancelled) {
-          setError("获取入场状态失败");
-        }
+        if (!cancelled) setError("获取入场条件失败");
       } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+        if (!cancelled) setIsLoading(false);
       }
     }
 
     fetchData();
-    const interval = setInterval(fetchData, 60000);
+    const interval = setInterval(fetchData, 120000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [rsiItems, rsiLoading, rsiError]);
-
-  const getTrendDisplay = (state: string) => {
-    switch (state) {
-      case "uptrend":
-        return { label: "↑看涨", color: "text-green-400" };
-      case "pullback":
-        return { label: "→回调", color: "text-yellow-400" };
-      default:
-        return { label: "→中性", color: "text-[var(--terminal-muted)]" };
-    }
-  };
-
-  const getRsiDisplay = (rsi: number, state: string) => {
-    if (state === "oversold") {
-      return { label: `${rsi.toFixed(1)}`, color: "text-green-400", bg: "bg-green-400/10" };
-    }
-    if (state === "overbought" || rsi > 70) {
-      return { label: `${rsi.toFixed(1)}`, color: "text-red-400", bg: "bg-red-400/10" };
-    }
-    return { label: `${rsi.toFixed(1)}`, color: "text-[var(--terminal-text)]", bg: "" };
-  };
+  }, []);
 
   if (isLoading) {
     return (
       <TerminalCard title="市场入场信号">
         <div className="animate-pulse space-y-2">
-          <div className="h-4 w-32 bg-[var(--terminal-border)] rounded" />
+          <div className="h-4 w-48 bg-[var(--terminal-border)] rounded" />
         </div>
       </TerminalCard>
     );
@@ -185,88 +65,109 @@ export function EntryStatusCard({ refreshInterval }: EntryStatusCardProps) {
     );
   }
 
-  const actionableConditions = conditions.filter(c => c.entryAllowed || c.rsiState === "oversold");
-
-  if (actionableConditions.length === 0) {
+  if (items.length === 0) {
     return (
       <TerminalCard title="市场入场信号">
-        <div className="text-sm text-[var(--terminal-muted)]">
-          当前没有满足入场条件的信号
-        </div>
-        <div className="text-xs text-[var(--terminal-muted)]/60 mt-2">
-          更新: {lastUpdate}
-        </div>
+        <div className="text-sm text-[var(--terminal-muted)]">暂无数据</div>
       </TerminalCard>
     );
   }
 
+  // 优先展示可能通过的（通过条件最多的排在前面）
+  const sorted = [...items].sort((a, b) => {
+    const aPass = Object.values(a.conditions).filter((c) => c.pass).length;
+    const bPass = Object.values(b.conditions).filter((c) => c.pass).length;
+    return bPass - aPass;
+  });
+
   return (
     <TerminalCard title="市场入场信号">
-      <div className="space-y-3">
-        {actionableConditions.slice(0, 4).map((cond) => {
-          const trend = getTrendDisplay(cond.trendState);
-          const rsiDisplay = getRsiDisplay(cond.rsi, cond.rsiState);
+      <div className="flex items-center gap-3 mb-3 text-xs">
+        <span className="text-[var(--terminal-muted)]">
+          监控 {items.length} 币种 · 通过 {items.filter((i) => i.all_pass).length} 个
+        </span>
+        <span className="text-[var(--terminal-muted)]/60">更新: {lastUpdate}</span>
+      </div>
+
+      <div className="space-y-2 max-h-[500px] overflow-y-auto">
+        {sorted.map((item) => {
+          const conds = item.conditions;
+          const passCount = Object.values(conds).filter((c) => c.pass).length;
 
           return (
             <div
-              key={cond.symbol}
-              className="border border-[var(--terminal-border)] rounded-lg p-3"
+              key={item.symbol}
+              className={`border rounded-lg p-2.5 ${
+                item.all_pass
+                  ? "border-green-500/30 bg-green-500/5"
+                  : "border-[var(--terminal-border)]"
+              }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-[var(--terminal-text)]">
-                    {cond.symbol.replace("USDT", "")}
-                  </span>
-                  {cond.entryAllowed && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
-                      可入场
-                    </span>
-                  )}
-                </div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-sm font-medium text-[var(--terminal-text)]">
+                  {item.symbol.replace("USDT", "")}
+                </span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    item.all_pass
+                      ? "bg-green-500/20 text-green-400"
+                      : passCount >= 2
+                        ? "bg-yellow-500/10 text-yellow-400"
+                        : "bg-red-500/10 text-red-400"
+                  }`}
+                >
+                  {item.all_pass ? "可入场" : `${passCount}/4`}
+                </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 text-xs mb-2">
-                <div className={`rounded p-2 ${rsiDisplay.bg}`}>
-                  <div className="text-[var(--terminal-muted)]">RSI</div>
-                  <div className={`${rsiDisplay.color} font-mono`}>
-                    {rsiDisplay.label}
-                    {cond.rsiState === "oversold" && " (超卖)"}
-                    {cond.rsiState === "overbought" && " (超买)"}
-                  </div>
-                </div>
-
-                <div className="rounded p-2 bg-[var(--terminal-border)]/10">
-                  <div className="text-[var(--terminal-muted)]">趋势</div>
-                  <div className={trend.color}>{trend.label}</div>
-                </div>
-
-                <div className="rounded p-2 bg-[var(--terminal-border)]/10">
-                  <div className="text-[var(--terminal-muted)]">建议</div>
-                  <div className="text-[var(--terminal-text)]">
-                    {cond.recommendedStrategy === "trend_breakout" ? "突破" :
-                     cond.recommendedStrategy === "trend_pullback" ? "回调" : "观望"}
-                  </div>
-                </div>
+              {/* 4个条件横向排列 */}
+              <div className="grid grid-cols-4 gap-1.5">
+                {Object.entries(conds).map(([key, c]) => (
+                  <ConditionBadge
+                    key={key}
+                    label={c.label}
+                    value={c.value}
+                    threshold={c.threshold}
+                    pass={c.pass}
+                  />
+                ))}
               </div>
-
-              {cond.reasons.length > 0 && (
-                <div className="text-xs text-[var(--terminal-muted)] flex flex-wrap gap-1">
-                  {cond.reasons.map((reason, i) => (
-                    <span key={i} className="px-1.5 py-0.5 rounded bg-[var(--terminal-border)]/20">
-                      {reason}
-                    </span>
-                  ))}
-                </div>
-              )}
             </div>
           );
         })}
       </div>
 
-      <div className="text-xs text-[var(--terminal-muted)]/60 mt-3 flex justify-between">
-        <span>通用市场信号，供参考</span>
-        <span>更新: {lastUpdate}</span>
+      <div className="text-[10px] text-[var(--terminal-muted)]/50 mt-2">
+        EnhancedStrategy 入场条件: RSI {"<"} 32 + 4H趋势向上 + 4H RSI {"<"} 70 + 成交量 ≥ 同时段60%
       </div>
     </TerminalCard>
+  );
+}
+
+function ConditionBadge({
+  label,
+  value,
+  threshold,
+  pass,
+}: {
+  label: string;
+  value: string;
+  threshold: string;
+  pass: boolean;
+}) {
+  return (
+    <div
+      className={`rounded p-1.5 text-center text-[11px] ${
+        pass ? "bg-green-500/10 text-green-300" : "bg-[var(--terminal-border)]/10 text-[var(--terminal-muted)]"
+      }`}
+    >
+      <div className="truncate">{label}</div>
+      <div className={`font-mono ${pass ? "text-green-400" : "text-red-400/70"}`}>
+        {value}
+      </div>
+      <div className="text-[9px] opacity-50">
+        {pass ? "✅" : `需 ${threshold}`}
+      </div>
+    </div>
   );
 }

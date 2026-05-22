@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -228,6 +229,134 @@ def refresh_rsi_cache_endpoint(interval: str = "1d") -> dict:
     """手动刷新RSI缓存。需要认证。"""
     result = refresh_rsi_cache(interval)
     return _success(result, {"source": "manual_refresh"})
+
+
+# 入口条件缓存
+_entry_conditions_cache: dict[str, object] = {"data": None, "ts": 0}
+_ENTRY_CONDITIONS_TTL = 120  # 2分钟
+
+
+def _fetch_entry_conditions(symbol: str, allowed_symbols: tuple) -> dict | None:
+    """获取单个币种的 EnhancedStrategy 入场条件检查结果。"""
+    from services.api.app.services.market_service import MarketService
+
+    service = MarketService()
+    settings = Settings.from_env()
+
+    try:
+        chart_1h = service.get_symbol_chart(symbol=symbol, interval="1h", limit=200, allowed_symbols=allowed_symbols)
+        chart_4h = service.get_symbol_chart(symbol=symbol, interval="4h", limit=200, allowed_symbols=allowed_symbols)
+
+        items_1h = list(chart_1h.get("items", []))
+        items_4h = list(chart_4h.get("items", []))
+
+        if len(items_1h) < 30 or len(items_4h) < 30:
+            return None
+
+        # --- 1H 指标 ---
+        closes_1h = [item.get("close", 0) for item in items_1h]
+        volumes_1h = [item.get("volume", 0) for item in items_1h]
+
+        rsi_1h = float(_rsi([_to_decimal(c) for c in closes_1h[-(14 + 1):]], 14).quantize(Decimal("0.01")))
+
+        # --- 4H 指标 ---
+        closes_4h = [item.get("close", 0) for item in items_4h]
+
+        # SMA200 on 4H
+        sma200_4h = sum(closes_4h[-200:]) / min(200, len(closes_4h)) if closes_4h else 0
+        close_4h = closes_4h[-1] if closes_4h else 0
+        gap_4h_sma200 = ((close_4h / sma200_4h) - 1) * 100 if sma200_4h > 0 else 0
+
+        # RSI 4H
+        rsi_4h = float(_rsi([_to_decimal(c) for c in closes_4h[-(14 + 1):]], 14).quantize(Decimal("0.01")))
+
+        # --- 成交量：过去7天同一小时均量 ---
+        lookback_days = 7
+        last_vol = volumes_1h[-1] if volumes_1h else 0
+        same_hour_sum = last_vol
+        valid_count = 1
+        for day in range(1, lookback_days + 1):
+            idx = len(volumes_1h) - 1 - day * 24
+            if idx >= 0:
+                same_hour_sum += volumes_1h[idx]
+                valid_count += 1
+        vol_avg_hourly = same_hour_sum / valid_count if valid_count > 0 else last_vol
+        vol_ratio = last_vol / vol_avg_hourly if vol_avg_hourly > 0 else 0
+
+        # --- 判断4个条件 ---
+        cond_rsi = rsi_1h < 32
+        cond_trend = gap_4h_sma200 > 0
+        cond_rsi_4h = rsi_4h < 70
+        cond_volume = vol_ratio > 0.6
+
+        all_pass = cond_rsi and cond_trend and cond_rsi_4h and cond_volume
+
+        return {
+            "symbol": symbol,
+            "rsi_1h": round(rsi_1h, 1),
+            "rsi_4h": round(rsi_4h, 1),
+            "close_4h": round(close_4h, 2),
+            "sma200_4h": round(sma200_4h, 2),
+            "gap_4h_pct": round(gap_4h_sma200, 2),
+            "vol_ratio": round(vol_ratio, 2),
+            "conditions": {
+                "rsi_oversold": {"pass": cond_rsi, "label": f"RSI<32", "value": f"{rsi_1h:.1f}", "threshold": "32"},
+                "trend_4h": {"pass": cond_trend, "label": "4H趋势向上", "value": f"{gap_4h_sma200:+.1f}%", "threshold": ">0%"},
+                "rsi_4h_ok": {"pass": cond_rsi_4h, "label": "4H RSI<70", "value": f"{rsi_4h:.1f}", "threshold": "70"},
+                "volume_ok": {"pass": cond_volume, "label": "成交量≥60%", "value": f"{vol_ratio:.2f}", "threshold": "0.6"},
+            },
+            "all_pass": all_pass,
+        }
+    except Exception:
+        return None
+
+
+@router.get("/entry-conditions")
+@alias_router.get("/entry-conditions")
+def get_entry_conditions() -> dict:
+    """返回所有监控币种的 EnhancedStrategy 入场条件检查结果。
+
+    对每个币种检查4个入场条件：
+    1. 1H RSI < 32（超卖）
+    2. 4H 价格 > SMA200（趋势向上）
+    3. 4H RSI < 70（不超买）
+    4. 成交量 > 过去7天同一时段均量 × 0.6
+    """
+    now = time.time()
+    cached = _entry_conditions_cache.get("data")
+    if cached is not None and now - _entry_conditions_cache.get("ts", 0) < _ENTRY_CONDITIONS_TTL:
+        return _success(cached, {"source": "cache"})
+
+    settings = Settings.from_env()
+    symbols = settings.market_symbols
+    allowed = tuple(symbols)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        futures = [
+            loop.run_in_executor(_executor, _fetch_entry_conditions, symbol, allowed)
+            for symbol in symbols
+        ]
+        raw_results = loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
+    finally:
+        loop.close()
+
+    results = [r for r in raw_results if r is not None and not isinstance(r, Exception)]
+    results.sort(key=lambda x: (not x["all_pass"], x["rsi_1h"]))
+
+    # 计算通过数量
+    passed = [r for r in results if r["all_pass"]]
+
+    payload = {
+        "items": results,
+        "total": len(results),
+        "passed_count": len(passed),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _entry_conditions_cache["data"] = payload
+    _entry_conditions_cache["ts"] = now
+    return _success(payload, {"source": "binance"})
 
 
 def _build_freqtrade_readiness(settings: Settings) -> dict[str, object]:
