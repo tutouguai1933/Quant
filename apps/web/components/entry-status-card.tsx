@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * 市场入场信号卡片
- * 展示 EnhancedStrategy 的4个入场条件检查结果
+ * 市场入场信号卡片 - 紧凑版
+ * 每行展示一个币种的4个入场条件检查结果
  */
 
 import { useEffect, useState } from "react";
@@ -50,9 +50,7 @@ export function EntryStatusCard() {
   if (isLoading) {
     return (
       <TerminalCard title="市场入场信号">
-        <div className="animate-pulse space-y-2">
-          <div className="h-4 w-48 bg-[var(--terminal-border)] rounded" />
-        </div>
+        <div className="animate-pulse h-4 w-48 bg-[var(--terminal-border)] rounded" />
       </TerminalCard>
     );
   }
@@ -60,7 +58,7 @@ export function EntryStatusCard() {
   if (error) {
     return (
       <TerminalCard title="市场入场信号">
-        <div className="text-sm text-red-500">⚠️ {error}</div>
+        <div className="text-xs text-red-500">⚠️ {error}</div>
       </TerminalCard>
     );
   }
@@ -68,106 +66,67 @@ export function EntryStatusCard() {
   if (items.length === 0) {
     return (
       <TerminalCard title="市场入场信号">
-        <div className="text-sm text-[var(--terminal-muted)]">暂无数据</div>
+        <div className="text-xs text-[var(--terminal-muted)]">暂无数据</div>
       </TerminalCard>
     );
   }
 
-  // 优先展示可能通过的（通过条件最多的排在前面）
   const sorted = [...items].sort((a, b) => {
     const aPass = Object.values(a.conditions).filter((c) => c.pass).length;
     const bPass = Object.values(b.conditions).filter((c) => c.pass).length;
     return bPass - aPass;
   });
 
+  // 只显示有超卖信号或通过条件 >=1 的币种
+  const visible = sorted.filter((i) => {
+    const passCount = Object.values(i.conditions).filter((c) => c.pass).length;
+    return passCount >= 1 || i.rsi_1h < 40;
+  }).slice(0, 8);
+
   return (
-    <TerminalCard title="市场入场信号">
-      <div className="flex items-center gap-3 mb-3 text-xs">
-        <span className="text-[var(--terminal-muted)]">
-          监控 {items.length} 币种 · 通过 {items.filter((i) => i.all_pass).length} 个
-        </span>
-        <span className="text-[var(--terminal-muted)]/60">更新: {lastUpdate}</span>
+    <TerminalCard title={`市场入场信号 (${items.filter((i) => i.all_pass).length}/${items.length})`}>
+      {/* 表头 */}
+      <div className="grid grid-cols-[1fr_52px_52px_52px_52px] gap-0.5 mb-1 text-[10px] text-[var(--terminal-muted)]">
+        <span>币种</span>
+        <span className="text-center">RSI</span>
+        <span className="text-center">趋势</span>
+        <span className="text-center">4H RSI</span>
+        <span className="text-center">成交量</span>
       </div>
 
-      <div className="space-y-2 max-h-[500px] overflow-y-auto">
-        {sorted.map((item) => {
-          const conds = item.conditions;
-          const passCount = Object.values(conds).filter((c) => c.pass).length;
-
+      {/* 数据行 */}
+      <div className="space-y-px">
+        {visible.map((item) => {
+          const c = item.conditions;
           return (
             <div
               key={item.symbol}
-              className={`border rounded-lg p-2.5 ${
-                item.all_pass
-                  ? "border-green-500/30 bg-green-500/5"
-                  : "border-[var(--terminal-border)]"
+              className={`grid grid-cols-[1fr_52px_52px_52px_52px] gap-0.5 py-1 px-1 rounded text-[11px] ${
+                item.all_pass ? "bg-green-500/10" : ""
               }`}
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium text-[var(--terminal-text)]">
-                  {item.symbol.replace("USDT", "")}
-                </span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    item.all_pass
-                      ? "bg-green-500/20 text-green-400"
-                      : passCount >= 2
-                        ? "bg-yellow-500/10 text-yellow-400"
-                        : "bg-red-500/10 text-red-400"
-                  }`}
-                >
-                  {item.all_pass ? "可入场" : `${passCount}/4`}
-                </span>
-              </div>
-
-              {/* 4个条件横向排列 */}
-              <div className="grid grid-cols-4 gap-1.5">
-                {Object.entries(conds).map(([key, c]) => (
-                  <ConditionBadge
-                    key={key}
-                    label={c.label}
-                    value={c.value}
-                    threshold={c.threshold}
-                    pass={c.pass}
-                  />
-                ))}
-              </div>
+              <span className="font-medium truncate">{item.symbol.replace("USDT", "")}</span>
+              <ConditionCell label={c.rsi_oversold.label} value={c.rsi_oversold.value} pass={c.rsi_oversold.pass} />
+              <ConditionCell label={c.trend_4h.label} value={c.trend_4h.value} pass={c.trend_4h.pass} />
+              <ConditionCell label={c.rsi_4h_ok.label} value={c.rsi_4h_ok.value} pass={c.rsi_4h_ok.pass} />
+              <ConditionCell label={c.volume_ok.label} value={c.volume_ok.value} pass={c.volume_ok.pass} />
             </div>
           );
         })}
       </div>
 
-      <div className="text-[10px] text-[var(--terminal-muted)]/50 mt-2">
-        EnhancedStrategy 入场条件: RSI {"<"} 32 + 4H趋势向上 + 4H RSI {"<"} 70 + 成交量 ≥ 同时段60%
+      <div className="text-[9px] text-[var(--terminal-muted)]/40 mt-1.5 flex justify-between">
+        <span>RSI&lt;32 · 4H价格&gt;SMA200 · 4H RSI&lt;70 · 成交量≥同时段60%</span>
+        <span>{lastUpdate}</span>
       </div>
     </TerminalCard>
   );
 }
 
-function ConditionBadge({
-  label,
-  value,
-  threshold,
-  pass,
-}: {
-  label: string;
-  value: string;
-  threshold: string;
-  pass: boolean;
-}) {
+function ConditionCell({ value, pass }: { label: string; value: string; pass: boolean }) {
   return (
-    <div
-      className={`rounded p-1.5 text-center text-[11px] ${
-        pass ? "bg-green-500/10 text-green-300" : "bg-[var(--terminal-border)]/10 text-[var(--terminal-muted)]"
-      }`}
-    >
-      <div className="truncate">{label}</div>
-      <div className={`font-mono ${pass ? "text-green-400" : "text-red-400/70"}`}>
-        {value}
-      </div>
-      <div className="text-[9px] opacity-50">
-        {pass ? "✅" : `需 ${threshold}`}
-      </div>
-    </div>
+    <span className={`text-center font-mono ${pass ? "text-green-400" : "text-red-400/60"}`}>
+      {value}
+    </span>
   );
 }
