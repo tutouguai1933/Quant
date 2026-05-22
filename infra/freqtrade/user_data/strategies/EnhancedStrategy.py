@@ -78,8 +78,12 @@ class EnhancedStrategy(IStrategy):
         dataframe["sma200"] = ta.SMA(dataframe["close"], timeperiod=200)
         dataframe["sma50"] = ta.SMA(dataframe["close"], timeperiod=50)
 
-        # 成交量指标
-        dataframe["volume_sma"] = ta.SMA(dataframe["volume"], timeperiod=20)
+        # 成交量指标 - 同一时段对比（过去7天同一小时的均量）
+        lookback_days = 7
+        volume_same_hour = dataframe["volume"].copy()
+        for day in range(1, lookback_days + 1):
+            volume_same_hour += dataframe["volume"].shift(day * 24, fill_value=0)
+        dataframe["volume_sma_hourly"] = volume_same_hour / (lookback_days + 1)
 
         # ATR指标 - 用于动态止损
         dataframe["atr"] = ta.ATR(dataframe["high"], dataframe["low"], dataframe["close"],
@@ -94,12 +98,12 @@ class EnhancedStrategy(IStrategy):
         # 1. 1H RSI超卖 (< threshold)
         # 2. 4H趋势向上（价格在SMA200上方）
         # 3. 4H RSI不极端超买（避免逆大势）
-        # 4. 成交量高于平均（有活性）
+        # 4. 成交量不低于过去7天同一时段的60%（过滤异常缩量）
         conditions = (
             (dataframe["rsi"] < self.rsi_entry_threshold.value) &
             (dataframe["close_4h"] > dataframe["sma200_4h"]) &
             (dataframe["rsi_4h"] < 70) &
-            (dataframe["volume"] > dataframe["volume_sma"] * 0.8)
+            (dataframe["volume"] > dataframe["volume_sma_hourly"] * 0.6)
         )
 
         dataframe.loc[conditions, "enter_long"] = 1
@@ -296,7 +300,7 @@ class EnhancedStrategy(IStrategy):
         last_candle = dataframe.iloc[-1]
         rsi = last_candle.get("rsi", 50)
         current_volume = last_candle.get("volume", 0)
-        avg_volume = last_candle.get("volume_sma", current_volume)
+        avg_volume = last_candle.get("volume_sma_hourly", current_volume)
 
         # 计算信号强度评分
         signal_score = self._calculate_signal_strength(
