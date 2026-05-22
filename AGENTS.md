@@ -79,9 +79,22 @@ docker logs quant-web --tail 30
 ### Freqtrade 重启
 
 ```bash
-# EnhancedStrategy 策略配置更新后需要重启 Freqtrade
+# EnhancedStrategy 策略代码更新后需要重启 Freqtrade（注意：容器必须 stop+rm 再 up）
 ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
   "docker stop quant-freqtrade && docker rm quant-freqtrade && cd ~/Quant/infra/freqtrade && docker compose up -d freqtrade"
+```
+
+### 自动化状态重置
+
+```bash
+# 自动化被暂停/人工接管后，重置状态文件并重启 API
+ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cat ~/Quant/infra/data/runtime/automation_state.json | python3 -c \"
+import sys,json; state=json.load(sys.stdin)
+state['manual_takeover']=state['paused']=False
+state['consecutive_failure_count']=0
+print(json.dumps(state,indent=2))
+\" > /tmp/as.json && mv /tmp/as.json ~/Quant/infra/data/runtime/automation_state.json \
+&& docker restart quant-api"
 ```
 
 ### Python 包安装（使用中国镜像加速）

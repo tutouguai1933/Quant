@@ -1,33 +1,34 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-05-20
+> 最后更新：2026-05-23
 
 ---
 
 ## 当前进度
 
-**状态**：系统稳定运行，ML 模型参数优化完成，EnhancedStrategy 策略优化完成
+**状态**：ML 模型推理修复完成，门控逻辑全面优化，EnhancedStrategy 成交量过滤改进
 
-**本次更新（2026-05-20）**：
+**本次更新（2026-05-23）**：
 
-### ML 模型参数优化
-- **时间框架**：从 4h+1h 多时间框架改为 4h 单一时间框架（提升样本质量）
-- **回看天数**：30天 → 60天（最佳性价比）
-- **模型参数**：num_leaves 8→31, learning_rate 0.03→0.02, reg_alpha/reg_lambda 0.5→0.1, min_child_samples 50→20, n_estimators 100→200
-- **效果**：验证AUC 0.51→0.64（+25%）
-- **超时修复**：openclaw_scheduler 180s→300s, action timeout 120s→300s, training task 600s→900s
+### ML 模型推理修复
+- **模型文件路径 Bug**：predictor.py 用字符串拼接检查模型文件（`.model.txt`），但 save 用 `with_suffix` 替换后缀（`.txt`），路径不匹配导致模型加载失败，fallback到启发式评分（全部为 0）
+- **类方法丢失 Bug**：`_build_per_symbol_validation` 缩进错误导致它后面的所有类方法脱离 `QlibRunner` class，训练时报 `AttributeError`
+- **运行时目录持久化**：添加 `QUANT_QLIB_RUNTIME_ROOT=/app/.runtime/qlib` 确保模型文件不会随容器重建丢失
 
-### EnhancedStrategy 策略参数优化
-- **rsi_entry_threshold**：50→32（日均信号14次→2-3次，只抓真正超卖）
-- **atr_multiplier**：3.0→2.0（适中止损距离）
-- **max_day_loss_pct**：8.3%→5%（收紧日亏损上限）
-- **ROI**：60min 4%→3%, 120min 3%→2%（更容易触发止盈）
-- **rsi_exit_threshold**：74→72
+### 门控逻辑全面修复
+- **Backtest Gate**：原回测对全部测试样本求和（无视模型预测），修复为只计入 ML 预测买入（概率≥0.5）的样本
+- **Consistency Gate**：原来用全局验证集对比单币回测（数据维度不对等），改为回测内部一致性检查（胜率vs Sharpe、收益vs回撤）
+- **Validation Gate**：原来所有候选共用全局验证数据，改为每个币种独立计算 per-symbol 验证指标
+- **门控阈值调整**：`dry_run_min_score` 0.55→0.45，`live_min_score` 0.65→0.50，`live_min_ml_probability` 0.55→0.45
 
-### 自动化周期恢复
-- **原因**：5月11日执行失败触发人工接管，8天未运行
-- **修复**：清理manual_takeover状态、重置失败计数、重启服务
-- **当前**：正常运行，每15分钟执行一次
+### EnhancedStrategy 成交量过滤改进
+- **同时段对比**：成交量不再与 SMA20 比，改为对比过去 7 天同一小时的均量，避免凌晨自然低量被误拦
+- **阈值调整**：0.8 → 0.6（同时段对比更精准）
+- **ROI 同步**：代码中 `minimal_roi` 与 JSON 配置文件保持一致
+
+### RSI 概览改进
+- 默认周期 1D → 1H（实时性更好）
+- 缓存增加 5 分钟 TTL 过期机制
 
 ---
 
@@ -42,100 +43,65 @@
 | mihomo代理 | 127.0.0.1:7890 | ✅ Healthy |
 | OpenClaw | 巡检服务 | ✅ Healthy |
 
-### 服务架构
-
-```
-服务器 (39.106.11.65)
-├── quant-api (FastAPI) - 端口 9011
-│   ├── ML 模型服务：训练/推理/超参优化/模型管理
-│   ├── ML 追踪服务：预测校准/A/B对比
-│   ├── 告警推送：飞书/Telegram/Webhook
-│   └── 运行时目录：/app/.runtime/
-├── quant-web (Next.js) - 端口 9012
-│   ├── /training - 训练结果+曲线+特征重要性+A/B对比
-│   ├── /models - 模型版本管理（对比/提升）
-│   ├── /signals - 信号+ML预测+特征贡献
-│   ├── /backtest - 回测训练
-│   ├── /evaluation - 选币回测+ML预测
-│   ├── /features - 因子研究
-│   └── /hyperopt - 参数优化
-├── quant-freqtrade (EnhancedStrategy) - RSI策略
-├── quant-mihomo - 代理端口 7890
-└── quant-openclaw - 巡检服务 (15分钟周期)
-```
-
 ---
 
 ## 双策略架构
 
 ### 1. EnhancedStrategy（RSI策略，Freqtrade）
 
-| 参数 | 旧值 | 新值 | 说明 |
-|------|------|------|------|
-| rsi_entry_threshold | 50 | **32** | RSI入场阈值 |
-| rsi_exit_threshold | 74 | **72** | RSI出场阈值 |
-| atr_multiplier | 3.0 | **2.0** | ATR止损倍数 |
-| max_day_loss_pct | 8.3% | **5%** | 日亏损上限 |
-| max_consecutive_losses | 4 | 4 | 连续亏损暂停 |
-| stoploss | -8% | -8% | 止损 |
-| ROI | 8/5/4/3 | 8/5/3/2 | 止盈目标 |
-| trading_pairs | 15个 | 15个 | 固定白名单 |
+**入场条件**（4个同时满足）：
+1. 1H RSI < 32（超卖区）
+2. 4H 价格 > SMA200（长期趋势向上）
+3. 4H RSI < 70（不超买）
+4. 成交量 > 过去 7 天同一时段均量 × 0.6
+
+| 参数 | 当前值 |
+|------|--------|
+| rsi_entry_threshold | 32 |
+| rsi_exit_threshold | 72 |
+| atr_multiplier | 2.0 |
+| max_day_loss_pct | 5% |
+| stoploss | -8% |
+| ROI | 8%/5%/3%/2% (0/30/60/120min) |
+| stake_amount | 7 USDT |
 
 ### 2. 自动化周期策略（ML策略）
 
-| 参数 | 旧值 | 新值 |
-|------|------|------|
-| 时间框架 | 4h + 1h | **4h** |
-| 回看天数 | 30天 | **60天** |
-| num_leaves | 8 | **31** |
-| learning_rate | 0.03 | **0.02** |
-| reg_alpha/reg_lambda | 0.5 | **0.1** |
-| min_child_samples | 50 | **20** |
-| n_estimators | 100 | **200** |
-| 运行频率 | 15分钟 | 15分钟 |
+| 参数 | 当前值 |
+|------|--------|
+| 时间框架 | 4h |
+| 回看天数 | 60天 |
+| num_leaves | 31 |
+| learning_rate | 0.02 |
+| reg_alpha/reg_lambda | 0.1 |
+| n_estimators | 200 |
+| 运行频率 | 15分钟 |
+
+### 门控体系
+
+| Gate | 检查内容 | 关键阈值 |
+|------|---------|---------|
+| Score Gate | ML 得分 | ≥ 0.45 |
+| Rule Gate | EMA趋势/ATR/成交量 | ema20_gap>0, ema55_gap>0 |
+| Backtest Gate | 回测指标（只看ML买入样本） | return>0, sharpe≥0.25 |
+| Consistency Gate | 回测内部一致性 | 胜率vs Sharpe, 收益vs回撤 |
+| Validation Gate | per-symbol 验证质量 | sample≥12, positive_rate≥45% |
+| Live Gate | 实盘准入 | score≥0.50, win_rate≥55% |
 
 ---
 
-## ML 模型系统
+## 已修复的 Bug 列表
 
-### 当前配置
-
-```python
-DEFAULT_LIGHTGBM_PARAMS = {
-    "num_leaves": 31,
-    "learning_rate": 0.02,
-    "feature_fraction": 0.8,
-    "bagging_fraction": 0.8,
-    "min_child_samples": 20,
-    "reg_alpha": 0.1,
-    "reg_lambda": 0.1,
-    "n_estimators": 200,
-    "early_stopping_rounds": 15,
-}
-```
-
-### 关键超时配置
-
-| 参数 | 旧值 | 新值 | 文件 |
-|------|------|------|------|
-| cycle_check timeout | 180s | **300s** | openclaw_scheduler.py |
-| action timeout | 120s | **300s** | openclaw_patrol_service.py |
-| research_train timeout | 600s | **900s** | tasks/scheduler.py |
-
----
-
-## 前端页面状态
-
-| 页面 | 路由 | 状态 |
-|------|------|------|
-| 工作台首页 | `/` | ✅ |
-| 模型训练 | `/training` | ✅ |
-| 模型管理 | `/models` | ✅ |
-| 回测训练 | `/backtest` | ✅ |
-| 选币回测 | `/evaluation` | ✅ |
-| 因子研究 | `/features` | ✅ |
-| 参数优化 | `/hyperopt` | ✅ |
-| 信号 | `/signals` | ✅ |
+| 日期 | Bug | 影响 | 修复 |
+|------|-----|------|------|
+| 05-23 | predictor 文件路径拼接错误 | 模型无法加载，score=0 | `with_suffix()` 替换字符串拼接 |
+| 05-23 | `_build_per_symbol_validation` 缩进错误 | 所有类方法脱离 class | 移到类定义之后 |
+| 05-23 | 回测全量样本求和 | 收益永远为负 | 只统计 ML 预测买入样本 |
+| 05-23 | Consistency Gate 跨维度对比 | 全局vs单币误拦 | 改为回测内部一致性 |
+| 05-23 | Validation Gate 全局复用 | 15个候选共用同份数据 | per-symbol 独立计算 |
+| 05-22 | RSI 缓存无过期 | 首页定格在旧数据 | 5分钟 TTL |
+| 05-21 | 自动化周期人工接管 | 8天未运行 | 重置状态 |
+| 05-20 | 训练超时 | 新参数训练时间超限 | 3处超时配置调整 |
 
 ---
 
@@ -146,31 +112,16 @@ DEFAULT_LIGHTGBM_PARAMS = {
 ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
   "cd ~/Quant && git pull && cd infra/deploy && docker compose build api && docker compose up -d --no-deps api"
 
-# Web
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
-  "cd ~/Quant && git pull && cd infra/deploy && docker compose build web && docker compose up -d --no-deps web"
-
 # Freqtrade 重启
 ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
   "docker stop quant-freqtrade && docker rm quant-freqtrade && cd ~/Quant/infra/freqtrade && docker compose up -d freqtrade"
 
-# OpenClaw 重启
+# 自动化状态重置
 ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
-  "cd ~/Quant/infra/deploy && docker compose restart openclaw"
-
-# 磁盘清理
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 \
-  "docker builder prune --force && docker image prune --force"
+  "cat ~/Quant/infra/data/runtime/automation_state.json | python3 -c \"
+import sys,json; state=json.load(sys.stdin)
+state['manual_takeover']=state['paused']=False
+state['consecutive_failure_count']=0
+print(json.dumps(state,indent=2))
+\" > /tmp/as.json && mv /tmp/as.json ~/Quant/infra/data/runtime/automation_state.json"
 ```
-
----
-
-## 参考文档
-
-| 文档 | 内容 |
-|------|------|
-| [AGENTS.md](AGENTS.md) | 开发规则和部署规范 |
-| [README.md](README.md) | 项目概览 |
-| [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) | 部署详细说明 |
-| [docs/SERVICE_ARCHITECTURE.md](docs/SERVICE_ARCHITECTURE.md) | 服务架构 |
-| [docs/ops-troubleshooting.md](docs/ops-troubleshooting.md) | 运维踩坑记录 |
