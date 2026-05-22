@@ -336,7 +336,7 @@ class EnhancedStrategy(IStrategy):
             )
 
         # 最低有效仓位，避免 NOTIONAL filter 导致无法平仓
-        MIN_EFFECTIVE_STAKE = 10.0
+        MIN_EFFECTIVE_STAKE = 6.0
 
         # 计算最终仓位
         adjusted_stake = proposed_stake * stake_multiplier
