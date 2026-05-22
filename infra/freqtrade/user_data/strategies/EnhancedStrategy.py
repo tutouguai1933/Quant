@@ -80,10 +80,13 @@ class EnhancedStrategy(IStrategy):
 
         # 成交量指标 - 同一时段对比（过去7天同一小时的均量）
         lookback_days = 7
-        volume_same_hour = dataframe["volume"].copy()
+        volume_sum = dataframe["volume"].copy()
+        valid_count = dataframe["volume"].notna().astype(int)
         for day in range(1, lookback_days + 1):
-            volume_same_hour += dataframe["volume"].shift(day * 24, fill_value=0)
-        dataframe["volume_sma_hourly"] = volume_same_hour / (lookback_days + 1)
+            shifted = dataframe["volume"].shift(day * 24)
+            volume_sum += shifted.fillna(0)
+            valid_count += shifted.notna().astype(int)
+        dataframe["volume_sma_hourly"] = volume_sum / valid_count.replace(0, 1)
 
         # ATR指标 - 用于动态止损
         dataframe["atr"] = ta.ATR(dataframe["high"], dataframe["low"], dataframe["close"],
