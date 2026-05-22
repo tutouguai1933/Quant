@@ -53,9 +53,9 @@ class ModelPredictor:
         if model_path is not None:
             # 检查是否存在模型文件（.txt 或 .meta.json 或 .pkl）
             path = Path(model_path)
-            txt_path = Path(str(path) + ".txt")
-            meta_path = Path(str(path) + ".meta.json")
-            pkl_path = Path(str(path) + ".pkl")
+            txt_path = path.with_suffix(".txt")
+            meta_path = path.with_suffix(".meta.json")
+            pkl_path = path.with_suffix(".pkl")
             if txt_path.exists() or meta_path.exists() or pkl_path.exists():
                 self._load_model(path)
 
