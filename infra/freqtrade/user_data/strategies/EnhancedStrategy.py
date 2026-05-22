@@ -335,6 +335,9 @@ class EnhancedStrategy(IStrategy):
                 f"stake x{stake_multiplier}"
             )
 
+        # 最低有效仓位，避免 NOTIONAL filter 导致无法平仓
+        MIN_EFFECTIVE_STAKE = 10.0
+
         # 计算最终仓位
         adjusted_stake = proposed_stake * stake_multiplier
 
@@ -344,5 +347,9 @@ class EnhancedStrategy(IStrategy):
         # 确保不低于min_stake（如果设置）
         if min_stake is not None:
             adjusted_stake = max(adjusted_stake, min_stake)
+
+        # 确保不低于最低有效值（防止 Binance NOTIONAL filter）
+        if adjusted_stake < MIN_EFFECTIVE_STAKE:
+            adjusted_stake = MIN_EFFECTIVE_STAKE
 
         return adjusted_stake
