@@ -505,7 +505,7 @@ def _resolve_thresholds(value: dict[str, object] | None, *, research_template: s
 
     payload = dict(value or {})
     resolved = {
-        "dry_run_min_score": _to_decimal(payload.get("dry_run_min_score") or _runtime_decimal("dry_run_min_score", "0.55")),
+        "dry_run_min_score": _to_decimal(payload.get("dry_run_min_score") or _runtime_decimal("dry_run_min_score", "0.45")),
         "dry_run_min_positive_rate": _to_decimal(payload.get("dry_run_min_positive_rate") or _runtime_decimal("dry_run_min_positive_rate", "0.45")),
         "dry_run_min_net_return_pct": _to_decimal(payload.get("dry_run_min_net_return_pct") or _runtime_decimal("dry_run_min_net_return_pct", "0")),
         "dry_run_min_sharpe": _to_decimal(payload.get("dry_run_min_sharpe") or _runtime_decimal("dry_run_min_sharpe", "0.5")),
@@ -529,8 +529,8 @@ def _resolve_thresholds(value: dict[str, object] | None, *, research_template: s
         "enable_consistency_gate": _to_bool(payload.get("enable_consistency_gate"), _runtime_bool("enable_consistency_gate", "true")),
         "enable_live_gate": _to_bool(payload.get("enable_live_gate"), _runtime_bool("enable_live_gate", "true")),
         "enable_ml_live_gate": _to_bool(payload.get("enable_ml_live_gate"), True),
-        "live_min_ml_probability": _to_decimal(payload.get("live_min_ml_probability") or _runtime_decimal("live_min_ml_probability", "0.55")),
-        "live_min_score": _to_decimal(payload.get("live_min_score") or _runtime_decimal("live_min_score", "0.65")),
+        "live_min_ml_probability": _to_decimal(payload.get("live_min_ml_probability") or _runtime_decimal("live_min_ml_probability", "0.45")),
+        "live_min_score": _to_decimal(payload.get("live_min_score") or _runtime_decimal("live_min_score", "0.50")),
         "live_min_positive_rate": _to_decimal(payload.get("live_min_positive_rate") or _runtime_decimal("live_min_positive_rate", "0.50")),
         "live_min_net_return_pct": _to_decimal(payload.get("live_min_net_return_pct") or _runtime_decimal("live_min_net_return_pct", "0.20")),
         "live_min_win_rate": _to_decimal(payload.get("live_min_win_rate") or _runtime_decimal("live_min_win_rate", "0.55")),
