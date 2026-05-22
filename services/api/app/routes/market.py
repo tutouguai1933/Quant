@@ -250,13 +250,13 @@ def _fetch_entry_conditions(symbol: str, allowed_symbols: tuple) -> dict | None:
             return None
 
         # --- 1H 指标 ---
-        closes_1h = [item.get("close", 0) for item in items_1h]
-        volumes_1h = [item.get("volume", 0) for item in items_1h]
+        closes_1h = [float(item.get("close", 0)) for item in items_1h]
+        volumes_1h = [float(item.get("volume", 0)) for item in items_1h]
 
         rsi_1h = float(_rsi([_to_decimal(c) for c in closes_1h[-(14 + 1):]], 14).quantize(Decimal("0.01")))
 
         # --- 4H 指标 ---
-        closes_4h = [item.get("close", 0) for item in items_4h]
+        closes_4h = [float(item.get("close", 0)) for item in items_4h]
 
         # SMA200 on 4H
         sma200_4h = sum(closes_4h[-200:]) / min(200, len(closes_4h)) if closes_4h else 0
