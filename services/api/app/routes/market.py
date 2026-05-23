@@ -36,6 +36,7 @@ alias_router = APIRouter(prefix="/api/v1/quotes", tags=["quotes"])
 service = MarketService(research_reader=research_service)
 
 _executor = ThreadPoolExecutor(max_workers=4)
+_entry_executor = ThreadPoolExecutor(max_workers=8)  # 入场条件专用，并发获取K线
 
 
 def _success(data: dict, meta: dict | None = None) -> dict:
@@ -331,7 +332,7 @@ def get_entry_conditions() -> dict:
     asyncio.set_event_loop(loop)
     try:
         futures = [
-            loop.run_in_executor(_executor, _fetch_entry_conditions, symbol, allowed)
+            loop.run_in_executor(_entry_executor, _fetch_entry_conditions, symbol, allowed)
             for symbol in symbols
         ]
         raw_results = loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
