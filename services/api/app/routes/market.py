@@ -233,7 +233,7 @@ def refresh_rsi_cache_endpoint(interval: str = "1d") -> dict:
 
 # 入口条件缓存
 _entry_conditions_cache: dict[str, object] = {"data": None, "ts": 0}
-_ENTRY_CONDITIONS_TTL = 120  # 2分钟
+_ENTRY_CONDITIONS_TTL = 300  # 5分钟
 
 
 def _fetch_entry_conditions(symbol: str, allowed_symbols: tuple) -> dict | None:

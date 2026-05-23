@@ -2034,7 +2034,7 @@ export async function getEntryConditions(): Promise<
   ApiEnvelope<{ items: EntryConditionItem[]; total: number; passed_count: number; updated_at: string }>
 > {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
     const response = await fetchJson<{ items: EntryConditionItem[]; total: number; passed_count: number }>(
