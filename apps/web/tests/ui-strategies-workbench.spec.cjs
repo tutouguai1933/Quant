@@ -1,6 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const { getPlaywrightUseOptions } = require("./playwright-browser.cjs");
 const { WEB_BASE_URL } = require("./test-urls.cjs");
+const { loginAsAdmin } = require("./test-auth.cjs");
 
 test.use(getPlaywrightUseOptions());
 
@@ -8,19 +9,7 @@ test("strategies page collapses default view into execution workbench with drawe
   test.setTimeout(120000);
   const navigation = { waitUntil: "commit", timeout: 90000 };
   const renderTimeout = 60000;
-
-  await page.context().addCookies([
-    {
-      name: "quant_admin_token",
-      value: "fake-token",
-      domain: "127.0.0.1",
-      path: "/",
-      httpOnly: false,
-      secure: false,
-      sameSite: "Lax",
-    },
-  ]);
-
+  await loginAsAdmin(page, "/strategies");
   await page.goto(`${WEB_BASE_URL}/strategies`, navigation);
 
   await expect(page.locator("body")).toContainText("策略", { timeout: renderTimeout });
