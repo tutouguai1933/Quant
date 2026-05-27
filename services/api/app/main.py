@@ -12,6 +12,7 @@ import time
 
 try:
     from fastapi import FastAPI, Request, Response
+    from fastapi.responses import JSONResponse
 except ImportError:
     class FastAPI:  # pragma: no cover - lightweight local fallback
         def __init__(self, *args, **kwargs) -> None:
@@ -27,6 +28,11 @@ except ImportError:
 
     class Response:  # pragma: no cover
         pass
+
+    class JSONResponse:  # pragma: no cover
+        def __init__(self, content: dict, status_code: int = 200) -> None:
+            self.content = content
+            self.status_code = status_code
 
 
 from services.api.app.routes.accounts import router as accounts_router
@@ -87,6 +93,19 @@ app = FastAPI(
 
 if not hasattr(app, "routers"):
     app.routers = []  # type: ignore[attr-defined]
+
+
+@app.exception_handler(PermissionError)
+async def permission_error_handler(request: Request, exc: PermissionError) -> JSONResponse:
+    """把控制面认证异常统一转换为 401，避免 ASGI 异常刷日志。"""
+    return JSONResponse(
+        status_code=401,
+        content={
+            "data": None,
+            "error": {"code": "unauthorized", "message": "当前页面需要先登录"},
+            "meta": {"source": "auth-service"},
+        },
+    )
 
 app.include_router(health_router)
 app.routers.append(health_router)  # type: ignore[attr-defined]

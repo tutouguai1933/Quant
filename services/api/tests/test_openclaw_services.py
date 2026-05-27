@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from services.api.app.services.openclaw_action_service import OpenclawActionService  # noqa: E402
+from services.api.app.services.openclaw_patrol_service import OpenclawPatrolService  # noqa: E402
 from services.api.app.services.openclaw_snapshot_service import OpenclawSnapshotService  # noqa: E402
 
 
@@ -119,6 +121,39 @@ class OpenclawServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         automation.enable_dry_run_only.assert_called_once_with(actor="openclaw")
         automation.set_mode.assert_not_called()
+
+    def test_cycle_check_queues_automation_run_without_waiting_for_cycle_completion(self) -> None:
+        snapshot_service = mock.Mock()
+        snapshot_service.get_snapshot.return_value = {
+            "snapshot_id": "snapshot-1",
+            "services": {"api": {"status": "healthy"}},
+            "runtime_guard": {},
+            "suggested_action": {"action": "run_cycle", "auto_run_allowed": True},
+        }
+        action_service = mock.Mock()
+
+        def slow_action(action: str) -> dict[str, object]:
+            time.sleep(0.2)
+            return {"success": True, "action": action}
+
+        action_service.execute_action.side_effect = slow_action
+        health_service = mock.Mock()
+
+        patrol_service = OpenclawPatrolService(
+            snapshot_service=snapshot_service,
+            action_service=action_service,
+            health_service=health_service,
+        )
+        patrol_service._check_vpn_health = mock.Mock(return_value={"action_taken": False})  # type: ignore[method-assign]
+        patrol_service._check_service_health = mock.Mock(return_value={"action_taken": False, "patrol_status": "normal"})  # type: ignore[method-assign]
+        patrol_service._can_execute_action = mock.Mock(return_value=(True, ""))  # type: ignore[method-assign]
+
+        started_at = time.monotonic()
+        result = patrol_service.patrol("cycle_check")
+        elapsed = time.monotonic() - started_at
+
+        self.assertEqual(result["actions_taken"][0]["patrol_status"], "queued")
+        self.assertLess(elapsed, 0.15)
 
 
 if __name__ == "__main__":

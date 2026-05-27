@@ -89,6 +89,11 @@ class OpenclawPatrolService:
         self._action_counters: dict[str, dict[str, Any]] = {}  # 动作节流计数器
         self._vpn_switch_counter: dict[str, Any] = {}  # VPN切换节流计数器
         self._lock = threading.Lock()
+        self._background_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="openclaw-action",
+        )
+        self._background_actions: dict[str, concurrent.futures.Future] = {}
         self._load()
 
     def _load(self) -> None:
@@ -363,43 +368,22 @@ class OpenclawPatrolService:
         if action == "run_cycle" and auto_run_allowed:
             can_execute, reason = self._can_execute_action("automation_run_cycle")
             if can_execute:
-                # 使用线程池执行，带超时保护
-                try:
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(
-                            self._action_service.execute_action,
-                            "automation_run_cycle"
-                        )
-                        result = future.result(timeout=self.ACTION_TIMEOUT_SECONDS)
-                        success = bool(result.get("success"))
-                        self._record_action_result("automation_run_cycle", success)
-                        return {
-                            "action_taken": True,
-                            "action": "automation_run_cycle",
-                            "success": success,
-                            "message": "周期就绪，已执行自动化周期",
-                            "patrol_status": "action_taken",
-                        }
-                except concurrent.futures.TimeoutError:
-                    logger.error("automation_run_cycle 执行超时 (%s 秒)", self.ACTION_TIMEOUT_SECONDS)
-                    self._record_action_result("automation_run_cycle", False)
+                queued, queue_reason = self._queue_background_action("automation_run_cycle")
+                if queued:
                     return {
-                        "action_taken": False,
+                        "action_taken": True,
                         "action": "automation_run_cycle",
-                        "blocked_reason": f"执行超时 ({self.ACTION_TIMEOUT_SECONDS}秒)",
-                        "message": f"自动化周期执行超时，已终止",
-                        "patrol_status": "timeout",
+                        "success": True,
+                        "message": "周期就绪，已排队后台执行自动化周期",
+                        "patrol_status": "queued",
                     }
-                except Exception as e:
-                    logger.exception("automation_run_cycle 执行异常: %s", e)
-                    self._record_action_result("automation_run_cycle", False)
-                    return {
-                        "action_taken": False,
-                        "action": "automation_run_cycle",
-                        "blocked_reason": str(e),
-                        "message": f"自动化周期执行异常: {e}",
-                        "patrol_status": "error",
-                    }
+                return {
+                    "action_taken": False,
+                    "action": "automation_run_cycle",
+                    "blocked_reason": queue_reason,
+                    "message": f"周期就绪但动作未排队: {queue_reason}",
+                    "patrol_status": "running",
+                }
             else:
                 return {
                     "action_taken": False,
@@ -414,6 +398,27 @@ class OpenclawPatrolService:
             "message": "周期未就绪或禁止自动运行",
             "patrol_status": "normal",
         }
+
+    def _queue_background_action(self, action: str) -> tuple[bool, str]:
+        """把耗时动作放入后台执行，避免巡检 HTTP 请求等待完整周期。"""
+        with self._lock:
+            existing = self._background_actions.get(action)
+            if existing is not None and not existing.done():
+                return False, "action_already_running"
+            future = self._background_executor.submit(self._execute_background_action, action)
+            self._background_actions[action] = future
+        return True, "queued"
+
+    def _execute_background_action(self, action: str) -> None:
+        """执行后台动作并记录结果。"""
+        success = False
+        try:
+            result = self._action_service.execute_action(action)
+            success = bool(result.get("success"))
+        except Exception as e:
+            logger.exception("%s 后台执行异常: %s", action, e)
+        finally:
+            self._record_action_result(action, success)
 
     def _check_alert_cleanup(self, snapshot: dict) -> dict[str, Any]:
         """检查告警堆积。

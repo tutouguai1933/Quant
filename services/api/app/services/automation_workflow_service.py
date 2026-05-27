@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import time
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -54,6 +55,8 @@ class AutomationWorkflowService:
         # get_status() 缓存
         self._status_cache: dict[str, Any] | None = None
         self._status_cache_time: float = 0.0
+        self._status_refresh_lock = threading.Lock()
+        self._status_refreshing = False
 
     def get_status(self) -> dict[str, object]:
         """返回自动化状态和健康摘要（带缓存）。"""
@@ -61,6 +64,39 @@ class AutomationWorkflowService:
         # 检查缓存是否有效
         if self._status_cache is not None and (time.time() - self._status_cache_time) < self._STATUS_CACHE_TTL:
             return self._status_cache
+        if self._status_cache is not None:
+            self._refresh_status_in_background()
+            stale_payload = dict(self._status_cache)
+            stale_payload["cache_state"] = "stale"
+            stale_payload["cache_age_seconds"] = round(time.time() - self._status_cache_time, 3)
+            return stale_payload
+
+        status_payload = self._compute_status_payload()
+        self._status_cache = status_payload
+        self._status_cache_time = time.time()
+        return status_payload
+
+    def _refresh_status_in_background(self) -> None:
+        """后台刷新过期状态缓存，避免页面请求等待慢下游。"""
+        with self._status_refresh_lock:
+            if self._status_refreshing:
+                return
+            self._status_refreshing = True
+        thread = threading.Thread(target=self._refresh_status_cache, name="automation-status-refresh", daemon=True)
+        thread.start()
+
+    def _refresh_status_cache(self) -> None:
+        """刷新状态缓存并释放刷新标记。"""
+        try:
+            status_payload = self._compute_status_payload()
+            self._status_cache = status_payload
+            self._status_cache_time = time.time()
+        finally:
+            with self._status_refresh_lock:
+                self._status_refreshing = False
+
+    def _compute_status_payload(self) -> dict[str, object]:
+        """同步计算完整自动化状态。"""
 
         task_health = self._scheduler.get_health_summary()
         automation_status = self._automation.get_status(task_health=task_health)
@@ -164,9 +200,6 @@ class AutomationWorkflowService:
                 automation_status=status_payload,
                 evaluation_workspace={},
             )
-        # 保存到缓存（使用当前时间）
-        self._status_cache = status_payload
-        self._status_cache_time = time.time()
         return status_payload
 
     def run_cycle(self, *, source: str = "automation", review_limit: int = 10) -> dict[str, object]:

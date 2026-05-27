@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -256,6 +257,28 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["recovery_review"]["status"], "attention_required")
         self.assertEqual(status["recovery_review"]["issue_code"], "execution_unavailable")
         self.assertIn("执行同步暂时不可用", status["recovery_review"]["detail"])
+
+    def test_get_status_returns_stale_cache_when_refresh_is_slow(self) -> None:
+        scheduler = mock.Mock()
+        scheduler.get_health_summary.return_value = {}
+        automation = AutomationService()
+        workflow = AutomationWorkflowService(
+            scheduler=scheduler,
+            automation=automation,
+            research=_QueuedResearchService(),
+            reviewer=_FakeReviewer(),
+            syncer=_SlowSyncService(),
+        )
+        workflow._status_cache = {"state": {"mode": "auto_dry_run"}, "cache_state": "warm"}  # type: ignore[attr-defined]
+        workflow._status_cache_time = time.time() - (workflow._STATUS_CACHE_TTL + 1)  # type: ignore[attr-defined]
+
+        started_at = time.monotonic()
+        status = workflow.get_status()
+        elapsed = time.monotonic() - started_at
+
+        self.assertLess(elapsed, 0.15)
+        self.assertEqual(status["cache_state"], "stale")
+        self.assertEqual(status["state"]["mode"], "auto_dry_run")
 
     def test_get_status_reuses_execution_health_snapshot_for_recovery_review(self) -> None:
         scheduler = mock.Mock()
@@ -1570,6 +1593,20 @@ class _BrokenSyncService:
         automation_state: dict[str, object] | None = None,
     ) -> dict[str, object]:
         raise RuntimeError("freqtrade offline")
+
+
+class _SlowSyncService(_FakeSyncService):
+    def __init__(self) -> None:
+        super().__init__(runtime_mode="live")
+
+    def get_execution_health_summary(
+        self,
+        *,
+        task_health: dict[str, object] | None = None,
+        automation_state: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        time.sleep(0.2)
+        return super().get_execution_health_summary(task_health=task_health, automation_state=automation_state)
 
 
 class _CountingSyncService:
