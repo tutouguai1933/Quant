@@ -67,7 +67,7 @@ services:
     environment:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
-      NO_PROXY: 127.0.0.1,localhost,api,web,freqtrade,mihomo
+      NO_PROXY: 127.0.0.1,localhost,172.17.0.1,api,web,freqtrade,mihomo
       QUANT_PATROL_AUTO_START: "true"
       QUANT_PATROL_INTERVAL_MINUTES: "15"
     env_file:
@@ -118,7 +118,7 @@ services:
     environment:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
-      NO_PROXY: 127.0.0.1,localhost,api,web,freqtrade,mihomo
+      NO_PROXY: 127.0.0.1,localhost,172.17.0.1,api,web,freqtrade,mihomo
     env_file:
       - ${QUANT_FREQTRADE_ENV_FILE:-../freqtrade/.env}
     volumes:

@@ -687,6 +687,39 @@ class QlibRunnerTests(unittest.TestCase):
             },
         )
 
+    def test_inference_iterates_over_stable_dataset_snapshot(self) -> None:
+        class MutatingDataset(dict):
+            def items(self):  # type: ignore[override]
+                for key, value in super().items():
+                    if "LATEUSDT" not in self:
+                        self["LATEUSDT"] = _sample_timing_candles(step_hours=4)
+                    yield key, value
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={
+                    "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                    "QUANT_QLIB_MODEL_TYPE": "heuristic",
+                },
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+
+            result = runner.infer(
+                dataset=MutatingDataset(
+                    {
+                        "BTCUSDT": _sample_timing_candles(step_hours=4),
+                        "ETHUSDT": _sample_timing_candles(step_hours=4),
+                    }
+                )
+            )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(len(result["signals"]), 2)
+
     def test_inference_uses_research_template_to_select_strategy_template(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)

@@ -169,7 +169,8 @@ class QlibRunner:
             except Exception:
                 pass
 
-        for symbol, market_payload in dataset.items():
+        for symbol in list(dataset.keys()):
+            market_payload = dataset[symbol]
             bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
             symbol_bundles[symbol] = bundle
             latest = self._pick_latest_row(bundle)
@@ -356,7 +357,8 @@ class QlibRunner:
         training_rows: list[dict[str, object]] = []
         validation_rows: list[dict[str, object]] = []
         backtest_rows: list[dict[str, object]] = []
-        for symbol, market_payload in dataset.items():
+        for symbol in list(dataset.keys()):
+            market_payload = dataset[symbol]
             bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
             symbol_bundles[symbol] = bundle
             training_rows.extend(bundle.training_rows)

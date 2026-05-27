@@ -244,6 +244,38 @@ class FreqtradeRestClientTests(unittest.TestCase):
         self.assertTrue(any(urlsplit(item["path"]).path == "/api/v1/forceenter" for item in state["requests"]))
         self.assertEqual(state["forceenter_seen"]["stakeamount"], 50.0)
 
+    def test_client_ignores_global_proxy_environment(self) -> None:
+        state: dict[str, object] = {}
+        server, base_url = _make_server(state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with patch.dict(
+                "os.environ",
+                {
+                    "HTTP_PROXY": "http://127.0.0.1:1",
+                    "HTTPS_PROXY": "http://127.0.0.1:1",
+                    "ALL_PROXY": "http://127.0.0.1:1",
+                    "NO_PROXY": "",
+                },
+            ):
+                client = FreqtradeRestClient(
+                    FreqtradeRestConfig(
+                        base_url=base_url,
+                        username="bot",
+                        password="secret",
+                        timeout_seconds=1.0,
+                    )
+                )
+
+                ping = client.ping()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(ping["status"], "pong")
+
     def test_client_forceexit_targets_current_symbol_instead_of_all_trades(self) -> None:
         state: dict[str, object] = {
             "positions": [

@@ -31,6 +31,12 @@ FREQTRADE_HOST = (
 )
 
 
+def _freqtrade_client() -> httpx.AsyncClient:
+    """创建 Freqtrade 直连客户端，避免本机执行器请求误走系统代理。"""
+
+    return httpx.AsyncClient(timeout=10.0, trust_env=False)
+
+
 def _get_auth() -> tuple[str, str]:
     """获取 Freqtrade 认证信息。"""
     # 支持两种环境变量格式
@@ -52,7 +58,7 @@ async def get_freqtrade_status() -> dict[str, Any]:
     """获取 Freqtrade 运行状态。"""
     try:
         auth = _get_auth()
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with _freqtrade_client() as client:
             # 获取状态
             status_resp = await client.get(f"{FREQTRADE_HOST}/api/v1/status", auth=auth)
             status_resp.raise_for_status()
@@ -102,7 +108,7 @@ async def get_freqtrade_profit() -> dict[str, Any]:
     """获取 Freqtrade 收益统计。"""
     try:
         auth = _get_auth()
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with _freqtrade_client() as client:
             resp = await client.get(f"{FREQTRADE_HOST}/api/v1/profit", auth=auth)
             resp.raise_for_status()
             return _success(resp.json())
@@ -116,7 +122,7 @@ async def get_freqtrade_trades(limit: int = 10) -> dict[str, Any]:
     """获取 Freqtrade 最近交易记录。"""
     try:
         auth = _get_auth()
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with _freqtrade_client() as client:
             resp = await client.get(
                 f"{FREQTRADE_HOST}/api/v1/trades",
                 params={"limit": limit},
@@ -139,7 +145,7 @@ async def get_freqtrade_profit_by_source() -> dict[str, Any]:
     """
     try:
         auth = _get_auth()
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with _freqtrade_client() as client:
             # 获取已平仓交易
             trades_resp = await client.get(
                 f"{FREQTRADE_HOST}/api/v1/trades",
@@ -241,7 +247,7 @@ async def get_freqtrade_open_trades() -> dict[str, Any]:
     """获取 Freqtrade 当前持仓详情。"""
     try:
         auth = _get_auth()
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with _freqtrade_client() as client:
             status_resp = await client.get(f"{FREQTRADE_HOST}/api/v1/status", auth=auth)
             status_resp.raise_for_status()
             trades = status_resp.json()
