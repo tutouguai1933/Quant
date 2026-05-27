@@ -1,14 +1,24 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-05-23
+> 最后更新：2026-05-27
 
 ---
 
 ## 当前进度
 
-**状态**：ML 模型推理修复完成，门控逻辑全面优化，EnhancedStrategy 成交量过滤改进
+**状态**：服务器服务恢复，自动化已退出人工接管，当前在 auto_dry_run 等待下一轮研究
 
-**本次更新（2026-05-23）**：
+**本次更新（2026-05-27）**：
+
+### 服务器不可用与自动化失败修复
+- **API 卡顿根因**：API 容器请求 Freqtrade 时使用 `172.17.0.1:9013`，但代理直连例外缺少 `172.17.0.1`，部分请求误走 mihomo 代理后超时，导致 Web 代理接口出现 `socket hang up`
+- **修复**：Freqtrade 代理路由统一使用 `httpx.AsyncClient(..., trust_env=False)`；部署 `NO_PROXY` 增加 `172.17.0.1`
+- **自动化失败根因**：05/26 01:50 推理阶段报 `dictionary changed size during iteration`，触发 `workflow_infer_failed` 并进入人工接管
+- **修复**：`QlibRunner` 训练和推理遍历数据前固定 key 快照，避免共享行情字典在遍历期间变化
+- **恢复动作**：服务器已部署 commit `b10ca54`，切到 `auto_dry_run` 后触发一轮自动化周期，训练、推理、信号输出、复盘均成功
+- **当前结果**：自动化未暂停、未人工接管；本轮候选被门控正常拦下，推荐继续研究（BNBUSDT 最大回撤过大）
+
+**上次更新（2026-05-23）**：
 
 ### ML 模型推理修复
 - **模型文件路径 Bug**：predictor.py 用字符串拼接检查模型文件（`.model.txt`），但 save 用 `with_suffix` 替换后缀（`.txt`），路径不匹配导致模型加载失败，fallback到启发式评分（全部为 0）
@@ -39,9 +49,10 @@
 |------|------|------|
 | 服务器API | http://39.106.11.65:9011 | ✅ Healthy |
 | 服务器Web | http://39.106.11.65:9012 | ✅ Healthy |
-| Freqtrade | EnhancedStrategy | ✅ RUNNING |
+| Freqtrade | EnhancedStrategy | ✅ API可用 |
 | mihomo代理 | 127.0.0.1:7890 | ✅ Healthy |
 | OpenClaw | 巡检服务 | ✅ Healthy |
+| 自动化周期 | auto_dry_run | ✅ 等待下一轮研究 |
 
 ---
 
@@ -94,6 +105,8 @@
 
 | 日期 | Bug | 影响 | 修复 |
 |------|-----|------|------|
+| 05-27 | Freqtrade 请求误走代理 | API 卡顿，Web 代理 `socket hang up` | Freqtrade 代理直连，`NO_PROXY` 加 `172.17.0.1` |
+| 05-27 | 推理遍历共享字典时报错 | 自动化 `workflow_infer_failed` 并人工接管 | 遍历前固定 dataset key 快照 |
 | 05-23 | predictor 文件路径拼接错误 | 模型无法加载，score=0 | `with_suffix()` 替换字符串拼接 |
 | 05-23 | `_build_per_symbol_validation` 缩进错误 | 所有类方法脱离 class | 移到类定义之后 |
 | 05-23 | 回测全量样本求和 | 收益永远为负 | 只统计 ML 预测买入样本 |
