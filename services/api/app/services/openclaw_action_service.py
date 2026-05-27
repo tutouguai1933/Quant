@@ -169,7 +169,7 @@ class OpenclawActionService:
             }
 
         if action == "automation_dry_run_only":
-            self._automation.set_mode(mode="auto_dry_run")
+            self._automation.enable_dry_run_only(actor="openclaw")
             return {
                 "success": True,
                 "message": "已切换到 dry-run only 模式",

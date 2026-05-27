@@ -6,7 +6,7 @@ This document describes how to set up and use the Grafana monitoring dashboard f
 
 The monitoring stack consists of:
 
-- **Prometheus** (port 9090): Metrics collection and storage
+- **Prometheus** (port 9091): Metrics collection and storage
 - **Grafana** (port 3000): Visualization and dashboards
 - **cAdvisor** (port 8080): Docker container metrics
 - **Node Exporter** (port 9100): System-level metrics
@@ -87,11 +87,12 @@ The "Quant Trading Overview" dashboard is automatically provisioned. Navigate to
 
 The Prometheus configuration scrapes metrics from:
 
-1. **Prometheus itself** (localhost:9090)
+1. **Prometheus itself** (localhost:9091)
 2. **Quant API** (port 9011) - requires `/metrics` endpoint
 3. **cAdvisor** (port 8080) - Docker container metrics
 4. **Node Exporter** (port 9100) - System metrics
-5. **Freqtrade** (port 8080) - Trading bot metrics (requires auth)
+
+Freqtrade REST runs on port 9013, but it is not scraped by the default Prometheus config because its credentials are private and must stay in `infra/freqtrade/user_data/config.private.json` / deployment environment files.
 
 ### Data Retention
 
@@ -199,7 +200,7 @@ groups:
 
 ### Prometheus Not Collecting Metrics
 
-1. Check Prometheus targets: `http://localhost:9090/targets`
+1. Check Prometheus targets: `http://localhost:9091/targets`
 2. Verify API `/metrics` endpoint is accessible
 3. Check network connectivity between containers
 
@@ -224,11 +225,11 @@ groups:
 | Service | Port | URL |
 |---------|------|-----|
 | Grafana | 3000 | http://localhost:3000 |
-| Prometheus | 9090 | http://localhost:9090 |
+| Prometheus | 9091 | http://localhost:9091 |
 | cAdvisor | 8080 | http://localhost:8080 |
 | Node Exporter | 9100 | http://localhost:9100 |
 | Quant API | 9011 | http://localhost:9011 |
-| Freqtrade | 8080 | http://localhost:8080 |
+| Freqtrade REST | 9013 | http://localhost:9013 |
 
 ## Security Notes
 

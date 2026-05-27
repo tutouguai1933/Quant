@@ -133,7 +133,7 @@ services:
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PROXY_CONFIG:-config.proxy.mihomo.json}
       --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}
     healthcheck:
-      test: ["CMD", "curl", "-f", "-u", "freqtrader:freqtrade123", "http://localhost:9013/api/v1/ping"]
+      test: ["CMD", "python", "-c", "import base64,json,sys,urllib.request; a=json.load(open('/freqtrade/user_data/config.private.json', encoding='utf-8')).get('api_server', {}); u=a.get('username'); p=a.get('password'); token=base64.b64encode(f'{u}:{p}'.encode()).decode(); req=urllib.request.Request('http://localhost:9013/api/v1/ping', headers={'Authorization': f'Basic {token}'}); sys.exit(0 if u and p and urllib.request.urlopen(req, timeout=5).status < 400 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -300,6 +300,27 @@ class QlibFeatureTests(unittest.TestCase):
 
 
 class QlibRunnerTests(unittest.TestCase):
+    def test_filter_backtest_rows_returns_empty_when_ml_has_no_buy_samples(self) -> None:
+        class SellOnlyPredictor:
+            def predict_batch(self, *, feature_rows: list[dict[str, object]], feature_columns: object, include_contributions: bool) -> list[object]:
+                return [mock.Mock(score=0.49) for _ in feature_rows]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runner = QlibRunner(
+                config=load_qlib_config(
+                    env={"QUANT_QLIB_RUNTIME_ROOT": str(Path(temp_dir))},
+                    require_explicit=True,
+                )
+            )
+            rows = [_sample_training_row(1), _sample_training_row(2)]
+
+            filtered = runner._filter_backtest_rows(
+                testing_rows=rows,
+                ml_predictor=SellOnlyPredictor(),
+            )
+
+        self.assertEqual(filtered, [])
+
     def test_scoring_and_rule_gate_change_when_strict_template_is_selected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)

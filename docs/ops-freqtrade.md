@@ -58,22 +58,23 @@ export QUANT_BINANCE_MARKET_BASE_URL='https://api.binance.com'
 export QUANT_BINANCE_ACCOUNT_BASE_URL='https://api.binance.com'
 export QUANT_BINANCE_TIMEOUT_SECONDS='10'
 export QUANT_FREQTRADE_API_URL='http://127.0.0.1:9013'
-export QUANT_FREQTRADE_API_USERNAME='Freqtrader'
-export QUANT_FREQTRADE_API_PASSWORD='YourPassword'
+export QUANT_FREQTRADE_API_USERNAME='<username>'
+export QUANT_FREQTRADE_API_PASSWORD='<password>'
 ```
 
 也兼容短变量名：
 
 ```bash
 export QUANT_FREQTRADE_URL='http://127.0.0.1:9013'
-export QUANT_FREQTRADE_USERNAME='Freqtrader'
-export QUANT_FREQTRADE_PASSWORD='YourPassword'
+export QUANT_FREQTRADE_USERNAME='<username>'
+export QUANT_FREQTRADE_PASSWORD='<password>'
 ```
 
 说明：
 
 - 如果不提供这组配置，系统会自动回退到 `memory`
 - 如果只配了一部分，会直接报错，不会半配置运行
+- Freqtrade REST 用户名和密码以部署环境变量及 `infra/freqtrade/user_data/config.private.json` 为准，不要写进文档
 - 如果服务器在中国大陆，公开行情建议单独改成：
   - `QUANT_BINANCE_MARKET_BASE_URL='https://data-api.binance.vision'`
 - 账户同步和真实下单仍然依赖 `api.binance.com`
@@ -117,7 +118,7 @@ docker compose up -d
 
 - 当前骨架固定为 `Spot`
 - Docker 继续使用 `host` 网络
-- 但 Freqtrade REST 自己只监听 `127.0.0.1:9013`
+- 统一部署时 Freqtrade REST 按 `config.live.base.json` / `config.deploy.json` 监听 `0.0.0.0:9013`，对外仍按内部服务管理，不建议开放公网访问
 - 第一批交易对白名单固定为：
   - `BTC/USDT`
   - `ETH/USDT`
@@ -154,6 +155,7 @@ docker compose up -d
 - `9013`: Freqtrade REST
 - `9014`: Qlib
 - `9015`: OpenClaw
+- `9091`: Prometheus
 
 本地联调时也沿用同一套口径，不再单独使用旧的 `3000 / 8000 / 8080`。
 

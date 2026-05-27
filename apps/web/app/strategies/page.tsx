@@ -151,6 +151,7 @@ export default function StrategiesPage() {
 
   const isManualTakeover = Boolean(automation.manualTakeover);
   const takeoverReason = readText(automation, "pauseReason", "");
+  const strategyReturnTo = "/strategies";
 
   const statusMetrics = [
     {
@@ -206,7 +207,10 @@ export default function StrategiesPage() {
           <MetricStrip metrics={statusMetrics} />
 
           {/* 执行器连接 */}
-          <TerminalCard title="执行器连接">
+          <TerminalCard
+            title="执行器连接"
+            actions={<StrategyActionButtons returnTo={strategyReturnTo} compact />}
+          >
             <div className="space-y-3 text-sm">
               <div className="grid gap-3 sm:grid-cols-2">
                 <InfoBlock label="连接状态" value={executorConnectionStatus} />
@@ -229,13 +233,19 @@ export default function StrategiesPage() {
                 <p className="text-xs text-[var(--terminal-muted)]">
                   {workspace.research_recommendation?.dry_run_gate?.status || "先完成研究和评估"}
                 </p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button asChild variant="terminal" size="sm">
                     <Link href={automationHandoff.targetHref}>{automationHandoff.targetLabel || "继续"}</Link>
                   </Button>
                   <Button asChild variant="outline" size="sm">
                     <Link href="/research">回到研究</Link>
                   </Button>
+                  <StrategyActionForm
+                    action="dispatch_latest_signal"
+                    label="派发最新信号"
+                    returnTo={strategyReturnTo}
+                    variant="terminal"
+                  />
                 </div>
               </div>
             </TerminalCard>
@@ -273,7 +283,17 @@ export default function StrategiesPage() {
           </TerminalCard>
 
           {/* 入场评分 */}
-          <TerminalCard title="入场评分计算">
+          <TerminalCard
+            title="入场评分计算"
+            actions={
+              <StrategyActionForm
+                action="dispatch_latest_signal"
+                label="派发最新信号"
+                returnTo={strategyReturnTo}
+                variant="terminal"
+              />
+            }
+          >
             <div className="space-y-4">
               <div className="flex gap-2">
                 <input
@@ -320,6 +340,14 @@ export default function StrategiesPage() {
                   />
                 </div>
               )}
+            </div>
+          </TerminalCard>
+
+          {/* 执行确认 */}
+          <TerminalCard title="执行确认">
+            <div className="space-y-3">
+              <p className="text-xs text-[var(--terminal-muted)]">确认执行器状态和最新信号后再操作。</p>
+              <StrategyActionButtons returnTo={strategyReturnTo} />
             </div>
           </TerminalCard>
 
@@ -406,6 +434,42 @@ export default function StrategiesPage() {
         </>
       )}
     </TerminalShell>
+  );
+}
+
+type StrategyActionName = "start_strategy" | "pause_strategy" | "stop_strategy" | "dispatch_latest_signal";
+
+function StrategyActionButtons({ returnTo, compact = false }: { returnTo: string; compact?: boolean }) {
+  return (
+    <div className={compact ? "flex flex-wrap items-center gap-2" : "grid gap-2 sm:grid-cols-2 lg:grid-cols-4"}>
+      <StrategyActionForm action="start_strategy" label="启动策略" returnTo={returnTo} />
+      <StrategyActionForm action="pause_strategy" label="暂停策略" returnTo={returnTo} />
+      <StrategyActionForm action="stop_strategy" label="停止策略" returnTo={returnTo} variant="danger" />
+      <StrategyActionForm action="dispatch_latest_signal" label="派发最新信号" returnTo={returnTo} variant="terminal" />
+    </div>
+  );
+}
+
+function StrategyActionForm({
+  action,
+  label,
+  returnTo,
+  variant = "outline",
+}: {
+  action: StrategyActionName;
+  label: string;
+  returnTo: string;
+  variant?: "terminal" | "outline" | "danger";
+}) {
+  return (
+    <form action="/actions" method="post" className="contents">
+      <input type="hidden" name="action" value={action} />
+      <input type="hidden" name="strategyId" value="1" />
+      <input type="hidden" name="returnTo" value={returnTo} />
+      <Button type="submit" variant={variant} size="sm">
+        {label}
+      </Button>
+    </form>
   );
 }
 

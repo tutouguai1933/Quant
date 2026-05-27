@@ -88,7 +88,7 @@ docker system prune -f && docker builder prune -f
 | Web | 9012 | http://39.106.11.65:9012 |
 | Freqtrade | 9013 | 仅内部访问 |
 | Grafana | 3000 | 需SSH隧道 |
-| Prometheus | 9090 | 需SSH隧道 |
+| Prometheus | 9091 | 需SSH隧道 |
 
 ---
 
@@ -102,7 +102,8 @@ curl http://localhost:9011/health
 curl http://localhost:9012/
 
 # Freqtrade健康检查
-curl -u 'Freqtrader:jianyu0.0.' http://localhost:9013/api/v1/ping
+# 用户名和密码以 infra/freqtrade/user_data/config.private.json 为准
+curl -u '<username>:<password>' http://localhost:9013/api/v1/ping
 
 # 系统状态
 curl http://localhost:9011/api/v1/system/status
@@ -325,8 +326,8 @@ ssh -L 3000:localhost:3000 djy@39.106.11.65
 
 ```bash
 # SSH隧道访问
-ssh -L 9090:localhost:9090 djy@39.106.11.65
-# 浏览器访问 http://localhost:9090
+ssh -L 9091:localhost:9091 djy@39.106.11.65
+# 浏览器访问 http://localhost:9091
 ```
 
 ### 飞书告警
@@ -362,9 +363,11 @@ BINANCE_API_SECRET=xxx
 
 # Freqtrade API（必须配置才能连接）
 QUANT_FREQTRADE_API_URL=http://127.0.0.1:9013
-QUANT_FREQTRADE_API_USERNAME=Freqtrader
+QUANT_FREQTRADE_API_USERNAME=<username>
 QUANT_FREQTRADE_API_PASSWORD=xxx
 ```
+
+说明：Freqtrade REST 凭据不要写进文档或命令历史，部署时以 `infra/deploy/api.env` 和 `infra/freqtrade/user_data/config.private.json` 为准。
 
 ---
 
@@ -436,7 +439,8 @@ curl -s http://localhost:9011/api/v1/ml/retrain/status | jq '.data'
 1. 检查 Freqtrade 是否运行：
 ```bash
 docker ps | grep freqtrade
-curl -u 'Freqtrader:xxx' http://127.0.0.1:9013/api/v1/ping
+# 用户名和密码以 infra/freqtrade/user_data/config.private.json 为准
+curl -u '<username>:<password>' http://127.0.0.1:9013/api/v1/ping
 ```
 
 2. 检查 API 容器网络模式：

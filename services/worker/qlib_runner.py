@@ -411,6 +411,7 @@ class QlibRunner:
         """过滤测试集，只保留 ML 模型预测为"买入"的样本。
 
         如果没有 ML 模型或测试集为空，返回全部行（保持向后兼容）。
+        如果 ML 模型没有给出任何买入样本，返回空列表，避免把无信号样本误算成可交易回测。
         """
         if not testing_rows or ml_predictor is None:
             return testing_rows
@@ -426,7 +427,7 @@ class QlibRunner:
                 for i, p in enumerate(predictions)
                 if p.score >= 0.5
             ]
-            return filtered if filtered else testing_rows  # 如果全被过滤，回退到全部
+            return filtered
         except Exception:
             return testing_rows
 

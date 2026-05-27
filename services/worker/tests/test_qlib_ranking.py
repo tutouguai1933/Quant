@@ -131,6 +131,45 @@ class QlibRankingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["live_gate"]["status"], "failed")
         self.assertIn("live_score_too_low", result["items"][0]["live_gate"]["reasons"])
 
+    def test_rank_candidates_live_gate_uses_candidate_validation_not_global_validation(self) -> None:
+        result = rank_candidates(
+            [
+                {
+                    "symbol": "ETHUSDT",
+                    "strategy_template": "trend_breakout_timing",
+                    "score": "0.8200",
+                    "backtest": {"metrics": _passing_metrics()},
+                    "validation": {
+                        "sample_count": 24,
+                        "positive_rate": "0.41",
+                        "avg_future_return_pct": "0.80",
+                    },
+                }
+            ],
+            validation={
+                "sample_count": 24,
+                "positive_rate": "0.80",
+                "avg_future_return_pct": "0.80",
+            },
+            thresholds={
+                "dry_run_min_positive_rate": "0.40",
+                "live_min_score": "0.80",
+                "live_min_positive_rate": "0.60",
+                "live_min_net_return_pct": "0.20",
+                "live_min_win_rate": "0.55",
+            },
+        )
+
+        self.assertTrue(result["items"][0]["allowed_to_dry_run"])
+        self.assertFalse(result["items"][0]["allowed_to_live"])
+        self.assertEqual(result["items"][0]["live_gate"]["status"], "failed")
+        self.assertTrue(
+            any(
+                "live_validation_positive_rate_too_low" in reason
+                for reason in result["items"][0]["live_gate"]["reasons"]
+            )
+        )
+
     def test_rank_candidates_blocks_dry_run_when_rule_gate_fails(self) -> None:
         result = rank_candidates(
             [

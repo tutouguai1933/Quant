@@ -61,15 +61,18 @@ class OpenclawSnapshotService:
             mode = str(state.get("mode", "manual"))
             paused = bool(state.get("paused", False))
             manual_takeover = bool(state.get("manual_takeover", False))
+            automation_state = dict(state)
 
             # 从 automation_workflow_service 获取完整的 runtime_guard 信息
+            workflow_status: dict[str, Any] = {}
             try:
-                workflow_status = automation_workflow_service.get_status()
+                workflow_status = dict(automation_workflow_service.get_status() or {})
                 runtime_guard = dict(workflow_status.get("runtime_guard") or {})
             except Exception:
                 runtime_guard = dict(state.get("runtime_guard") or {})
 
             recovery_review = dict(state.get("recovery_review") or {})
+            execution_health = dict(state.get("execution_health") or workflow_status.get("execution_health") or {})
 
             executor_runtime = dict(state.get("executor_runtime") or {})
             connection_status = str(executor_runtime.get("connection_status", "unknown"))
@@ -132,6 +135,8 @@ class OpenclawSnapshotService:
                 "mode": mode,
                 "paused": paused,
                 "manual_takeover": manual_takeover,
+                "automation_state": automation_state,
+                "execution_health": execution_health,
                 "suggested_action": {
                     "action": suggested_action,
                     "reason": suggested_action_reason,

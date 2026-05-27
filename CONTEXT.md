@@ -6,9 +6,16 @@
 
 ## 当前进度
 
-**状态**：服务器服务恢复，自动化已退出人工接管，当前在 auto_dry_run 等待下一轮研究
+**状态**：已完成系统 Review 后首轮 P0 改造，等待提交、服务器部署和线上验证
 
 **本次更新（2026-05-27）**：
+
+### 系统 Review 后 P0 改造
+- **策略安全门**：ML live gate 改为使用候选自己的 per-symbol validation；当 ML 没有任何买入样本时，回测不再回退到全部样本，避免无信号候选被误包装成可交易
+- **OpenClaw 巡检闭环**：OpenClaw 快照补齐 `automation_state` 和 `execution_health`；`automation_dry_run_only` 改为完整调用 dry-run only 恢复逻辑，能清除暂停和人工接管
+- **策略页承接**：`/strategies` 增加执行确认动作区，补齐启动策略、暂停策略、停止策略、派发最新信号入口，统一走现有 `/actions` 路由
+- **监控与运维口径**：Prometheus 端口统一为 `9091`；host 网络抓取目标改为 localhost；移除默认 Freqtrade scrape 凭据；Freqtrade healthcheck 改为读取私有配置中的 REST 凭据
+- **验证结果**：策略定向 unittest 2 个通过；OpenClaw unittest 3 个通过；前端 TypeScript、Playwright `/strategies` 定向测试、`pnpm build` 均通过；配置静态检查通过
 
 ### 服务器不可用与自动化失败修复
 - **API 卡顿根因**：API 容器请求 Freqtrade 时使用 `172.17.0.1:9013`，但代理直连例外缺少 `172.17.0.1`，部分请求误走 mihomo 代理后超时，导致 Web 代理接口出现 `socket hang up`
@@ -105,6 +112,11 @@
 
 | 日期 | Bug | 影响 | 修复 |
 |------|-----|------|------|
+| 05-27 | ML live gate 使用全局验证 | live 准入可能没有按单币种质量判断 | 改用候选 per-symbol validation |
+| 05-27 | ML 无买入样本回测回退全样本 | 无信号候选可能被误算成可交易 | 无买入样本返回空回测样本 |
+| 05-27 | OpenClaw 快照缺巡检字段 | 巡检可能读不到执行健康和告警状态 | 快照补齐 automation_state / execution_health |
+| 05-27 | OpenClaw dry-run only 只改模式 | 可能未清除暂停/人工接管 | 复用完整 enable_dry_run_only |
+| 05-27 | 监控端口和抓取目标不一致 | Prometheus/Grafana 可能误报或空数据 | 端口统一 9091，host 网络目标改 localhost |
 | 05-27 | Freqtrade 请求误走代理 | API 卡顿，Web 代理 `socket hang up` | Freqtrade 代理直连，`NO_PROXY` 加 `172.17.0.1` |
 | 05-27 | 推理遍历共享字典时报错 | 自动化 `workflow_infer_failed` 并人工接管 | 遍历前固定 dataset key 快照 |
 | 05-23 | predictor 文件路径拼接错误 | 模型无法加载，score=0 | `with_suffix()` 替换字符串拼接 |

@@ -84,7 +84,7 @@ def _normalize_candidate(
     allowed_to_dry_run = dry_run_gate["status"] == "passed"
     live_gate = _evaluate_live_gate(
         score=item.get("score"),
-        validation=validation,
+        validation=effective_validation,
         metrics=metrics,
         thresholds=gate_thresholds,
         allowed_to_dry_run=allowed_to_dry_run,
@@ -107,7 +107,7 @@ def _normalize_candidate(
     recommendation_score = _build_recommendation_score(
         raw_score=_to_decimal(item.get("score")),
         metrics=metrics,
-        validation=validation,
+        validation=effective_validation,
         training_metrics=training_metrics,
         recommendation_context=recommendation_context,
     )
