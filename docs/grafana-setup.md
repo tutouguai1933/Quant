@@ -88,9 +88,10 @@ The "Quant Trading Overview" dashboard is automatically provisioned. Navigate to
 The Prometheus configuration scrapes metrics from:
 
 1. **Prometheus itself** (localhost:9091)
-2. **Quant API** (port 9011) - requires `/metrics` endpoint
-3. **cAdvisor** (port 8080) - Docker container metrics
-4. **Node Exporter** (port 9100) - System metrics
+2. **Quant API** (port 9011) - exposes a lightweight `/metrics` endpoint
+3. **Node Exporter** (port 9100) - System metrics
+
+cAdvisor remains in `infra/deploy/docker-compose.yml`, but it is not scraped by default until the server has the cAdvisor image and container running. After deployment, enable the commented cAdvisor job in `infra/prometheus/prometheus.yml` only when `http://localhost:8080/healthz` is healthy.
 
 Freqtrade REST runs on port 9013, but it is not scraped by the default Prometheus config because its credentials are private and must stay in `infra/freqtrade/user_data/config.private.json` / deployment environment files.
 
@@ -99,56 +100,9 @@ Freqtrade REST runs on port 9013, but it is not scraped by the default Prometheu
 - Prometheus retains metrics for **15 days** by default
 - Configure via `--storage.tsdb.retention.time` flag
 
-## Adding Metrics Endpoint to API
+## API Metrics Endpoint
 
-To expose Prometheus metrics from the Quant API, add the following:
-
-```python
-# In services/api/app/routes/metrics.py
-from prometheus_client import Counter, Histogram, Gauge, generate_latest
-from fastapi import Response
-
-# Define metrics
-http_requests_total = Counter(
-    'http_requests_total',
-    'Total HTTP requests',
-    ['endpoint', 'method', 'status']
-)
-
-http_request_duration_seconds = Histogram(
-    'http_request_duration_seconds',
-    'HTTP request latency',
-    ['endpoint', 'method']
-)
-
-freqtrade_open_positions = Gauge(
-    'freqtrade_open_positions',
-    'Number of open positions'
-)
-
-freqtrade_total_profit = Gauge(
-    'freqtrade_total_profit',
-    'Total profit in USD'
-)
-
-freqtrade_win_ratio = Gauge(
-    'freqtrade_win_ratio',
-    'Win ratio (0-1)'
-)
-
-alerts_total = Counter(
-    'alerts_total',
-    'Total alerts generated',
-    ['level', 'type']
-)
-
-@router.get("/metrics")
-async def metrics():
-    return Response(
-        content=generate_latest(),
-        media_type="text/plain"
-    )
-```
+The API currently exposes lightweight process metrics at `/metrics`. Add richer counters and histograms later only after approving the required dependency change.
 
 ## Alerting Rules
 
@@ -202,13 +156,13 @@ groups:
 
 1. Check Prometheus targets: `http://localhost:9091/targets`
 2. Verify API `/metrics` endpoint is accessible
-3. Check network connectivity between containers
+3. Verify Node Exporter is listening on `http://localhost:9100/metrics`
 
 ### No Container Metrics
 
 1. Ensure cAdvisor is running: `docker ps | grep cadvisor`
 2. Check cAdvisor health: `curl http://localhost:8080/healthz`
-3. Verify cAdvisor can access Docker socket
+3. Enable the commented cAdvisor scrape job in `infra/prometheus/prometheus.yml`
 
 ## File Locations
 

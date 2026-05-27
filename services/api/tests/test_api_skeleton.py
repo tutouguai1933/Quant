@@ -41,7 +41,7 @@ from services.api.app.routes.backtest_workspace import get_backtest_workspace  #
 from services.api.app.routes.data_workspace import get_data_workspace  # noqa: E402
 from services.api.app.routes.evaluation_workspace import get_evaluation_workspace  # noqa: E402
 from services.api.app.routes.feature_workspace import get_feature_workspace  # noqa: E402
-from services.api.app.routes.health import get_health, get_healthz  # noqa: E402
+from services.api.app.routes.health import get_health, get_healthz, get_metrics  # noqa: E402
 from services.api.app.routes.research_workspace import get_research_workspace  # noqa: E402
 from services.api.app.routes.workbench_config import get_workbench_config, update_workbench_config  # noqa: E402
 from services.api.app.routes.risk_events import get_risk_event, list_risk_events  # noqa: E402
@@ -225,6 +225,13 @@ class ApiSkeletonTests(unittest.TestCase):
     def test_health_endpoints_return_success_envelope(self) -> None:
         self.assertEqual(get_health()["error"], None)
         self.assertEqual(get_healthz()["data"]["status"], "ok")
+
+    def test_metrics_endpoint_returns_prometheus_text(self) -> None:
+        response = get_metrics()
+        body = response.body.decode("utf-8")
+
+        self.assertEqual(response.media_type, "text/plain; version=0.0.4")
+        self.assertIn("quant_api_up 1", body)
 
     def test_auth_login_returns_success_envelope(self) -> None:
         response = login(username="admin", password="1933")

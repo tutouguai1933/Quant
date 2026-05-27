@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 try:
-    from fastapi import APIRouter, Header
+    from fastapi import APIRouter, Header, Response
 except ImportError:
     class APIRouter:  # pragma: no cover - lightweight local fallback
         def __init__(self, *args, **kwargs) -> None:
@@ -25,10 +25,16 @@ except ImportError:
     def Header(default=""):  # pragma: no cover
         return default
 
+    class Response:  # pragma: no cover
+        def __init__(self, content: str = "", media_type: str = "") -> None:
+            self.body = content.encode("utf-8")
+            self.media_type = media_type
+
 from services.api.app.services.auth_service import auth_service
 
 
 router = APIRouter(tags=["health"])
+_PROCESS_START_TIME_SECONDS = __import__("time").time()
 
 
 def _success(data: dict, meta: dict | None = None) -> dict:
@@ -49,6 +55,23 @@ def get_health() -> dict:
 def get_healthz() -> dict:
     """Kubernetes风格健康检查端点。"""
     return _success({"status": "ok", "service": "control-plane-api"})
+
+
+@router.get("/metrics")
+def get_metrics() -> Response:
+    """提供 Prometheus 可抓取的 API 基础存活指标。"""
+    payload = "\n".join(
+        [
+            "# HELP quant_api_up Control plane API process is serving requests.",
+            "# TYPE quant_api_up gauge",
+            "quant_api_up 1",
+            "# HELP quant_api_process_start_time_seconds API process start time.",
+            "# TYPE quant_api_process_start_time_seconds gauge",
+            f"quant_api_process_start_time_seconds {_PROCESS_START_TIME_SECONDS:.0f}",
+            "",
+        ]
+    )
+    return Response(content=payload, media_type="text/plain; version=0.0.4")
 
 
 @router.get("/api/v1/health")
