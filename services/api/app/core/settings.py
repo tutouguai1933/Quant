@@ -70,6 +70,10 @@ class Settings:
     trade_limit_slippage_budget_bps: int = 30
     trade_unfilled_timeout_seconds: int = 15
 
+    vpn_primary_node: str = ""
+    vpn_backup_nodes: tuple[str, ...] = ()
+    vpn_whitelisted_ips: tuple[str, ...] = ()
+
     @classmethod
     def from_env(cls) -> "Settings":
         """从环境变量读取运行配置。"""
@@ -181,6 +185,21 @@ class Settings:
         trade_limit_slippage_budget_bps = cls._parse_positive_int_env("QUANT_TRADE_LIMIT_SLIPPAGE_BUDGET_BPS", 30)
         trade_unfilled_timeout_seconds = cls._parse_positive_int_env("QUANT_TRADE_UNFILLED_TIMEOUT_SECONDS", 15)
 
+        # VPN 主备配置（P3）
+        vpn_primary_node = os.getenv("QUANT_VPN_PRIMARY_NODE", "").strip()
+        vpn_backup_nodes: tuple[str, ...] = ()
+        raw_vpn_backups = os.getenv("QUANT_VPN_BACKUP_NODES", "")
+        if raw_vpn_backups.strip():
+            vpn_backup_nodes = tuple(
+                node.strip() for node in raw_vpn_backups.split(",") if node.strip()
+            )
+        vpn_whitelisted_ips: tuple[str, ...] = ()
+        raw_vpn_ips = os.getenv("QUANT_VPN_WHITELISTED_IPS", "")
+        if raw_vpn_ips.strip():
+            vpn_whitelisted_ips = tuple(
+                ip.strip() for ip in raw_vpn_ips.split(",") if ip.strip()
+            )
+
         freqtrade_config_values = (freqtrade_api_url, freqtrade_api_username, freqtrade_api_password)
         has_freqtrade_config = any(freqtrade_config_values)
         if has_freqtrade_config and not all(freqtrade_config_values):
@@ -217,6 +236,9 @@ class Settings:
             trade_order_type=trade_order_type,
             trade_limit_slippage_budget_bps=trade_limit_slippage_budget_bps,
             trade_unfilled_timeout_seconds=trade_unfilled_timeout_seconds,
+            vpn_primary_node=vpn_primary_node,
+            vpn_backup_nodes=vpn_backup_nodes,
+            vpn_whitelisted_ips=vpn_whitelisted_ips,
         )
 
     @staticmethod
