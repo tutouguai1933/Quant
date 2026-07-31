@@ -58,6 +58,9 @@ class Settings:
     live_max_stake_usdt: Decimal | None = None
     live_max_open_trades: int | None = None
     automation_state_path: str = DEFAULT_AUTOMATION_STATE_PATH
+    vpn_primary_node: str = ""
+    vpn_backup_nodes: tuple[str, ...] = ()
+    vpn_whitelisted_ips: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -155,6 +158,21 @@ class Settings:
                 raise ValueError("QUANT_LIVE_MAX_OPEN_TRADES 必须大于 0")
         automation_state_path = (os.getenv("QUANT_AUTOMATION_STATE_PATH") or DEFAULT_AUTOMATION_STATE_PATH).strip() or DEFAULT_AUTOMATION_STATE_PATH
 
+        # VPN 主备配置（P3）
+        vpn_primary_node = os.getenv("QUANT_VPN_PRIMARY_NODE", "").strip()
+        vpn_backup_nodes: tuple[str, ...] = ()
+        raw_vpn_backups = os.getenv("QUANT_VPN_BACKUP_NODES", "")
+        if raw_vpn_backups.strip():
+            vpn_backup_nodes = tuple(
+                node.strip() for node in raw_vpn_backups.split(",") if node.strip()
+            )
+        vpn_whitelisted_ips: tuple[str, ...] = ()
+        raw_vpn_ips = os.getenv("QUANT_VPN_WHITELISTED_IPS", "")
+        if raw_vpn_ips.strip():
+            vpn_whitelisted_ips = tuple(
+                ip.strip() for ip in raw_vpn_ips.split(",") if ip.strip()
+            )
+
         freqtrade_config_values = (freqtrade_api_url, freqtrade_api_username, freqtrade_api_password)
         has_freqtrade_config = any(freqtrade_config_values)
         if has_freqtrade_config and not all(freqtrade_config_values):
@@ -181,6 +199,9 @@ class Settings:
             live_max_stake_usdt=live_max_stake_usdt,
             live_max_open_trades=live_max_open_trades,
             automation_state_path=automation_state_path,
+            vpn_primary_node=vpn_primary_node,
+            vpn_backup_nodes=vpn_backup_nodes,
+            vpn_whitelisted_ips=vpn_whitelisted_ips,
         )
 
     @staticmethod

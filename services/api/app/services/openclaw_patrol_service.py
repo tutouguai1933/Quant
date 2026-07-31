@@ -470,60 +470,19 @@ class OpenclawPatrolService:
     def _check_vpn_health(self) -> dict[str, Any]:
         """检查VPN节点健康状态。
 
+        优先使用主备策略（若已配置），否则降级到原有自动切换逻辑。
+
         Returns:
             检查结果
         """
         try:
-            # 检查当前节点健康状态
-            health_result = vpn_switch_service.check_node_health_sync()
+            # 优先使用主备故障切换策略
+            controller = self._get_failover_controller()
+            if controller is not None and controller.enabled:
+                return self._check_vpn_with_policy(controller)
 
-            logger.info(
-                "VPN健康检查: 节点=%s, 状态=%s, IP=%s, 白名单=%s, 延迟=%.2fms",
-                health_result.node_name,
-                health_result.status.value,
-                health_result.exit_ip,
-                health_result.is_whitelisted,
-                health_result.latency_ms or 0,
-            )
-
-            # 如果节点健康且在白名单，无需切换
-            if health_result.status == NodeHealthStatus.HEALTHY and health_result.is_whitelisted:
-                return {
-                    "action_taken": False,
-                    "message": f"VPN节点健康，IP在白名单: {health_result.exit_ip}",
-                    "patrol_status": "normal",
-                    "vpn_health": health_result.to_dict(),
-                }
-
-            # 节点不健康或IP不在白名单，尝试自动切换
-            can_switch, reason = self._can_switch_vpn()
-            if not can_switch:
-                logger.warning("VPN切换被节流: %s", reason)
-                return {
-                    "action_taken": False,
-                    "blocked_reason": reason,
-                    "message": f"VPN异常但切换被节流: {reason}",
-                    "patrol_status": "vpn_throttled",
-                    "vpn_health": health_result.to_dict(),
-                }
-
-            # 执行自动切换
-            switch_result = vpn_switch_service.auto_switch_to_healthy_node_sync()
-            self._record_vpn_switch_result(switch_result.success)
-
-            return {
-                "action_taken": True,
-                "action": "vpn_auto_switch",
-                "success": switch_result.success,
-                "message": (
-                    f"VPN节点切换成功: {switch_result.current_node}, IP: {switch_result.exit_ip}"
-                    if switch_result.success
-                    else f"VPN节点切换失败: {switch_result.error_message}"
-                ),
-                "patrol_status": "vpn_switched" if switch_result.success else "vpn_switch_failed",
-                "vpn_health": health_result.to_dict(),
-                "vpn_switch": switch_result.to_dict(),
-            }
+            # 降级到原有逻辑
+            return self._check_vpn_legacy()
 
         except Exception as e:
             logger.exception("VPN健康检查异常: %s", e)
@@ -533,6 +492,146 @@ class OpenclawPatrolService:
                 "patrol_status": "vpn_error",
                 "error": str(e),
             }
+
+    @staticmethod
+    def _get_failover_controller():
+        """获取故障切换控制器（延迟导入避免循环依赖）。"""
+        try:
+            from services.api.app.services.vpn_failover_controller import (
+                get_failover_controller,
+            )
+            return get_failover_controller()
+        except Exception:
+            return None
+
+    def _check_vpn_with_policy(self, controller) -> dict[str, Any]:
+        """使用主备策略检查VPN。"""
+        result = controller.check_primary()
+        action = result.get("action", "unknown")
+
+        if action == "healthy":
+            return {
+                "action_taken": False,
+                "message": f"VPN主节点健康，IP: {result.get('ip', 'N/A')}",
+                "patrol_status": "normal",
+                "policy_action": action,
+                "vpn_details": result,
+            }
+
+        if action == "failover":
+            # 主节点故障，已选出备选 — 需要实际执行切换
+            to_node = result.get("to", "")
+            if to_node:
+                switch_result = vpn_switch_service.switch_node_sync(to_node)
+                self._record_vpn_switch_result(switch_result.success)
+                return {
+                    "action_taken": True,
+                    "action": "vpn_failover",
+                    "success": switch_result.success,
+                    "message": (
+                        f"VPN故障切换到 {switch_result.current_node}, IP: {switch_result.exit_ip}"
+                        if switch_result.success
+                        else f"VPN故障切换失败: {switch_result.error_message}"
+                    ),
+                    "patrol_status": "vpn_switched" if switch_result.success else "vpn_switch_failed",
+                    "vpn_switch": switch_result.to_dict(),
+                    "policy_action": action,
+                }
+            return {
+                "action_taken": False,
+                "message": "VPN故障切换：备选节点名称为空",
+                "patrol_status": "vpn_switch_failed",
+                "policy_action": action,
+            }
+
+        if action == "failback":
+            # 回切到主节点
+            switch_result = vpn_switch_service.switch_node_sync(controller.primary_name)
+            self._record_vpn_switch_result(switch_result.success)
+            return {
+                "action_taken": True,
+                "action": "vpn_failback",
+                "success": switch_result.success,
+                "message": (
+                    f"VPN回切到主节点 {switch_result.current_node}"
+                    if switch_result.success
+                    else f"VPN回切失败: {switch_result.error_message}"
+                ),
+                "patrol_status": "vpn_switched" if switch_result.success else "vpn_switch_failed",
+                "vpn_switch": switch_result.to_dict(),
+                "policy_action": action,
+            }
+
+        if action == "failover_failed":
+            return {
+                "action_taken": True,
+                "action": "vpn_failover_failed",
+                "success": False,
+                "message": result.get("message", "故障切换失败"),
+                "patrol_status": "vpn_switch_failed",
+                "policy_action": action,
+            }
+
+        # probing / observing / disabled
+        return {
+            "action_taken": False,
+            "message": result.get("message", "VPN策略等待中"),
+            "patrol_status": "normal",
+            "policy_action": action,
+        }
+
+    def _check_vpn_legacy(self) -> dict[str, Any]:
+        """原有VPN检查逻辑（降级路径）。"""
+        # 检查当前节点健康状态
+        health_result = vpn_switch_service.check_node_health_sync()
+
+        logger.info(
+            "VPN健康检查: 节点=%s, 状态=%s, IP=%s, 白名单=%s, 延迟=%.2fms",
+            health_result.node_name,
+            health_result.status.value,
+            health_result.exit_ip,
+            health_result.is_whitelisted,
+            health_result.latency_ms or 0,
+        )
+
+        # 如果节点健康且在白名单，无需切换
+        if health_result.status == NodeHealthStatus.HEALTHY and health_result.is_whitelisted:
+            return {
+                "action_taken": False,
+                "message": f"VPN节点健康，IP在白名单: {health_result.exit_ip}",
+                "patrol_status": "normal",
+                "vpn_health": health_result.to_dict(),
+            }
+
+        # 节点不健康或IP不在白名单，尝试自动切换
+        can_switch, reason = self._can_switch_vpn()
+        if not can_switch:
+            logger.warning("VPN切换被节流: %s", reason)
+            return {
+                "action_taken": False,
+                "blocked_reason": reason,
+                "message": f"VPN异常但切换被节流: {reason}",
+                "patrol_status": "vpn_throttled",
+                "vpn_health": health_result.to_dict(),
+            }
+
+        # 执行自动切换
+        switch_result = vpn_switch_service.auto_switch_to_healthy_node_sync()
+        self._record_vpn_switch_result(switch_result.success)
+
+        return {
+            "action_taken": True,
+            "action": "vpn_auto_switch",
+            "success": switch_result.success,
+            "message": (
+                f"VPN节点切换成功: {switch_result.current_node}, IP: {switch_result.exit_ip}"
+                if switch_result.success
+                else f"VPN节点切换失败: {switch_result.error_message}"
+            ),
+            "patrol_status": "vpn_switched" if switch_result.success else "vpn_switch_failed",
+            "vpn_health": health_result.to_dict(),
+            "vpn_switch": switch_result.to_dict(),
+        }
 
     def _can_switch_vpn(self) -> tuple[bool, str]:
         """检查是否可以执行VPN切换（节流校验）。

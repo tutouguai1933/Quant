@@ -574,14 +574,114 @@ class VPNSwitchService:
     def auto_switch_to_healthy_node_sync(self) -> SwitchResult:
         """同步自动切换到健康的白名单节点。
 
-        按优先级尝试切换到健康的白名单节点：
-        1. 首先检查当前节点是否健康且在白名单
-        2. 如果不健康，按优先级尝试其他节点
-        3. 找到第一个健康的白名单节点后切换
+        优先使用主备策略（若已配置），否则降级到原有顺序尝试逻辑。
+        现有调用方零改动。
 
         Returns:
             切换结果
         """
+        # 检查主备策略是否可用
+        controller = self._get_failover_controller()
+        if controller is not None and controller.enabled:
+            return self._auto_switch_with_policy(controller)
+
+        # 降级到原有逻辑
+        return self._auto_switch_legacy()
+
+    @staticmethod
+    def _get_failover_controller():
+        """获取故障切换控制器（延迟导入避免循环依赖）。"""
+        try:
+            from services.api.app.services.vpn_failover_controller import (
+                get_failover_controller,
+            )
+            return get_failover_controller()
+        except Exception:
+            return None
+
+    def _auto_switch_with_policy(self, controller) -> SwitchResult:
+        """使用主备策略执行自动切换。"""
+        from services.api.app.services.alert_push_service import (
+            AlertEventType,
+            AlertLevel,
+            AlertMessage,
+            alert_push_service,
+        )
+
+        health_result = self.check_node_health_sync()
+
+        if health_result.status == NodeHealthStatus.HEALTHY and health_result.is_whitelisted:
+            logger.info(
+                "当前节点 %s 健康，出口IP %s 在白名单中，无需切换",
+                health_result.node_name,
+                health_result.exit_ip,
+            )
+            return SwitchResult(
+                success=True,
+                current_node=health_result.node_name,
+                exit_ip=health_result.exit_ip,
+                is_whitelisted=True,
+            )
+
+        logger.warning(
+            "当前节点 %s 状态: %s, IP: %s, 白名单: %s, 使用主备策略选备选...",
+            health_result.node_name,
+            health_result.status.value,
+            health_result.exit_ip,
+            health_result.is_whitelisted,
+        )
+
+        # 使用策略选出最佳备选
+        backup = controller.policy.pick_backup(controller.registry, controller.probe)
+        if backup is None:
+            error_msg = "主备策略未能选出可用备选节点"
+            logger.error(error_msg)
+            self._send_switch_failure_alert(error_msg, health_result)
+            return SwitchResult(
+                success=False,
+                previous_node=health_result.node_name,
+                error_message=error_msg,
+            )
+
+        # 尝试切换到备选节点
+        switch_result = self.switch_node_sync(backup)
+        if not switch_result.success:
+            error_msg = f"切换到备选节点 {backup} 失败: {switch_result.error_message}"
+            logger.error(error_msg)
+            self._send_switch_failure_alert(error_msg, health_result)
+            return switch_result
+
+        # 验证新节点
+        new_health = self.check_node_health_sync()
+        if new_health.status == NodeHealthStatus.HEALTHY and new_health.is_whitelisted:
+            logger.info(
+                "成功切换到健康的白名单节点 %s, 出口IP: %s",
+                backup,
+                new_health.exit_ip,
+            )
+            controller.policy.current_backup = backup
+            controller.policy.mark_switched()
+            controller.policy.record_event(
+                from_node=health_result.node_name,
+                to_node=backup,
+                reason="auto_switch_to_healthy_node_sync 触发",
+                success=True,
+            )
+            self._send_switch_success_alert(switch_result, health_result)
+            return switch_result
+
+        error_msg = f"切换到 {backup} 成功但节点不满足条件"
+        logger.warning(error_msg)
+        self._send_switch_failure_alert(error_msg, health_result)
+        return SwitchResult(
+            success=False,
+            previous_node=health_result.node_name,
+            current_node=backup,
+            error_message=error_msg,
+        )
+
+    def _auto_switch_legacy(self) -> SwitchResult:
+        """原有自动切换逻辑（降级路径）。"""
         from services.api.app.services.alert_push_service import (
             AlertEventType,
             AlertLevel,
