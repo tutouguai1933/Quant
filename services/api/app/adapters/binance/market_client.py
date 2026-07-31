@@ -77,12 +77,42 @@ class BinanceMarketClient:
             url = f"{self.base_url}/api/v3/ticker/24hr"
         return self._safe_public_get(url, [])
 
-    def get_klines(self, symbol: str, interval: str = "4h", limit: int = 200) -> list[list[object]]:
-        """读取指定币种的 K 线。"""
+    def get_klines(
+        self,
+        symbol: str,
+        interval: str = "4h",
+        limit: int = 200,
+        start_ts: int | None = None,
+        end_ts: int | None = None,
+    ) -> list[list[object]]:
+        """读取指定币种的 K 线。
 
-        query = urlencode({"symbol": symbol.strip().upper(), "interval": interval, "limit": limit})
+        支持 start_ts / end_ts 毫秒时间戳过滤（Binance API 原生参数）。
+        保持无参调用行为不变。
+        """
+
+        params: dict[str, object] = {
+            "symbol": symbol.strip().upper(),
+            "interval": interval,
+            "limit": limit,
+        }
+        if start_ts is not None:
+            params["startTime"] = start_ts
+        if end_ts is not None:
+            params["endTime"] = end_ts
+        query = urlencode(params)
         url = f"{self.base_url}/api/v3/klines?{query}"
         return self._safe_public_get(url, [])
+
+    def get_order_book(self, symbol: str, limit: int = 20) -> dict[str, list[list[object]]]:
+        """读取指定币种的订单簿深度。
+
+        返回 {"bids": [[price, qty], ...], "asks": [[price, qty], ...]}。
+        """
+
+        query = urlencode({"symbol": symbol.strip().upper(), "limit": limit})
+        url = f"{self.base_url}/api/v3/depth?{query}"
+        return self._safe_public_get(url, {"bids": [], "asks": []})
 
     def get_exchange_info(self, symbols: tuple[str, ...] | None = None) -> dict[str, object]:
         """读取指定交易对的交易规则。"""
