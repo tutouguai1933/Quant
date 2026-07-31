@@ -11,7 +11,11 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from services.api.app.adapters.binance.market_client import BinanceMarketClient
+from services.api.app.core.settings import Settings
 from services.api.app.services.candidate_priority_service import candidate_priority_service
+from services.api.app.services.kline_store import KlineStore
+from services.api.app.services.kline_sync_service import KlineSyncService
 from services.api.app.services.market_service import MarketService
 from services.api.app.services.strategy_catalog import strategy_catalog_service
 from services.api.app.services.workbench_config_service import workbench_config_service
@@ -126,6 +130,7 @@ class ResearchService:
             source: 训练来源标识 (manual/automation_cycle/hyperopt)
         """
 
+        self._sync_kline_store()
         config = self._load_runtime_config()
         runner = QlibRunner(config=config)
         dataset, market_cache = self._prepare_dataset()
@@ -194,6 +199,7 @@ class ResearchService:
     def run_inference(self) -> dict[str, object]:
         """触发一次推理。"""
 
+        self._sync_kline_store()
         config = self._load_runtime_config()
         runner = QlibRunner(config=config)
         dataset, market_cache = self._prepare_dataset()
@@ -293,6 +299,28 @@ class ResearchService:
             report=report,
             candidate_scope=candidate_scope,
         )
+
+    def _sync_kline_store(self) -> None:
+        """训练/推理前增量同步本地 K 线仓库（仅真实 MarketService 调用）。"""
+
+        if not isinstance(self._market_reader, MarketService):
+            return
+        settings = Settings.from_env()
+        if not settings.kline_store_enabled:
+            return
+        try:
+            whitelist = list(self._whitelist_provider())
+            workbench_config = self._workbench_config_reader()
+            data_config = dict(workbench_config.get("data") or {})
+            selected_symbols = self._resolve_selected_symbols(
+                data_config=data_config, whitelist=whitelist,
+            )
+            selected_timeframes = self._resolve_selected_timeframes(data_config=data_config)
+            store = KlineStore(root=settings.kline_store_root)
+            sync_service = KlineSyncService(store=store, market_client=BinanceMarketClient())
+            sync_service.incremental_sync(selected_symbols, sorted(selected_timeframes))
+        except Exception:
+            pass
 
     def _prepare_dataset(self) -> tuple[dict[str, dict[str, list[dict[str, object]]]], dict[str, int]]:
         """准备最小研究输入。"""

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import time
 from decimal import Decimal, InvalidOperation
 
 from services.api.app.adapters.binance.market_client import BinanceMarketClient
+from services.api.app.core.settings import Settings
 from services.api.app.services.indicator_service import build_empty_marker_groups
 from services.api.app.services.indicator_service import build_indicator_summary
+from services.api.app.services.kline_store import KlineStore
+from services.api.app.services.kline_sync_service import KlineSyncService
 from services.api.app.services.market_timeframe_service import build_multi_timeframe_summary
 from services.api.app.services.market_timeframe_service import get_supported_market_intervals
 from services.api.app.services.market_timeframe_service import normalize_market_interval
@@ -81,6 +85,39 @@ class MarketService:
             )
             snapshots.append(snapshot)
         return snapshots
+
+    def get_klines_with_store(
+        self,
+        symbol: str,
+        interval: str = "4h",
+        days: int = 30,
+    ) -> list[dict[str, object]]:
+        """优先读 KlineStore，缺口触发 ensure_window 补齐，补齐失败返回仓库已有数据降级。
+
+        返回规范化 bar dict 列表（与 _normalize_kline_rows 输出一致）。
+        """
+
+        settings = Settings.from_env()
+        if not settings.kline_store_enabled:
+            rows = self._client.get_klines(
+                symbol=symbol,
+                interval=interval,
+                limit=200,
+            )
+            normalized_rows, _ = _normalize_kline_rows(rows)
+            return normalized_rows
+
+        store = KlineStore(root=settings.kline_store_root)
+        sync_service = KlineSyncService(store=store, market_client=self._client)
+
+        try:
+            sync_service.ensure_window(symbol, interval, days)
+        except Exception:
+            pass  # 降级：返回仓库已有数据
+
+        now_ms = int(time.time() * 1000)
+        start_ts = now_ms - days * 86400000
+        return store.read(symbol, interval, start_ts=start_ts)
 
     def get_symbol_chart(
         self,
@@ -235,6 +272,24 @@ class MarketService:
                     "items": [],
                     "overlays": build_indicator_summary([], warnings=warnings),
                 }
+
+        # P2: 优先读本地仓库（网关开关，默认 true）
+        settings = Settings.from_env()
+        if settings.kline_store_enabled:
+            try:
+                bars = self.get_klines_with_store(
+                    symbol=symbol,
+                    interval=interval,
+                    days=30,
+                )
+                if bars:
+                    items = bars[:limit]
+                    return {
+                        "items": items,
+                        "overlays": build_indicator_summary(items, warnings=[]),
+                    }
+            except Exception:
+                pass  # 降级：回退到 API 直连
 
         rows = self._client.get_klines(symbol=symbol, interval=interval, limit=limit)
         items, warnings = _normalize_kline_rows(rows)

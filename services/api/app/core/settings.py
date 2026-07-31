@@ -58,6 +58,8 @@ class Settings:
     live_max_stake_usdt: Decimal | None = None
     live_max_open_trades: int | None = None
     automation_state_path: str = DEFAULT_AUTOMATION_STATE_PATH
+    kline_store_enabled: bool = True
+    kline_store_root: str = ".runtime/kline_store"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -155,6 +157,9 @@ class Settings:
                 raise ValueError("QUANT_LIVE_MAX_OPEN_TRADES 必须大于 0")
         automation_state_path = (os.getenv("QUANT_AUTOMATION_STATE_PATH") or DEFAULT_AUTOMATION_STATE_PATH).strip() or DEFAULT_AUTOMATION_STATE_PATH
 
+        kline_store_enabled = os.getenv("QUANT_KLINE_STORE_ENABLED", "true").strip().lower() != "false"
+        kline_store_root = (os.getenv("QUANT_KLINE_STORE_ROOT") or ".runtime/kline_store").strip() or ".runtime/kline_store"
+
         freqtrade_config_values = (freqtrade_api_url, freqtrade_api_username, freqtrade_api_password)
         has_freqtrade_config = any(freqtrade_config_values)
         if has_freqtrade_config and not all(freqtrade_config_values):
@@ -181,6 +186,8 @@ class Settings:
             live_max_stake_usdt=live_max_stake_usdt,
             live_max_open_trades=live_max_open_trades,
             automation_state_path=automation_state_path,
+            kline_store_enabled=kline_store_enabled,
+            kline_store_root=kline_store_root,
         )
 
     @staticmethod
