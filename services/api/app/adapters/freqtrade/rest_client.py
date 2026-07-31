@@ -197,17 +197,17 @@ class FreqtradeRestClient:
             )
         else:
             stake_amount = self._resolve_action_stake_amount(action)
+            order_payload = self._build_entry_payload(
+                pair=symbol,
+                side=side,
+                stake_amount=stake_amount,
+                action=action,
+            )
             response = self._request_json(
                 "POST",
                 "/api/v1/forceenter",
                 auth=True,
-                payload={
-                    "pair": symbol,
-                    "side": side,
-                    "stakeamount": float(stake_amount),
-                    "ordertype": "market",
-                    "entry_tag": "quant-control-plane",
-                },
+                payload=order_payload,
             )
             trade_id = response.get("trade_id") or response.get("id")
             hydrated_trade = self._find_open_trade(symbol, trade_id=trade_id) or self._find_trade_history(symbol, trade_id=trade_id)
@@ -227,6 +227,48 @@ class FreqtradeRestClient:
             requested_quantity=quantity,
             response=response,
             hydrated_trade=hydrated_trade,
+        )
+
+    def _build_entry_payload(
+        self,
+        pair: str,
+        side: str,
+        stake_amount: Decimal,
+        action: dict[str, object],
+    ) -> dict[str, object]:
+        from services.api.app.core.settings import Settings
+
+        settings = Settings.from_env()
+        order_type = settings.trade_order_type
+        payload: dict[str, object] = {
+            "pair": pair,
+            "side": side,
+            "stakeamount": float(stake_amount),
+            "entry_tag": "quant-control-plane",
+        }
+
+        if order_type == "limit":
+            ref_price_str = action.get("reference_price")
+            if ref_price_str in (None, ""):
+                payload["ordertype"] = "market"
+            else:
+                ref_price = Decimal(str(ref_price_str))
+                budget_bps = Decimal(str(settings.trade_limit_slippage_budget_bps))
+                multiplier = Decimal("1") + budget_bps / Decimal("10000") if side == "buy" else Decimal("1") - budget_bps / Decimal("10000")
+                limit_price = (ref_price * multiplier).quantize(Decimal("0.01"))
+                payload["ordertype"] = "limit"
+                payload["price"] = float(limit_price)
+        else:
+            payload["ordertype"] = "market"
+
+        return payload
+
+    def cancel_order(self, trade_id: object) -> dict[str, object]:
+        return self._request_json(
+            "POST",
+            "/api/v1/forceexit",
+            auth=True,
+            payload={"tradeid": int(trade_id)},
         )
 
     def _resolve_action_stake_amount(self, action: dict[str, object]) -> Decimal:

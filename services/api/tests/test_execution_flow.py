@@ -53,7 +53,12 @@ class _FakeBinanceMarketClient:
             items.append(
                 {
                     "symbol": normalized_symbol,
+                    "status": "TRADING",
                     "filters": [
+                        {
+                            "filterType": "PRICE_FILTER",
+                            "tickSize": "0.01",
+                        },
                         {
                             "filterType": "NOTIONAL",
                             "minNotional": min_notional,
@@ -72,6 +77,12 @@ class _FakeBinanceMarketClient:
                 }
             )
         return {"symbols": items}
+
+    def get_order_book(self, symbol: str, limit: int = 20) -> dict[str, object]:
+        return {"bids": [["100", "100"]], "asks": [["101", "100"]]}
+
+    def get_klines(self, symbol: str, interval: str = "4h", limit: int = 200) -> list[list[object]]:
+        return [[0, "100", "101", "99", "100", "1000", 0, "0", 0, "0", "0", "0"]]
 
     def get_tickers(self) -> list[dict[str, object]]:
         symbols = set(self._min_notional_map) | set(self._last_price_map)

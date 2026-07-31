@@ -84,6 +84,12 @@ class BinanceMarketClient:
         url = f"{self.base_url}/api/v3/klines?{query}"
         return self._safe_public_get(url, [])
 
+    def get_order_book(self, symbol: str, limit: int = 20) -> dict[str, object]:
+        """读取指定交易对的订单簿深度。"""
+        query = urlencode({"symbol": symbol.strip().upper(), "limit": limit})
+        url = f"{self.base_url}/api/v3/depth?{query}"
+        return self._safe_public_get(url, {"bids": [], "asks": []})
+
     def get_exchange_info(self, symbols: tuple[str, ...] | None = None) -> dict[str, object]:
         """读取指定交易对的交易规则。"""
 
