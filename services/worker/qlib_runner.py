@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -40,6 +40,7 @@ from services.worker.qlib_features import (
 from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
 from services.worker.qlib_rule_gate import evaluate_rule_gate
+from services.worker.qlib_walk_forward import WalkForwardConfig, WalkForwardValidator
 
 
 @dataclass(slots=True)
@@ -126,6 +127,7 @@ class QlibRunner:
             "dataset_snapshot": dataset_snapshot,
             "dataset_snapshot_path": str(dataset_snapshot_path),
             "training_context": self._build_training_context(bundle=bundle, dataset_snapshot=dataset_snapshot),
+            "walk_forward_report": self._build_walk_forward_report(bundle, metrics),
         }
         result["backtest"]["data_snapshot"] = {
             "snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
@@ -366,6 +368,34 @@ class QlibRunner:
             backtest_rows.extend(bundle.testing_rows)
         if not training_rows:
             raise RuntimeError("研究层没有拿到可训练样本")
+
+        # walk-forward 分支：用 WalkForwardValidator 重切分
+        if self._config.enable_walk_forward:
+            all_rows = training_rows + validation_rows + backtest_rows
+            all_rows.sort(key=lambda r: int(r.get("generated_at", 0)))
+            wf_config = WalkForwardConfig(
+                n_folds=4,
+                min_train_bars=120,
+                gap_bars=self._config.label_window_bars,
+            )
+            validator = WalkForwardValidator()
+            folds = validator.split(all_rows, wf_config)
+            if folds:
+                # 使用第一折 train 作为训练集，所有 test 合并为验证 + 回测
+                wf_training = list(folds[0].train)
+                wf_test = []
+                for f in folds:
+                    wf_test.extend(f.test)
+                # test 集按时间升序拆分：前半验证、后半回测（各 50%）
+                wf_test.sort(key=lambda r: int(r.get("generated_at", 0)))
+                split_mid = len(wf_test) // 2
+                wf_validation = wf_test[:split_mid] if split_mid > 0 else wf_test
+                wf_backtest = wf_test[split_mid:] if split_mid < len(wf_test) else wf_test[-1:]
+                if wf_training and wf_validation and wf_backtest:
+                    training_rows = wf_training
+                    validation_rows = wf_validation
+                    backtest_rows = wf_backtest
+
         if not validation_rows or not backtest_rows:
             raise RuntimeError("研究层样本不足，无法生成完整验证和回测结果")
         return TrainingBundle(
@@ -946,6 +976,42 @@ class QlibRunner:
         """构造最小验证摘要。"""
 
         return _build_per_symbol_validation(rows)
+
+    def _build_walk_forward_report(self, bundle: TrainingBundle, metrics: dict[str, object]) -> dict[str, object] | None:
+        """构造 walk-forward 汇总报告。
+
+        仅在 enable_walk_forward 或 gate_use_walk_forward 时产出有意义内容。
+        """
+        if not self._config.enable_walk_forward and not self._config.gate_use_walk_forward:
+            return None
+
+        all_rows = bundle.training_rows + bundle.validation_rows + bundle.backtest_rows
+        if len(all_rows) < 4:
+            return None
+
+        all_rows.sort(key=lambda r: int(r.get("generated_at", 0)))
+        wf_config = WalkForwardConfig(
+            n_folds=4,
+            min_train_bars=120,
+            gap_bars=self._config.label_window_bars,
+        )
+        validator = WalkForwardValidator()
+
+        def _predict(train_rows: list[dict], test_rows: list[dict]) -> list[float]:
+            train_returns = [_to_float(r.get("future_return_pct", 0)) for r in train_rows]
+            pos_rate = sum(1 for v in train_returns if v > 0) / max(len(train_returns), 1)
+            return [pos_rate] * len(test_rows)
+
+        try:
+            report = validator.run(_predict, all_rows, wf_config)
+            return {
+                "folds": [asdict(f) for f in report.folds],
+                "summary": report.summary,
+                "enabled": self._config.enable_walk_forward,
+                "gate_use_walk_forward": self._config.gate_use_walk_forward,
+            }
+        except Exception:
+            return None
 
     def _build_factor_evaluation(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """构建因子评估数据。
