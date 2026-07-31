@@ -16,10 +16,12 @@ from services.api.app.services.alert_push_service import (
     push_open_position_alert,
     push_close_position_alert,
 )
+from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.services.execution_service import execution_service
 from services.api.app.services.risk_guard_service import risk_guard_service
 from services.api.app.services.risk_service import risk_service
 from services.api.app.services.signal_service import signal_service
+from services.api.app.services.strategy_arbitration_service import strategy_arbitration_service
 from services.api.app.services.strategy_engine_service import (
     strategy_engine_service,
     EntryDecision,
@@ -161,6 +163,39 @@ class StrategyDispatchService:
                 "status": "blocked",
                 "error_code": "risk_blocked",
                 "message": str(decision.get("reason") or "risk blocked"),
+                "risk_task": risk_task,
+                "sync_task": None,
+            }
+
+        arb_decision = strategy_arbitration_service.evaluate(
+            symbol=symbol,
+            freqtrade_client=freqtrade_client,
+        )
+        if not arb_decision.allowed:
+            signal_service.release_dispatch_claim(int(latest["signal_id"]))
+            error_message = "; ".join(arb_decision.reasons)
+            logger.warning("双策略仲裁拦截: %s, 原因: %s", symbol, error_message)
+            try:
+                alert_push_service.push_sync(
+                    AlertMessage(
+                        event_type=AlertEventType.RISK_ALERT,
+                        level=AlertLevel.WARNING,
+                        title="双策略仲裁拦截",
+                        message=f"ML 跳过 {symbol}: {error_message}",
+                        details={
+                            "strategy_id": strategy_id,
+                            "symbol": symbol,
+                            "arbitration_decision": arb_decision.to_dict(),
+                        },
+                    )
+                )
+            except Exception as alert_exc:
+                logger.warning("仲裁告警推送失败: %s", alert_exc)
+            return {
+                "status": "blocked",
+                "error_code": "arbitration_blocked",
+                "message": error_message,
+                "arbitration_decision": arb_decision.to_dict(),
                 "risk_task": risk_task,
                 "sync_task": None,
             }

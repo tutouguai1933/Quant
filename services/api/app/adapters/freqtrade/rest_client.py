@@ -354,6 +354,14 @@ class FreqtradeRestClient:
         payload = self._request_json("GET", "/api/v1/status", auth=True)
         return _payload_items(payload, "status")
 
+    def list_open_trades(self) -> list[dict[str, object]]:
+        """返回所有未平仓交易的原始状态条目（含 enter_tag，区分策略来源）。
+
+        不做缓存，供仲裁等需要最新持仓视图的调用使用。
+        """
+
+        return [item for item in self._get_status_items() if item.get("is_open")]
+
     def _get_balances(self) -> list[dict[str, object]]:
         """读取账户余额列表。"""
 

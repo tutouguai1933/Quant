@@ -74,6 +74,11 @@ class Settings:
     vpn_backup_nodes: tuple[str, ...] = ()
     vpn_whitelisted_ips: tuple[str, ...] = ()
 
+    arbitration_enabled: bool = True
+    arbitration_feishu_alert_enabled: bool = True
+    arbitration_log_path: str = ".runtime/arbitration_log.jsonl"
+    arbitration_fail_open: bool = False
+
     @classmethod
     def from_env(cls) -> "Settings":
         """从环境变量读取运行配置。"""
@@ -200,6 +205,16 @@ class Settings:
                 ip.strip() for ip in raw_vpn_ips.split(",") if ip.strip()
             )
 
+        # 双策略协同仲裁（P0 系列）
+        arbitration_enabled = os.getenv("QUANT_ARBITRATION_ENABLED", "true").strip().lower() == "true"
+        arbitration_feishu_alert_enabled = (
+            os.getenv("QUANT_ARBITRATION_FEISHU_ALERT_ENABLED", "true").strip().lower() == "true"
+        )
+        arbitration_log_path = (
+            os.getenv("QUANT_ARBITRATION_LOG_PATH") or ".runtime/arbitration_log.jsonl"
+        ).strip() or ".runtime/arbitration_log.jsonl"
+        arbitration_fail_open = os.getenv("QUANT_ARBITRATION_FAIL_OPEN", "false").strip().lower() == "true"
+
         freqtrade_config_values = (freqtrade_api_url, freqtrade_api_username, freqtrade_api_password)
         has_freqtrade_config = any(freqtrade_config_values)
         if has_freqtrade_config and not all(freqtrade_config_values):
@@ -239,6 +254,10 @@ class Settings:
             vpn_primary_node=vpn_primary_node,
             vpn_backup_nodes=vpn_backup_nodes,
             vpn_whitelisted_ips=vpn_whitelisted_ips,
+            arbitration_enabled=arbitration_enabled,
+            arbitration_feishu_alert_enabled=arbitration_feishu_alert_enabled,
+            arbitration_log_path=arbitration_log_path,
+            arbitration_fail_open=arbitration_fail_open,
         )
 
     @staticmethod

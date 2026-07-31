@@ -158,6 +158,15 @@ class _MemoryFreqtradeBackend:
             "bot_state": "",
         }
 
+    def list_open_trades(self) -> list[dict[str, object]]:
+        """返回内存态未平仓交易（pair/is_open/enter_tag 结构，供仲裁使用）。"""
+
+        trades: list[dict[str, object]] = []
+        for symbol in self._positions:
+            pair = f"{symbol[:-4]}/{symbol[-4:]}" if "/" not in symbol else symbol
+            trades.append({"pair": pair, "is_open": True, "enter_tag": ""})
+        return trades
+
     def _runtime_mode(self) -> str:
         """读取当前运行模式。"""
 
@@ -190,6 +199,11 @@ class FreqtradeClient:
         """对外暴露运行视图。"""
 
         return self._backend.get_runtime_snapshot()
+
+    def list_open_trades(self) -> list[dict[str, object]]:
+        """对外暴露未平仓交易列表（含 enter_tag，区分策略来源）。"""
+
+        return self._backend.list_open_trades()
 
     def _build_backend(self, rest_client: object | None) -> object:
         """根据运行配置选择后端。"""
