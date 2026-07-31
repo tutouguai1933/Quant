@@ -69,6 +69,10 @@ DEFAULT_VOLUME_WEIGHT = Decimal("1.1")
 DEFAULT_OSCILLATOR_WEIGHT = Decimal("0.7")
 DEFAULT_VOLATILITY_WEIGHT = Decimal("0.9")
 DEFAULT_STRICT_PENALTY_WEIGHT = Decimal("1")
+DEFAULT_LABEL_WINDOW_BARS = 18
+DEFAULT_LABEL_NEUTRAL_PCT = Decimal("0")
+DEFAULT_ENABLE_WALK_FORWARD = False
+DEFAULT_GATE_USE_WALK_FORWARD = False
 
 # ML 模型相关默认值
 DEFAULT_MODEL_TYPE = "lightgbm"
@@ -238,6 +242,11 @@ class QlibRuntimeConfig:
     enable_ml_training: bool
     hyperopt_n_trials: int
     hyperopt_timeout_seconds: int
+    # P1 标签工程 + walk-forward
+    label_window_bars: int
+    label_neutral_pct: Decimal
+    enable_walk_forward: bool
+    gate_use_walk_forward: bool
     paths: QlibRuntimePaths
 
     def ensure_ready(self) -> None:
@@ -632,6 +641,22 @@ def load_qlib_config(
         minimum=60,
     )
 
+    # P1 标签工程 + walk-forward
+    label_window_bars = _read_int(
+        values.get("QUANT_QLIB_LABEL_WINDOW_BARS"),
+        default=DEFAULT_LABEL_WINDOW_BARS,
+        env_name="QUANT_QLIB_LABEL_WINDOW_BARS",
+        minimum=1,
+    )
+    label_neutral_pct = _read_decimal(
+        values.get("QUANT_QLIB_LABEL_NEUTRAL_PCT"),
+        default=DEFAULT_LABEL_NEUTRAL_PCT,
+        env_name="QUANT_QLIB_LABEL_NEUTRAL_PCT",
+        minimum=Decimal("0"),
+    )
+    enable_walk_forward = _read_bool(values.get("QUANT_QLIB_ENABLE_WALK_FORWARD"), default=False)
+    gate_use_walk_forward = _read_bool(values.get("QUANT_QLIB_GATE_USE_WALK_FORWARD"), default=False)
+
     _publish_runtime_hints(
         {
             "train_split_ratio": format(train_split_ratio.normalize(), "f"),
@@ -767,6 +792,10 @@ def load_qlib_config(
             enable_ml_training=enable_ml_training,
             hyperopt_n_trials=hyperopt_n_trials,
             hyperopt_timeout_seconds=hyperopt_timeout_seconds,
+            label_window_bars=label_window_bars,
+            label_neutral_pct=label_neutral_pct,
+            enable_walk_forward=enable_walk_forward,
+            gate_use_walk_forward=gate_use_walk_forward,
         )
 
     if runtime_root_raw:
@@ -858,6 +887,10 @@ def load_qlib_config(
         enable_ml_training=enable_ml_training,
         hyperopt_n_trials=hyperopt_n_trials,
         hyperopt_timeout_seconds=hyperopt_timeout_seconds,
+        label_window_bars=label_window_bars,
+        label_neutral_pct=label_neutral_pct,
+        enable_walk_forward=enable_walk_forward,
+        gate_use_walk_forward=gate_use_walk_forward,
     )
 
 
@@ -945,6 +978,10 @@ def _build_config(
     enable_ml_training: bool,
     hyperopt_n_trials: int,
     hyperopt_timeout_seconds: int,
+    label_window_bars: int,
+    label_neutral_pct: Decimal,
+    enable_walk_forward: bool,
+    gate_use_walk_forward: bool,
 ) -> QlibRuntimeConfig:
     """构造配置对象。"""
 
@@ -1048,6 +1085,10 @@ def _build_config(
         enable_ml_training=enable_ml_training,
         hyperopt_n_trials=hyperopt_n_trials,
         hyperopt_timeout_seconds=hyperopt_timeout_seconds,
+        label_window_bars=label_window_bars,
+        label_neutral_pct=label_neutral_pct,
+        enable_walk_forward=enable_walk_forward,
+        gate_use_walk_forward=gate_use_walk_forward,
         paths=paths,
     )
 

@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
-from statistics import median
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from statistics import median
 
 
 DAY_MS = 24 * 60 * 60 * 1000
@@ -23,6 +24,139 @@ LABEL_COLUMNS = (
 )
 
 
+# ---------------------------------------------------------------------------
+# 新数据模型
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LabelSpec:
+    """标签构建参数。
+
+    LabelSpec() 默认值与现有 build_label_rows 行为对齐：
+    target_pct=1.0, stop_pct=-1.0, window_bars=18（4h×18≈3天），
+    mode="earliest_hit", neutral_threshold_pct=0.0（无过滤）。
+    """
+
+    target_pct: float = 1.0
+    stop_pct: float = -1.0
+    window_bars: int = 18  # 4h x 18 = 72h ≈ 3天
+    mode: str = "earliest_hit"
+    neutral_threshold_pct: float = 0.0
+
+
+@dataclass
+class LabeledRow:
+    """单条标签结果。"""
+
+    open_time: int
+    future_return_pct: float
+    label: str  # buy / sell / watch
+    is_trainable: bool
+
+
+@dataclass
+class LabelQuality:
+    """标签质量报告。"""
+
+    total: int
+    buy_ratio: float
+    sell_ratio: float
+    watch_ratio: float
+    trainable_ratio: float
+
+
+# ---------------------------------------------------------------------------
+# LabelEngine
+# ---------------------------------------------------------------------------
+
+
+class LabelEngine:
+    """把 K 线样本转成标签的引擎。
+
+    支持三种模式：earliest_hit（默认）、close_only、window_majority。
+    新增 neutral_threshold_pct 过滤和 window_bars 参数。
+    """
+
+    _SUPPORTED_MODES = ("earliest_hit", "close_only", "window_majority")
+
+    def build(self, candles: list[dict], spec: LabelSpec) -> list[LabeledRow]:
+        """根据 spec 从 K 线构建标签行。
+
+        window_bars 决定向前看多少根 bar（从 index+1 开始）。
+        neutral_threshold_pct > 0 时，|收益| <= 该值的样本标为 watch。
+        """
+        target_dec = Decimal(str(spec.target_pct))
+        stop_dec = Decimal(str(spec.stop_pct))
+        neutral_dec = Decimal(str(spec.neutral_threshold_pct))
+        window_bars = max(1, int(spec.window_bars))
+        mode = spec.mode if spec.mode in self._SUPPORTED_MODES else "earliest_hit"
+
+        normalized = [_normalize_candle(item) for item in candles]
+        valid_candles = [item for item in normalized if item is not None]
+        if not valid_candles:
+            return []
+
+        rows: list[LabeledRow] = []
+        for index, candle in enumerate(valid_candles):
+            future_window = _slice_future_window_single(
+                candles=valid_candles,
+                index=index,
+                window_bars=window_bars,
+            )
+            if not future_window or candle["close"] == 0:
+                future_return = Decimal("0")
+                label = "watch"
+                is_trainable = False
+            else:
+                future_return, label = _classify_window_label(
+                    entry_close=candle["close"],
+                    future_window=future_window,
+                    label_mode=mode,
+                    trigger_basis="close",
+                    target_return_pct=target_dec,
+                    stop_return_pct=stop_dec,
+                )
+                is_trainable = True
+
+            # neutral 过滤：|收益| <= neutral_threshold_pct 归为 watch
+            if is_trainable and neutral_dec > 0:
+                if abs(future_return) <= neutral_dec:
+                    label = "watch"
+
+            rows.append(
+                LabeledRow(
+                    open_time=int(candle["close_time"]),
+                    future_return_pct=float(future_return) if is_trainable else 0.0,
+                    label=label,
+                    is_trainable=is_trainable,
+                )
+            )
+        return rows
+
+    def quality_report(self, rows: list[LabeledRow]) -> LabelQuality:
+        """从标签行生成质量报告。"""
+        if not rows:
+            return LabelQuality(total=0, buy_ratio=0.0, sell_ratio=0.0, watch_ratio=0.0, trainable_ratio=0.0)
+        total = len(rows)
+        buy_count = sum(1 for r in rows if r.label == "buy")
+        sell_count = sum(1 for r in rows if r.label == "sell")
+        watch_count = sum(1 for r in rows if r.label == "watch")
+        trainable_count = sum(1 for r in rows if r.is_trainable)
+        return LabelQuality(
+            total=total,
+            buy_ratio=buy_count / total,
+            sell_ratio=sell_count / total,
+            watch_ratio=watch_count / total,
+            trainable_ratio=trainable_count / total,
+        )
+
+
+# ---------------------------------------------------------------------------
+# build_label_rows（兼容旧签名，内部保留 range-window 语义）
+# ---------------------------------------------------------------------------
+
+
 def build_label_rows(
     symbol: str,
     candles: list[dict[str, object]],
@@ -35,7 +169,11 @@ def build_label_rows(
     max_window_days: int = MAX_WINDOW_DAYS,
     holding_window_label: str = "1-3d",
 ) -> list[dict[str, object]]:
-    """把 K 线样本转成标签行。"""
+    """把 K 线样本转成标签行。
+
+    签名完全兼容旧版，输出格式不变。
+    内部保留 range-window 语义（min/max window days -> bar range）。
+    """
 
     normalized_target = target_return_pct if isinstance(target_return_pct, Decimal) else Decimal(str(target_return_pct or "1"))
     normalized_stop = stop_return_pct if isinstance(stop_return_pct, Decimal) else Decimal(str(stop_return_pct or "-1"))
@@ -52,7 +190,7 @@ def build_label_rows(
 
     rows: list[dict[str, object]] = []
     for index, candle in enumerate(valid_candles):
-        future_window = _slice_future_window(
+        future_window = _slice_future_window_range(
             candles=valid_candles,
             index=index,
             min_window_bars=min_window_bars,
@@ -86,6 +224,11 @@ def build_label_rows(
     return rows
 
 
+# ---------------------------------------------------------------------------
+# 内部辅助函数
+# ---------------------------------------------------------------------------
+
+
 def _infer_bar_step_ms(candles: list[dict[str, object]]) -> int:
     """从 K 线时间推导单根 bar 的间隔。"""
 
@@ -110,18 +253,37 @@ def _window_bars(bar_step_ms: int, days: int) -> int:
     return max(1, (days * DAY_MS) // bar_step_ms)
 
 
-def _slice_future_window(
+def _slice_future_window_range(
     *,
     candles: list[dict[str, Decimal | int]],
     index: int,
     min_window_bars: int,
     max_window_bars: int,
 ) -> list[dict[str, Decimal | int]]:
-    """截取未来 1-3 天观察窗口。"""
+    """截取未来 1-3 天观察窗口（range 语义，兼容旧版）。"""
 
     start_index = index + min_window_bars
     end_index = index + max_window_bars
     if start_index >= len(candles) or end_index >= len(candles):
+        return []
+    return candles[start_index : end_index + 1]
+
+
+def _slice_future_window_single(
+    *,
+    candles: list[dict[str, Decimal | int]],
+    index: int,
+    window_bars: int,
+) -> list[dict[str, Decimal | int]]:
+    """截取未来观察窗口（单一 window_bars 语义，从 index+1 开始）。"""
+
+    start_index = index + 1
+    end_index = index + window_bars
+    if start_index >= len(candles):
+        return []
+    if end_index >= len(candles):
+        end_index = len(candles) - 1
+    if start_index > end_index:
         return []
     return candles[start_index : end_index + 1]
 
@@ -135,23 +297,23 @@ def _classify_window_label(
     target_return_pct: Decimal,
     stop_return_pct: Decimal,
 ) -> tuple[Decimal, str]:
-    """按 1-3 天窗口内的最早命中结果生成标签。"""
+    """按观察窗口内的命中结果生成标签。"""
 
     future_returns = [_return_pct(entry_close=entry_close, value=candle["close"]) for candle in future_window]
     trigger_high_returns = [_return_pct(entry_close=entry_close, value=candle["high"]) for candle in future_window]
     trigger_low_returns = [_return_pct(entry_close=entry_close, value=candle["low"]) for candle in future_window]
 
     def _buy_hit_index(values: list[Decimal]) -> int | None:
-        return next((index for index, value in enumerate(values) if value >= target_return_pct), None)
+        return next((idx for idx, value in enumerate(values) if value >= target_return_pct), None)
 
     def _sell_hit_index(values: list[Decimal]) -> int | None:
-        return next((index for index, value in enumerate(values) if value <= stop_return_pct), None)
+        return next((idx for idx, value in enumerate(values) if value <= stop_return_pct), None)
 
-    def _pick_buy_trigger(index: int) -> Decimal:
-        return trigger_high_returns[index] if trigger_basis == "high_low" else future_returns[index]
+    def _pick_buy_trigger(idx: int) -> Decimal:
+        return trigger_high_returns[idx] if trigger_basis == "high_low" else future_returns[idx]
 
-    def _pick_sell_trigger(index: int) -> Decimal:
-        return trigger_low_returns[index] if trigger_basis == "high_low" else future_returns[index]
+    def _pick_sell_trigger(idx: int) -> Decimal:
+        return trigger_low_returns[idx] if trigger_basis == "high_low" else future_returns[idx]
 
     if label_mode == "window_majority":
         checkpoints = []
