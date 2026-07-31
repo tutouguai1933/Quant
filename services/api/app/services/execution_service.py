@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import time
+from datetime import datetime, timezone
 from decimal import Decimal
 from decimal import InvalidOperation
 from decimal import ROUND_CEILING
+from pathlib import Path
 
 from services.api.app.adapters.binance.market_client import BinanceMarketClient
 from services.api.app.adapters.freqtrade.client import freqtrade_client
@@ -18,8 +21,13 @@ from services.api.app.services.workbench_config_service import workbench_config_
 class ExecutionService:
     """Maps control-plane signals to execution actions."""
 
+    _REJECTIONS_PATH = Path(".runtime/trade_rejections.jsonl")
+    _SLIPPAGE_PATH = Path(".runtime/trade_slippage.jsonl")
+
     def __init__(self, market_client: BinanceMarketClient | None = None) -> None:
         self._market_client = market_client or BinanceMarketClient()
+        self._pre_trade_validator = None
+        self._slippage_model = None
 
     def build_execution_action(self, signal_id: int, strategy_context_id: int | None = None) -> dict[str, object]:
         signal = signal_service.get_signal(signal_id)
@@ -57,13 +65,51 @@ class ExecutionService:
                 raise PermissionError("dry-run 模式下执行器没有切到 dry-run 运行模式")
 
         action = self.build_execution_action(signal_id, strategy_context_id=strategy_context_id)
+        reference_price = None
         if runtime_mode == "live":
             self._guard_live_execution(action=action, settings=settings, runtime_snapshot=runtime_snapshot)
+            if settings.pre_trade_enabled:
+                reference_price = self._compute_reference_price(str(action["symbol"]))
+                report = self._run_pre_trade_validation(
+                    action=action,
+                    settings=settings,
+                    reference_price=reference_price,
+                )
+                if report is not None and report.blocked:
+                    blocked_reasons = [
+                        c.detail for c in report.checks
+                        if c.severity == "block" and not c.passed
+                    ]
+                    self._record_rejection(
+                        symbol=str(action["symbol"]),
+                        side=str(action["side"]),
+                        reasons=blocked_reasons,
+                    )
+                    self._send_pre_trade_alert(
+                        symbol=str(action["symbol"]),
+                        side=str(action["side"]),
+                        reasons=blocked_reasons,
+                    )
+                    raise PermissionError(
+                        f"pre-trade validation blocked: {'; '.join(blocked_reasons)}"
+                    )
+
+        if reference_price is not None:
+            action["reference_price"] = str(reference_price)
 
         # 记录交易延迟
         start_time = time.time()
         order = freqtrade_client.submit_execution_action(action)
         duration_ms = (time.time() - start_time) * 1000
+
+        # 记录成交滑点
+        if reference_price is not None:
+            self._record_slippage(
+                symbol=str(action["symbol"]),
+                side=str(action["side"]),
+                reference_price=reference_price,
+                order=order,
+            )
 
         # 延迟导入以避免循环依赖
         from services.api.app.services.performance_monitor_service import (
@@ -88,6 +134,150 @@ class ExecutionService:
             "runtime": runtime_snapshot,
             "execution_latency_ms": duration_ms,
         }
+
+    def _compute_reference_price(self, symbol: str) -> Decimal:
+        compact = self._compact_symbol(symbol)
+        return self._get_last_price(compact)
+
+    def _run_pre_trade_validation(
+        self,
+        action: dict[str, object],
+        settings: Settings,
+        reference_price: Decimal,
+    ) -> object | None:
+        try:
+            from services.api.app.adapters.binance.account_client import binance_account_client
+            from services.api.app.services.pre_trade_validator import (
+                PreTradeConfig,
+                PreTradeValidator,
+            )
+            from services.api.app.services.slippage_model import (
+                SlippageConfig,
+                SlippageModel,
+            )
+
+            config = PreTradeConfig(
+                enabled=settings.pre_trade_enabled,
+                min_depth_coverage=settings.pre_trade_min_depth_coverage,
+                max_spread_bps=settings.pre_trade_max_spread_bps,
+                max_deviation_bps=settings.pre_trade_max_deviation_bps,
+                max_slippage_bps=settings.pre_trade_max_slippage_bps,
+            )
+            validator = PreTradeValidator(
+                market_client=self._market_client,
+                account_client=binance_account_client,
+                config=config,
+            )
+            side_raw = str(action["side"])
+            if side_raw in ("flat", "sell"):
+                validate_side = "sell"
+            else:
+                validate_side = "buy"
+            symbol = self._compact_symbol(str(action["symbol"]))
+            stake_amount = Decimal(str(action.get("stake_amount", "0")))
+            report = validator.validate(
+                symbol=symbol,
+                side=validate_side,
+                stake_amount=stake_amount,
+                reference_price=reference_price,
+            )
+
+            if not report.blocked:
+                slippage_config = SlippageConfig(
+                    max_slippage_bps=settings.pre_trade_max_slippage_bps,
+                )
+                slippage_model = SlippageModel(config=slippage_config)
+                order_book = self._market_client.get_order_book(symbol)
+                candles_4h = self._market_client.get_klines(symbol, interval="4h", limit=20)
+                normalized_candles = [
+                    {"open_time": c[0], "open": c[1], "high": c[2], "low": c[3], "close": c[4], "volume": c[5]}
+                    for c in candles_4h if isinstance(c, list) and len(c) >= 6
+                ]
+                slippage_estimate = slippage_model.estimate(
+                    symbol=symbol,
+                    side=validate_side,
+                    stake_amount=stake_amount,
+                    order_book=order_book,
+                    candles_4h=normalized_candles,
+                )
+                report.slippage = slippage_estimate
+                if slippage_estimate.worst_case_bps > Decimal(str(settings.pre_trade_max_slippage_bps)):
+                    report.blocked = True
+                    report.warnings.append(
+                        f"滑点 worst_case={slippage_estimate.worst_case_bps} bps > {settings.pre_trade_max_slippage_bps}"
+                    )
+
+            self._pre_trade_validator = validator
+            self._slippage_model = slippage_model if not report.blocked else None
+            return report
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("pre-trade validation error: %s", exc)
+            return None
+
+    def _record_rejection(self, symbol: str, side: str, reasons: list[str]) -> None:
+        try:
+            self._REJECTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "symbol": symbol,
+                "side": side,
+                "reason": "; ".join(reasons),
+            }
+            with open(self._REJECTIONS_PATH, "a") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    def _send_pre_trade_alert(self, symbol: str, side: str, reasons: list[str]) -> None:
+        try:
+            from services.api.app.services.feishu_push_service import (
+                AlertCardMessage,
+                FeishuAlertLevel,
+                feishu_push_service,
+            )
+            alert = AlertCardMessage(
+                level=FeishuAlertLevel.ERROR,
+                title="Pre-trade Validation Blocked",
+                message=f"{symbol} {side} 下单被拦截",
+                details={
+                    "symbol": symbol,
+                    "side": side,
+                    "reasons": "; ".join(reasons),
+                },
+            )
+            feishu_push_service.send_alert(alert)
+        except Exception:
+            pass
+
+    def _record_slippage(
+        self,
+        symbol: str,
+        side: str,
+        reference_price: Decimal,
+        order: dict[str, object],
+    ) -> None:
+        try:
+            fill_price_str = order.get("avgPrice", "0")
+            if fill_price_str in (None, "", "0.0000000000", 0):
+                return
+            fill_price = Decimal(str(fill_price_str))
+            if fill_price <= 0:
+                return
+            slippage_bps = (fill_price - reference_price) / reference_price * 10000
+            self._SLIPPAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "symbol": symbol,
+                "side": side,
+                "ref_price": str(reference_price),
+                "fill_price": str(fill_price),
+                "slippage_bps": str(slippage_bps.quantize(Decimal("0.01"))),
+            }
+            with open(self._SLIPPAGE_PATH, "a") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
     @staticmethod
     def _resolve_action_type(side: str) -> ExecutionActionType:

@@ -109,7 +109,6 @@ class BinanceMarketClient:
 
         返回 {"bids": [[price, qty], ...], "asks": [[price, qty], ...]}。
         """
-
         query = urlencode({"symbol": symbol.strip().upper(), "limit": limit})
         url = f"{self.base_url}/api/v3/depth?{query}"
         return self._safe_public_get(url, {"bids": [], "asks": []})

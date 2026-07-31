@@ -61,6 +61,15 @@ class Settings:
     kline_store_enabled: bool = True
     kline_store_root: str = ".runtime/kline_store"
 
+    pre_trade_enabled: bool = True
+    pre_trade_min_depth_coverage: int = 3
+    pre_trade_max_spread_bps: int = 20
+    pre_trade_max_deviation_bps: int = 100
+    pre_trade_max_slippage_bps: int = 30
+    trade_order_type: str = "market"
+    trade_limit_slippage_budget_bps: int = 30
+    trade_unfilled_timeout_seconds: int = 15
+
     @classmethod
     def from_env(cls) -> "Settings":
         """从环境变量读取运行配置。"""
@@ -160,6 +169,18 @@ class Settings:
         kline_store_enabled = os.getenv("QUANT_KLINE_STORE_ENABLED", "true").strip().lower() != "false"
         kline_store_root = (os.getenv("QUANT_KLINE_STORE_ROOT") or ".runtime/kline_store").strip() or ".runtime/kline_store"
 
+        # Pre-trade validation settings
+        pre_trade_enabled = os.getenv("QUANT_PRE_TRADE_ENABLED", "true").strip().lower() == "true"
+        pre_trade_min_depth_coverage = cls._parse_positive_int_env("QUANT_PRE_TRADE_MIN_DEPTH_COVERAGE", 3)
+        pre_trade_max_spread_bps = cls._parse_positive_int_env("QUANT_PRE_TRADE_MAX_SPREAD_BPS", 20)
+        pre_trade_max_deviation_bps = cls._parse_positive_int_env("QUANT_PRE_TRADE_MAX_DEVIATION_BPS", 100)
+        pre_trade_max_slippage_bps = cls._parse_positive_int_env("QUANT_PRE_TRADE_MAX_SLIPPAGE_BPS", 30)
+        trade_order_type = os.getenv("QUANT_TRADE_ORDER_TYPE", "market").strip().lower() or "market"
+        if trade_order_type not in ("market", "limit"):
+            raise ValueError("QUANT_TRADE_ORDER_TYPE 只能是 market 或 limit")
+        trade_limit_slippage_budget_bps = cls._parse_positive_int_env("QUANT_TRADE_LIMIT_SLIPPAGE_BUDGET_BPS", 30)
+        trade_unfilled_timeout_seconds = cls._parse_positive_int_env("QUANT_TRADE_UNFILLED_TIMEOUT_SECONDS", 15)
+
         freqtrade_config_values = (freqtrade_api_url, freqtrade_api_username, freqtrade_api_password)
         has_freqtrade_config = any(freqtrade_config_values)
         if has_freqtrade_config and not all(freqtrade_config_values):
@@ -188,7 +209,26 @@ class Settings:
             automation_state_path=automation_state_path,
             kline_store_enabled=kline_store_enabled,
             kline_store_root=kline_store_root,
+            pre_trade_enabled=pre_trade_enabled,
+            pre_trade_min_depth_coverage=pre_trade_min_depth_coverage,
+            pre_trade_max_spread_bps=pre_trade_max_spread_bps,
+            pre_trade_max_deviation_bps=pre_trade_max_deviation_bps,
+            pre_trade_max_slippage_bps=pre_trade_max_slippage_bps,
+            trade_order_type=trade_order_type,
+            trade_limit_slippage_budget_bps=trade_limit_slippage_budget_bps,
+            trade_unfilled_timeout_seconds=trade_unfilled_timeout_seconds,
         )
+
+    @staticmethod
+    def _parse_positive_int_env(env_name: str, default: int) -> int:
+        raw = os.getenv(env_name, str(default)).strip() or str(default)
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(f"{env_name} 必须是整数") from exc
+        if value <= 0:
+            raise ValueError(f"{env_name} 必须大于 0")
+        return value
 
     @staticmethod
     def _parse_symbol_list(raw_value: str, env_name: str) -> tuple[str, ...]:
