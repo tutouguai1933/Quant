@@ -1,14 +1,26 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-05-27
+> 最后更新：2026-08-01
 
 ---
 
 ## 当前进度
 
-**状态**：已完成系统 Review 后首轮 P0 改造，等待提交、服务器部署和线上验证
+**状态**：全部服务已恢复运行，自动化周期已恢复，等待下一轮周期验证
 
-**本次更新（2026-05-27）**：
+**本次更新（2026-08-01）**：
+
+### 全系统恢复（停机 5-7 周后重启）
+- **卡点确认**：quant-api Exited(137) 5 周前 OOM、quant-freqtrade Exited(2) 3 周前无法访问 Binance、mihomo 全部节点 REALITY 认证失败（配置过期）、GitHub pull 失败（代理失效）
+- **mihomo 代理更新**：用户提供新节点配置（`infra/mihomo/config.yaml` 不进 Git），所有旧节点 public-key 已更换；补充 MMDB（jsdelivr 下载）后正常启动
+- **出口 IP 白名单匹配**：Binance API key 白名单包含 154.31.113.7（日本¹）和 45.95.212.82（日本⁴），固定 BestSSR 到 **日本¹**（154.31.113.7）
+- **行情直连**：`QUANT_BINANCE_MARKET_BASE_URL` 改为 `data-api.binance.vision`（大陆直连 200），compose `NO_PROXY` 加 vision 域名（commit `4888078`）；不再依赖失效代理，账户/交易接口仍走代理
+- **quant-api 恢复**：OOM(137) 是 Docker recreate 竞争残留孤儿 uvicorn 占用 9011 导致 bind 失败循环；用 `docker run --pid=host` 清理孤儿进程 + `--force-recreate` 重建容器解决
+- **quant-freqtrade 恢复**：代理恢复后启动成功（EnhancedStrategy，1h，stake 10 USDT，dry_run=False 真实模式）
+- **自动化恢复**：6/10 连续失败触发的人工接管通过 `/tasks/automation/dry-run-only` 清除（resume 会被 resume_checklist 拦截属正常保护），现为 auto_dry_run 运行中
+- **注意**：服务器仅 1.6G 内存，api 容器内存紧张时有 OOM 风险，需要关注
+
+**上次更新（2026-05-27）**：
 
 ### 系统 Review 后 P0 改造
 - **策略安全门**：ML live gate 改为使用候选自己的 per-symbol validation；当 ML 没有任何买入样本时，回测不再回退到全部样本，避免无信号候选被误包装成可交易
