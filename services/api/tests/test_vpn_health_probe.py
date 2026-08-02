@@ -16,7 +16,7 @@ from services.api.app.services.vpn_health_probe import NodeHealthProbe, ProbeRes
 
 
 class NodeHealthProbeTests(unittest.TestCase):
-    """NodeHealthProbe 单元测试（mock HTTP）。"""
+    """NodeHealthProbe 单元测试（mock mihomo delay API）。"""
 
     def setUp(self) -> None:
         self.whitelisted_ips = {"154.31.113.7", "45.95.212.80"}
@@ -31,60 +31,69 @@ class NodeHealthProbeTests(unittest.TestCase):
 
     def _mock_client(
         self,
-        ping_status: int = 200,
-        exit_ip: str | None = "154.31.113.7",
+        status: int = 200,
+        delay_ms: int = 123,
     ) -> mock.MagicMock:
-        """创建 mock httpx.Client。"""
+        """创建 mock httpx.Client（delay API 单次 GET 响应）。"""
         mock_client = mock.MagicMock()
         mock_client.__enter__ = mock.Mock(return_value=mock_client)
         mock_client.__exit__ = mock.Mock(return_value=False)
 
-        # Mock Binance ping response
-        ping_response = mock.MagicMock()
-        ping_response.status_code = ping_status
+        response = mock.MagicMock()
+        response.status_code = status
+        if delay_ms is not None:
+            response.json.return_value = {"delay": delay_ms}
+        else:
+            response.json.return_value = {"message": "An error occurred in the node"}
 
-        # For IP check, second .get() call needs different response
-        ip_response = mock.MagicMock()
-        ip_response.status_code = 200
-        ip_response.json.return_value = {"ip": exit_ip}
-
-        mock_client.get.side_effect = [ping_response, ip_response]
-
+        mock_client.get.return_value = response
         return mock_client
 
-    def _make_client_factory(self, call_counter: list[int], ping_statuses=None, exit_ips=None):
+    def _make_client_factory(self, call_counter: list[int], statuses=None, delay_vals=None):
         """Create a client factory side_effect function that accepts **kwargs."""
         def factory(**kwargs):
             idx = call_counter[0]
             call_counter[0] += 1
             status = 200
-            ip = "154.31.113.7"
-            if ping_statuses and idx < len(ping_statuses):
-                status = ping_statuses[idx]
-            if exit_ips and idx < len(exit_ips):
-                ip = exit_ips[idx]
-            return self._mock_client(ping_status=status, exit_ip=ip)
+            delay = 123
+            if statuses and idx < len(statuses):
+                status = statuses[idx]
+            if delay_vals and idx < len(delay_vals):
+                delay = delay_vals[idx]
+            return self._mock_client(status=status, delay_ms=delay)
         return factory
 
     def test_check_success(self) -> None:
         with mock.patch("httpx.Client") as mock_client_cls:
             mock_client_cls.return_value = self._mock_client(
-                ping_status=200, exit_ip="154.31.113.7"
+                status=200, delay_ms=123
             )
             result = self.probe.check("★ 日本¹")
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.ip, "154.31.113.7")
+        self.assertEqual(result.latency_ms, 123.0)
         self.assertEqual(result.node_name, "★ 日本¹")
-        self.assertIsNotNone(result.latency_ms)
+        # delay API 探测不返回出口 IP（白名单校验在切换后验证）
+        self.assertIsNone(result.ip)
 
-    def test_check_binance_unreachable(self) -> None:
+    def test_check_delay_api_unreachable(self) -> None:
         with mock.patch("httpx.Client") as mock_client_cls:
-            mock_client_cls.return_value = self._mock_client(ping_status=500)
+            mock_client_cls.return_value = self._mock_client(status=500)
             result = self.probe.check("★ 日本¹")
 
         self.assertFalse(result.ok)
         self.assertIn("500", result.error or "")
+
+    def test_check_delay_fail(self) -> None:
+        """mihomo delay 返回 FAIL（无 delay 字段）。"""
+        with mock.patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.return_value = self._mock_client(
+                status=200, delay_ms=None
+            )
+            result = self.probe.check("★ 日本¹")
+
+        self.assertFalse(result.ok)
+        self.assertIn("FAIL", result.error or "")
 
     def test_check_timeout(self) -> None:
         import httpx as httpx_module
@@ -119,7 +128,7 @@ class NodeHealthProbeTests(unittest.TestCase):
         call_counter = [0]
         factory = self._make_client_factory(
             call_counter,
-            ping_statuses=[200, 500],
+            statuses=[200, 500],
         )
 
         with mock.patch("httpx.Client") as mock_client_cls:
@@ -153,7 +162,7 @@ class NodeHealthProbeTests(unittest.TestCase):
         # Simulate last probe 15s ago
         self.probe._last_probe_at["★ 日本¹"] = time.time() - 15.0
         self.probe._cache["★ 日本¹"] = ProbeResult(
-            ok=True, ip="154.31.113.7", node_name="★ 日本¹",
+            ok=True, node_name="★ 日本¹",
             at=time.time() - 130.0,  # cache expired (> 120s)
         )
 
@@ -168,7 +177,7 @@ class NodeHealthProbeTests(unittest.TestCase):
         """最近探测过 + 缓存未过期，返回缓存不发起请求。"""
         self.probe._last_probe_at["★ 日本¹"] = time.time() - 1.0
         cached = ProbeResult(
-            ok=True, ip="154.31.113.7", node_name="★ 日本¹",
+            ok=True, node_name="★ 日本¹",
         )
         self.probe._cache["★ 日本¹"] = cached
 
@@ -190,7 +199,7 @@ class NodeHealthProbeTests(unittest.TestCase):
     def test_clear_cache(self) -> None:
         with mock.patch("httpx.Client") as mock_client_cls:
             mock_client_cls.return_value = self._mock_client(
-                ping_status=200, exit_ip="154.31.113.7"
+                status=200, delay_ms=123
             )
             self.probe.check("★ 日本¹")
 
@@ -207,7 +216,7 @@ class NodeHealthProbeTests(unittest.TestCase):
         call_counter = [0]
         factory = self._make_client_factory(
             call_counter,
-            exit_ips=["154.31.113.7", "45.95.212.80"],
+            delay_vals=[123, 456],
         )
 
         with mock.patch("httpx.Client") as mock_client_cls:
@@ -217,8 +226,8 @@ class NodeHealthProbeTests(unittest.TestCase):
 
         self.assertTrue(result1.ok)
         self.assertTrue(result2.ok)
-        self.assertEqual(result1.ip, "154.31.113.7")
-        self.assertEqual(result2.ip, "45.95.212.80")
+        self.assertEqual(result1.latency_ms, 123.0)
+        self.assertEqual(result2.latency_ms, 456.0)
         self.assertEqual(call_counter[0], 2)
 
     def test_request_error_handling(self) -> None:

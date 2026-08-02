@@ -24,6 +24,27 @@ from services.api.app.services.vpn_failover_controller import (  # noqa: E402
 )
 
 
+class _SwitchResult:
+    """模拟 vpn_switch_service.SwitchResult。"""
+
+    def __init__(
+        self,
+        *,
+        success: bool,
+        previous_node: str,
+        current_node: str = "",
+        exit_ip: str | None = None,
+        is_whitelisted: bool = False,
+        error_message: str = "",
+    ) -> None:
+        self.success = success
+        self.previous_node = previous_node
+        self.current_node = current_node
+        self.exit_ip = exit_ip
+        self.is_whitelisted = is_whitelisted
+        self.error_message = error_message
+
+
 class VPNFailoverControllerTests(unittest.TestCase):
     """控制器单元测试（mock 探针）。"""
 
@@ -110,7 +131,16 @@ class VPNFailoverControllerTests(unittest.TestCase):
         # 3rd failure triggers failover
         with mock.patch.object(
             self.controller.probe, "check_with_interval"
-        ) as mock_check_interval:
+        ) as mock_check_interval, mock.patch(
+            "services.api.app.services.vpn_switch_service.vpn_switch_service.switch_node_sync",
+            return_value=_SwitchResult(
+                success=True,
+                previous_node=self.primary,
+                current_node="★ 日本²",
+                exit_ip="45.95.212.80",
+                is_whitelisted=True,
+            ),
+        ):
             # Return different results per node: primary fails, backup OK
             def side_effect(node, **kwargs):
                 if node == self.primary:
@@ -123,6 +153,7 @@ class VPNFailoverControllerTests(unittest.TestCase):
         self.assertEqual(result["action"], "failover")
         self.assertEqual(result["to"], "★ 日本²")
         self.assertTrue(result["success"])
+        self.assertTrue(result["is_whitelisted"])
 
         # Verify event was written
         events_path = self.controller._events_path
@@ -134,6 +165,54 @@ class VPNFailoverControllerTests(unittest.TestCase):
         self.assertEqual(event["from"], self.primary)
         self.assertEqual(event["to"], "★ 日本²")
         self.assertTrue(event["success"])
+
+    def test_failover_skips_backup_not_in_whitelist(self) -> None:
+        """备选节点切换成功但出口 IP 不在白名单时，自动尝试下一个。"""
+        self.controller.policy.record_probe(self.primary, ok=False)
+        self.controller.policy.record_probe(self.primary, ok=False)
+
+        def switch_side_effect(node):
+            if node == "★ 日本²":
+                return _SwitchResult(
+                    success=True,
+                    previous_node=self.primary,
+                    current_node="★ 日本²",
+                    exit_ip="202.85.76.66",  # 不在白名单
+                    is_whitelisted=False,
+                )
+            return _SwitchResult(
+                success=True,
+                previous_node=self.primary,
+                current_node="★ 日本³",
+                exit_ip="45.95.212.81",
+                is_whitelisted=True,
+            )
+
+        with mock.patch.object(
+            self.controller.probe, "check_with_interval"
+        ) as mock_check_interval, mock.patch(
+            "services.api.app.services.vpn_switch_service.vpn_switch_service.switch_node_sync",
+            side_effect=switch_side_effect,
+        ):
+            def probe_side_effect(node, **kwargs):
+                if node == self.primary:
+                    return ProbeResult(ok=False, node_name=node, error="timeout")
+                return ProbeResult(ok=True, ip="45.95.212.80", node_name=node)
+
+            mock_check_interval.side_effect = probe_side_effect
+            result = self.controller.check_primary()
+
+        self.assertEqual(result["action"], "failover")
+        self.assertEqual(result["to"], "★ 日本³")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["exit_ip"], "45.95.212.81")
+
+        # 两个事件：日本² 白名单失败 + 最终切换成功
+        with open(self.controller._events_path, "r") as f:
+            lines = [line for line in f if line.strip()]
+        self.assertEqual(len(lines), 2)
+        self.assertFalse(json.loads(lines[0])["success"])
+        self.assertTrue(json.loads(lines[1])["success"])
 
     def test_check_primary_failover_all_backups_fail(self) -> None:
         """所有备选节点预验证失败。"""

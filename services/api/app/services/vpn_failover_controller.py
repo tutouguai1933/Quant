@@ -49,6 +49,7 @@ class VPNFailoverController:
         observe_seconds: int = DEFAULT_OBSERVE_SECONDS,
         state_path: Path | None = None,
         events_path: Path | None = None,
+        mihomo_api_url: str = "http://127.0.0.1:9090",
     ) -> None:
         """初始化控制器。
 
@@ -75,6 +76,7 @@ class VPNFailoverController:
             health_check_url=health_check_url,
             ip_check_url=ip_check_url,
             whitelisted_ips=whitelisted_ips,
+            mihomo_api_url=mihomo_api_url,
         )
         self._policy = PrimaryBackupPolicy(
             fail_threshold=fail_threshold,
@@ -140,23 +142,7 @@ class VPNFailoverController:
                     self._primary,
                     self._policy.fail_threshold,
                 )
-                backup = self._pick_and_switch(from_node=self._primary)
-                if backup:
-                    self._policy.mark_switched()
-                    self._policy.current_backup = backup
-                    return {
-                        "action": "failover",
-                        "from": self._primary,
-                        "to": backup,
-                        "success": True,
-                        "message": f"故障切换到备选节点 {backup}",
-                    }
-                return {
-                    "action": "failover_failed",
-                    "from": self._primary,
-                    "success": False,
-                    "message": "故障切换失败，所有备选节点不可用",
-                }
+                return self.failover(from_node=self._primary)
 
             return {
                 "action": "probing",
@@ -200,33 +186,93 @@ class VPNFailoverController:
             "message": "主节点健康",
         }
 
-    def _pick_and_switch(self, from_node: str) -> str | None:
-        """选出最佳备选节点并记录事件。
+    def failover(self, from_node: str) -> dict[str, Any]:
+        """从主节点故障切换，自动找到白名单内第一个健康备选。
+
+        按优先级依次尝试备选：delay 探测健康 → 实际切换 → 出口 IP 在白名单
+        才算成功；任一环节不过则试下一个。全部失败返回 failover_failed，
+        由上层触发告警（提示用户配新 IP）。
 
         Args:
             from_node: 切换前节点
 
         Returns:
-            选中的节点名称，或 None
+            切换结果字典（action=failover / failover_failed）
         """
-        backup = self._policy.pick_backup(self._registry, self._probe)
-        if backup:
-            event = self._policy.record_event(
-                from_node=from_node,
-                to_node=backup,
-                reason=f"主节点 {from_node} 连续失败",
-                success=True,
+        from services.api.app.services.vpn_switch_service import vpn_switch_service
+
+        candidates = self._registry.candidates()
+        if not candidates:
+            logger.error("没有可用的备选节点")
+            return {
+                "action": "failover_failed",
+                "from": from_node,
+                "success": False,
+                "message": "故障切换失败，所有备选节点不可用",
+            }
+
+        for candidate in candidates:
+            probe_result = self._probe.check_with_interval(candidate.name)
+            if not probe_result.ok:
+                logger.warning(
+                    "备选节点 %s 探测失败: %s，尝试下一个",
+                    candidate.name,
+                    probe_result.error,
+                )
+                continue
+
+            switch_result = vpn_switch_service.switch_node_sync(candidate.name)
+            if switch_result.success and switch_result.is_whitelisted:
+                self._policy.mark_switched()
+                self._policy.current_backup = candidate.name
+                event = self._policy.record_event(
+                    from_node=from_node,
+                    to_node=candidate.name,
+                    reason=f"主节点 {from_node} 连续失败",
+                    success=True,
+                )
+                self._write_event(event)
+                logger.info(
+                    "VPN 故障切换到 %s（出口 %s，白名单通过）",
+                    candidate.name,
+                    switch_result.exit_ip,
+                )
+                return {
+                    "action": "failover",
+                    "from": from_node,
+                    "to": candidate.name,
+                    "success": True,
+                    "exit_ip": switch_result.exit_ip,
+                    "is_whitelisted": True,
+                    "message": f"故障切换到备选节点 {candidate.name}",
+                }
+
+            logger.warning(
+                "备选节点 %s 切换成功但出口 IP %s 不在白名单，尝试下一个",
+                candidate.name,
+                switch_result.exit_ip,
             )
-            self._write_event(event)
-        else:
             event = self._policy.record_event(
                 from_node=from_node,
-                to_node="",
-                reason=f"主节点 {from_node} 故障切换失败，无可用备选",
+                to_node=candidate.name,
+                reason=f"出口 IP {switch_result.exit_ip} 不在白名单",
                 success=False,
             )
             self._write_event(event)
-        return backup
+
+        event = self._policy.record_event(
+            from_node=from_node,
+            to_node="",
+            reason=f"主节点 {from_node} 故障切换失败，所有备选不可用或不在白名单",
+            success=False,
+        )
+        self._write_event(event)
+        return {
+            "action": "failover_failed",
+            "from": from_node,
+            "success": False,
+            "message": "故障切换失败，所有备选节点不可用或不在白名单",
+        }
 
     def _switch_back(self, from_backup: str) -> bool:
         """记录回切事件。
@@ -307,6 +353,7 @@ def get_failover_controller() -> VPNFailoverController | None:
     proxy_url = os.getenv("QUANT_MIHOMO_PROXY_URL", "http://127.0.0.1:7890")
     health_check_url = os.getenv("QUANT_VPN_HEALTH_CHECK_URL", "https://api.binance.com/api/v3/ping")
     ip_check_url = os.getenv("QUANT_VPN_IP_CHECK_URL", "https://api.ipify.org?format=json")
+    mihomo_api_url = os.getenv("QUANT_MIHOMO_API_URL", "http://127.0.0.1:9090")
 
     fail_threshold = int(os.getenv("QUANT_VPN_FAIL_THRESHOLD", str(DEFAULT_FAIL_THRESHOLD)))
     recover_threshold = int(os.getenv("QUANT_VPN_RECOVER_THRESHOLD", str(DEFAULT_RECOVER_THRESHOLD)))
@@ -322,5 +369,6 @@ def get_failover_controller() -> VPNFailoverController | None:
         fail_threshold=fail_threshold,
         recover_threshold=recover_threshold,
         observe_seconds=observe_seconds,
+        mihomo_api_url=mihomo_api_url,
     )
     return _failover_controller
