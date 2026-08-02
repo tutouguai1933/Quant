@@ -41,11 +41,16 @@ class SyncService:
         settings = Settings.from_env()
         if settings.runtime_mode != "live":
             return self.sync_execution_state()
+        positions = account_sync_service.list_positions(limit=limit)
         order_symbols = self._resolve_live_order_symbols(settings=settings, expected_symbol=expected_symbol)
+        held_pairs = self._held_order_symbols(positions)
+        if expected_symbol:
+            held_pairs.add(self._compact_symbol(expected_symbol))
+        order_symbols = tuple(sorted(set(order_symbols) & held_pairs))
         result = {
             "balances": account_sync_service.list_balances(limit=limit),
-            "orders": account_sync_service.list_orders(limit=limit, symbols=order_symbols),
-            "positions": account_sync_service.list_positions(limit=limit),
+            "orders": account_sync_service.list_orders(limit=limit, symbols=order_symbols) if order_symbols else [],
+            "positions": positions,
             "strategies": [],
             "source": "binance-account-sync",
             "truth_source": "binance",
@@ -195,8 +200,13 @@ class SyncService:
         if runtime_mode == "live":
             try:
                 balances = account_sync_service.list_balances(limit=100)
-                orders = account_sync_service.list_orders(limit=100)
                 positions = account_sync_service.list_positions(limit=100)
+                held_pairs = self._held_order_symbols(positions)
+                orders = (
+                    account_sync_service.list_orders(limit=100, symbols=tuple(sorted(held_pairs)))
+                    if held_pairs
+                    else []
+                )
             except Exception as exc:
                 return unavailable_shape(str(exc))
         else:
@@ -347,6 +357,23 @@ class SyncService:
         if expected_compact_symbol:
             normalized_symbols.add(expected_compact_symbol)
         return tuple(sorted(normalized_symbols))
+
+    @staticmethod
+    def _held_order_symbols(positions: list[dict[str, object]]) -> set[str]:
+        """从持仓（资产级）推导需要查订单的 symbol 对，排除计价币。
+
+        避免 live 模式下对全部配置 symbol 逐个查订单（16+ 个顺序 Binance 调用
+        拖垮 patrol 链路），只查实际持有资产的订单。
+        """
+
+        quote_assets = {"USDT", "BUSD", "FDUSD", "USDC", "TUSD", "DAI", "EUR", "GBP", "USD"}
+        pairs: set[str] = set()
+        for position in positions:
+            asset = str(position.get("symbol", "")).strip().upper()
+            if not asset or asset in quote_assets:
+                continue
+            pairs.add(f"{asset}USDT")
+        return pairs
 
     @staticmethod
     def _compact_symbol(symbol: str) -> str:

@@ -63,6 +63,8 @@ class VPNConfig:
 
     mihomo_api_url: str = "http://127.0.0.1:9090"
     mihomo_proxy_url: str = "http://127.0.0.1:7890"
+    # 固定出口组（README 约定固定 BestSSR，不用 url-test 组）
+    mihomo_proxy_group: str = "BestSSR"
     health_check_url: str = "https://api.binance.com/api/v3/ping"
     health_check_timeout: float = 10.0
     health_check_interval: int = 60  # 秒
@@ -77,6 +79,7 @@ class VPNConfig:
         mihomo_api_url = os.getenv("QUANT_MIHOMO_API_URL", "http://127.0.0.1:9090")
         mihomo_proxy_url = os.getenv("QUANT_MIHOMO_PROXY_URL", "http://127.0.0.1:7890")
         health_check_url = os.getenv("QUANT_VPN_HEALTH_CHECK_URL", "https://api.binance.com/api/v3/ping")
+        mihomo_proxy_group = os.getenv("QUANT_MIHOMO_PROXY_GROUP", "BestSSR")
         health_check_timeout = float(os.getenv("QUANT_VPN_HEALTH_CHECK_TIMEOUT", "10.0"))
         health_check_interval = int(os.getenv("QUANT_VPN_HEALTH_CHECK_INTERVAL", "60"))
 
@@ -97,6 +100,7 @@ class VPNConfig:
         return cls(
             mihomo_api_url=mihomo_api_url,
             mihomo_proxy_url=mihomo_proxy_url,
+            mihomo_proxy_group=mihomo_proxy_group,
             health_check_url=health_check_url,
             health_check_timeout=health_check_timeout,
             health_check_interval=health_check_interval,
@@ -371,7 +375,7 @@ class VPNSwitchService:
         """同步获取当前选择的节点名称。"""
         try:
             client = self._get_sync_client(use_proxy=False)
-            response = client.get(f"{self._config.mihomo_api_url}/proxies/PROXY")
+            response = client.get(f"{self._config.mihomo_api_url}/proxies/{self._config.mihomo_proxy_group}")
             if response.status_code == 200:
                 data = response.json()
                 self._current_node = data.get("now")
@@ -385,7 +389,7 @@ class VPNSwitchService:
         """异步获取当前选择的节点名称。"""
         try:
             client = await self._get_async_client(use_proxy=False)
-            response = await client.get(f"{self._config.mihomo_api_url}/proxies/PROXY")
+            response = await client.get(f"{self._config.mihomo_api_url}/proxies/{self._config.mihomo_proxy_group}")
             if response.status_code == 200:
                 data = response.json()
                 self._current_node = data.get("now")
@@ -399,7 +403,7 @@ class VPNSwitchService:
         """同步获取所有可用节点列表。"""
         try:
             client = self._get_sync_client(use_proxy=False)
-            response = client.get(f"{self._config.mihomo_api_url}/proxies/PROXY")
+            response = client.get(f"{self._config.mihomo_api_url}/proxies/{self._config.mihomo_proxy_group}")
             if response.status_code == 200:
                 data = response.json()
                 return data.get("all", [])
@@ -412,7 +416,7 @@ class VPNSwitchService:
         """异步获取所有可用节点列表。"""
         try:
             client = await self._get_async_client(use_proxy=False)
-            response = await client.get(f"{self._config.mihomo_api_url}/proxies/PROXY")
+            response = await client.get(f"{self._config.mihomo_api_url}/proxies/{self._config.mihomo_proxy_group}")
             if response.status_code == 200:
                 data = response.json()
                 return data.get("all", [])
@@ -446,7 +450,7 @@ class VPNSwitchService:
             # 通过mihomo API切换节点
             client = self._get_sync_client(use_proxy=False)
             response = client.put(
-                f"{self._config.mihomo_api_url}/proxies/PROXY",
+                f"{self._config.mihomo_api_url}/proxies/{self._config.mihomo_proxy_group}",
                 json={"name": node_name},
             )
 
@@ -521,7 +525,7 @@ class VPNSwitchService:
             # 通过mihomo API切换节点
             client = await self._get_async_client(use_proxy=False)
             response = await client.put(
-                f"{self._config.mihomo_api_url}/proxies/PROXY",
+                f"{self._config.mihomo_api_url}/proxies/{self._config.mihomo_proxy_group}",
                 json={"name": node_name},
             )
 
