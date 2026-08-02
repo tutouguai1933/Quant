@@ -16,12 +16,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# 默认白名单IP列表
+# 默认白名单IP列表（与 api.env 的 QUANT_VPN_WHITELISTED_IPS 保持一致的 7 节点）
 DEFAULT_WHITELIST_IPS = [
-    "39.106.11.65",   # 服务器IP
-    "202.85.76.66",   # 白名单IP
-    "154.31.113.7",   # 白名单IP
-    "154.3.37.169",   # 白名单IP
+    "154.31.113.7",    # 日本¹
+    "45.95.212.80",    # 日本²
+    "45.95.212.81",    # 日本³
+    "45.95.212.82",    # 日本⁴
+    "154.12.176.56",   # 香港²
+    "152.175.1.118",   # 香港³
+    "152.175.1.123",   # 香港⁴
 ]
 
 # 默认可用节点（与mihomo实际节点名称一致）
@@ -83,8 +86,8 @@ class VPNConfig:
         health_check_timeout = float(os.getenv("QUANT_VPN_HEALTH_CHECK_TIMEOUT", "10.0"))
         health_check_interval = int(os.getenv("QUANT_VPN_HEALTH_CHECK_INTERVAL", "60"))
 
-        # 解析白名单IP列表
-        whitelist_ips_str = os.getenv("QUANT_VPN_WHITELIST_IPS", "")
+        # 解析白名单IP列表（api.env 用的是 WHITELISTED 拼写，兼容旧的 WHITELIST）
+        whitelist_ips_str = os.getenv("QUANT_VPN_WHITELISTED_IPS") or os.getenv("QUANT_VPN_WHITELIST_IPS", "")
         if whitelist_ips_str:
             whitelist_ips = [ip.strip() for ip in whitelist_ips_str.split(",") if ip.strip()]
         else:
