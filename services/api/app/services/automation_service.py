@@ -305,6 +305,8 @@ class AutomationService:
         self._paused = False
         self._paused_reason = ""
         self._manual_takeover = False
+        # 人工复核确认继续，连续失败计数重新开始；否则计数 ≥ 阈值时恢复后下一轮必然再次触发 guard
+        self._consecutive_failure_count = 0
         self._paused_at = ""
         self._manual_takeover_at = ""
         self._apply_execution_guard(paused=False, stop_executor=False)

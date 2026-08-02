@@ -73,6 +73,27 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(resumed["blocked_reason"], "resume_checklist_pending")
         self.assertTrue(resumed["pending_items"])
 
+    def test_resume_resets_consecutive_failure_count(self) -> None:
+        """人工接管（连续失败触发）后恢复，计数清零，避免下一轮再次触发 guard。"""
+        service = AutomationService()
+        service.configure_mode("auto_dry_run", actor="tester")
+
+        # 模拟连续失败：两次 attention_required 周期
+        service.record_cycle({"status": "attention_required", "mode": "auto_dry_run"})
+        service.record_cycle({"status": "attention_required", "mode": "auto_dry_run"})
+        self.assertEqual(service.get_state()["consecutive_failure_count"], 2)
+
+        # 触发 guard 进入人工接管
+        service.manual_takeover(reason="consecutive_failure_guard_triggered", actor="watchdog")
+
+        # 人工复核后先暂停确认，再恢复
+        service.pause("manual_pause", actor="tester")
+        resumed = service.resume(actor="tester")
+
+        self.assertEqual(resumed["status"], "succeeded")
+        self.assertEqual(resumed["consecutive_failure_count"], 0)
+        self.assertFalse(resumed["paused"])
+
     def test_pause_manual_takeover_kill_and_resume_sync_global_pause_and_executor(self) -> None:
         service = AutomationService()
         with mock.patch("services.api.app.services.automation_service.risk_service") as fake_risk, mock.patch(
