@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from decimal import Decimal, InvalidOperation
 
@@ -21,6 +22,20 @@ from services.api.app.services.strategy_engine import apply_research_soft_gate, 
 
 
 ChartCache = dict[tuple[str, tuple[str, ...] | None], dict[str, object]]
+
+
+# KlineStore 构造时会全量重建内存索引（读全部 JSONL），按 root 缓存单实例
+_store_cache: dict[str, KlineStore] = {}
+_store_cache_lock = threading.Lock()
+
+
+def _get_cached_store(root: str) -> KlineStore:
+    with _store_cache_lock:
+        store = _store_cache.get(root)
+        if store is None:
+            store = KlineStore(root=root)
+            _store_cache[root] = store
+        return store
 
 
 def normalize_market_snapshot(item: dict[str, object]) -> dict[str, object]:
@@ -107,7 +122,7 @@ class MarketService:
             normalized_rows, _ = _normalize_kline_rows(rows)
             return normalized_rows
 
-        store = KlineStore(root=settings.kline_store_root)
+        store = _get_cached_store(settings.kline_store_root)
         sync_service = KlineSyncService(store=store, market_client=self._client)
 
         try:

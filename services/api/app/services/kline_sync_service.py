@@ -166,14 +166,25 @@ class KlineSyncService:
         total_fetched = 0
         total_inserted = 0
         cursor_end = end_ts if end_ts is not None else _now_ms()
+        interval_ms = _resolve_interval_ms(interval)
 
         while cursor_end > start_ts:
-            raw = self._client.get_klines(
-                symbol=symbol,
-                interval=interval,
-                limit=1000,
-                end_ts=cursor_end,
-            )
+            # 剩余区间单页能装下时收窄返回窗口，避免小缺口也下载整页 1000 根
+            if cursor_end - start_ts <= 1000 * interval_ms:
+                raw = self._client.get_klines(
+                    symbol=symbol,
+                    interval=interval,
+                    limit=1000,
+                    start_ts=start_ts,
+                    end_ts=cursor_end,
+                )
+            else:
+                raw = self._client.get_klines(
+                    symbol=symbol,
+                    interval=interval,
+                    limit=1000,
+                    end_ts=cursor_end,
+                )
             if not raw:
                 break
 
