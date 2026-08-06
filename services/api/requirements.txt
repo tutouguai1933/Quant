@@ -6,8 +6,10 @@ python-multipart>=0.0.9
 ccxt>=4.0,<5
 
 # ML 模型依赖
+# 注意：xgboost 单独安装（见 Dockerfile），用 --no-deps 避免拉 303MB 的
+# nvidia-nccl-cu12（仅 CUDA 需要，服务器无 GPU）；numpy/scipy 由
+# scikit-learn 传递提供。
 lightgbm>=4.0.0
-xgboost>=2.0.0
 optuna>=3.4.0
 joblib>=1.3.0
 scikit-learn>=1.3.0

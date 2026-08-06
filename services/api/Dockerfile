@@ -17,7 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl docker-cli
 WORKDIR /app
 
 COPY services/api/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
+    pip install --no-cache-dir --no-deps "xgboost>=2.0.0"
 
 COPY services /app/services
 COPY packages /app/packages
