@@ -88,6 +88,7 @@ class OpenclawPatrolService:
         self._records: list[dict[str, Any]] = []
         self._action_counters: dict[str, dict[str, Any]] = {}  # 动作节流计数器
         self._vpn_switch_counter: dict[str, Any] = {}  # VPN切换节流计数器
+        self._freqtrade_paused_count: int = 0  # freqtrade 连续 PAUSED 轮次（方案 B）
         self._lock = threading.Lock()
         self._background_executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
@@ -471,6 +472,8 @@ class OpenclawPatrolService:
         """检查VPN节点健康状态。
 
         优先使用主备策略（若已配置），否则降级到原有自动切换逻辑。
+        额外检测 freqtrade 是否卡在 PAUSED（exchange 连续失败导致），
+        连续 N 轮仍 PAUSED 时主动强制 failover（方案 B）。
 
         Returns:
             检查结果
@@ -478,6 +481,38 @@ class OpenclawPatrolService:
         try:
             # 优先使用主备故障切换策略
             controller = self._get_failover_controller()
+
+            # freqtrade PAUSED 强信号检测：连续 2 轮（每轮 60s）仍 PAUSED
+            # 说明出口节点大概率有问题（即使 delay 探测显示健康），强制切换
+            freqtrade_paused = self._freqtrade_is_paused()
+            if freqtrade_paused:
+                self._freqtrade_paused_count += 1
+            else:
+                self._freqtrade_paused_count = 0
+
+            if self._freqtrade_paused_count >= 2:
+                logger.warning(
+                    "freqtrade 连续 %d 轮 PAUSED，强制执行 VPN 故障切换",
+                    self._freqtrade_paused_count,
+                )
+                if controller is not None and controller.enabled:
+                    forced = controller.failover(from_node=controller.primary_name)
+                    return {
+                        "action_taken": True,
+                        "action": "vpn_failover",
+                        "success": bool(forced.get("success")),
+                        "message": f"freqtrade 卡 PAUSED，强制故障切换: {forced.get('message')}",
+                        "patrol_status": "vpn_switched" if forced.get("success") else "vpn_switch_failed",
+                        "policy_action": "forced_failover",
+                    }
+                return {
+                    "action_taken": True,
+                    "action": "vpn_failover",
+                    "success": False,
+                    "message": "freqtrade 卡 PAUSED 但主备策略未配置，无法自动切换",
+                    "patrol_status": "vpn_switch_failed",
+                }
+
             if controller is not None and controller.enabled:
                 return self._check_vpn_with_policy(controller)
 
@@ -492,6 +527,24 @@ class OpenclawPatrolService:
                 "patrol_status": "vpn_error",
                 "error": str(e),
             }
+
+    @staticmethod
+    def _freqtrade_is_paused() -> bool:
+        """查询 freqtrade 是否处于 PAUSED 状态。
+
+        Returns:
+            True 表示 freqtrade 处于 PAUSED（exchange 连接异常暂停）
+        """
+        try:
+            from services.api.app.adapters.freqtrade.client import freqtrade_client
+
+            runtime = dict(freqtrade_client.get_runtime_snapshot())
+            if str(runtime.get("backend", "")) != "rest":
+                return False
+            return str(runtime.get("bot_state", "")).lower() == "paused"
+        except Exception as e:
+            logger.warning("查询 freqtrade 状态失败: %s", e)
+            return False
 
     @staticmethod
     def _get_failover_controller():

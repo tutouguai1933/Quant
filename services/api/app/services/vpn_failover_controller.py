@@ -50,6 +50,11 @@ class VPNFailoverController:
         state_path: Path | None = None,
         events_path: Path | None = None,
         mihomo_api_url: str = "http://127.0.0.1:9090",
+        signed_check_url: str = "https://api.binance.com/api/v3/account",
+        binance_api_key: str | None = None,
+        binance_api_secret: str | None = None,
+        probe_cache_ttl: float = 30.0,
+        signed_probe_interval: float = 60.0,
     ) -> None:
         """初始化控制器。
 
@@ -65,6 +70,12 @@ class VPNFailoverController:
             observe_seconds: 观察期秒数
             state_path: 状态持久化路径
             events_path: 事件记录路径
+            mihomo_api_url: mihomo controller 地址
+            signed_check_url: 签名实测接口 URL
+            binance_api_key: Binance API key（签名实测）
+            binance_api_secret: Binance API secret（签名实测）
+            probe_cache_ttl: 探测缓存有效期（秒）
+            signed_probe_interval: 签名实测最小间隔（秒）
         """
         self._registry = NodeRegistry(
             primary=primary,
@@ -77,7 +88,12 @@ class VPNFailoverController:
             ip_check_url=ip_check_url,
             whitelisted_ips=whitelisted_ips,
             mihomo_api_url=mihomo_api_url,
+            cache_ttl_s=probe_cache_ttl,
+            signed_check_url=signed_check_url,
+            binance_api_key=binance_api_key,
+            binance_api_secret=binance_api_secret,
         )
+        self._signed_probe_interval = signed_probe_interval
         self._policy = PrimaryBackupPolicy(
             fail_threshold=fail_threshold,
             recover_threshold=recover_threshold,
@@ -120,21 +136,38 @@ class VPNFailoverController:
     def check_primary(self) -> dict[str, Any]:
         """探测主节点并驱动故障切换/回切决策。
 
+        除 mihomo delay 探测外，叠加签名接口实测（验证当前出口 IP 是否在
+        Binance 白名单）。签名实测失败说明当前出口对签名接口不可用，
+        视为主节点故障，尽快切换。
+
         Returns:
             检查结果字典
         """
         if not self._enabled:
             return {"action": "disabled", "message": "主备策略未配置"}
 
-        # 探测主节点
+        # 探测主节点（mihomo delay）
         result = self._probe.check_with_interval(self._primary)
-        self._policy.record_probe(self._primary, result.ok)
+        primary_ok = result.ok
+
+        # 签名接口实测（当前出口）：失败则主节点判为不健康
+        signed_result = self._probe.check_signed_exit(
+            min_interval_s=self._signed_probe_interval,
+        )
+        if not signed_result.ok:
+            logger.warning(
+                "签名接口实测失败（当前出口）: %s，主节点视为不健康",
+                signed_result.error,
+            )
+            primary_ok = False
+
+        self._policy.record_probe(self._primary, primary_ok)
 
         # 更新注册表
-        self._registry.mark_probe(self._primary, result.ok, result.ip)
+        self._registry.mark_probe(self._primary, primary_ok, result.ip)
         self._registry.save_state(self._state_path)
 
-        if not result.ok:
+        if not primary_ok:
             # 主节点不健康，检查是否需要故障切换
             if self._policy.should_failover(self._primary):
                 logger.warning(
@@ -148,7 +181,8 @@ class VPNFailoverController:
                 "action": "probing",
                 "node": self._primary,
                 "ok": False,
-                "message": f"主节点探测失败({result.error})，等待更多失败确认",
+                "signed_ok": signed_result.ok,
+                "message": f"主节点探测失败({result.error or signed_result.error})，等待更多失败确认",
             }
 
         # 主节点健康
@@ -182,6 +216,7 @@ class VPNFailoverController:
             "action": "healthy",
             "node": self._primary,
             "ok": True,
+            "signed_ok": signed_result.ok,
             "ip": result.ip,
             "message": "主节点健康",
         }
@@ -223,6 +258,26 @@ class VPNFailoverController:
 
             switch_result = vpn_switch_service.switch_node_sync(candidate.name)
             if switch_result.success and switch_result.is_whitelisted:
+                # 切换后签名复验：确认新出口对签名接口真实可用
+                signed_after = self._probe.check_signed_exit(
+                    min_interval_s=0.0,
+                    force=True,
+                )
+                if not signed_after.ok:
+                    logger.warning(
+                        "备选节点 %s 切换后签名实测失败: %s，尝试下一个",
+                        candidate.name,
+                        signed_after.error,
+                    )
+                    event = self._policy.record_event(
+                        from_node=from_node,
+                        to_node=candidate.name,
+                        reason=f"切换后签名实测失败: {signed_after.error}",
+                        success=False,
+                    )
+                    self._write_event(event)
+                    continue
+
                 self._policy.mark_switched()
                 self._policy.current_backup = candidate.name
                 event = self._policy.record_event(
@@ -233,10 +288,12 @@ class VPNFailoverController:
                 )
                 self._write_event(event)
                 logger.info(
-                    "VPN 故障切换到 %s（出口 %s，白名单通过）",
+                    "VPN 故障切换到 %s（出口 %s，白名单通过，签名实测通过）",
                     candidate.name,
                     switch_result.exit_ip,
                 )
+                # 切换成功后恢复 freqtrade（方案 B）
+                self._recover_freqtrade()
                 return {
                     "action": "failover",
                     "from": from_node,
@@ -290,7 +347,31 @@ class VPNFailoverController:
             success=True,
         )
         self._write_event(event)
+        # 回切后也恢复 freqtrade（重新加载配置、解除可能的 PAUSED）
+        self._recover_freqtrade()
         return True
+
+    def _recover_freqtrade(self) -> None:
+        """切换节点后触发 freqtrade 重载配置，解除可能的 PAUSED 状态。
+
+        freqtrade 在 reload_markets 连续失败后自动暂停（PAUSED），自身重试
+        周期约 1 小时。代理已切换后主动触发 reload_config 可立即重连，
+        无需干等下一个重试周期。
+        """
+        try:
+            from services.api.app.adapters.freqtrade.client import FreqtradeClient
+            from services.api.app.core.settings import Settings
+
+            client = FreqtradeClient(Settings.from_env())
+            if not getattr(client, "_backend", None):
+                return
+            if not Settings.from_env().should_use_freqtrade_rest():
+                logger.info("freqtrade 未配置 REST，跳过 reload_config")
+                return
+            result = client._backend.reload_config()
+            logger.info("freqtrade reload_config 已触发: %s", result)
+        except Exception as e:
+            logger.warning("恢复 freqtrade 失败（不影响切换本身）: %s", e)
 
     def _write_event(self, event: FailoverEvent) -> None:
         """将切换事件写入 JSONL 文件。
@@ -354,10 +435,18 @@ def get_failover_controller() -> VPNFailoverController | None:
     health_check_url = os.getenv("QUANT_VPN_HEALTH_CHECK_URL", "https://api.binance.com/api/v3/ping")
     ip_check_url = os.getenv("QUANT_VPN_IP_CHECK_URL", "https://api.ipify.org?format=json")
     mihomo_api_url = os.getenv("QUANT_MIHOMO_API_URL", "http://127.0.0.1:9090")
+    signed_check_url = os.getenv(
+        "QUANT_VPN_SIGNED_CHECK_URL",
+        "https://api.binance.com/api/v3/account",
+    )
+    binance_api_key = os.getenv("BINANCE_API_KEY", "").strip()
+    binance_api_secret = os.getenv("BINANCE_API_SECRET", "").strip()
 
     fail_threshold = int(os.getenv("QUANT_VPN_FAIL_THRESHOLD", str(DEFAULT_FAIL_THRESHOLD)))
     recover_threshold = int(os.getenv("QUANT_VPN_RECOVER_THRESHOLD", str(DEFAULT_RECOVER_THRESHOLD)))
     observe_seconds = int(os.getenv("QUANT_VPN_OBSERVE_SECONDS", str(DEFAULT_OBSERVE_SECONDS)))
+    probe_cache_ttl = float(os.getenv("QUANT_VPN_PROBE_CACHE_TTL", "30.0"))
+    signed_probe_interval = float(os.getenv("QUANT_VPN_SIGNED_PROBE_INTERVAL", "60.0"))
 
     _failover_controller = VPNFailoverController(
         primary=primary,
@@ -370,5 +459,10 @@ def get_failover_controller() -> VPNFailoverController | None:
         recover_threshold=recover_threshold,
         observe_seconds=observe_seconds,
         mihomo_api_url=mihomo_api_url,
+        signed_check_url=signed_check_url,
+        binance_api_key=binance_api_key,
+        binance_api_secret=binance_api_secret,
+        probe_cache_ttl=probe_cache_ttl,
+        signed_probe_interval=signed_probe_interval,
     )
     return _failover_controller

@@ -185,6 +185,13 @@ class FreqtradeClient:
 
         return self._backend.control_strategy(strategy_id, action)
 
+    def reload_config(self) -> dict[str, object]:
+        """触发 Freqtrade 重载配置（VPN 切换后恢复 PAUSED 用）。"""
+
+        if not hasattr(self._backend, "reload_config"):
+            return {"status": "noop", "reason": "backend not supported"}
+        return self._backend.reload_config()
+
     def submit_execution_action(self, action: dict[str, object]) -> dict[str, object]:
         """对外暴露执行动作提交接口。"""
 

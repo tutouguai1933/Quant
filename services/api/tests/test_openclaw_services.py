@@ -155,6 +155,66 @@ class OpenclawServiceTests(unittest.TestCase):
         self.assertEqual(result["actions_taken"][0]["patrol_status"], "queued")
         self.assertLess(elapsed, 0.15)
 
+    def test_vpn_health_forced_failover_when_freqtrade_paused(self) -> None:
+        """freqtrade 连续 2 轮 PAUSED 时，巡检强制执行 VPN 故障切换（方案 B）。"""
+        snapshot_service = mock.Mock()
+        snapshot_service.get_snapshot.return_value = {"snapshot_id": "snapshot-1"}
+        action_service = mock.Mock()
+        health_service = mock.Mock()
+
+        patrol_service = OpenclawPatrolService(
+            snapshot_service=snapshot_service,
+            action_service=action_service,
+            health_service=health_service,
+        )
+
+        # 第一轮 PAUSED：仅计数，不切换
+        patrol_service._freqtrade_is_paused = mock.Mock(return_value=True)  # type: ignore[method-assign]
+        controller = mock.Mock()
+        controller.enabled = True
+        controller.primary_name = "★ 日本¹"
+        patrol_service._get_failover_controller = mock.Mock(return_value=controller)  # type: ignore[method-assign]
+        patrol_service._check_vpn_legacy = mock.Mock(return_value={"action_taken": False})  # type: ignore[method-assign]
+
+        result1 = patrol_service._check_vpn_health()
+        self.assertEqual(patrol_service._freqtrade_paused_count, 1)
+        self.assertNotEqual(result1.get("action"), "vpn_failover")
+
+        # 第二轮 PAUSED：触发强制切换
+        controller.failover.return_value = {
+            "action": "failover",
+            "success": True,
+            "message": "故障切换到备选节点",
+        }
+        result2 = patrol_service._check_vpn_health()
+        self.assertEqual(patrol_service._freqtrade_paused_count, 2)
+        self.assertEqual(result2["action"], "vpn_failover")
+        controller.failover.assert_called_once_with(from_node="★ 日本¹")
+
+    def test_vpn_health_resets_paused_count_when_running(self) -> None:
+        """freqtrade 恢复 RUNNING 后，PAUSED 计数清零。"""
+        snapshot_service = mock.Mock()
+        snapshot_service.get_snapshot.return_value = {"snapshot_id": "snapshot-1"}
+        action_service = mock.Mock()
+        health_service = mock.Mock()
+
+        patrol_service = OpenclawPatrolService(
+            snapshot_service=snapshot_service,
+            action_service=action_service,
+            health_service=health_service,
+        )
+
+        patrol_service._freqtrade_paused_count = 1
+        patrol_service._freqtrade_is_paused = mock.Mock(return_value=False)  # type: ignore[method-assign]
+        controller = mock.Mock()
+        controller.enabled = True
+        controller.check_primary.return_value = {"action": "healthy", "ip": "1.2.3.4"}
+        patrol_service._get_failover_controller = mock.Mock(return_value=controller)  # type: ignore[method-assign]
+
+        result = patrol_service._check_vpn_health()
+        self.assertEqual(patrol_service._freqtrade_paused_count, 0)
+        self.assertEqual(result["patrol_status"], "normal")
+
 
 if __name__ == "__main__":
     unittest.main()

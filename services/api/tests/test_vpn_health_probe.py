@@ -242,6 +242,131 @@ class NodeHealthProbeTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("connection refused", result.error or "")
 
+    # ---- 签名接口实测（方案 A）----
+
+    def _make_signed_probe(self, api_key: str = "key", api_secret: str = "secret"):
+        """构造带 Binance key 的探针实例。"""
+        return NodeHealthProbe(
+            proxy_url="http://127.0.0.1:7890",
+            health_check_url="https://api.binance.com/api/v3/ping",
+            whitelisted_ips=self.whitelisted_ips,
+            cache_ttl_s=30.0,
+            probe_timeout=10.0,
+            binance_api_key=api_key,
+            binance_api_secret=api_secret,
+        )
+
+    def _mock_signed_client(self, status: int = 200, text: str = "{}") -> mock.MagicMock:
+        """创建 mock httpx.Client（签名接口单次 GET 响应）。"""
+        mock_client = mock.MagicMock()
+        mock_client.__enter__ = mock.Mock(return_value=mock_client)
+        mock_client.__exit__ = mock.Mock(return_value=False)
+        response = mock.MagicMock()
+        response.status_code = status
+        response.text = text
+        mock_client.get.return_value = response
+        return mock_client
+
+    def test_signed_probe_skip_without_key(self) -> None:
+        """未配置 Binance key 时跳过签名实测，返回 ok=True。"""
+        result = self.probe.check_signed_exit(force=True)
+        self.assertTrue(result.ok)
+        self.assertIn("未配置", result.error or "")
+
+    def test_signed_probe_success(self) -> None:
+        """签名接口返回 200，判定健康，且请求带签名参数。"""
+        probe = self._make_signed_probe()
+        mock_client = self._mock_signed_client(status=200)
+        with mock.patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.return_value = mock_client
+            result = probe.check_signed_exit(force=True)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.node_name, "signed")
+        # 校验请求带签名参数和 API key 头
+        args, kwargs = mock_client.get.call_args
+        self.assertIn("signature=", args[0])
+        self.assertIn("timestamp=", args[0])
+        self.assertEqual(kwargs["headers"]["X-MBX-APIKEY"], "key")
+
+    def test_signed_probe_ip_not_whitelisted(self) -> None:
+        """签名接口返回 -2015（出口 IP 不在白名单），判为不健康。"""
+        probe = self._make_signed_probe()
+        with mock.patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.return_value = self._mock_signed_client(
+                status=400,
+                text='{"code": -2015, "msg": "Invalid API-key, IP, or permissions for action"}',
+            )
+            result = probe.check_signed_exit(force=True)
+
+        self.assertFalse(result.ok)
+        self.assertIn("-2015", result.error or "")
+
+    def test_signed_probe_unauthorized(self) -> None:
+        """签名接口返回 401，判为不健康。"""
+        probe = self._make_signed_probe()
+        with mock.patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.return_value = self._mock_signed_client(
+                status=401,
+                text="unauthorized",
+            )
+            result = probe.check_signed_exit(force=True)
+
+        self.assertFalse(result.ok)
+        self.assertIn("-2015", result.error or "")
+
+    def test_signed_probe_timeout(self) -> None:
+        """签名接口超时，判为不健康。"""
+        import httpx as httpx_module
+
+        probe = self._make_signed_probe()
+        with mock.patch("httpx.Client") as mock_client_cls:
+            mock_client = mock.MagicMock()
+            mock_client.__enter__ = mock.Mock(return_value=mock_client)
+            mock_client.__exit__ = mock.Mock(return_value=False)
+            mock_client.get.side_effect = httpx_module.TimeoutException("timeout")
+            mock_client_cls.return_value = mock_client
+            result = probe.check_signed_exit(force=True)
+
+        self.assertFalse(result.ok)
+        self.assertIn("超时", result.error or "")
+
+    def test_signed_probe_throttled_by_interval(self) -> None:
+        """签名实测在 min_interval_s 内节流，返回缓存。"""
+        probe = self._make_signed_probe()
+        call_counter = [0]
+
+        def factory(**kwargs):
+            call_counter[0] += 1
+            return self._mock_signed_client(status=200)
+
+        with mock.patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.side_effect = factory
+            result1 = probe.check_signed_exit(min_interval_s=60.0)
+            result2 = probe.check_signed_exit(min_interval_s=60.0)
+
+        self.assertTrue(result1.ok)
+        self.assertTrue(result2.ok)
+        self.assertEqual(call_counter[0], 1)  # 第二次节流命中缓存
+
+    def test_signed_probe_force_bypasses_cache(self) -> None:
+        """force=True 忽略节流与缓存，强制实测。"""
+        probe = self._make_signed_probe()
+        call_counter = [0]
+
+        def factory(**kwargs):
+            call_counter[0] += 1
+            return self._mock_signed_client(status=200)
+
+        with mock.patch("httpx.Client") as mock_client_cls:
+            mock_client_cls.side_effect = factory
+            result1 = probe.check_signed_exit(min_interval_s=60.0)
+            result2 = probe.check_signed_exit(min_interval_s=60.0, force=True)
+
+        self.assertTrue(result1.ok)
+        self.assertTrue(result2.ok)
+        self.assertEqual(call_counter[0], 2)  # force 强制重新探测
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,6 +19,9 @@ def utc_now() -> datetime:
     """返回当前 UTC 时间。"""
 
     return datetime.now(timezone.utc)
+
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_symbol(symbol: str) -> str:
@@ -141,6 +145,31 @@ class FreqtradeRestClient:
         """检查 API 是否可用。"""
 
         return self._request_json("GET", "/api/v1/ping", auth=False)
+
+    def reload_config(self) -> dict[str, object]:
+        """触发 Freqtrade 重新加载配置并重连交易所。
+
+        用于 VPN 节点切换后立即恢复：reload_markets 成功时 freqtrade
+        会自动从 PAUSED 回到 RUNNING，无需等待自身约 1 小时的重试周期。
+        """
+
+        return self._request_json("POST", "/api/v1/reload_config", auth=True)
+
+    def get_bot_state(self) -> str:
+        """返回 freqtrade bot 当前运行状态（running/paused/stopped）。
+
+        PAUSED 常由 exchange 连接连续失败触发，巡检用于发现卡死状态。
+        """
+
+        try:
+            payload = self._request_json("GET", "/api/v1/show_config", auth=True)
+            state = str(payload.get("state") or "").lower()
+            if state in {"running", "paused", "stopped"}:
+                return state
+            return "running"
+        except FreqtradeRestError as e:
+            logger.warning("获取 freqtrade bot 状态失败: %s", e)
+            return "unknown"
 
     def control_strategy(self, strategy_id: int, action: str) -> dict[str, object]:
         """控制 Freqtrade bot 的运行状态。"""
