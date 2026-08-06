@@ -15,6 +15,7 @@ infra/freqtrade/user_data/logs
 infra/freqtrade/user_data/config.private.json
 infra/deploy/.env
 infra/deploy/api.env
+infra/data
 .claude
 *.log
 *.tmp
