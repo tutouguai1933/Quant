@@ -46,6 +46,7 @@ export async function GET(request: Request, context: RouteContext) {
       status: response.status,
       headers: {
         "Content-Type": response.headers.get("Content-Type") ?? "application/json; charset=utf-8",
+        "x-proxy-build": "v2-debug",
       },
     });
   } catch {
