@@ -13,6 +13,7 @@ import {
   MetricCard,
   TerminalCard,
 } from "../components/terminal";
+import { CoreNumberCard, HomeMoreDetails } from "../components/home-workbench-grid";
 import { readFeedback } from "../lib/feedback";
 import { RsiSummaryCard } from "../components/rsi-summary-card";
 import { TradeHistorySummaryCard } from "../components/trade-history-summary-card";
@@ -28,12 +29,30 @@ import {
   getStrategyWorkspace,
   getStrategyWorkspaceFallback,
   getPublicExecutorStatus,
+  fetchJson,
 } from "../lib/api";
 import type { PublicExecutorStatus } from "../lib/api";
 import { FeedbackBanner } from "../components/feedback-banner";
 import { LoadingBanner } from "../components/loading-banner";
 import { ErrorBanner } from "../components/error-banner";
 import { OpenPositionsCard } from "../components/open-positions-card";
+
+/* 持仓汇总（/freqtrade/open-trades 返回的汇总字段） */
+type OpenTradesSummary = {
+  total_profit: number;
+  total_profit_pct: number;
+  total_stake: number;
+  count: number;
+};
+
+/* 加载持仓汇总：失败时标记降级，页面显示"数据暂不可用" */
+async function getPositionsSummary(token?: string, signal?: AbortSignal) {
+  const response = await fetchJson<OpenTradesSummary>("/freqtrade/open-trades", token, signal);
+  if (response.error) {
+    return { data: null as OpenTradesSummary | null, degraded: true };
+  }
+  return { data: response.data, degraded: false };
+}
 
 /* 页面主组件 */
 export default function HomePage() {
@@ -53,6 +72,11 @@ export default function HomePage() {
   const [researchRuntime, setResearchRuntime] = useState(getResearchRuntimeStatusFallback());
   const [strategyWorkspace, setStrategyWorkspace] = useState(getStrategyWorkspaceFallback());
   const [executorStatus, setExecutorStatus] = useState<PublicExecutorStatus | null>(null);
+  const [positionsSummary, setPositionsSummary] = useState<OpenTradesSummary | null>(null);
+  // 三个核心数字的数据是否降级（接口失败时置 true，卡片显示"数据暂不可用"）
+  const [positionsDegraded, setPositionsDegraded] = useState(false);
+  const [automationDegraded, setAutomationDegraded] = useState(false);
+  const [executorDegraded, setExecutorDegraded] = useState(false);
 
   // 获取会话状态
   useEffect(() => {
@@ -87,8 +111,9 @@ export default function HomePage() {
       getResearchRuntimeStatus(controller.signal),
       getStrategyWorkspace(token, controller.signal),
       getPublicExecutorStatus(controller.signal),
+      getPositionsSummary(token, controller.signal),
     ])
-      .then(([automationRes, runtimeRes, strategyRes, executorRes]) => {
+      .then(([automationRes, runtimeRes, strategyRes, executorRes, positionsRes]) => {
         clearTimeout(timeoutId);
 
         const errors: string[] = [];
@@ -97,6 +122,7 @@ export default function HomePage() {
           setAutomationStatus(automationRes.value.data.item);
         } else if (automationRes.status === "fulfilled" && automationRes.value.error) {
           errors.push(`自动化状态加载失败: ${automationRes.value.error.message}`);
+          setAutomationDegraded(true);
         }
 
         if (runtimeRes.status === "fulfilled" && !runtimeRes.value.error) {
@@ -113,6 +139,13 @@ export default function HomePage() {
 
         if (executorRes.status === "fulfilled" && !executorRes.value.error) {
           setExecutorStatus(executorRes.value.data);
+        } else if (executorRes.status === "fulfilled" && executorRes.value.error) {
+          setExecutorDegraded(true);
+        }
+
+        if (positionsRes.status === "fulfilled") {
+          setPositionsSummary(positionsRes.value.data);
+          setPositionsDegraded(positionsRes.value.degraded);
         }
 
         if (errors.length > 0) {
@@ -172,6 +205,43 @@ export default function HomePage() {
     ];
   }, [automationStatus, researchRuntime, strategyWorkspace, executorStatus]);
 
+  // 首屏 3 个核心数字：持仓盈亏 / 自动化状态 / 执行器健康
+  const coreNumbers = useMemo(() => {
+    // 1. 持仓盈亏：总盈亏 USDT + 浮盈 %
+    const profit = positionsSummary?.total_profit;
+    const profitPct = positionsSummary?.total_profit_pct;
+    const positionsValue =
+      profit !== undefined && profit !== null
+        ? `${profit >= 0 ? "+" : ""}${profit.toFixed(3)} USDT`
+        : "--";
+    const positionsDetail =
+      profitPct !== undefined && profitPct !== null
+        ? `浮盈 ${profitPct >= 0 ? "+" : ""}${profitPct.toFixed(2)}% · ${positionsSummary?.count ?? 0} 笔持仓`
+        : `${positionsSummary?.count ?? 0} 笔持仓`;
+
+    // 2. 自动化状态：模式 + 今日周期数
+    const runtimeGuard = (automationStatus.runtimeGuard ?? {}) as Record<string, unknown>;
+    const cyclesToday = Number(runtimeGuard.cycles_today ?? 0);
+    const modeLabel =
+      automationStatus.mode === "auto_live"
+        ? "自动实盘"
+        : automationStatus.mode === "auto_dry_run"
+          ? "自动模拟"
+          : "手动";
+    const automationDetail = `${cyclesToday > 0 ? `今日 ${cyclesToday} 次周期 · ` : ""}${automationStatus.paused ? "已暂停" : "运行中"}`;
+
+    // 3. 执行器健康：freqtrade 连接状态 + 持仓数
+    const connectionStatus =
+      executorStatus?.connection_status || strategyWorkspace.executor_runtime?.connection_status || "unknown";
+    const isConnected = connectionStatus === "connected";
+    const executorValue = executorStatus ? (isConnected ? "已连接" : "断开") : "未知";
+    const executorDetail = executorStatus
+      ? `${executorStatus.position_count || 0} 个持仓 · ${executorStatus.mode || ""}`
+      : "暂无执行器信息";
+
+    return { positionsValue, positionsDetail, modeLabel, automationDetail, executorValue, executorDetail };
+  }, [positionsSummary, automationStatus, executorStatus, strategyWorkspace]);
+
   // 快速导航
   const quickLinks = [
     { href: "/research", label: "模型训练", description: "训练因子模型" },
@@ -207,7 +277,35 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* 第二行：快速导航 */}
+        {/* 第二行：首屏 3 个核心数字 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <CoreNumberCard
+            label="持仓盈亏"
+            value={coreNumbers.positionsValue}
+            detail={coreNumbers.positionsDetail}
+            href="/positions"
+            tone={positionsSummary && positionsSummary.total_profit >= 0 ? "positive" : "negative"}
+            degraded={positionsDegraded}
+          />
+          <CoreNumberCard
+            label="自动化状态"
+            value={coreNumbers.modeLabel}
+            detail={coreNumbers.automationDetail}
+            href="/tasks"
+            tone={automationStatus.mode === "manual" ? "negative" : "positive"}
+            degraded={automationDegraded}
+          />
+          <CoreNumberCard
+            label="执行器健康"
+            value={coreNumbers.executorValue}
+            detail={coreNumbers.executorDetail}
+            href="/strategies"
+            tone={coreNumbers.executorValue === "已连接" ? "positive" : "negative"}
+            degraded={executorDegraded}
+          />
+        </div>
+
+        {/* 第三行：快速导航 */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {quickLinks.map((link) => (
             <Link
@@ -225,32 +323,35 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* 第三行：双策略状态 + 市场入场信号 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <DualStrategyCard refreshInterval={30000} />
-          <EntryStatusCard />
-        </div>
+        {/* 更多详情：完整卡片收进折叠区，默认收起减少首屏信息量 */}
+        <HomeMoreDetails title="更多详情">
+          {/* 双策略状态 + 市场入场信号 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <DualStrategyCard refreshInterval={30000} />
+            <EntryStatusCard />
+          </div>
 
-        {/* 第四行：当前持仓详情 */}
-        <OpenPositionsCard refreshInterval={30000} />
+          {/* 当前持仓详情 */}
+          <OpenPositionsCard refreshInterval={30000} />
 
-        {/* 第五行：RSI概览 */}
-        <RsiSummaryCard refreshInterval={300000} />
+          {/* RSI概览 */}
+          <RsiSummaryCard refreshInterval={300000} />
 
-        {/* 第五行：两个策略的交易记录 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <TradeHistorySummaryCard strategyType="enhanced" refreshInterval={60000} />
-          <TradeHistorySummaryCard strategyType="automation" refreshInterval={60000} />
-        </div>
+          {/* 两个策略的交易记录 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <TradeHistorySummaryCard strategyType="enhanced" refreshInterval={60000} />
+            <TradeHistorySummaryCard strategyType="automation" refreshInterval={60000} />
+          </div>
 
-        {/* 第六行：自动化周期候选 */}
-        <CandidateQueueCard
-          refreshInterval={60000}
-          fallbackSymbols={strategyWorkspace.whitelist || []}
-        />
+          {/* 自动化周期候选 */}
+          <CandidateQueueCard
+            refreshInterval={60000}
+            fallbackSymbols={strategyWorkspace.whitelist || []}
+          />
 
-        {/* 第七行：自动化周期历史 */}
-        <AutomationCycleHistoryCard refreshInterval={60000} />
+          {/* 自动化周期历史 */}
+          <AutomationCycleHistoryCard refreshInterval={60000} />
+        </HomeMoreDetails>
       </div>
     </TerminalShell>
   );

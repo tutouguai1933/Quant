@@ -1,5 +1,6 @@
-/* 这个文件负责渲染首页主工作台卡片，把当前推荐、研究、执行、风险、下一步和回看入口统一收成一组摘要卡。 */
+/* 这个文件负责渲染首页主工作台：首屏 3 个核心数字卡 + "更多详情"折叠区，以及原有的 6 卡摘要组（供旧版首页复用）。 */
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 
 import { DetailDrawer } from "./detail-drawer";
@@ -36,6 +37,77 @@ export type HomeWorkbenchCardItem = {
 type HomeWorkbenchGridProps = {
   cards: HomeWorkbenchCardItem[];
 };
+
+/* 核心数字卡属性 */
+export type CoreNumberCardProps = {
+  /** 卡标题 */
+  label: string;
+  /** 大数字 */
+  value: string;
+  /** 短说明 */
+  detail: string;
+  /** 点击跳转的详情页地址 */
+  href: string;
+  /** 数字颜色：positive=绿, negative=红, neutral=默认 */
+  tone?: "positive" | "negative" | "neutral";
+  /** 数据降级（接口不可用）时显示提示 */
+  degraded?: boolean;
+};
+
+/* 渲染首屏核心数字卡：大数字 + 短说明，整卡可点击跳详情页 */
+export function CoreNumberCard({
+  label,
+  value,
+  detail,
+  href,
+  tone = "neutral",
+  degraded = false,
+}: CoreNumberCardProps) {
+  const toneClass =
+    tone === "positive"
+      ? "text-green-400"
+      : tone === "negative"
+        ? "text-red-400"
+        : "text-[var(--terminal-text)]";
+
+  return (
+    <Link
+      href={href}
+      className="terminal-card block p-4 hover:border-[var(--terminal-cyan)] transition-colors"
+    >
+      <div className="text-[var(--terminal-dim)] text-[11px] font-medium">{label}</div>
+      <div className={`mt-2 font-mono text-[28px] font-bold leading-tight ${toneClass}`}>
+        {value}
+      </div>
+      <div className="mt-2 text-[12px] text-[var(--terminal-muted)]">
+        {degraded ? "数据暂不可用，请刷新或稍后再试" : detail}
+      </div>
+    </Link>
+  );
+}
+
+/* "更多详情"折叠区属性 */
+export type HomeMoreDetailsProps = {
+  /** 折叠区标题，默认"更多详情" */
+  title?: string;
+  /** 折叠区内容 */
+  children: ReactNode;
+};
+
+/* 渲染"更多详情"折叠区：默认收起，点击展开完整卡片内容 */
+export function HomeMoreDetails({ title = "更多详情", children }: HomeMoreDetailsProps) {
+  return (
+    <details className="terminal-card">
+      <summary className="cursor-pointer select-none px-4 py-3 flex items-center justify-between text-[13px] font-semibold text-[var(--terminal-text)]">
+        <span>{title}</span>
+        <span className="text-[11px] font-normal text-[var(--terminal-dim)]">点击展开</span>
+      </summary>
+      <div className="border-t border-[var(--terminal-border)] p-4 space-y-4">
+        {children}
+      </div>
+    </details>
+  );
+}
 
 /* 渲染首页主工作台卡片组。 */
 export function HomeWorkbenchGrid({ cards }: HomeWorkbenchGridProps) {
