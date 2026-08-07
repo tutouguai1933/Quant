@@ -70,6 +70,8 @@ DEFAULT_OSCILLATOR_WEIGHT = Decimal("0.7")
 DEFAULT_VOLATILITY_WEIGHT = Decimal("0.9")
 DEFAULT_STRICT_PENALTY_WEIGHT = Decimal("1")
 DEFAULT_LABEL_WINDOW_BARS = 18
+DEFAULT_MULTI_WINDOW_LABELS_ENABLED = False
+DEFAULT_LABEL_WINDOWS = [6, 12, 18]
 DEFAULT_LABEL_NEUTRAL_PCT = Decimal("0")
 DEFAULT_ENABLE_WALK_FORWARD = False
 DEFAULT_GATE_USE_WALK_FORWARD = False
@@ -244,6 +246,9 @@ class QlibRuntimeConfig:
     hyperopt_timeout_seconds: int
     # P1 标签工程 + walk-forward
     label_window_bars: int
+    # 多窗口标签（默认关闭，避免未验证改动上线）
+    multi_window_labels_enabled: bool
+    label_windows: list[int]
     label_neutral_pct: Decimal
     enable_walk_forward: bool
     gate_use_walk_forward: bool
@@ -656,6 +661,14 @@ def load_qlib_config(
     )
     enable_walk_forward = _read_bool(values.get("QUANT_QLIB_ENABLE_WALK_FORWARD"), default=False)
     gate_use_walk_forward = _read_bool(values.get("QUANT_QLIB_GATE_USE_WALK_FORWARD"), default=False)
+    multi_window_labels_enabled = _read_bool(
+        values.get("QUANT_MULTI_WINDOW_LABELS"),
+        default=DEFAULT_MULTI_WINDOW_LABELS_ENABLED,
+    )
+    raw_label_windows = str(values.get("QUANT_LABEL_WINDOWS") or "")
+    label_windows = [
+        int(x.strip()) for x in raw_label_windows.split(",") if x.strip().isdigit()
+    ] or list(DEFAULT_LABEL_WINDOWS)
 
     _publish_runtime_hints(
         {
@@ -793,6 +806,8 @@ def load_qlib_config(
             hyperopt_n_trials=hyperopt_n_trials,
             hyperopt_timeout_seconds=hyperopt_timeout_seconds,
             label_window_bars=label_window_bars,
+            multi_window_labels_enabled=multi_window_labels_enabled,
+            label_windows=label_windows,
             label_neutral_pct=label_neutral_pct,
             enable_walk_forward=enable_walk_forward,
             gate_use_walk_forward=gate_use_walk_forward,
@@ -888,6 +903,8 @@ def load_qlib_config(
         hyperopt_n_trials=hyperopt_n_trials,
         hyperopt_timeout_seconds=hyperopt_timeout_seconds,
         label_window_bars=label_window_bars,
+        multi_window_labels_enabled=multi_window_labels_enabled,
+        label_windows=label_windows,
         label_neutral_pct=label_neutral_pct,
         enable_walk_forward=enable_walk_forward,
         gate_use_walk_forward=gate_use_walk_forward,
@@ -979,6 +996,8 @@ def _build_config(
     hyperopt_n_trials: int,
     hyperopt_timeout_seconds: int,
     label_window_bars: int,
+    multi_window_labels_enabled: bool,
+    label_windows: list[int],
     label_neutral_pct: Decimal,
     enable_walk_forward: bool,
     gate_use_walk_forward: bool,
@@ -1086,6 +1105,8 @@ def _build_config(
         hyperopt_n_trials=hyperopt_n_trials,
         hyperopt_timeout_seconds=hyperopt_timeout_seconds,
         label_window_bars=label_window_bars,
+        multi_window_labels_enabled=multi_window_labels_enabled,
+        label_windows=label_windows,
         label_neutral_pct=label_neutral_pct,
         enable_walk_forward=enable_walk_forward,
         gate_use_walk_forward=gate_use_walk_forward,
