@@ -1017,6 +1017,7 @@ def build_factor_correlation_matrix(
 
     皮尔逊相关系数（与 IC 同口径），返回冗余分组建议。
     相关度 >= 0.8 的因子对进入 redundancy_pairs，按相关度降序。
+    常量因子（方差为 0）经复用 IC 口径计算得 corr=0.0，恒等常量因子不会被标记为冗余。
     """
     if factor_names is None:
         factor_names = list(PRIMARY_FEATURE_COLUMNS)
@@ -1034,8 +1035,6 @@ def build_factor_correlation_matrix(
         for j in range(i + 1, len(factor_names)):
             a, b = factor_names[i], factor_names[j]
             corr = _compute_ic(values[a], values[b])
-            if corr is None:
-                continue
             entry = {
                 "factor_a": a,
                 "factor_b": b,
