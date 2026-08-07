@@ -34,6 +34,7 @@ from services.worker.qlib_features import (
     OUTLIER_POLICY_LABELS,
     PRIMARY_FEATURE_COLUMNS,
     TIMEFRAME_PROFILES,
+    build_factor_correlation_matrix,
     evaluate_factor_ic_series,
     evaluate_factor_quantile_nav,
 )
@@ -1026,6 +1027,11 @@ class QlibRunner:
             return {
                 "ic_series": [],
                 "quantile_nav": [],
+                "correlation_matrix": {
+                    "factors": list(self._active_primary_feature_columns()),
+                    "pairs": [],
+                    "redundancy_pairs": [],
+                },
             }
 
         # 计算 IC 时间序列
@@ -1041,9 +1047,16 @@ class QlibRunner:
             num_quantiles=5,
         )
 
+        # 计算因子相关性矩阵（去冗余）
+        correlation_matrix = build_factor_correlation_matrix(
+            rows,
+            factor_names=list(self._active_primary_feature_columns()),
+        )
+
         return {
             "ic_series": ic_series,
             "quantile_nav": quantile_nav,
+            "correlation_matrix": correlation_matrix,
         }
 
     def _score_signal(self, feature_row: dict[str, object], metrics: dict[str, object]) -> float:
