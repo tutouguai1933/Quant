@@ -237,6 +237,21 @@ class MultiWindowLabelTests(unittest.TestCase):
         # 最后一根：close 124 vs 6 根前 118 → +5.1% ≥ 5% → buy
         self.assertEqual(result[6], "buy")
 
+    def test_multi_window_earliest_hit_stop_first_is_sell(self) -> None:
+        """窗口内先触达 stop 再触达 target，应按时间顺序判 sell。"""
+        from services.worker.qlib_labels import build_multi_window_labels
+
+        # 最后一根 now=105，窗口 3 根（旧→新）=[112, 110, 100]：
+        # 第一根 112 → (105-112)/112 = -6.25% ≤ -5% → sell 先触发
+        # 即使窗口内后面出现 target 触发也不改判
+        closes = ["112", "110", "100", "105"]
+        candles = [
+            {"open_time": 1000 * i, "close_time": 1000 * (i + 1), "open": c, "high": c, "low": c, "close": c, "volume": "10"}
+            for i, c in enumerate(closes)
+        ]
+        result = build_multi_window_labels(candles, windows=[3], target_pct=5.0, stop_pct=-5.0)
+        self.assertEqual(result[3], "sell")
+
 
 if __name__ == "__main__":
     unittest.main()

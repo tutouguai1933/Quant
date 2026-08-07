@@ -255,7 +255,7 @@ def _classify_single_window(
 def build_multi_window_labels(
     candles: list[dict[str, object]],
     *,
-    windows: list[int] = (6, 12, 18),
+    windows: tuple[int, ...] = (6, 12, 18),
     target_pct: float = 1.0,
     stop_pct: float = -1.0,
 ) -> dict[int, str]:
