@@ -449,6 +449,7 @@ class ResearchServiceTests(unittest.TestCase):
                     "selected_symbols": ["ETHUSDT"],
                     "timeframes": ["4h"],
                     "sample_limit": 180,
+                    "lookback_days": 30,  # 显式指定，避免依赖默认值变化
                 }
             },
             runtime_override_provider=lambda: {},

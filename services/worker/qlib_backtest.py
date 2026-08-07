@@ -71,7 +71,8 @@ def run_backtest(
         "gross_return_pct": _format_float(gross_trade_return),
         "net_return_pct": _format_float(net_trade_return),
         "cost_impact_pct": _format_float(cost_impact),
-        "max_drawdown_pct": _format_float(simulation["max_drawdown_pct"]),
+        # 兼容旧约定：回撤输出负值（下游回撤门按 max_drawdown_pct < -阈值 判断）
+        "max_drawdown_pct": _format_float(-simulation["max_drawdown_pct"]),
         "sharpe": _format_float(simulation["sharpe"]),
         "win_rate": _format_float(simulation["win_rate"]),
         "turnover": _format_float(_turnover_ratio(rows)),

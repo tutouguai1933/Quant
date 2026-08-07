@@ -163,6 +163,21 @@ def test_run_backtest_uses_simulation_metrics():
     assert int(metrics["trades_count"]) >= 0
 
 
+def test_run_backtest_max_drawdown_is_negative():
+    """回撤指标输出负值（下游回撤门按负值判断，防止符号翻转失效）。"""
+    from services.worker.qlib_backtest import run_backtest
+
+    rows = [
+        {"generated_at": 1000, "label": "buy", "future_return_pct": "5.0"},
+        {"generated_at": 2000, "label": "watch", "future_return_pct": "-5.0"},
+        {"generated_at": 3000, "label": "watch", "future_return_pct": "-8.0"},
+        {"generated_at": 4000, "label": "watch", "future_return_pct": "2.0"},
+    ]
+    report = run_backtest(rows=rows, holding_window="1-3d", fee_bps=10, slippage_bps=5)
+    drawdown = float(report["metrics"]["max_drawdown_pct"])
+    assert drawdown <= 0.0, f"回撤应为负值，实际 {drawdown}"
+
+
 def _sample_ranked_rows() -> list[dict[str, object]]:
     return [
         {"future_return_pct": "2.0000", "label": "buy"},
