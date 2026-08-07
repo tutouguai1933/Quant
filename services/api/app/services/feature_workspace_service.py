@@ -917,8 +917,8 @@ class FeatureWorkspaceService:
                 "detail": group.get("detail", ""),
             })
 
-        # 相关性表格（暂为空）
-        correlation_rows: list[dict[str, object]] = []
+        # 相关性表格
+        correlation_rows = self._build_correlation_rows(report)
 
         tables = {
             "factor_rows": factor_rows,
@@ -931,6 +931,22 @@ class FeatureWorkspaceService:
             "charts": charts,
             "tables": tables,
         }
+
+    def _build_correlation_rows(self, report: dict[str, object]) -> list[dict[str, object]]:
+        """从训练报告提取因子相关性冗余对，供前端表格展示。"""
+        factor_eval = dict(report.get("factor_evaluation") or {})
+        matrix = dict(factor_eval.get("correlation_matrix") or {})
+        pairs = list(matrix.get("redundancy_pairs") or [])
+        rows: list[dict[str, object]] = []
+        for pair in pairs:
+            rows.append({
+                "factor_a": str(pair.get("factor_a", "")),
+                "factor_b": str(pair.get("factor_b", "")),
+                "correlation": float(pair.get("correlation", 0.0)),
+                "redundant": bool(pair.get("redundant", False)),
+                "detail": f"相关度 {float(pair.get('correlation', 0.0)):.2f}，建议保留 IC 更高者",
+            })
+        return rows
 
     def _build_terminal_knowledge(
         self,
