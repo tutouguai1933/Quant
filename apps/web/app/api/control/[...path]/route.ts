@@ -21,7 +21,7 @@ function resolveAuthorizationHeader(request: Request): string {
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${SESSION_COOKIE_NAME}=`))
     ?.split("=", 2)[1];
-  console.log("[proxy-debug] cookieHeader=", JSON.stringify(cookieHeader), "token=", JSON.stringify(token), "auth=", JSON.stringify(directHeader));
+  require("fs").appendFileSync("/tmp/proxy-debug.log", `${new Date().toISOString()} cookie=${JSON.stringify(cookieHeader)} token=${JSON.stringify(token)} auth=${JSON.stringify(directHeader)}\n`);
   return token ? `Bearer ${decodeURIComponent(token)}` : "";
 }
 
