@@ -1391,15 +1391,44 @@ class QlibRunner:
             return "trend_breakout_timing"
         return "trend_pullback_timing"
 
-    def _active_primary_feature_columns(self) -> tuple[str, ...]:
-        """返回当前启用的主判断因子。"""
+    def _active_primary_feature_columns(self, registry: object | None = None) -> tuple[str, ...]:
+        """返回当前启用的主判断因子（config 定范围，注册表控启停）。"""
 
-        return self._config.primary_feature_columns
+        return self._filter_columns_by_registry(
+            self._config.primary_feature_columns,
+            role="primary",
+            registry=registry,
+        )
 
-    def _active_auxiliary_feature_columns(self) -> tuple[str, ...]:
-        """返回当前启用的辅助因子。"""
+    def _active_auxiliary_feature_columns(self, registry: object | None = None) -> tuple[str, ...]:
+        """返回当前启用的辅助因子（config 定范围，注册表控启停）。"""
 
-        return self._config.auxiliary_feature_columns
+        return self._filter_columns_by_registry(
+            self._config.auxiliary_feature_columns,
+            role="auxiliary",
+            registry=registry,
+        )
+
+    def _filter_columns_by_registry(
+        self,
+        columns: tuple[str, ...],
+        *,
+        role: str,
+        registry: object | None = None,
+    ) -> tuple[str, ...]:
+        """按注册表过滤因子列：config 指定范围，注册表控制启停。
+
+        注册表未登记的自定义列保持原样，登记但被禁用的列剔除。
+        """
+        from services.worker.factor_registry import factor_registry
+
+        active_registry = registry or factor_registry
+        enabled = set(active_registry.enabled_columns(role))
+        return tuple(
+            column
+            for column in columns
+            if column not in FACTOR_METADATA or column in enabled
+        )
 
     def _build_factor_protocol(self) -> dict[str, object]:
         """把当前启用因子写回协议摘要。"""
