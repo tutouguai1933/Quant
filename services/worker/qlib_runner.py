@@ -511,6 +511,8 @@ class QlibRunner:
                 "train_split_ratio": self._config.train_split_ratio,
                 "validation_split_ratio": self._config.validation_split_ratio,
                 "test_split_ratio": self._config.test_split_ratio,
+                "multi_window_labels_enabled": self._config.multi_window_labels_enabled,
+                "label_windows": tuple(self._config.label_windows),
             }
             if self._config.timeframe_profiles != TIMEFRAME_PROFILES:
                 build_kwargs["timeframe_profiles"] = self._config.timeframe_profiles
@@ -611,6 +613,8 @@ class QlibRunner:
                 "window_mode": self._config.window_mode,
                 "start_date": self._config.start_date,
                 "end_date": self._config.end_date,
+                "multi_window_labels_enabled": self._config.multi_window_labels_enabled,
+                "label_windows": list(self._config.label_windows),
             },
             "feature_config": {
                 "missing_policy": self._config.missing_policy,

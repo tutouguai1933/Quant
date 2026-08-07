@@ -278,6 +278,115 @@ def build_multi_window_labels(
     return result
 
 
+def build_multi_window_label_rows(
+    symbol: str,
+    candles: list[dict[str, object]],
+    *,
+    windows: tuple[int, ...] = (6, 12, 18),
+    target_return_pct: Decimal = Decimal("1"),
+    stop_return_pct: Decimal = Decimal("-1"),
+    holding_window_label: str = "multi-window",
+) -> list[dict[str, object]]:
+    """对每根 K 线按多个未来窗口分别判定标签，多数票合并。
+
+    与 build_label_rows 输出格式一致。标签无泄漏：每个窗口都是未来窗口。
+    多数票规则：buy 票最多→buy；否则 sell 票最多→sell；否则 watch。
+    平票时取较长窗口的结果。
+    """
+
+    normalized_target = target_return_pct if isinstance(target_return_pct, Decimal) else Decimal(str(target_return_pct or "1"))
+    normalized_stop = stop_return_pct if isinstance(stop_return_pct, Decimal) else Decimal(str(stop_return_pct or "-1"))
+    normalized = [_normalize_candle(item) for item in candles]
+    valid_candles = [item for item in normalized if item is not None]
+    if not valid_candles:
+        return []
+
+    rows: list[dict[str, object]] = []
+    for index, candle in enumerate(valid_candles):
+        if candle["close"] == 0:
+            rows.append(
+                {
+                    "symbol": symbol.strip().upper(),
+                    "generated_at": int(candle["close_time"]),
+                    "future_return_pct": None,
+                    "label": "watch",
+                    "holding_window": holding_window_label,
+                    "is_trainable": False,
+                }
+            )
+            continue
+
+        window_results: list[tuple[int, Decimal, str]] = []
+        for window in windows:
+            future_window = _slice_future_window_single(
+                candles=valid_candles,
+                index=index,
+                window_bars=int(window),
+            )
+            if not future_window:
+                continue
+            future_return, label = _classify_window_label(
+                entry_close=candle["close"],
+                future_window=future_window,
+                label_mode="earliest_hit",
+                trigger_basis="close",
+                target_return_pct=normalized_target,
+                stop_return_pct=normalized_stop,
+            )
+            window_results.append((int(window), future_return, label))
+
+        if not window_results:
+            rows.append(
+                {
+                    "symbol": symbol.strip().upper(),
+                    "generated_at": int(candle["close_time"]),
+                    "future_return_pct": None,
+                    "label": "watch",
+                    "holding_window": holding_window_label,
+                    "is_trainable": False,
+                }
+            )
+            continue
+
+        buy_votes = [item for item in window_results if item[2] == "buy"]
+        sell_votes = [item for item in window_results if item[2] == "sell"]
+        buy_count = len(buy_votes)
+        sell_count = len(sell_votes)
+        watch_count = len(window_results) - buy_count - sell_count
+        largest_window = max(item[0] for item in window_results)
+        largest_result = next(item for item in window_results if item[0] == largest_window)
+
+        # 多数票合并：buy/sell 严格最多优先，平票（buy==sell）取较长窗口的结果
+        if buy_count > sell_count and buy_count > watch_count:
+            chosen_label = "buy"
+        elif sell_count > buy_count and sell_count > watch_count:
+            chosen_label = "sell"
+        elif buy_count == sell_count:
+            chosen_label = largest_result[2]
+        else:
+            chosen_label = "watch"
+
+        # 票选结果对应的未来收益：buy 取最早 buy 窗口，sell 取最早 sell 窗口，watch 取最大窗口
+        if chosen_label == "buy":
+            chosen_return = min(buy_votes, key=lambda item: item[0])[1]
+        elif chosen_label == "sell":
+            chosen_return = min(sell_votes, key=lambda item: item[0])[1]
+        else:
+            chosen_return = largest_result[1]
+
+        rows.append(
+            {
+                "symbol": symbol.strip().upper(),
+                "generated_at": int(candle["close_time"]),
+                "future_return_pct": _format_decimal(chosen_return),
+                "label": chosen_label,
+                "holding_window": holding_window_label,
+                "is_trainable": True,
+            }
+        )
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # 波动率调整收益
 # ---------------------------------------------------------------------------

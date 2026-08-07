@@ -14,7 +14,7 @@ DATA_STATE_NAMES = ("raw", "cleaned", "feature-ready")
 
 from services.worker.qlib_config import get_runtime_hint
 from services.worker.qlib_features import build_feature_rows
-from services.worker.qlib_labels import build_label_rows
+from services.worker.qlib_labels import build_label_rows, build_multi_window_label_rows
 
 
 @dataclass(slots=True)
@@ -54,6 +54,8 @@ def build_dataset_bundle(
     train_split_ratio: object | None = None,
     validation_split_ratio: object | None = None,
     test_split_ratio: object | None = None,
+    multi_window_labels_enabled: bool = False,
+    label_windows: tuple[int, ...] = (6, 12, 18),
 ) -> DatasetBundle:
     """把输入 K 线整理成训练、验证、测试三段数据。"""
 
@@ -103,6 +105,8 @@ def build_dataset_bundle(
                 max_window_days=max_window_days,
                 holding_window_label=holding_window_label,
                 split_ratios=split_ratios,
+                multi_window_labels_enabled=multi_window_labels_enabled,
+                label_windows=label_windows,
             )
         except RuntimeError as exc:
             if str(exc) != "样本不足以切成训练/验证/测试三段":
@@ -133,6 +137,8 @@ def _build_dataset_bundle_for_candles(
     max_window_days: int = 3,
     holding_window_label: str = "1-3d",
     split_ratios: tuple[Decimal, Decimal, Decimal] = (Decimal("0.6"), Decimal("0.2"), Decimal("0.2")),
+    multi_window_labels_enabled: bool = False,
+    label_windows: tuple[int, ...] = (6, 12, 18),
 ) -> DatasetBundle:
     """把单个周期的 K 线整理成可切分的数据包。"""
 
@@ -144,17 +150,26 @@ def _build_dataset_bundle_for_candles(
         missing_policy=missing_policy,
         timeframe_profiles=timeframe_profiles,
     )
-    label_rows = build_label_rows(
-        symbol,
-        candles,
-        label_mode=label_mode,
-        trigger_basis=trigger_basis,
-        target_return_pct=label_target_pct,
-        stop_return_pct=label_stop_pct,
-        min_window_days=min_window_days,
-        max_window_days=max_window_days,
-        holding_window_label=holding_window_label,
-    )
+    if multi_window_labels_enabled:
+        label_rows = build_multi_window_label_rows(
+            symbol,
+            candles,
+            windows=label_windows,
+            target_return_pct=label_target_pct,
+            stop_return_pct=label_stop_pct,
+        )
+    else:
+        label_rows = build_label_rows(
+            symbol,
+            candles,
+            label_mode=label_mode,
+            trigger_basis=trigger_basis,
+            target_return_pct=label_target_pct,
+            stop_return_pct=label_stop_pct,
+            min_window_days=min_window_days,
+            max_window_days=max_window_days,
+            holding_window_label=holding_window_label,
+        )
     merged_rows = _merge_feature_and_label_rows(feature_rows, label_rows)
     if len(merged_rows) < 3:
         raise RuntimeError("样本不足以切成训练/验证/测试三段")
