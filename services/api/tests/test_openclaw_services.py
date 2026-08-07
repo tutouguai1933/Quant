@@ -215,6 +215,64 @@ class OpenclawServiceTests(unittest.TestCase):
         self.assertEqual(patrol_service._freqtrade_paused_count, 0)
         self.assertEqual(result["patrol_status"], "normal")
 
+    def test_freqtrade_error_triggers_auto_recovery(self) -> None:
+        """freqtrade 连接异常时，巡检自动重启容器并保留 dry_run_only 降级。"""
+        snapshot_service = mock.Mock()
+        snapshot_service.get_snapshot.return_value = {"snapshot_id": "snapshot-1"}
+        action_service = mock.Mock()
+        action_service.execute_action.return_value = {"success": True}
+        health_service = mock.Mock()
+
+        patrol_service = OpenclawPatrolService(
+            snapshot_service=snapshot_service,
+            action_service=action_service,
+            health_service=health_service,
+        )
+        patrol_service._can_execute_action = mock.Mock(return_value=(True, ""))  # type: ignore[method-assign]
+        recovery = mock.Mock()
+        recovery.attempt_recovery.return_value = mock.Mock(
+            status="success",
+            action="restart_container",
+        )
+        patrol_service._get_recovery_service = mock.Mock(return_value=recovery)  # type: ignore[method-assign]
+
+        snapshot = {
+            "runtime_guard": {},
+            "execution_health": {"connection_status": "error"},
+        }
+        result = patrol_service._check_service_health(snapshot)
+
+        # 自动恢复被调用（重启 freqtrade 容器）
+        recovery.attempt_recovery.assert_called_once_with("quant-freqtrade")
+        # dry_run_only 降级保护仍执行
+        action_service.execute_action.assert_called_once_with("automation_dry_run_only")
+        self.assertEqual(result["action"], "automation_dry_run_only")
+
+    def test_freqtrade_recovery_skipped_when_connected(self) -> None:
+        """freqtrade 连接正常时不触发自动恢复。"""
+        snapshot_service = mock.Mock()
+        snapshot_service.get_snapshot.return_value = {"snapshot_id": "snapshot-1"}
+        action_service = mock.Mock()
+        health_service = mock.Mock()
+
+        patrol_service = OpenclawPatrolService(
+            snapshot_service=snapshot_service,
+            action_service=action_service,
+            health_service=health_service,
+        )
+        recovery = mock.Mock()
+        patrol_service._get_recovery_service = mock.Mock(return_value=recovery)  # type: ignore[method-assign]
+
+        snapshot = {
+            "runtime_guard": {},
+            "execution_health": {"connection_status": "connected"},
+        }
+        result = patrol_service._check_service_health(snapshot)
+
+        recovery.attempt_recovery.assert_not_called()
+        action_service.execute_action.assert_not_called()
+        self.assertEqual(result["patrol_status"], "normal")
+
 
 if __name__ == "__main__":
     unittest.main()

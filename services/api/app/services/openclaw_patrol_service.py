@@ -300,10 +300,25 @@ class OpenclawPatrolService:
         execution_health = dict(snapshot.get("execution_health") or {})
         connection_status = str(execution_health.get("connection_status", "connected"))
 
-        # 执行器连接异常时，切到 dry_run_only
+        # 执行器连接异常时，切到 dry_run_only + 自动恢复 freqtrade 容器
         if connection_status == "error":
             action = "automation_dry_run_only"
             can_execute, reason = self._can_execute_action(action)
+
+            # 自动恢复：freqtrade 进程死亡/连接异常时重启容器（带冷却和次数保护）
+            try:
+                recovery = self._get_recovery_service()
+                if recovery is not None:
+                    record = recovery.attempt_recovery("quant-freqtrade")
+                    if record and record.status == "success":
+                        logger.info("freqtrade 连接异常，已自动重启容器 (冷却/次数保护生效)")
+                    else:
+                        logger.warning(
+                            "freqtrade 自动恢复未执行或未成功: %s",
+                            getattr(record, "status", "unknown"),
+                        )
+            except Exception as recovery_exc:
+                logger.warning("freqtrade 自动恢复异常: %s", recovery_exc)
 
             # 推送执行器异常告警
             try:
@@ -554,6 +569,17 @@ class OpenclawPatrolService:
                 get_failover_controller,
             )
             return get_failover_controller()
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_recovery_service():
+        """获取自动恢复服务（延迟导入避免循环依赖）。"""
+        try:
+            from services.api.app.services.auto_recovery_service import (
+                auto_recovery_service,
+            )
+            return auto_recovery_service
         except Exception:
             return None
 
