@@ -863,6 +863,31 @@ class FeatureWorkspaceService:
             "knowledge": knowledge,
         }
 
+    def _build_ic_summary(self, report: dict[str, object]) -> dict[str, object]:
+        """从 ic_series 计算 IC 摘要指标（mean_ic/ic_std/icir/ic_win_rate）。
+
+        数据不足时返回 None（前端显示 -- 而非误导性的 0）。
+        """
+        evaluation = dict(report.get("factor_evaluation") or {})
+        ic_series = list(evaluation.get("ic_series") or [])
+        ics = [float(e["ic"]) for e in ic_series if isinstance(e.get("ic"), (int, float))]
+        if not ics:
+            return {"mean_ic": None, "ic_std": None, "icir": None, "ic_win_rate": None}
+        mean_ic = sum(ics) / len(ics)
+        if len(ics) >= 2:
+            variance = sum((v - mean_ic) ** 2 for v in ics) / (len(ics) - 1)
+            ic_std = variance ** 0.5
+        else:
+            ic_std = 0.0
+        icir = (mean_ic / ic_std) if ic_std > 0 else 0.0
+        win_rate = sum(1 for v in ics if v > 0) / len(ics)
+        return {
+            "mean_ic": round(mean_ic, 4),
+            "ic_std": round(ic_std, 4),
+            "icir": round(icir, 4),
+            "ic_win_rate": round(win_rate, 4),
+        }
+
     def _build_terminal_research(
         self,
         *,
@@ -874,13 +899,16 @@ class FeatureWorkspaceService:
     ) -> dict[str, object]:
         """构建因子研究终端视图。"""
 
-        # 指标卡：从 overview 和 effectiveness_summary 提取
+        # 指标卡：从 overview、effectiveness_summary 和 IC 摘要提取
+        ic_summary = self._build_ic_summary(report)
         metrics = [
             metric_card("factor_count", "因子数量", overview.get("factor_count", 0), format="integer"),
             metric_card("primary_count", "主因子", overview.get("primary_count", 0), format="integer"),
             metric_card("auxiliary_count", "辅助因子", overview.get("auxiliary_count", 0), format="integer"),
-            metric_card("mean_ic", "平均 IC", "0", format="decimal"),
-            metric_card("icir", "ICIR", "0", format="decimal"),
+            metric_card("mean_ic", "平均 IC", ic_summary.get("mean_ic"), format="decimal"),
+            metric_card("ic_std", "IC 标准差", ic_summary.get("ic_std"), format="decimal"),
+            metric_card("icir", "ICIR", ic_summary.get("icir"), format="decimal"),
+            metric_card("ic_win_rate", "IC 胜率", ic_summary.get("ic_win_rate"), format="percent_ratio"),
             metric_card("effective_factor_count", "有效因子", overview.get("enabled_count", 0), format="integer"),
         ]
 
