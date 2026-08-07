@@ -780,6 +780,51 @@ class MarketServiceTests(unittest.TestCase):
 
         self.assertIn("/api/v1/market", router_prefixes)
 
+    def test_read_base_chart_returns_latest_bars_from_store(self) -> None:
+        """回归测试：KlineStore 返回升序数据时，图表必须取最新 limit 根。
+
+        曾因 bars[:limit] 取到最旧的 K 线，导致页面"市场入场信号"用
+        30 天前的旧行情计算（假信号），而 freqtrade 用实时行情判断
+        不下单，两边数据不一致。
+        """
+        import tempfile
+        from services.api.app.services.kline_store import KlineStore
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = KlineStore(root=tmpdir)
+            base_ts = 1783486800000  # 7-08 03:00 UTC
+            rows = []
+            for i in range(250):
+                ot = base_ts + i * 3600000
+                rows.append({
+                    "open_time": ot,
+                    "open": "100", "high": "101", "low": "99", "close": "100",
+                    "volume": "10", "close_time": ot + 3599999,
+                })
+            store.upsert("ETHUSDT", "1h", rows)
+
+            service = MarketService(client=FakeMarketClient())
+
+            with patch.dict(
+                os.environ,
+                {"QUANT_KLINE_STORE_ENABLED": "true", "QUANT_KLINE_STORE_ROOT": tmpdir},
+                clear=False,
+            ):
+                # 直接测 _read_base_chart（store 路径）
+                chart = service._read_base_chart(
+                    symbol="ETHUSDT",
+                    interval="1h",
+                    limit=200,
+                    allowed_symbols=None,
+                )
+                items = chart["items"]
+
+            self.assertEqual(len(items), 200)
+            # 必须是最新的 200 根（最后一根是 base_ts + 249h）
+            self.assertEqual(items[-1]["open_time"], base_ts + 249 * 3600000)
+            # 不能是最旧的（修复前 bars[:limit] 会拿到 base_ts 开头）
+            self.assertEqual(items[0]["open_time"], base_ts + 50 * 3600000)
+
 
 if __name__ == "__main__":
     unittest.main()

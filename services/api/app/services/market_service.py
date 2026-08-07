@@ -298,7 +298,8 @@ class MarketService:
                     days=30,
                 )
                 if bars:
-                    items = bars[:limit]
+                    # store 返回升序（旧→新），取最新 limit 根
+                    items = bars[-limit:]
                     return {
                         "items": items,
                         "overlays": build_indicator_summary(items, warnings=[]),
