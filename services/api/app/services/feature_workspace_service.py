@@ -866,9 +866,13 @@ class FeatureWorkspaceService:
     def _build_ic_summary(self, report: dict[str, object]) -> dict[str, object]:
         """从 ic_series 计算 IC 摘要指标（mean_ic/ic_std/icir/ic_win_rate）。
 
+        factor_evaluation 可能在顶层或 latest_training 内（factory report 结构），
         数据不足时返回 None（前端显示 -- 而非误导性的 0）。
         """
         evaluation = dict(report.get("factor_evaluation") or {})
+        if not evaluation.get("ic_series"):
+            latest_training = dict(report.get("latest_training") or {})
+            evaluation = dict(latest_training.get("factor_evaluation") or {})
         ic_series = list(evaluation.get("ic_series") or [])
         ics = [float(e["ic"]) for e in ic_series if isinstance(e.get("ic"), (int, float))]
         if not ics:

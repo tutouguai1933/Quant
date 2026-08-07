@@ -39,3 +39,20 @@ class IcMetricsTests(unittest.TestCase):
         summary = service._build_ic_summary({"factor_evaluation": {"ic_series": []}})
         self.assertIsNone(summary["mean_ic"])
         self.assertIsNone(summary["icir"])
+
+    def test_build_ic_summary_reads_latest_training_nested(self):
+        """factory report 结构下 factor_evaluation 在 latest_training 内。"""
+        service = object.__new__(FeatureWorkspaceService)
+        report = {
+            "latest_training": {
+                "factor_evaluation": {
+                    "ic_series": [
+                        {"factor": "ema20_gap_pct", "ic": 0.05, "rank_ic": 0.04},
+                        {"factor": "ema20_gap_pct", "ic": 0.03, "rank_ic": 0.02},
+                    ]
+                }
+            }
+        }
+        summary = service._build_ic_summary(report)
+        self.assertGreater(summary["mean_ic"], 0)
+        self.assertEqual(summary["ic_win_rate"], 1.0)
