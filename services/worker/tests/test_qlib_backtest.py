@@ -40,6 +40,9 @@ class QlibBacktestTests(unittest.TestCase):
                 "max_loss_streak",
                 "action_segment_count",
                 "direction_switch_count",
+                "trades_count",
+                "final_nav",
+                "exit_reasons",
             },
         )
         self.assertIn("assumptions", report)
@@ -58,9 +61,11 @@ class QlibBacktestTests(unittest.TestCase):
         )
 
         self.assertEqual(report["assumptions"]["round_trip_cost_pct"], "0.3000")
-        self.assertEqual(report["metrics"]["gross_return_pct"], "2.0000")
-        self.assertEqual(report["metrics"]["net_return_pct"], "1.4000")
-        self.assertEqual(report["metrics"]["cost_impact_pct"], "0.6000")
+        # 模拟语义：第一根开仓（扣开仓费 0.15），第二根持仓收益 0.8，结束时平仓再扣 0.15
+        self.assertEqual(report["metrics"]["gross_return_pct"], "0.8000")
+        self.assertEqual(report["metrics"]["net_return_pct"], "0.5000")
+        self.assertEqual(report["metrics"]["cost_impact_pct"], "0.3000")
+        self.assertEqual(report["metrics"]["trades_count"], "1")
 
     def test_backtest_supports_zero_cost_baseline_model(self) -> None:
         report = run_backtest(
@@ -76,8 +81,9 @@ class QlibBacktestTests(unittest.TestCase):
 
         self.assertEqual(report["assumptions"]["cost_model"], "zero_cost_baseline")
         self.assertEqual(report["assumptions"]["round_trip_cost_pct"], "0.0000")
-        self.assertEqual(report["metrics"]["gross_return_pct"], "2.0000")
-        self.assertEqual(report["metrics"]["net_return_pct"], "2.0000")
+        # 模拟语义：第一根开仓无成本，第二根持仓收益 0.8，平仓无成本
+        self.assertEqual(report["metrics"]["gross_return_pct"], "0.8000")
+        self.assertEqual(report["metrics"]["net_return_pct"], "0.8000")
         self.assertEqual(report["metrics"]["cost_impact_pct"], "0.0000")
 
     def test_backtest_turnover_stays_low_when_direction_is_stable(self) -> None:
@@ -139,6 +145,22 @@ def test_simulate_trades_opens_and_closes():
     assert result["trades_count"] == 1
     assert result["trades"][0]["exit_reason"] == "stop_loss"
     assert result["final_nav"] < 1.0  # 亏损
+
+
+def test_run_backtest_uses_simulation_metrics():
+    """run_backtest 输出真实模拟指标（含 trades_count）。"""
+    from services.worker.qlib_backtest import run_backtest
+
+    rows = [
+        {"generated_at": 1000, "label": "buy", "future_return_pct": "0.5"},
+        {"generated_at": 2000, "label": "watch", "future_return_pct": "-2.0"},
+        {"generated_at": 3000, "label": "watch", "future_return_pct": "3.0"},
+    ]
+    report = run_backtest(rows=rows, holding_window="1-3d", fee_bps=10, slippage_bps=5)
+    metrics = report["metrics"]
+    assert "trades_count" in metrics
+    assert "final_nav" in metrics
+    assert int(metrics["trades_count"]) >= 0
 
 
 def _sample_ranked_rows() -> list[dict[str, object]]:

@@ -17,7 +17,7 @@ def run_backtest(
     slippage_bps: Decimal | str | float | int = Decimal("0"),
     cost_model: str = "round_trip_basis_points",
 ) -> dict[str, object]:
-    """运行一次最小回测并返回统一指标。"""
+    """运行一次最小回测并返回统一指标（基于逐 K 线真实交易模拟）。"""
 
     gross_returns = [_to_float(item.get("future_return_pct")) for item in rows]
     fee_bps_decimal = _to_decimal(fee_bps)
@@ -29,22 +29,59 @@ def run_backtest(
     )
     net_returns = [item - round_trip_cost_pct for item in gross_returns]
 
-    # 计算净值序列
-    performance_series = _build_performance_series(rows, net_returns)
+    # 单边手续费合计（simulate 内部开仓、平仓各扣一次 → 等价双边成本）
+    sim_fee_pct = (
+        0.0
+        if cost_model == "zero_cost_baseline"
+        else float(fee_bps_decimal + slippage_bps_decimal) / 100.0
+    )
+    # 逐 K 线真实交易模拟：信号开仓，止损/止盈/窗口结束平仓
+    simulation = simulate_trades(
+        rows,
+        stop_loss_pct=-8.0,
+        take_profit_pct=8.0,
+        fee_pct=sim_fee_pct,
+        max_holding_bars=18,
+    )
+    trades = simulation["trades"]
+    net_trade_return = sum(float(t["return_pct"]) for t in trades)
+    # 毛收益 = 净收益 + 每笔双边手续费；成本影响 = 手续费总额
+    cost_impact = len(trades) * 2 * sim_fee_pct
+    gross_trade_return = net_trade_return + cost_impact
+
+    # 计算净值序列（strategy_nav 用模拟后的净值序列）
+    performance_series = _build_performance_series(
+        rows, net_returns, nav_series=simulation["nav_series"]
+    )
+
+    # 统计各平仓原因数量（四种原因都保留 0 计数）
+    exit_reasons = {
+        "stop_loss": 0,
+        "take_profit": 0,
+        "window_end": 0,
+        "end_of_series": 0,
+    }
+    for trade in trades:
+        reason = str(trade["exit_reason"])
+        if reason in exit_reasons:
+            exit_reasons[reason] += 1
 
     metrics = {
-        "total_return_pct": _format_float(sum(net_returns)),
-        "gross_return_pct": _format_float(sum(gross_returns)),
-        "net_return_pct": _format_float(sum(net_returns)),
-        "cost_impact_pct": _format_float(sum(gross_returns) - sum(net_returns)),
-        "max_drawdown_pct": _format_float(_max_drawdown_pct(net_returns)),
-        "sharpe": _format_float(_sharpe_ratio(net_returns)),
-        "win_rate": _format_float(_win_rate(net_returns)),
+        "total_return_pct": _format_float(net_trade_return),
+        "gross_return_pct": _format_float(gross_trade_return),
+        "net_return_pct": _format_float(net_trade_return),
+        "cost_impact_pct": _format_float(cost_impact),
+        "max_drawdown_pct": _format_float(simulation["max_drawdown_pct"]),
+        "sharpe": _format_float(simulation["sharpe"]),
+        "win_rate": _format_float(simulation["win_rate"]),
         "turnover": _format_float(_turnover_ratio(rows)),
         "sample_count": str(len(rows)),
         "max_loss_streak": str(_max_loss_streak(net_returns)),
         "action_segment_count": str(_action_segment_count(rows)),
         "direction_switch_count": str(_direction_switch_count(rows)),
+        "trades_count": str(simulation["trades_count"]),
+        "final_nav": _format_float(simulation["final_nav"]),
+        "exit_reasons": exit_reasons,
     }
     return {
         "holding_window": holding_window,
@@ -164,12 +201,14 @@ def _resolve_cost_pct(*, fee_bps: Decimal, slippage_bps: Decimal, cost_model: st
 def _build_performance_series(
     rows: list[dict[str, object]],
     net_returns: list[float],
+    nav_series: list[float] | None = None,
 ) -> list[dict[str, object]]:
     """构建净值序列数据。
 
     Args:
         rows: 原始样本行
         net_returns: 扣除成本后的净收益列表
+        nav_series: 模拟交易后的净值序列（与 rows 逐行对齐），为空时退回按净收益累计
 
     Returns:
         净值序列列表，包含 date, strategy_nav, benchmark_nav, drawdown_pct
@@ -183,8 +222,11 @@ def _build_performance_series(
     peak_nav = 1.0  # 用于计算回撤的峰值净值
 
     for index, (row, net_return) in enumerate(zip(rows, net_returns)):
-        # 更新净值
-        strategy_nav *= 1 + (net_return / 100.0)
+        # 更新净值：优先使用模拟后的净值序列，否则按净收益累计
+        if nav_series is not None and index < len(nav_series):
+            strategy_nav = nav_series[index]
+        else:
+            strategy_nav *= 1 + (net_return / 100.0)
         benchmark_nav *= 1 + (0.0 / 100.0)  # 基准净值保持不变或按需调整
 
         # 更新峰值并计算回撤
