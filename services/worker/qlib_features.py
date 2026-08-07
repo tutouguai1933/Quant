@@ -1006,3 +1006,50 @@ def _compute_rank_ic(x: list[float], y: list[float]) -> float:
         return 0.0
 
     return covariance / ((variance_x ** 0.5) * (variance_y ** 0.5))
+
+
+def build_factor_correlation_matrix(
+    rows: list[dict[str, object]],
+    factor_names: list[str] | None = None,
+    min_samples: int = 3,
+) -> dict[str, object]:
+    """计算因子两两相关性矩阵。
+
+    皮尔逊相关系数（与 IC 同口径），返回冗余分组建议。
+    相关度 >= 0.8 的因子对进入 redundancy_pairs，按相关度降序。
+    """
+    if factor_names is None:
+        factor_names = list(PRIMARY_FEATURE_COLUMNS)
+
+    if len(rows) < min_samples:
+        return {"factors": factor_names, "pairs": [], "redundancy_pairs": []}
+
+    values: dict[str, list[float]] = {}
+    for name in factor_names:
+        values[name] = [_to_float_local(row.get(name)) for row in rows]
+
+    pairs: list[dict[str, object]] = []
+    redundancy_pairs: list[dict[str, object]] = []
+    for i in range(len(factor_names)):
+        for j in range(i + 1, len(factor_names)):
+            a, b = factor_names[i], factor_names[j]
+            corr = _compute_ic(values[a], values[b])
+            if corr is None:
+                continue
+            entry = {
+                "factor_a": a,
+                "factor_b": b,
+                "correlation": round(corr, 4),
+                "redundant": abs(corr) >= 0.8,
+            }
+            pairs.append(entry)
+            if abs(corr) >= 0.8:
+                redundancy_pairs.append(entry)
+
+    pairs.sort(key=lambda p: -abs(float(p["correlation"])))
+    redundancy_pairs.sort(key=lambda p: -abs(float(p["correlation"])))
+    return {
+        "factors": factor_names,
+        "pairs": pairs,
+        "redundancy_pairs": redundancy_pairs,
+    }
