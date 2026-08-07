@@ -11,7 +11,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from services.api.app.services.workbench_config_service import WorkbenchConfigService  # noqa: E402
+from services.api.app.services.workbench_config_service import (  # noqa: E402
+    THRESHOLD_PRESET_VALUES,
+    WorkbenchConfigService,
+)
 
 
 class WorkbenchConfigServiceTests(unittest.TestCase):
@@ -740,6 +743,12 @@ class WorkbenchConfigServiceTests(unittest.TestCase):
         self.assertEqual(config["operations"]["review_limit"], "25")
         self.assertEqual(config["operations"]["cycle_cooldown_minutes"], "30")
         self.assertEqual(config["operations"]["max_daily_cycle_count"], "12")
+
+
+    def test_standard_gate_default_score_is_045(self) -> None:
+        """标准门槛预设的 dry_run 分数默认 0.45（与 env 一致，不再覆盖为 0.55）。"""
+        preset = THRESHOLD_PRESET_VALUES["standard_gate"]
+        self.assertEqual(preset["dry_run_min_score"], "0.45")
 
 
 if __name__ == "__main__":

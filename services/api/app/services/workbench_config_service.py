@@ -301,7 +301,7 @@ BACKTEST_PRESET_VALUES = {
 
 THRESHOLD_PRESET_VALUES = {
     "standard_gate": {
-        "dry_run_min_score": "0.55",
+        "dry_run_min_score": "0.45",
         "dry_run_min_positive_rate": "0.45",
         "dry_run_min_net_return_pct": "0",
         "dry_run_min_sharpe": "0.5",
