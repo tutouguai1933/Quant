@@ -2316,6 +2316,53 @@ export async function getEvaluationWorkspace(signal?: AbortSignal): Promise<ApiE
   };
 }
 
+/* 通用：通过控制面代理发起 POST 动作（客户端自动带上会话 cookie 鉴权） */
+async function postControlAction<T>(path: string, signal?: AbortSignal): Promise<ApiEnvelope<T>> {
+  try {
+    const url = await resolveControlPlaneUrl(path);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal,
+    });
+
+    if (!response.ok) {
+      return {
+        data: {} as T,
+        error: { code: `http_${response.status}`, message: `API 请求失败: ${response.statusText}` },
+        meta: { status: response.status },
+      };
+    }
+
+    return response.json() as Promise<ApiEnvelope<T>>;
+  } catch (error) {
+    return {
+      data: {} as T,
+      error: {
+        code: error instanceof Error && error.name === "AbortError" ? "request_timeout" : "network_error",
+        message: error instanceof Error && error.name === "AbortError" ? "请求超时" : "网络连接失败",
+      },
+      meta: {},
+    };
+  }
+}
+
+/* 运行研究训练：触发后端 research_train 任务，刷新训练样本与 AUC 数据 */
+export function runResearchTraining(source = "pipeline", signal?: AbortSignal): Promise<ApiEnvelope<{ item: Record<string, unknown> }>> {
+  return postControlAction(`/signals/research/train?source=${encodeURIComponent(source)}`, signal);
+}
+
+/* 运行因子分析：触发后端 research_infer 任务，刷新 IC/因子研究数据 */
+export function runResearchInference(source = "pipeline", signal?: AbortSignal): Promise<ApiEnvelope<{ item: Record<string, unknown> }>> {
+  return postControlAction(`/signals/research/infer?source=${encodeURIComponent(source)}`, signal);
+}
+
+/* 运行选币回测：触发完整研究流水线（训练+推理+信号+复盘），刷新候选与回测数据 */
+export function runQlibPipeline(source = "qlib", signal?: AbortSignal): Promise<ApiEnvelope<{ item: Record<string, unknown> }>> {
+  return postControlAction(`/signals/pipeline/run?source=${encodeURIComponent(source)}`, signal);
+}
+
 export function getDataWorkspaceFallback(symbol?: string, interval?: string, limit?: number): DataWorkspaceModel {
   return {
     status: "unavailable",

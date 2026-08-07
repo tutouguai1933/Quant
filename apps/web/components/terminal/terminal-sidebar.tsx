@@ -35,10 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "研究",
     items: [
       { href: "/", label: "工作台" },
-      { href: "/research", label: "模型训练", protected: true },
-      { href: "/backtest", label: "回测训练", protected: true },
-      { href: "/evaluation", label: "选币回测", protected: true },
-      { href: "/features", label: "因子研究", protected: true },
+      { href: "/pipeline", label: "研究流水线", protected: true },
       { href: "/signals", label: "信号" },
       { href: "/hyperopt", label: "参数优化", protected: true },
       { href: "/analytics", label: "数据分析" },

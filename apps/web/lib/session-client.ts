@@ -12,6 +12,7 @@ const KNOWN_APP_PATHS = new Set([
   "/research",
   "/backtest",
   "/evaluation",
+  "/pipeline",
   "/strategies",
   "/balances",
   "/positions",
