@@ -2316,13 +2316,24 @@ export async function getEvaluationWorkspace(signal?: AbortSignal): Promise<ApiE
   };
 }
 
-/* 通用：通过控制面代理发起 POST 动作（客户端自动带上会话 cookie 鉴权） */
+/* 通用：通过控制面代理发起 POST 动作（客户端显式携带会话令牌鉴权） */
 async function postControlAction<T>(path: string, signal?: AbortSignal): Promise<ApiEnvelope<T>> {
   try {
+    // 先取会话令牌：/api/control/session 是直连 Next 自身路由，会返回当前登录令牌
+    const sessionResponse = await fetch("/api/control/session", { cache: "no-store", signal });
+    const sessionPayload = (await sessionResponse.json()) as { token?: string | null };
+    const token = sessionPayload.token || "";
+
     const url = await resolveControlPlaneUrl(path);
-    const response = await fetch(url, {
+    const separator = url.includes("?") ? "&" : "?";
+    // 注意：/api/control/* 被 next.config 重写到后端，直接透传 query，令牌放 query 与后端签名一致
+    const targetUrl = `${url}${separator}token=${encodeURIComponent(token)}`;
+    const response = await fetch(targetUrl, {
       method: "POST",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       cache: "no-store",
       signal,
     });
