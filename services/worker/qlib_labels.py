@@ -225,6 +225,60 @@ def build_label_rows(
 
 
 # ---------------------------------------------------------------------------
+# 多窗口标签（用于多窗口加权训练）
+# ---------------------------------------------------------------------------
+
+
+def _classify_single_window(
+    close_now: Decimal,
+    closes_ahead: list[Decimal],
+    target_pct: Decimal,
+    stop_pct: Decimal,
+) -> str:
+    """按单窗口判定 buy/sell/watch。
+
+    窗口内每根 close 视为潜在入场价，当前 close 为出场价，
+    按时间顺序先触达 target（盈利）为 buy，先触达 stop（亏损）为 sell。
+    """
+
+    for close in closes_ahead:
+        if not close:
+            continue
+        change = (close_now - close) / close * 100
+        if change >= target_pct:
+            return "buy"
+        if change <= stop_pct:
+            return "sell"
+    return "watch"
+
+
+def build_multi_window_labels(
+    candles: list[dict[str, object]],
+    *,
+    windows: list[int] = (6, 12, 18),
+    target_pct: float = 1.0,
+    stop_pct: float = -1.0,
+) -> dict[int, str]:
+    """对最后一根 K 线按多个窗口分别判定标签。
+
+    返回 {window_bars: label}。用于多窗口加权训练。
+    """
+
+    closes = [Decimal(str(c["close"])) for c in candles]
+    if len(closes) < max(windows) + 1:
+        return {w: "watch" for w in windows}
+    now = closes[-1]
+    target = Decimal(str(target_pct))
+    stop = Decimal(str(stop_pct))
+    result: dict[int, str] = {}
+    for window in windows:
+        # 观察窗口 = 最后一根往前 window 根（不含最后一根本身）
+        ahead = closes[-window - 1 : -1]
+        result[window] = _classify_single_window(now, ahead, target, stop)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 内部辅助函数
 # ---------------------------------------------------------------------------
 

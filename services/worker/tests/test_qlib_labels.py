@@ -210,5 +210,33 @@ class BuildLabelRowsBackwardCompatTests(unittest.TestCase):
         self.assertGreaterEqual(quality.buy_ratio + quality.sell_ratio + quality.watch_ratio, 0.99)
 
 
+class MultiWindowLabelTests(unittest.TestCase):
+    def test_label_spec_supports_multi_window_returns(self) -> None:
+        """多窗口标签：返回 dict[window_bars -> label]。"""
+        from services.worker.qlib_labels import build_multi_window_labels
+
+        candles = [
+            {
+                "open_time": 1000 * i,
+                "close_time": 1000 * (i + 1),
+                "open": "100",
+                "high": "101",
+                "low": "99",
+                "close": str(100 + i),
+                "volume": "10",
+            }
+            for i in range(25)
+        ]
+        result = build_multi_window_labels(
+            candles,
+            windows=[6, 12, 18],
+            target_pct=5.0,
+            stop_pct=-5.0,
+        )
+        self.assertEqual(set(result.keys()), {6, 12, 18})
+        # 最后一根：close 124 vs 6 根前 118 → +5.1% ≥ 5% → buy
+        self.assertEqual(result[6], "buy")
+
+
 if __name__ == "__main__":
     unittest.main()
