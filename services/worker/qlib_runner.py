@@ -88,6 +88,7 @@ class QlibRunner:
         # 计算因子评估
         all_rows = bundle.training_rows + bundle.validation_rows + bundle.backtest_rows
         factor_evaluation = self._build_factor_evaluation(all_rows)
+        disabled_factors_recheck = self._build_disabled_factors_recheck(all_rows)
 
         run_id = self._new_run_id("train")
         generated_at = _utc_now()
@@ -123,6 +124,7 @@ class QlibRunner:
             "validation": validation,
             "backtest": backtest,
             "factor_evaluation": factor_evaluation,
+            "disabled_factors_recheck": disabled_factors_recheck,
             "warnings": self._build_warnings(),
             "artifact_path": str(artifact_path),
             "dataset_snapshot": dataset_snapshot,
@@ -1077,6 +1079,29 @@ class QlibRunner:
             "quantile_nav": quantile_nav,
             "correlation_matrix": correlation_matrix,
         }
+
+    def _build_disabled_factors_recheck(self, rows: list[dict[str, object]]) -> dict[str, object]:
+        """复检静态 enabled=False 的因子：计算最近 IC，供人工决定是否启用。"""
+        from services.worker.qlib_features import FACTOR_DEFINITIONS, evaluate_factor_ic_series
+
+        static_disabled = [
+            item["name"] for item in FACTOR_DEFINITIONS
+            if item.get("role") == "primary" and not item.get("enabled", True)
+        ]
+        result: dict[str, object] = {}
+        if not rows:
+            return {"factors": {}}
+        for factor in static_disabled:
+            sample = [r for r in rows if r.get(factor) is not None]
+            if len(sample) < 10:
+                result[factor] = {"current_ic": None, "sample_count": len(sample)}
+                continue
+            ic_series = evaluate_factor_ic_series(sample, factor_names=[factor])
+            latest_ic = None
+            for entry in ic_series:
+                latest_ic = entry.get("ic")
+            result[factor] = {"current_ic": latest_ic, "sample_count": len(sample)}
+        return {"factors": result}
 
     def _score_signal(self, feature_row: dict[str, object], metrics: dict[str, object]) -> float:
         """根据特征和训练统计生成分数。
