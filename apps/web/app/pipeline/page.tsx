@@ -6,7 +6,7 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 
 import {
@@ -64,6 +64,11 @@ export default function PipelinePage() {
   const [runningStep, setRunningStep] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // 最新数据镜像（供轮询循环读取，避免闭包拿到旧值）
+  const researchWsRef = useRef<ResearchWorkspaceModel | null>(null);
+  const featureWsRef = useRef<FeatureWorkspaceModel | null>(null);
+  const evaluationWsRef = useRef<EvaluationWorkspaceModel | null>(null);
+
   // 获取会话状态
   useEffect(() => {
     fetch("/api/control/session")
@@ -83,15 +88,24 @@ export default function PipelinePage() {
     const nextDegraded: Record<number, boolean> = {};
     if (r1.status === "fulfilled") {
       if (r1.value.error && isTechnicalError(r1.value.error)) nextDegraded[1] = true;
-      if (!r1.value.error) setResearchWorkspace(r1.value.data.item);
+      if (!r1.value.error) {
+        researchWsRef.current = r1.value.data.item;
+        setResearchWorkspace(r1.value.data.item);
+      }
     }
     if (r2.status === "fulfilled") {
       if (r2.value.error && isTechnicalError(r2.value.error)) nextDegraded[2] = true;
-      if (!r2.value.error) setFeatureWorkspace(r2.value.data.item);
+      if (!r2.value.error) {
+        featureWsRef.current = r2.value.data.item;
+        setFeatureWorkspace(r2.value.data.item);
+      }
     }
     if (r3.status === "fulfilled") {
       if (r3.value.error && isTechnicalError(r3.value.error)) nextDegraded[3] = true;
-      if (!r3.value.error) setEvaluationWorkspace(r3.value.data.item);
+      if (!r3.value.error) {
+        evaluationWsRef.current = r3.value.data.item;
+        setEvaluationWorkspace(r3.value.data.item);
+      }
     }
     setStepDegraded(nextDegraded);
   }, []);
@@ -140,13 +154,6 @@ export default function PipelinePage() {
     ];
   })();
 
-  /* ---- 各步骤"是否有数据"的签名，用于判断后台任务完成后数据是否刷新 ---- */
-  const stepSignatures = {
-    1: `${researchWorkspace?.model?.model_version ?? ""}|${researchWorkspace?.model?.train_auc ?? ""}|${researchWorkspace?.model?.val_auc ?? ""}`,
-    2: step2Metrics.map((m) => m.value).join("|"),
-    3: step3Metrics.map((m) => m.value).join("|") + `|${evaluationWorkspace?.candidate_scope?.candidate_symbols?.length ?? 0}`,
-  } as Record<number, string>;
-
   /* ---- 步骤完成状态（用于顶部进度指引） ---- */
   const stepDone = {
     1: (researchWorkspace?.model?.model_version ?? "") !== "",
@@ -154,12 +161,26 @@ export default function PipelinePage() {
     3: evaluationWorkspace?.terminal?.metrics?.length ? true : false,
   } as Record<number, boolean>;
 
+  // 从最新镜像（ref）计算签名，轮询循环里始终读到最新值
+  const readStepSignature = (step: number): string => {
+    if (step === 1) {
+      const ws = researchWsRef.current;
+      return `${ws?.model?.model_version ?? ""}|${ws?.model?.train_auc ?? ""}|${ws?.model?.val_auc ?? ""}`;
+    }
+    if (step === 2) {
+      const metrics = featureWsRef.current?.terminal?.research?.metrics || [];
+      return metrics.map((m) => m.value).join("|");
+    }
+    const metrics = evaluationWsRef.current?.terminal?.metrics || [];
+    return metrics.map((m) => m.value).join("|") + `|${evaluationWsRef.current?.candidate_scope?.candidate_symbols?.length ?? 0}`;
+  };
+
   // 触发后台任务并轮询刷新，直到该步骤数据变化或超时
   const runStep = async (step: number, trigger: () => Promise<unknown>) => {
     if (runningStep !== null || !session.isAuthenticated) return;
     setRunningStep(step);
     setStepMessage((prev) => ({ ...prev, [step]: "正在启动后台任务..." }));
-    const beforeSignature = stepSignatures[step];
+    const beforeSignature = readStepSignature(step);
 
     const res = (await trigger()) as { error?: { message?: string } | null } | undefined;
     const err = res && "error" in res ? res.error : null;
@@ -174,7 +195,7 @@ export default function PipelinePage() {
     for (let round = 0; round < POLL_MAX_ROUNDS; round++) {
       await sleep(POLL_INTERVAL_MS);
       await refreshAll();
-      if (stepSignatures[step] !== beforeSignature) {
+      if (readStepSignature(step) !== beforeSignature) {
         changed = true;
         break;
       }
