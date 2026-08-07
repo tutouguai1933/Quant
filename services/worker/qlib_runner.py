@@ -1021,7 +1021,7 @@ class QlibRunner:
             rows: 所有样本行（训练+验证+测试）
 
         Returns:
-            包含 ic_series 和 quantile_nav 的因子评估结果
+            包含 ic_series、quantile_nav 和 correlation_matrix 的因子评估结果
         """
         if not rows:
             return {

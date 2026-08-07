@@ -39,4 +39,8 @@ def test_factor_evaluation_includes_correlation_matrix():
         })
     evaluation = runner._build_factor_evaluation(rows)
     assert "correlation_matrix" in evaluation
-    assert evaluation["correlation_matrix"]["redundancy_pairs"], "应检出 ema20/ema55 冗余"
+    pairs_set = {
+        frozenset((p["factor_a"], p["factor_b"]))
+        for p in evaluation["correlation_matrix"]["redundancy_pairs"]
+    }
+    assert frozenset(("ema20_gap_pct", "ema55_gap_pct")) in pairs_set
