@@ -175,5 +175,28 @@ class WalkForwardValidatorRunTests(unittest.TestCase):
         self.assertIsInstance(mean_return, float)
 
 
+def test_run_with_model_predictor_uses_predictions():
+    """walk-forward 使用模型预测函数而非恒等比例。"""
+    rows = []
+    for i in range(210):
+        rows.append({
+            "open_time": 1712000000000 + i * 3600000,
+            "generated_at": 1712000000000 + i * 3600000,
+            "future_return_pct": str((i % 10) - 4),
+        })
+
+    calls = {"count": 0}
+
+    def fake_predictor(train_rows, test_rows):
+        calls["count"] += 1
+        return [0.6 if i % 2 == 0 else 0.4 for i in range(len(test_rows))]
+
+    validator = WalkForwardValidator()
+    config = WalkForwardConfig(n_folds=4, min_train_bars=50, gap_bars=6)
+    report = validator.run(fake_predictor, rows, config)
+    assert calls["count"] == 4  # 每折调用一次
+    assert report.folds
+
+
 if __name__ == "__main__":
     unittest.main()
