@@ -100,15 +100,11 @@ class ResearchWorkspaceService:
                 name: dict(value or {})
                 for name, value in sample_window.items()
             },
-            "model": {
-                "model_key": model_key,
-                "model_version": str(
-                    latest_inference.get("model_version")
-                    or latest_training.get("model_version")
-                    or ""
-                ),
-                "backend": str(report.get("backend", "qlib-fallback") or "qlib-fallback"),
-            },
+            "model": self._build_model_view(
+                latest_training=latest_training,
+                latest_inference=latest_inference,
+                report_backend=str(report.get("backend", "qlib-fallback") or "qlib-fallback"),
+            ),
             "artifact_templates": self._build_artifact_templates(
                 option_catalogs=option_catalogs,
                 training_template_key=training_template_key,
@@ -418,6 +414,46 @@ class ResearchWorkspaceService:
             "label_mode": label_mode_item,
             "label_trigger_basis": label_trigger,
             "holding_window": holding_window,
+        }
+
+    @staticmethod
+    def _build_model_view(
+        *,
+        latest_training: dict[str, object],
+        latest_inference: dict[str, object],
+        report_backend: str,
+    ) -> dict[str, object]:
+        """模型视图：从最近训练产物读取真实模型信息，读不到时显示无训练记录而非 heuristic_v1。"""
+
+        metrics = dict(latest_training.get("training_metrics") or latest_training.get("metrics") or {})
+        training_context = dict(latest_training.get("training_context") or {})
+        model_type = str(
+            metrics.get("model_type")
+            or training_context.get("model_type")
+            or ""
+        ).strip()
+        model_version = str(
+            latest_training.get("model_version")
+            or latest_inference.get("model_version")
+            or ""
+        ).strip()
+        backend = str(latest_training.get("backend") or report_backend or "qlib-fallback")
+        if not model_type:
+            return {
+                "model_type": "",
+                "model_key": "",
+                "model_version": model_version,
+                "backend": backend,
+                "has_training_record": False,
+                "note": "无训练记录" if not model_version else "训练产物缺少模型类型",
+            }
+        return {
+            "model_type": model_type,
+            "model_key": model_type,
+            "model_version": model_version,
+            "backend": backend,
+            "has_training_record": True,
+            "note": "",
         }
 
     @staticmethod

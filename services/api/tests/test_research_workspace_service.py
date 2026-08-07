@@ -108,6 +108,47 @@ class ResearchWorkspaceServiceTests(unittest.TestCase):
         self.assertIn("最近训练和推理", item["artifact_templates"]["note"])
 
 
+    def test_model_view_reflects_latest_training(self) -> None:
+        """模型视图应反映最新训练（lightgbm），而非残留的 heuristic_v1。"""
+        service = object.__new__(ResearchWorkspaceService)
+        view = service._build_model_view(
+            latest_training={
+                "metrics": {"model_type": "lightgbm"},
+                "model_version": "qlib-minimal-20260807163614",
+                "backend": "qlib",
+            },
+            latest_inference={},
+            report_backend="qlib",
+        )
+        self.assertEqual(view["model_type"], "lightgbm")
+        self.assertEqual(view["model_key"], "lightgbm")
+        self.assertNotEqual(view["model_key"], "heuristic_v1")
+        self.assertTrue(view["has_training_record"])
+
+    def test_model_view_falls_back_when_no_training_record(self) -> None:
+        """没有训练记录时模型视图显示无训练记录，而不是 heuristic_v1。"""
+        service = object.__new__(ResearchWorkspaceService)
+        view = service._build_model_view(
+            latest_training={},
+            latest_inference={},
+            report_backend="qlib-fallback",
+        )
+        self.assertEqual(view["model_key"], "")
+        self.assertIn("无训练记录", view["note"])
+        self.assertFalse(view["has_training_record"])
+
+    def test_workspace_model_view_reads_from_training_metrics(self) -> None:
+        """工作台 model 视图从最新训练产物读取模型类型，不再用配置里的 heuristic_v1 顶替。"""
+        service = ResearchWorkspaceService(report_reader=_MlTrainedResearchService(), controls_builder=_fake_controls)
+
+        item = service.get_workspace()
+
+        self.assertEqual(item["model"]["model_type"], "lightgbm")
+        self.assertEqual(item["model"]["model_key"], "lightgbm")
+        self.assertEqual(item["model"]["backend"], "qlib")
+        self.assertEqual(item["model"]["model_version"], "qlib-minimal-20260807163614")
+
+
 class _FakeResearchService:
     def get_factory_report(self) -> dict[str, object]:
         return {
@@ -154,6 +195,17 @@ class _FakeResearchService:
                 {"symbol": "BTCUSDT", "strategy_template": "trend_pullback_timing"},
             ],
         }
+
+
+class _MlTrainedResearchService(_FakeResearchService):
+    def get_factory_report(self) -> dict[str, object]:
+        payload = super().get_factory_report()
+        latest_training = dict(payload.get("latest_training") or {})
+        latest_training["model_version"] = "qlib-minimal-20260807163614"
+        latest_training["backend"] = "qlib"
+        latest_training["metrics"] = {"model_type": "lightgbm"}
+        payload["latest_training"] = latest_training
+        return payload
 
 
 class _UnavailableResearchService:
