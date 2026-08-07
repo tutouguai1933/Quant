@@ -41,7 +41,7 @@ class RecoveryRecord:
 
     service_name: str
     action: RecoveryAction
-    status: RecoveryStatus
+    status: RecoveryStatus = RecoveryStatus.SKIPPED
     timestamp: str = ""
     duration_ms: int = 0
     error: str = ""
