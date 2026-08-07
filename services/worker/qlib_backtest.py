@@ -63,6 +63,94 @@ def run_backtest(
     }
 
 
+def simulate_trades(
+    rows: list[dict[str, object]],
+    *,
+    stop_loss_pct: float = -8.0,
+    take_profit_pct: float = 8.0,
+    fee_pct: float = 0.1,
+    max_holding_bars: int = 18,
+) -> dict[str, object]:
+    """逐 K 线模拟交易：信号开仓，止损/止盈/窗口结束平仓。
+
+    每行样本的 future_return_pct 视为"持有一根 K 线的收益率"。
+    遇到 label=buy 开仓，后续每根累计收益；触达 stop_loss 或 take_profit
+    平仓，或持有 max_holding_bars 根后按窗口结束平仓。
+    """
+
+    trades: list[dict[str, object]] = []
+    position: dict[str, object] | None = None
+    nav = 1.0
+    nav_series: list[float] = []
+    peak_nav = 1.0
+    max_drawdown = 0.0
+    wins = 0
+
+    for row in rows:
+        ret = float(row.get("future_return_pct", 0.0) or 0.0)
+        if position is None and str(row.get("label", "")) == "buy":
+            position = {
+                "entry_bar": row.get("generated_at"),
+                "bars_held": 0,
+                "cum_return": -fee_pct,  # 开仓手续费
+            }
+            nav_series.append(nav)  # 开仓当根净值不变，保证序列与样本行数对齐
+            continue
+        if position is not None:
+            position["bars_held"] += 1
+            position["cum_return"] += ret
+            cum = float(position["cum_return"])
+            exit_reason = None
+            if cum <= stop_loss_pct:
+                exit_reason = "stop_loss"
+            elif cum >= take_profit_pct:
+                exit_reason = "take_profit"
+            elif position["bars_held"] >= max_holding_bars:
+                exit_reason = "window_end"
+            if exit_reason:
+                cum -= fee_pct  # 平仓手续费
+                profit = cum
+                nav *= 1 + profit / 100.0
+                if profit > 0:
+                    wins += 1
+                trades.append({
+                    "entry_bar": position["entry_bar"],
+                    "exit_bar": row.get("generated_at"),
+                    "bars_held": position["bars_held"],
+                    "return_pct": round(profit, 4),
+                    "exit_reason": exit_reason,
+                })
+                position = None
+        nav_series.append(nav)
+        peak_nav = max(peak_nav, nav)
+        max_drawdown = max(max_drawdown, (peak_nav - nav) / peak_nav * 100)
+
+    if position is not None:
+        # 序列结束时仍持仓：按当前累计收益平仓
+        profit = float(position["cum_return"]) - fee_pct
+        nav *= 1 + profit / 100.0
+        if profit > 0:
+            wins += 1
+        trades.append({
+            "entry_bar": position["entry_bar"],
+            "exit_bar": "end",
+            "bars_held": position["bars_held"],
+            "return_pct": round(profit, 4),
+            "exit_reason": "end_of_series",
+        })
+
+    total = len(trades)
+    return {
+        "trades": trades,
+        "trades_count": total,
+        "final_nav": round(nav, 4),
+        "max_drawdown_pct": round(max_drawdown, 4),
+        "win_rate": round(wins / total, 4) if total else 0.0,
+        "sharpe": _sharpe_ratio([t["return_pct"] for t in trades]) if total else 0.0,
+        "nav_series": nav_series,
+    }
+
+
 def _resolve_cost_pct(*, fee_bps: Decimal, slippage_bps: Decimal, cost_model: str) -> float:
     """按成本模型计算净收益扣减比例。"""
 

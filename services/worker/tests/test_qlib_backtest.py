@@ -126,6 +126,21 @@ class QlibBacktestTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["direction_switch_count"], "1")
 
 
+def test_simulate_trades_opens_and_closes():
+    """模拟交易：有买入信号时开仓，价格到达止损/止盈时平仓。"""
+    from services.worker.qlib_backtest import simulate_trades
+
+    rows = [
+        {"generated_at": 1000, "label": "buy", "future_return_pct": "0.5"},
+        {"generated_at": 2000, "label": "watch", "future_return_pct": "-2.0"},   # 触发止损
+        {"generated_at": 3000, "label": "watch", "future_return_pct": "3.0"},
+    ]
+    result = simulate_trades(rows, stop_loss_pct=-1.5, take_profit_pct=5.0, fee_pct=0.1)
+    assert result["trades_count"] == 1
+    assert result["trades"][0]["exit_reason"] == "stop_loss"
+    assert result["final_nav"] < 1.0  # 亏损
+
+
 def _sample_ranked_rows() -> list[dict[str, object]]:
     return [
         {"future_return_pct": "2.0000", "label": "buy"},
