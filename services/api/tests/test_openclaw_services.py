@@ -229,6 +229,7 @@ class OpenclawServiceTests(unittest.TestCase):
             health_service=health_service,
         )
         patrol_service._can_execute_action = mock.Mock(return_value=(True, ""))  # type: ignore[method-assign]
+        patrol_service._freqtrade_ping_ok = mock.Mock(return_value=False)  # type: ignore[method-assign]
         recovery = mock.Mock()
         recovery.attempt_recovery.return_value = mock.Mock(
             status="success",
@@ -248,6 +249,38 @@ class OpenclawServiceTests(unittest.TestCase):
         action_service.execute_action.assert_called_once_with("automation_dry_run_only")
         self.assertEqual(result["action"], "automation_dry_run_only")
 
+    def test_freqtrade_ping_fail_triggers_recovery_even_when_snapshot_connected(self) -> None:
+        """快照显示 connected 但 ping 失败（容器死缓存降级场景）也应触发恢复。"""
+        snapshot_service = mock.Mock()
+        snapshot_service.get_snapshot.return_value = {"snapshot_id": "snapshot-1"}
+        action_service = mock.Mock()
+        action_service.execute_action.return_value = {"success": True}
+        health_service = mock.Mock()
+
+        patrol_service = OpenclawPatrolService(
+            snapshot_service=snapshot_service,
+            action_service=action_service,
+            health_service=health_service,
+        )
+        patrol_service._can_execute_action = mock.Mock(return_value=(True, ""))  # type: ignore[method-assign]
+        patrol_service._freqtrade_ping_ok = mock.Mock(return_value=False)  # type: ignore[method-assign]
+        recovery = mock.Mock()
+        recovery.attempt_recovery.return_value = mock.Mock(
+            status="success",
+            action="restart_container",
+        )
+        patrol_service._get_recovery_service = mock.Mock(return_value=recovery)  # type: ignore[method-assign]
+
+        snapshot = {
+            "runtime_guard": {},
+            # 快照缓存降级：容器已死但显示 connected
+            "execution_health": {"connection_status": "connected"},
+        }
+        result = patrol_service._check_service_health(snapshot)
+
+        recovery.attempt_recovery.assert_called_once_with("quant-freqtrade")
+        self.assertEqual(result["action"], "automation_dry_run_only")
+
     def test_freqtrade_recovery_skipped_when_connected(self) -> None:
         """freqtrade 连接正常时不触发自动恢复。"""
         snapshot_service = mock.Mock()
@@ -260,6 +293,7 @@ class OpenclawServiceTests(unittest.TestCase):
             action_service=action_service,
             health_service=health_service,
         )
+        patrol_service._freqtrade_ping_ok = mock.Mock(return_value=True)  # type: ignore[method-assign]
         recovery = mock.Mock()
         patrol_service._get_recovery_service = mock.Mock(return_value=recovery)  # type: ignore[method-assign]
 

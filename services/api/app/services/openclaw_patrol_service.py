@@ -300,8 +300,12 @@ class OpenclawPatrolService:
         execution_health = dict(snapshot.get("execution_health") or {})
         connection_status = str(execution_health.get("connection_status", "connected"))
 
+        # 真实连通性检测：快照 connection_status 有缓存降级（容器死时仍可能显示
+        # connected），直接用 REST ping 确认，避免漏检
+        ping_ok = self._freqtrade_ping_ok()
+
         # 执行器连接异常时，切到 dry_run_only + 自动恢复 freqtrade 容器
-        if connection_status == "error":
+        if connection_status == "error" or not ping_ok:
             action = "automation_dry_run_only"
             can_execute, reason = self._can_execute_action(action)
 
@@ -582,6 +586,22 @@ class OpenclawPatrolService:
             return auto_recovery_service
         except Exception:
             return None
+
+    @staticmethod
+    def _freqtrade_ping_ok() -> bool:
+        """真实检测 freqtrade REST 连通性（ping 9013，绕过快照缓存降级）。"""
+        try:
+            from services.api.app.adapters.freqtrade.client import FreqtradeClient
+            from services.api.app.core.settings import Settings
+
+            client = FreqtradeClient(Settings.from_env())
+            backend = getattr(client, "_backend", None)
+            if backend is None or not hasattr(backend, "ping"):
+                return True  # 无 REST 后端（内存态），不视为异常
+            backend.ping()
+            return True
+        except Exception:
+            return False
 
     def _check_vpn_with_policy(self, controller) -> dict[str, Any]:
         """使用主备策略检查VPN。"""
