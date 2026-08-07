@@ -2533,39 +2533,14 @@ class EvaluationWorkspaceService:
         )
         rejected_count = candidate_count - passed_count
 
-        # 从 leaderboard 提取最佳净收益和最佳回撤
-        best_net_return_pct = 0.0
-        best_max_drawdown_pct = 0.0
-        for item in leaderboard:
-            backtest = dict(item.get("backtest") or {})
-            net_return = float(backtest.get("net_return_pct", 0) or 0)
-            max_drawdown = float(backtest.get("max_drawdown_pct", 0) or 0)
-            if net_return > best_net_return_pct:
-                best_net_return_pct = net_return
-            if max_drawdown > 0 and (best_max_drawdown_pct == 0 or max_drawdown < best_max_drawdown_pct):
-                best_max_drawdown_pct = max_drawdown
-
-        # 构造指标卡
-        metrics = [
-            metric_card("recommended_symbol", "推荐标的", recommended_symbol or "-", format="text"),
-            metric_card("candidate_count", "候选数量", str(candidate_count), format="integer"),
-            metric_card("passed_count", "通过数量", str(passed_count), format="integer"),
-            metric_card("rejected_count", "淘汰数量", str(rejected_count), format="integer"),
-            metric_card(
-                "best_net_return_pct",
-                "最佳净收益",
-                f"{best_net_return_pct:.2f}",
-                format="percent",
-                tone="profit_loss",
-            ),
-            metric_card(
-                "best_max_drawdown_pct",
-                "最佳回撤",
-                f"{best_max_drawdown_pct:.2f}",
-                format="percent",
-                tone="risk",
-            ),
-        ]
+        # 构造指标卡（从 leaderboard 提取）
+        metrics = self._build_terminal_metrics(
+            leaderboard=leaderboard,
+            recommended_symbol=recommended_symbol,
+            candidate_count=candidate_count,
+            passed_count=passed_count,
+            rejected_count=rejected_count,
+        )
 
         # 构造图表：Top 候选净值对比
         top_candidate_nav = terminal_series_service.build_top_candidate_nav_series(report)
@@ -2632,6 +2607,88 @@ class EvaluationWorkspaceService:
             },
             "states": states,
         }
+
+    def _build_terminal_metrics(
+        self,
+        *,
+        leaderboard: list[dict[str, object]],
+        recommended_symbol: str,
+        candidate_count: int,
+        passed_count: int,
+        rejected_count: int,
+    ) -> list[dict[str, object]]:
+        """从 leaderboard 构建 terminal 指标卡（含年化/夏普/超额/换手）。
+
+        指标优先从 backtest.metrics 嵌套结构读取，兼容旧顶层结构。
+        """
+        best_net_return_pct = 0.0
+        best_max_drawdown_pct = 0.0
+        best_sharpe = 0.0
+        best_turnover = 0.0
+        for item in leaderboard:
+            backtest = dict(item.get("backtest") or {})
+            metrics_b = dict(backtest.get("metrics") or {})
+            net_return = float(metrics_b.get("net_return_pct") or backtest.get("net_return_pct", 0) or 0)
+            max_drawdown = float(metrics_b.get("max_drawdown_pct") or backtest.get("max_drawdown_pct", 0) or 0)
+            sharpe = float(metrics_b.get("sharpe") or backtest.get("sharpe", 0) or 0)
+            turnover = float(metrics_b.get("turnover") or backtest.get("turnover", 0) or 0)
+            if net_return > best_net_return_pct:
+                best_net_return_pct = net_return
+            if max_drawdown > 0 and (best_max_drawdown_pct == 0 or max_drawdown < best_max_drawdown_pct):
+                best_max_drawdown_pct = max_drawdown
+            if sharpe > best_sharpe:
+                best_sharpe = sharpe
+            if turnover > best_turnover:
+                best_turnover = turnover
+
+        return [
+            metric_card("recommended_symbol", "推荐标的", recommended_symbol or "-", format="text"),
+            metric_card("candidate_count", "候选数量", str(candidate_count), format="integer"),
+            metric_card("passed_count", "通过数量", str(passed_count), format="integer"),
+            metric_card("rejected_count", "淘汰数量", str(rejected_count), format="integer"),
+            metric_card(
+                "best_net_return_pct",
+                "最佳净收益",
+                f"{best_net_return_pct:.2f}",
+                format="percent",
+                tone="profit_loss",
+            ),
+            metric_card(
+                "annual_return_pct",
+                "年化收益",
+                f"{best_net_return_pct:.2f}",
+                format="percent",
+                tone="profit_loss",
+                caption="简化口径：当前按最佳净收益展示",
+            ),
+            metric_card(
+                "sharpe",
+                "夏普比率",
+                f"{best_sharpe:.2f}",
+                format="decimal",
+            ),
+            metric_card(
+                "excess_return_pct",
+                "超额收益",
+                f"{best_net_return_pct:.2f}",
+                format="percent",
+                tone="profit_loss",
+                caption="基准暂缺，当前按最佳净收益展示",
+            ),
+            metric_card(
+                "turnover",
+                "平均换手",
+                f"{best_turnover:.2f}",
+                format="decimal",
+            ),
+            metric_card(
+                "best_max_drawdown_pct",
+                "最佳回撤",
+                f"{best_max_drawdown_pct:.2f}",
+                format="percent",
+                tone="risk",
+            ),
+        ]
 
 
 evaluation_workspace_service = EvaluationWorkspaceService()
