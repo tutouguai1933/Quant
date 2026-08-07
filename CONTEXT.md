@@ -1,29 +1,30 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-08-07
+> 最后更新：2026-08-08
 
 ---
 
 ## 当前进度
 
-**状态**：因子挖掘优化 5 阶段 14 任务全部完成并部署；服务运行正常
+**状态**：系统优化（可信训练-回测闭环）已部署验证；训练数据 365 天、walk-forward 启用、回测真实模拟、阈值 0.45 全部生效
 
-**本次更新（2026-08-07 晚）**：
+**本次更新（2026-08-08）**：
 
-### 因子挖掘优化（计划：docs/superpowers/plans/2026-08-07-factor-mining.md）
-- **阶段一 因子去冗余**：新增 `build_factor_correlation_matrix`（皮尔逊相关，≥0.8 标记冗余），训练报告携带，前端因子终端展示冗余对
-- **阶段二 标签升级**：多窗口未来标签（6/12/18 根多数票，`build_multi_window_label_rows`，无泄漏）+ 波动率调整收益函数；默认关闭（`QUANT_MULTI_WINDOW_LABELS`）
-- **阶段三 IC 体检闭环**：`FactorRegistry`（运行时因子启停，持久化）+ `FactorIcDoctor`（IC≥0.05 keep / <0.05 downgrade / 负 IC 连续 2 轮 disable），train() 自动体检落地；状态文件落 runtime_root 防污染
-- **阶段四 新维度因子**：横截面相对强弱、taker 主动买量占比、BTC 相关性（新增 2 个进特征列，relative_strength 为工具函数）
-- **阶段五 提速**：ATR/RSI/波动收缩滚动窗口化，build_feature_rows 111s→1.2s（约 100 倍）；禁用因子复检报告（IC 驱动决策）
-- **回归**：49 failed（全为 pre-existing，补装 numpy/lightgbm 后反而少了 15 个），0 新增
+### 系统优化：可信训练-回测闭环（4 并行工作流 16 任务）
+- **数据量**：训练数据 60→365 天（sample_count 837→8372，10 倍）。修复了 market_service 硬编码 days=30 的隐藏瓶颈（store_days 参数透传 lookback_days）
+- **回测**：重写为真实交易模拟（simulate_trades：buy 开仓/止损/止盈/窗口结束平仓/手续费双扣）；run_backtest 字段名兼容，新增 trades_count/final_nav/exit_reasons；max_drawdown_pct 保持负值约定
+- **walk-forward**：启用（QUANT_QLIB_ENABLE_WALK_FORWARD=true），预测函数接真 LightGBM（predictor=ml，4 folds），失败降级恒等比例
+- **阈值**：standard_gate preset 0.55→0.45（与 env 一致）；回测门最小样本保护（防 2 样本造假指标）；模型视图对齐最新训练（清除 heuristic_v1 残留）
+- **验证**：val_auc 0.438→0.525（超过随机线）；回测 120→1263 笔模拟交易
+- **遗留**：回测 nav 复利虚高（take_profit 8% 长序列锁定导致），门控因回撤 -91% 拦截不影响决策，后续可调模拟参数；freqtrade 曾因 Binance 签名接口超时进程死亡（代理抖动），已重启恢复
 
 ### 服务状态
 | 服务 | 状态 |
 |------|------|
-| quant-api | ✅ Healthy（新代码已部署，全部功能验证通过） |
-| quant-freqtrade | ✅ RUNNING |
+| quant-api | ✅ Healthy（新代码已部署） |
+| quant-freqtrade | ✅ RUNNING（重启恢复） |
 | quant-web / openclaw / mihomo | ✅ Healthy |
+| 自动化周期 | auto_dry_run，等待冷却窗口结束 |
 
 **本次更新（2026-08-01）**：
 
