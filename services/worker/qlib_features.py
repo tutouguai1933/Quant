@@ -477,7 +477,7 @@ def _normalize_feature_decimal(name: str, value: object, *, outlier_policy: str)
     return min(max(parsed, lower), upper)
 
 
-def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int] | None:
+def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int | None] | None:
     """把输入 K 线整理成可计算结构。"""
 
     try:
