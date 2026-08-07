@@ -21,6 +21,7 @@ import { FeedbackBanner } from "../../components/feedback-banner";
 import { OpenclawActionConfirmDialog } from "../../components/openclaw-action-confirm-dialog";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
+import { ErrorBanner } from "../../components/error-banner";
 import { readFeedback } from "../../lib/feedback";
 import {
   DEFAULT_API_TIMEOUT,
@@ -48,6 +49,8 @@ export default function TasksPage() {
   const [openclawAuditRecords, setOpenclawAuditRecords] = useState<Array<Record<string, unknown>>>([]);
   const [openclawPatrolHistory, setOpenclawPatrolHistory] = useState<Array<Record<string, unknown>>>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // 降级提示：后端不可达时保留兜底数据渲染，同时标记数据可能不真实
+  const [degradedMessage, setDegradedMessage] = useState<string | null>(null);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
@@ -111,6 +114,10 @@ export default function TasksPage() {
       safeLoad(
         async (signal) => {
           const response = await getAutomationStatus(session.token!, signal);
+          if (response.error) {
+            // 后端不可达：保留兜底数据渲染，记录降级提示供页面顶部展示
+            setDegradedMessage(response.error.message);
+          }
           return { data: { items: [response.data.item] }, error: response.error };
         },
         [],
@@ -230,6 +237,8 @@ export default function TasksPage() {
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
+      {/* 降级提示：后端不可达时页面仍渲染兜底数据，但明确告知用户数据可能不真实 */}
+      {degradedMessage && <ErrorBanner message={degradedMessage} tone="warning" />}
       {isLoading && <LoadingBanner />}
 
       <ArbitrationHandoffCard

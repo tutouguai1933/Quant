@@ -19,6 +19,7 @@ import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-car
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
+import { ErrorBanner } from "../../components/error-banner";
 import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
 import { readFeedback } from "../../lib/feedback";
 import {
@@ -47,6 +48,8 @@ export default function StrategiesPage() {
   const [entryScoreSymbol, setEntryScoreSymbol] = useState<string>("");
   const [entryScoreResult, setEntryScoreResult] = useState<EntryDecisionModel>(getEntryDecisionFallback());
   const [entryScoreLoading, setEntryScoreLoading] = useState(false);
+  // 降级提示：后端不可达时保留兜底数据渲染，同时标记数据可能不真实
+  const [degradedMessage, setDegradedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/control/session")
@@ -76,11 +79,24 @@ export default function StrategiesPage() {
       .then(([workspaceResult, automationResult]) => {
         clearTimeout(timeoutId);
 
-        if (workspaceResult.status === "fulfilled" && workspaceResult.value && !workspaceResult.value.error) {
-          setWorkspace(workspaceResult.value.data);
+        // 收集降级错误信息：数据仍渲染兜底内容，但页面顶部提示用户数据可能不真实
+        const degradedMessages: string[] = [];
+        if (workspaceResult.status === "fulfilled" && workspaceResult.value) {
+          if (workspaceResult.value.error) {
+            degradedMessages.push(`策略工作区：${workspaceResult.value.error.message}`);
+          } else {
+            setWorkspace(workspaceResult.value.data);
+          }
         }
-        if (automationResult.status === "fulfilled" && automationResult.value && !automationResult.value.error) {
-          setAutomation(automationResult.value.data.item);
+        if (automationResult.status === "fulfilled" && automationResult.value) {
+          if (automationResult.value.error) {
+            degradedMessages.push(`自动化状态：${automationResult.value.error.message}`);
+          } else {
+            setAutomation(automationResult.value.data.item);
+          }
+        }
+        if (degradedMessages.length > 0) {
+          setDegradedMessage(degradedMessages.join("；"));
         }
         setIsLoading(false);
       })
@@ -185,6 +201,9 @@ export default function StrategiesPage() {
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
+
+      {/* 降级提示：后端不可达时页面仍渲染兜底数据，但明确告知用户数据可能不真实 */}
+      {degradedMessage && <ErrorBanner message={degradedMessage} tone="warning" />}
 
       <ArbitrationHandoffCard
         arbitration={arbitration}

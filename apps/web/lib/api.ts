@@ -4,6 +4,12 @@ export type ApiEnvelope<T> = {
   meta: Record<string, unknown>;
 };
 
+/** 降级错误标记：后端不可达时 fallback 逻辑返回该错误，页面据此显示"数据暂不可用"提示 */
+export const DEGRADED_DATA_ERROR: { code: string; message: string } = {
+  code: "degraded_data",
+  message: "后端数据暂不可用，可能已重新部署，请刷新或重新登录",
+};
+
 type NavigationItem = {
   href: string;
   label: string;
@@ -1611,10 +1617,10 @@ export async function getStrategyWorkspace(
 ): Promise<ApiEnvelope<StrategyWorkspaceModel>> {
   const response = await fetchJson<Record<string, unknown>>("/strategies/workspace", token, signal);
   if (response.error) {
-    // Return fallback data instead of error for unauthorized/not logged in
+    // 后端不可达（网络抖动/接口瞬时失败）：保留兜底数据供页面渲染，但 error 标记降级状态，页面据此显示"数据暂不可用"提示
     return {
       data: getStrategyWorkspaceFallback(),
-      error: null,
+      error: { ...DEGRADED_DATA_ERROR },
       meta: { fallback: true, source: "strategy-workspace" },
     };
   }
@@ -1875,11 +1881,10 @@ export async function getAutomationStatus(
   try {
     response = await fetchJson<{ item: Record<string, unknown> }>("/tasks/automation", token, signal);
   } catch {
-    // Fetch failed (timeout/network), but we have valid fallback data
-    // Don't return an error - page should work normally with fallback
+    // 请求失败（超时/网络抖动）：保留兜底数据供页面渲染，但 error 标记降级状态，页面据此显示"数据暂不可用"提示
     return {
       data: getAutomationStatusFallback(),
-      error: null,
+      error: { ...DEGRADED_DATA_ERROR },
       meta: {
         source: "automation-status",
         fallback: true,
@@ -1888,10 +1893,10 @@ export async function getAutomationStatus(
   }
 
   if (response.error) {
-    // Return fallback data instead of error for unauthorized/not logged in
+    // 接口返回错误：保留兜底数据供页面渲染，但 error 标记降级状态，页面据此显示"数据暂不可用"提示
     return {
       data: getAutomationStatusFallback(),
-      error: null,
+      error: { ...DEGRADED_DATA_ERROR },
       meta: {
         source: "automation-status",
         fallback: true,
