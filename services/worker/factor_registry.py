@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from pathlib import Path
 
 from services.worker.qlib_features import FACTOR_DEFINITIONS, FACTOR_METADATA
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_STATE_PATH = Path(".runtime/factor_registry.json")
 
@@ -50,7 +53,8 @@ class FactorRegistry:
             with open(self._state_path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
             self._overrides = {str(k): bool(v) for k, v in dict(data.get("overrides", {})).items()}
-        except (json.JSONDecodeError, OSError, IOError):
+        except (json.JSONDecodeError, OSError, IOError) as exc:
+            logger.warning("加载因子注册表状态失败（回退默认）: %s", exc)
             self._overrides = {}
 
     def _save_locked(self) -> None:
@@ -58,8 +62,8 @@ class FactorRegistry:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self._state_path, "w", encoding="utf-8") as fh:
                 json.dump({"overrides": self._overrides}, fh, ensure_ascii=False, indent=2)
-        except (OSError, IOError):
-            pass
+        except (OSError, IOError) as exc:
+            logger.warning("保存因子注册表状态失败: %s", exc)
 
 
 factor_registry = FactorRegistry()
