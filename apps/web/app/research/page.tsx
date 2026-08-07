@@ -200,26 +200,19 @@ export default function ResearchPage() {
     const sampleWindow = workspace.sample_window || {};
     const trainSample = (sampleWindow.training as Record<string, unknown>) || {};
     const testSample = (sampleWindow.test as Record<string, unknown>) || {};
+    const model = (workspace.model as Record<string, unknown>) || {};
+    const trainAuc = model.train_auc as number | undefined;
+    const valAuc = model.val_auc as number | undefined;
 
     return [
       {
-        label: "R² (train)",
-        value: "--",
+        label: "训练 AUC",
+        value: trainAuc != null ? Number(trainAuc).toFixed(3) : "--",
         colorType: "neutral" as const,
       },
       {
-        label: "R² (test)",
-        value: "--",
-        colorType: "neutral" as const,
-      },
-      {
-        label: "IC (train)",
-        value: "--",
-        colorType: "neutral" as const,
-      },
-      {
-        label: "IC (test)",
-        value: "--",
+        label: "验证 AUC",
+        value: valAuc != null ? Number(valAuc).toFixed(3) : "--",
         colorType: "neutral" as const,
       },
       {

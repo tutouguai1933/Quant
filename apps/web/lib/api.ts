@@ -802,6 +802,8 @@ export type ResearchWorkspaceModel = {
     model_key?: string;
     model_version: string;
     backend: string;
+    train_auc?: number | null;
+    val_auc?: number | null;
   };
   artifact_templates: {
     training: {

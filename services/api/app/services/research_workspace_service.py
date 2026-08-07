@@ -99,7 +99,7 @@ class ResearchWorkspaceService:
             "sample_window": {
                 name: dict(value or {})
                 for name, value in sample_window.items()
-            },
+            } | self._build_sample_window_extra(sample_window),
             "model": self._build_model_view(
                 latest_training=latest_training,
                 latest_inference=latest_inference,
@@ -427,6 +427,7 @@ class ResearchWorkspaceService:
 
         metrics = dict(latest_training.get("training_metrics") or latest_training.get("metrics") or {})
         training_context = dict(latest_training.get("training_context") or {})
+        ml_metrics = dict(metrics.get("ml_metrics") or {})
         model_type = str(
             metrics.get("model_type")
             or training_context.get("model_type")
@@ -446,6 +447,8 @@ class ResearchWorkspaceService:
                 "backend": backend,
                 "has_training_record": False,
                 "note": "无训练记录" if not model_version else "训练产物缺少模型类型",
+                "train_auc": None,
+                "val_auc": None,
             }
         return {
             "model_type": model_type,
@@ -454,6 +457,20 @@ class ResearchWorkspaceService:
             "backend": backend,
             "has_training_record": True,
             "note": "",
+            "train_auc": ml_metrics.get("train_auc"),
+            "val_auc": ml_metrics.get("val_auc"),
+        }
+
+    @staticmethod
+    def _build_sample_window_extra(sample_window: dict[str, object]) -> dict[str, object]:
+        """补充 sample_window 缺失的 test 切分（回测段兼任测试段）。"""
+        if "test" in sample_window:
+            return {}
+        backtest = dict(sample_window.get("backtest") or {})
+        if not backtest:
+            return {}
+        return {
+            "test": dict(backtest),
         }
 
     @staticmethod
