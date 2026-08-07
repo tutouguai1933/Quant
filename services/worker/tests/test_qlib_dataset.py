@@ -199,6 +199,31 @@ class QlibDatasetTests(unittest.TestCase):
             )
 
 
+def test_filter_candles_one_year_lookback_keeps_full_window() -> None:
+    """365 天回看：2016 根 4h K 线应全部保留。"""
+
+    from services.worker.qlib_dataset import _filter_candles_by_lookback_days
+
+    import time
+
+    now_ms = int(time.time() * 1000)
+    step_ms = 4 * 3600 * 1000
+    candles = [
+        {
+            "open_time": now_ms - (2015 - i) * step_ms,
+            "close_time": now_ms - (2015 - i) * step_ms + step_ms - 1,
+            "open": "100",
+            "high": "101",
+            "low": "99",
+            "close": "100",
+            "volume": "10",
+        }
+        for i in range(2016)
+    ]
+    filtered = _filter_candles_by_lookback_days(candles, lookback_days=365)
+    assert len(filtered) == 2016
+
+
 def _sample_candles(count: int, *, step_hours: int = 1) -> list[dict[str, object]]:
     """生成最小的时间序列样本。"""
 
