@@ -135,6 +135,21 @@ class DataWorkspaceServiceTests(unittest.TestCase):
         self.assertEqual(item["filters"]["available_intervals"][0], "1m")
         self.assertIn("4h", item["filters"]["available_intervals"])
 
+    def test_workbench_default_lookback_is_one_year(self) -> None:
+        """数据工作台默认回看 365 天（4h 周期换算 2190 根）。"""
+
+        from services.api.app.services.data_workspace_service import _resolve_preview_fetch_limit
+
+        limit = _resolve_preview_fetch_limit(
+            interval="4h",
+            limit=120,
+            lookback_days=365,
+            window_mode="rolling",
+            start_date="",
+            end_date="",
+        )
+        self.assertGreaterEqual(limit, 2190)  # 365天 × 6根/天
+
 
 class _FakeResearchService:
     def get_factory_report(self) -> dict[str, object]:

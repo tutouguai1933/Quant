@@ -50,7 +50,7 @@ class DataWorkspaceService:
         configured_intervals = [str(item) for item in list(configured_data.get("timeframes") or [])]
         normalized_interval = normalize_market_interval(requested_interval or (configured_intervals[0] if configured_intervals else "4h"))
         normalized_limit = max(int(limit or configured_data.get("sample_limit", 200) or 200), 1)
-        lookback_days = max(int(configured_data.get("lookback_days", 30) or 30), 1)
+        lookback_days = max(int(configured_data.get("lookback_days", 365) or 365), 1)
         window_mode = str(configured_data.get("window_mode", "rolling") or "rolling")
         start_date = str(configured_data.get("start_date", "") or "")
         end_date = str(configured_data.get("end_date", "") or "")

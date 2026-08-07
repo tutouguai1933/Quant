@@ -332,7 +332,7 @@ class ResearchService:
         selected_symbols = self._resolve_selected_symbols(data_config=data_config, whitelist=whitelist)
         selected_timeframes = self._resolve_selected_timeframes(data_config=data_config)
         sample_limit = int(data_config.get("sample_limit", 120) or 120)
-        lookback_days = int(data_config.get("lookback_days", 30) or 30)
+        lookback_days = int(data_config.get("lookback_days", 365) or 365)
         window_mode = str(data_config.get("window_mode", "rolling") or "rolling")
         start_date = str(data_config.get("start_date", "") or "")
         end_date = str(data_config.get("end_date", "") or "")
