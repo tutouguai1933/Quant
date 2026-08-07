@@ -17,6 +17,15 @@ from services.api.app.services.auth_service import auth_service
 router = APIRouter(prefix="/api/v1/openclaw", tags=["openclaw"])
 
 
+def _success(data: dict, meta: dict | None = None) -> dict:
+    """统一成功响应包裹（与全站 envelope 约定一致）。"""
+    return {
+        "data": data,
+        "error": None,
+        "meta": meta or {},
+    }
+
+
 def get_snapshot_service() -> OpenclawSnapshotService:
     """获取快照服务实例。"""
     return OpenclawSnapshotService(
@@ -93,10 +102,10 @@ def get_audit_records(limit: int = 10):
     """
     try:
         records = openclaw_audit_service.get_recent_records(limit=limit)
-        return {
-            "items": records,
-            "total": len(records),
-        }
+        return _success(
+            {"items": records, "total": len(records)},
+            {"limit": limit, "source": "openclaw-audit"},
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -158,10 +167,10 @@ def get_patrol_history(limit: int = 10):
     """
     try:
         records = openclaw_patrol_service.get_recent_patrols(limit=limit)
-        return {
-            "items": records,
-            "total": len(records),
-        }
+        return _success(
+            {"items": records, "total": len(records)},
+            {"limit": limit, "source": "openclaw-patrol"},
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
