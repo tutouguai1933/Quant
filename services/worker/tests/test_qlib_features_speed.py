@@ -101,6 +101,28 @@ def test_rolling_rsi_matches_original():
         assert _rsi(window, 14) == _rsi_original(window, 14), f"RSI 不一致 at i={i}"
 
 
+def test_rolling_matches_original_with_random_data():
+    """随机波动数据下滚动实现与原实现仍完全一致（防止窗口截错也能通过）。"""
+    import random
+
+    random.seed(42)
+    candles = []
+    price = Decimal("100")
+    for i in range(120):
+        # 随机振幅的 K 线，制造波动
+        move = Decimal(str(random.uniform(-3, 3)))
+        high = price + Decimal(str(abs(random.uniform(0.5, 2))))
+        low = price - Decimal(str(abs(random.uniform(0.5, 2))))
+        candles.append({"open": price, "high": high, "low": low, "close": price + move, "volume": Decimal("10")})
+        price += move
+    for i in range(1, len(candles) + 1):
+        window = candles[:i]
+        if len(window) >= 2:
+            assert _atr(window, 14) == _atr_original(window, 14), f"ATR 不一致 at i={i}"
+        if len(window) >= 2:
+            assert _rsi(window, 14) == _rsi_original(window, 14), f"RSI 不一致 at i={i}"
+
+
 def test_rolling_atr_speed_smoke():
     """性能冒烟：1000 根 K 线逐根算 ATR 应在 1 秒内。"""
     candles = _make_candles(1000)

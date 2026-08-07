@@ -686,7 +686,7 @@ def _atr(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
     """计算平均真实波幅（滚动窗口实现，输出与原逐根实现完全一致）。
 
     用定长滑动窗口只保留最近 period 个真实波幅，避免为超长序列构建全量列表。
-    period <= 0 时与原始语义一致：取全部真实波幅的均值。
+    period == 0 时与原始语义一致：取全部真实波幅的均值（调用点均经 max(1, ..) 兜底，正常不会出现）。
     """
 
     if not candles:
@@ -714,7 +714,7 @@ def _rsi(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
     """计算 RSI（滚动窗口实现，输出与原逐根实现完全一致）。
 
     用定长滑动窗口只保留最近 period 个涨跌幅度，避免为超长序列构建全量列表。
-    period <= 0 时与原始语义一致：取全部涨跌幅度的均值。
+    period == 0 时与原始语义一致：取全部涨跌幅度的均值（调用点均经 max(1, ..) 兜底，正常不会出现）。
     """
 
     if len(candles) < 2:
