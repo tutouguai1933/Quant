@@ -6,30 +6,24 @@
 
 ## 当前进度
 
-**状态**：全部服务运行中；VPN 故障切换三优化已部署验证；服务器死机根因已修复（构建上下文过大）
+**状态**：因子挖掘优化 5 阶段 14 任务全部完成并部署；服务运行正常
 
-**本次更新（2026-08-07）**：
+**本次更新（2026-08-07 晚）**：
 
-### VPN 故障切换三优化（commit 350a295，已部署验证）
-- **背景**：08-02 起 freqtrade 因 Binance 签名接口超时进入 PAUSED 5 天无交易。根因：探针只测公共接口 ping 发现不了签名接口故障（IP 白名单问题）；切换后无人唤醒 freqtrade（自身重试周期 1 小时）
-- **方案 A**：探针新增签名接口实测（带 key 走代理请求 account 接口），-2015/超时即判不健康；failover 后签名复验
-- **方案 B**：切换后主动调 freqtrade reload_config 恢复；openclaw 巡检检测 freqtrade 连续 2 轮 PAUSED 强制 failover
-- **方案 C**：探测 TTL 30s、阈值 2、观察期 120s（api.env 可调）
-- **验证**：failover 演练切日本² 白名单+签名复验通过，reload_config 生效，回切正常，巡检全绿
+### 因子挖掘优化（计划：docs/superpowers/plans/2026-08-07-factor-mining.md）
+- **阶段一 因子去冗余**：新增 `build_factor_correlation_matrix`（皮尔逊相关，≥0.8 标记冗余），训练报告携带，前端因子终端展示冗余对
+- **阶段二 标签升级**：多窗口未来标签（6/12/18 根多数票，`build_multi_window_label_rows`，无泄漏）+ 波动率调整收益函数；默认关闭（`QUANT_MULTI_WINDOW_LABELS`）
+- **阶段三 IC 体检闭环**：`FactorRegistry`（运行时因子启停，持久化）+ `FactorIcDoctor`（IC≥0.05 keep / <0.05 downgrade / 负 IC 连续 2 轮 disable），train() 自动体检落地；状态文件落 runtime_root 防污染
+- **阶段四 新维度因子**：横截面相对强弱、taker 主动买量占比、BTC 相关性（新增 2 个进特征列，relative_strength 为工具函数）
+- **阶段五 提速**：ATR/RSI/波动收缩滚动窗口化，build_feature_rows 111s→1.2s（约 100 倍）；禁用因子复检报告（IC 驱动决策）
+- **回归**：49 failed（全为 pre-existing，补装 numpy/lightgbm 后反而少了 15 个），0 新增
 
-### 服务器死机根因与修复（commit 2926dcb）
-- **现象**：docker compose build api 执行后整机无响应，需控制台强制重启
-- **根因**：构建上下文含 3.4G 的 infra/data/runtime/qlib（.dockerignore 漏配），BuildKit 打包 4G+ 上下文 + pip 装包，1.6G 内存耗尽
-- **修复**：.dockerignore 加 infra/data；xgboost 改 --no-deps 安装（避免 303MB nvidia-nccl-cu12）；磁盘从 82% 清理到 57%
-- **教训**：服务器仅 1.6G 内存，任何构建/大数据操作都可能 OOM，构建用 nohup 后台执行
-
-### 服务状态（重启后全部恢复）
+### 服务状态
 | 服务 | 状态 |
 |------|------|
-| quant-api | ✅ Healthy（新代码已部署） |
-| quant-freqtrade | ✅ RUNNING（重启后自动恢复，不再 PAUSED） |
+| quant-api | ✅ Healthy（新代码已部署，全部功能验证通过） |
+| quant-freqtrade | ✅ RUNNING |
 | quant-web / openclaw / mihomo | ✅ Healthy |
-| 自动化周期 | auto_dry_run 运行中 |
 
 **本次更新（2026-08-01）**：
 
