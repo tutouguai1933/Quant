@@ -72,6 +72,34 @@ class FactorIcDoctor:
             "assessed_at": time.time(),
         }
 
+    def apply_actions(
+        self,
+        assessment: dict[str, object],
+        *,
+        registry: object | None = None,
+    ) -> dict[str, object]:
+        """把体检动作落地：disable → 注册表禁用。
+
+        disable 动作落地后同时清除该因子的负 IC 轮次记录。
+        """
+        if registry is None:
+            from services.worker.factor_registry import factor_registry
+            registry = factor_registry
+
+        actions = dict(assessment.get("actions") or {})
+        disabled: list[str] = []
+        downgraded: list[str] = []
+        with self._lock:
+            for factor, action in actions.items():
+                if action == "disable":
+                    registry.set_enabled(factor, False)
+                    self._negative_rounds[factor] = 0
+                    disabled.append(factor)
+                elif action == "downgrade":
+                    downgraded.append(factor)
+            self._save_locked()
+        return {"disabled": disabled, "downgraded": downgraded}
+
     def _load(self) -> None:
         if not self._state_path.exists():
             return

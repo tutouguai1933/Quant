@@ -130,6 +130,15 @@ class QlibRunner:
             "training_context": self._build_training_context(bundle=bundle, dataset_snapshot=dataset_snapshot),
             "walk_forward_report": self._build_walk_forward_report(bundle, metrics),
         }
+        # IC 体检：自动禁用连续负 IC 因子
+        try:
+            from services.worker.factor_ic_doctor import FactorIcDoctor
+            doctor = FactorIcDoctor()
+            assessment = doctor.assess(result)
+            applied = doctor.apply_actions(assessment)
+            result["factor_health"] = {"assessment": assessment, "applied": applied}
+        except Exception as exc:
+            result["factor_health"] = {"error": f"ic_doctor_failed: {exc}"}
         result["backtest"]["data_snapshot"] = {
             "snapshot_id": str(dataset_snapshot.get("snapshot_id", "")),
             "cache_signature": str(dataset_snapshot.get("cache_signature", "")),
