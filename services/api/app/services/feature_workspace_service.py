@@ -939,12 +939,13 @@ class FeatureWorkspaceService:
         pairs = list(matrix.get("redundancy_pairs") or [])
         rows: list[dict[str, object]] = []
         for pair in pairs:
+            correlation = float(pair.get("correlation", 0.0) or 0.0)
             rows.append({
                 "factor_a": str(pair.get("factor_a", "")),
                 "factor_b": str(pair.get("factor_b", "")),
-                "correlation": float(pair.get("correlation", 0.0)),
+                "correlation": correlation,
                 "redundant": bool(pair.get("redundant", False)),
-                "detail": f"相关度 {float(pair.get('correlation', 0.0)):.2f}，建议保留 IC 更高者",
+                "detail": f"相关度 {correlation:.2f}，建议保留 IC 更高者",
             })
         return rows
 

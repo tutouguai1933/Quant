@@ -30,7 +30,18 @@ class CorrelationRowsTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["factor_a"], "ema20_gap_pct")
         self.assertEqual(rows[0]["redundant"], True)
+        self.assertEqual(rows[0]["correlation"], 0.99)
+        self.assertIn("相关度 0.99", rows[0]["detail"])
 
     def test_empty_when_no_report(self):
         service = object.__new__(FeatureWorkspaceService)
         self.assertEqual(service._build_correlation_rows({}), [])
+
+    def test_empty_when_factor_evaluation_missing(self):
+        service = object.__new__(FeatureWorkspaceService)
+        self.assertEqual(service._build_correlation_rows({"factor_evaluation": None}), [])
+
+    def test_empty_when_matrix_missing(self):
+        service = object.__new__(FeatureWorkspaceService)
+        report = {"factor_evaluation": {"correlation_matrix": None}}
+        self.assertEqual(service._build_correlation_rows(report), [])
