@@ -2,6 +2,7 @@
 
 import "./globals.css";
 import { ErrorBoundary } from "../components/error-boundary";
+import { SessionGuard } from "../components/session-guard";
 import { WebSocketProvider } from "../lib/websocket-context";
 import { RsiDataProvider } from "../lib/rsi-data-context";
 
@@ -20,6 +21,7 @@ export default function RootLayout({
       <body className="dark min-h-screen bg-background text-foreground antialiased">
         <WebSocketProvider>
           <RsiDataProvider>
+            <SessionGuard />
             <ErrorBoundary>{children}</ErrorBoundary>
           </RsiDataProvider>
         </WebSocketProvider>

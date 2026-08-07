@@ -9,12 +9,14 @@ export async function GET() {
     return NextResponse.json({
       token: session.token,
       isAuthenticated: session.isAuthenticated,
+      hasSessionCookie: session.hasSessionCookie,
     });
   } catch (error) {
     return NextResponse.json(
       {
         token: null,
         isAuthenticated: false,
+        hasSessionCookie: false,
         error: "Failed to get session state",
       },
       { status: 500 }
