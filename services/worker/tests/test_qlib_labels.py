@@ -253,5 +253,18 @@ class MultiWindowLabelTests(unittest.TestCase):
         self.assertEqual(result[3], "sell")
 
 
+class VolatilityAdjustedReturnTests(unittest.TestCase):
+    def test_volatility_adjusted_return_normalizes_by_atr(self) -> None:
+        """波动率调整收益 = 原始收益 / ATR%，低波动期小波动不会误判。"""
+        from services.worker.qlib_labels import volatility_adjusted_return
+
+        # 高波动场景：ATR 5%，收益 3% → 调整后 0.6
+        self.assertAlmostEqual(volatility_adjusted_return(3.0, atr_pct=5.0), 0.6)
+        # 低波动场景：ATR 0.5%，收益 3% → 调整后 6.0（信号更突出）
+        self.assertAlmostEqual(volatility_adjusted_return(3.0, atr_pct=0.5), 6.0)
+        # ATR 为 0 保护
+        self.assertEqual(volatility_adjusted_return(3.0, atr_pct=0.0), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
