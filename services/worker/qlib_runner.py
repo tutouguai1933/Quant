@@ -131,11 +131,17 @@ class QlibRunner:
             "walk_forward_report": self._build_walk_forward_report(bundle, metrics),
         }
         # IC 体检：自动禁用连续负 IC 因子
+        # 状态文件必须落在 runner 的 runtime_root 下（与其余状态一致），
+        # 不能用模块默认的 .runtime/ 相对路径，否则测试/多环境会互相污染。
         try:
             from services.worker.factor_ic_doctor import FactorIcDoctor
-            doctor = FactorIcDoctor()
+            from services.worker.factor_registry import FactorRegistry
+
+            runtime_root = self._config.paths.runtime_root
+            doctor = FactorIcDoctor(state_path=runtime_root / "factor_ic_state.json")
+            registry = FactorRegistry(state_path=runtime_root / "factor_registry.json")
             assessment = doctor.assess(result)
-            applied = doctor.apply_actions(assessment)
+            applied = doctor.apply_actions(assessment, registry=registry)
             result["factor_health"] = {"assessment": assessment, "applied": applied}
         except Exception as exc:
             result["factor_health"] = {"error": f"ic_doctor_failed: {exc}"}
