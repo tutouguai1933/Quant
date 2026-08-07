@@ -172,6 +172,26 @@ FACTOR_DEFINITIONS = (
         "neutral": "1",
         "clip": ("0", "10"),
     },
+    # 新增因子 - taker 主动买量占比
+    {
+        "name": "taker_buy_ratio",
+        "category": "volume",
+        "role": "primary",
+        "kind": "composite",
+        "neutral": "0.5",
+        "clip": ("0", "1"),
+        "description": "taker 主动买量占比，衡量真实买卖力量",
+    },
+    # 新增因子 - BTC 相关性
+    {
+        "name": "btc_correlation",
+        "category": "trend",
+        "role": "primary",
+        "kind": "composite",
+        "neutral": "0",
+        "clip": ("-1", "1"),
+        "description": "与BTC的收益率相关性，判断市场联动程度",
+    },
     {
         "name": "rsi14",
         "category": "oscillator",
@@ -283,6 +303,7 @@ def build_feature_rows(
     outlier_policy: str = DEFAULT_OUTLIER_POLICY,
     normalization_policy: str = DEFAULT_NORMALIZATION_POLICY,
     timeframe_profiles: dict[str, dict[str, int | str]] | None = None,
+    btc_closes: list[float] | None = None,
 ) -> list[dict[str, object]]:
     """把 K 线样本转成统一因子行。"""
 
@@ -347,6 +368,8 @@ def build_feature_rows(
             "volatility_contraction": volatility_contraction,
             "volume_price_divergence": volume_price_divergence,
             "bull_bear_ratio": bull_bear_ratio,
+            "taker_buy_ratio": compute_taker_buy_ratio(float(candle["volume"]), candle.get("taker_buy_base_volume")),
+            "btc_correlation": compute_btc_correlation([float(c["close"]) for c in valid_candles], btc_closes or []),
             "rsi14": rsi14,
             "cci20": cci20,
             "stoch_k14": stoch_k14,
@@ -363,6 +386,46 @@ def build_feature_rows(
         outlier_policy=outlier_policy,
         normalization_policy=normalization_policy,
     )
+
+
+def compute_relative_strength(
+    symbol: str,
+    symbol_returns: dict[str, float],
+    *,
+    window: int = 20,
+) -> float:
+    """横截面相对强弱：该币 window 根收益相对全体币收益中位数的偏离。
+
+    正值表示强于市场平均，负值表示弱于市场平均。
+    """
+    if symbol not in symbol_returns:
+        return 0.0
+    values = list(symbol_returns.values())
+    if len(values) < 2:
+        return 0.0
+    median = sorted(values)[len(values) // 2]
+    return float(symbol_returns[symbol]) - float(median)
+
+
+def compute_taker_buy_ratio(volume: float, taker_buy: float | None) -> float:
+    """taker 主动买量占比，值域 [0,1]，缺失或零成交量返回 0.5 中性。"""
+    if taker_buy is None or volume is None or float(volume) <= 0:
+        return 0.5
+    ratio = float(taker_buy) / float(volume)
+    return max(0.0, min(1.0, ratio))
+
+
+def compute_btc_correlation(coin_closes: list[float], btc_closes: list[float]) -> float:
+    """最近 20 根该币与 BTC 的收益率相关性，值域 [-1, 1]，数据不足返回 0。"""
+    if len(coin_closes) < 3 or len(btc_closes) < 3:
+        return 0.0
+    n = min(len(coin_closes), len(btc_closes))
+    coin_ret = [coin_closes[i] / coin_closes[i - 1] - 1 for i in range(max(1, n - 20), n) if coin_closes[i - 1]]
+    btc_ret = [btc_closes[i] / btc_closes[i - 1] - 1 for i in range(max(1, n - 20), n) if btc_closes[i - 1]]
+    if len(coin_ret) < 2 or len(btc_ret) != len(coin_ret):
+        return 0.0
+    corr = _compute_ic(coin_ret, btc_ret)
+    return round(corr or 0.0, 4)
 
 
 def _apply_feature_protocol(
@@ -424,6 +487,7 @@ def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int] | N
             "low": Decimal(str(candle["low"])),
             "close": Decimal(str(candle["close"])),
             "volume": Decimal(str(candle["volume"])),
+            "taker_buy_base_volume": candle.get("taker_buy_base_volume"),
             "open_time": int(candle.get("open_time") or candle["close_time"]),
             "close_time": int(candle["close_time"]),
         }
