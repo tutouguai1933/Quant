@@ -2,7 +2,7 @@
 
 > 本文档记录运维过程中遇到的问题和解决方案，避免重复踩坑。
 >
-> **最后更新：2026-05-23**
+> **最后更新：2026-08-07**
 
 ---
 
@@ -844,4 +844,68 @@ docker ps --format 'table {{.Names}}\t{{.Status}}' | grep freqtrade
 4. **代理出口IP**：JP1是154.31.113.7，已在Binance白名单
 5. **飞书推送**：Webhook已配置，测试命令`POST /api/v1/feishu/test`
 6. **VPN告警**：alert_push_service import问题已修复
+
+---
+
+## 12. 最新变更（2026-08-07）
+
+### 12.1 服务器死机：docker build 内存耗尽（构建上下文过大）
+
+**现象**：`docker compose build api` 执行数分钟后，整台服务器失去响应（SSH banner 超时、9011/9012 全断），需阿里云控制台强制重启实例
+
+**根因**：构建上下文打包了整个仓库根目录（compose build context 是 `../..`），而 `.dockerignore` 漏了 `infra/data` —— 其中 `infra/data/runtime/qlib` 有 **3.4G** 的 ML 训练产物。BuildKit 压缩/传输 4G+ 上下文 + pip 安装大包，在 **1.6G 内存**的服务器上（容器已占 ~780M）内存耗尽，swap 打满，整机无响应
+
+**解决**：
+- `.dockerignore` 增加 `infra/data`（构建上下文 4G → ~400M）
+- 注意：qlib 数据运行时通过挂载进容器（`../data/runtime:/app/.runtime`），**不需要进构建镜像**，排除后无副作用
+
+**预防**：
+- 部署前检查构建上下文大小：`du -sh --exclude='.git' /home/djy/Quant`
+- 构建尽量用 nohup 后台执行避免 SSH 断连：`nohup bash -c 'cd infra/deploy && docker compose build api && docker compose up -d --no-deps api && docker compose restart api' > /tmp/build_api.log 2>&1 &`
+- 服务器内存仅 1.6G，构建时避免同时跑大任务
+
+### 12.2 构建拉取 303MB 无用 CUDA 依赖
+
+**现象**：构建 pip 安装阶段卡在下载 `nvidia-nccl-cu12`（303MB），源速度慢时耗时很长
+
+**根因**：xgboost 3.x 的 wheel 强制依赖 `nvidia-nccl-cu12`（仅 CUDA 需要），服务器无 GPU
+
+**解决**：Dockerfile 中 xgboost 单独用 `--no-deps` 安装，numpy/scipy 由 scikit-learn 传递提供：
+```dockerfile
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
+    pip install --no-cache-dir --no-deps "xgboost>=2.0.0"
+```
+
+### 12.3 磁盘占用清理（82% → 57%）
+
+**排查命令**：
+```bash
+docker system df                    # 镜像/缓存占用
+du -sh /var/log/journal             # journal 日志
+journalctl --vacuum-size=200M       # 限制日志（需配合 SystemMaxUse 配置）
+```
+
+**清理结果**：
+| 项目 | 清理前 | 清理后 |
+|------|--------|--------|
+| 悬空镜像 + 构建缓存 | 7.5G | 已清（`docker image prune -f` + `docker builder prune -f`） |
+| journal 日志 | 1.8G | 124M（journald.conf 配 `SystemMaxUse=200M` + 手动删旧归档） |
+
+**注意**：
+- `infra/data/runtime/qlib`（3.4G）是 ML 训练数据，**不能删**
+- 无 sudo 权限时可用 docker 容器挂载方式清理：`docker run --rm --privileged -v /var/log/journal:/var/log/journal alpine sh -c 'rm -f /var/log/journal/*/*.journal~'`
+
+### 12.4 VPN 故障切换三优化（commit 350a295）
+
+**背景**：08-02 起 freqtrade 因 Binance 签名接口超时进入 PAUSED，代理探针只测公共接口 ping 发现不了，且切换后无人唤醒 freqtrade，导致 5 天无交易
+
+**优化**：
+- **方案 A**：探针新增签名接口实测（走 7890 出口带 key 请求 Binance account 接口），-2015/超时即判主节点不健康；failover 切换后签名复验，避免切到"ping 通但签名不通"的假健康节点
+- **方案 B**：切换成功后主动调 freqtrade `reload_config` 恢复 PAUSED（不等 1 小时重试周期）；openclaw 巡检检测 freqtrade 连续 2 轮 PAUSED 时强制执行 failover
+- **方案 C**：探测缓存 TTL 120s→30s、失败/恢复阈值 3→2、观察期 120s，全部走 `QUANT_VPN_*` 环境变量可调（见 api.env）
+
+**验证**（已通过）：
+- 签名实测 508ms 通过；failover 演练切到日本²（出口 45.95.212.80 白名单通过）
+- freqtrade 日志确认 `reload_config` 触发并恢复 RUNNING
+- 回切日本¹ 成功，巡检全绿
 7. **容器健康检查**：Freqtrade必须配置health-cmd参数

@@ -1,12 +1,35 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-08-01
+> 最后更新：2026-08-07
 
 ---
 
 ## 当前进度
 
-**状态**：全部服务已恢复运行，自动化周期已恢复，等待下一轮周期验证
+**状态**：全部服务运行中；VPN 故障切换三优化已部署验证；服务器死机根因已修复（构建上下文过大）
+
+**本次更新（2026-08-07）**：
+
+### VPN 故障切换三优化（commit 350a295，已部署验证）
+- **背景**：08-02 起 freqtrade 因 Binance 签名接口超时进入 PAUSED 5 天无交易。根因：探针只测公共接口 ping 发现不了签名接口故障（IP 白名单问题）；切换后无人唤醒 freqtrade（自身重试周期 1 小时）
+- **方案 A**：探针新增签名接口实测（带 key 走代理请求 account 接口），-2015/超时即判不健康；failover 后签名复验
+- **方案 B**：切换后主动调 freqtrade reload_config 恢复；openclaw 巡检检测 freqtrade 连续 2 轮 PAUSED 强制 failover
+- **方案 C**：探测 TTL 30s、阈值 2、观察期 120s（api.env 可调）
+- **验证**：failover 演练切日本² 白名单+签名复验通过，reload_config 生效，回切正常，巡检全绿
+
+### 服务器死机根因与修复（commit 2926dcb）
+- **现象**：docker compose build api 执行后整机无响应，需控制台强制重启
+- **根因**：构建上下文含 3.4G 的 infra/data/runtime/qlib（.dockerignore 漏配），BuildKit 打包 4G+ 上下文 + pip 装包，1.6G 内存耗尽
+- **修复**：.dockerignore 加 infra/data；xgboost 改 --no-deps 安装（避免 303MB nvidia-nccl-cu12）；磁盘从 82% 清理到 57%
+- **教训**：服务器仅 1.6G 内存，任何构建/大数据操作都可能 OOM，构建用 nohup 后台执行
+
+### 服务状态（重启后全部恢复）
+| 服务 | 状态 |
+|------|------|
+| quant-api | ✅ Healthy（新代码已部署） |
+| quant-freqtrade | ✅ RUNNING（重启后自动恢复，不再 PAUSED） |
+| quant-web / openclaw / mihomo | ✅ Healthy |
+| 自动化周期 | auto_dry_run 运行中 |
 
 **本次更新（2026-08-01）**：
 
