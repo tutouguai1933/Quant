@@ -17,7 +17,7 @@ from services.worker.qlib_dataset import DatasetBundle  # noqa: E402
 from services.worker.qlib_features import AUXILIARY_FEATURE_COLUMNS, PRIMARY_FEATURE_COLUMNS  # noqa: E402
 from services.worker.qlib_features import FEATURE_COLUMNS, build_feature_rows  # noqa: E402
 from services.worker.qlib_labels import LABEL_COLUMNS, build_label_rows  # noqa: E402
-from services.worker.qlib_runner import QlibRunner  # noqa: E402
+from services.worker.qlib_runner import QlibRunner, TrainingBundle  # noqa: E402
 
 
 class QlibConfigTests(unittest.TestCase):
@@ -1027,6 +1027,53 @@ class QlibRunnerTests(unittest.TestCase):
                 )
 
         self.assertIn("完整验证和回测结果", str(ctx.exception))
+
+    def test_walk_forward_report_built_when_enabled(self) -> None:
+        """开启 walk-forward 后训练报告包含 folds，且预测接入真模型。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            config = load_qlib_config(
+                env={
+                    "QUANT_QLIB_RUNTIME_ROOT": str(Path(tmp) / "runtime"),
+                    "QUANT_QLIB_ENABLE_WALK_FORWARD": "true",
+                },
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            rows = [
+                {
+                    "generated_at": 1712000000000 + i * 3600000,
+                    "future_return_pct": "1.5" if i % 2 == 0 else "0.5",
+                    "ema20_gap_pct": str(1 + (i % 10) * 0.1),
+                    "ema55_gap_pct": str(2 + (i % 7) * 0.1),
+                    "body_pct": "1",
+                    "volume_ratio": str(1 + (i % 5) * 0.1),
+                    "trend_gap_pct": str(1 + (i % 9) * 0.1),
+                    "breakout_strength": "1",
+                    "trend_strength": "1",
+                    "volatility_contraction": "50",
+                    "volume_price_divergence": "0",
+                    "bull_bear_ratio": "1",
+                    "rsi14": "50",
+                    "cci20": "0",
+                    "stoch_k14": "50",
+                }
+                for i in range(500)
+            ]
+            bundle = TrainingBundle(
+                symbol_bundles={},
+                training_rows=rows,
+                validation_rows=[],
+                backtest_rows=[],
+                feature_columns=config.primary_feature_columns,
+                auxiliary_feature_columns=(),
+                label_columns=("future_return_pct",),
+                factor_protocol={},
+            )
+            report = runner._build_walk_forward_report(bundle, {})
+            self.assertIsNotNone(report)
+            self.assertTrue(report["folds"])
+            # 预测必须接入真模型，而非恒等正比例
+            self.assertEqual(report["predictor"], "ml")
 
 
 def _sample_candles() -> list[dict[str, object]]:

@@ -1019,7 +1019,22 @@ class QlibRunner:
         )
         validator = WalkForwardValidator()
 
+        # 记录实际使用的预测方式（真模型 / 恒等比例降级）
+        predictor_state = {"predictor": "heuristic"}
+
         def _predict(train_rows: list[dict], test_rows: list[dict]) -> list[float]:
+            """每折预测：优先用真实 ML 模型，失败时降级为恒等正比例。"""
+            model_type = str(self._config.model_type)
+            if model_type in ("lightgbm", "xgboost"):
+                try:
+                    probs = self._walk_forward_model_predict(train_rows, test_rows, model_type)
+                    predictor_state["predictor"] = "ml"
+                    return probs
+                except Exception as exc:
+                    import logging
+                    logging.getLogger("qlib_runner").warning(
+                        f"walk-forward 模型预测失败，降级为恒等比例: {exc}"
+                    )
             train_returns = [_to_float(r.get("future_return_pct", 0)) for r in train_rows]
             pos_rate = sum(1 for v in train_returns if v > 0) / max(len(train_returns), 1)
             return [pos_rate] * len(test_rows)
@@ -1031,9 +1046,64 @@ class QlibRunner:
                 "summary": report.summary,
                 "enabled": self._config.enable_walk_forward,
                 "gate_use_walk_forward": self._config.gate_use_walk_forward,
+                "predictor": predictor_state["predictor"],
             }
         except Exception:
             return None
+
+    def _walk_forward_model_predict(
+        self,
+        train_rows: list[dict],
+        test_rows: list[dict],
+        model_type: str,
+    ) -> list[float]:
+        """用轻量 ML 模型对 walk-forward 的 test_rows 预测正类概率。
+
+        Args:
+            train_rows: 本折训练行（含 future_return_pct 标签）
+            test_rows: 本折待预测行
+            model_type: lightgbm / xgboost
+
+        Returns:
+            每行正类概率列表。
+
+        Raises:
+            训练或预测失败时抛出，由调用方降级处理。
+        """
+        from services.worker.ml.trainer import ModelTrainer
+
+        import numpy as np
+
+        feature_columns = self._active_primary_feature_columns()
+        if not feature_columns:
+            raise ValueError("无可用因子列")
+
+        # 末尾切出约 20% 作为验证集供早停；样本太少则不分验证集
+        val_cut = max(10, len(train_rows) // 5)
+        if len(train_rows) > val_cut * 2:
+            wf_train, wf_val = train_rows[:-val_cut], train_rows[-val_cut:]
+        else:
+            wf_train, wf_val = train_rows, []
+
+        trainer = ModelTrainer(
+            model_type=model_type,
+            model_params=dict(self._config.model_params),
+            label_column="future_return_pct",
+            label_threshold=float(self._config.model_label_threshold),
+        )
+        result = trainer.train(
+            training_rows=wf_train,
+            validation_rows=wf_val,
+            feature_columns=feature_columns,
+        )
+
+        # 因子列缺失时兜底为 0 值，与训练端 _prepare_data 行为一致
+        X_test = np.array(
+            [[_to_float(r.get(col, 0)) for col in feature_columns] for r in test_rows],
+            dtype=np.float64,
+        )
+        proba = result.model.predict_proba(X_test)
+        return [float(p) for p in proba[:, 1]]
 
     def _build_factor_evaluation(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """构建因子评估数据。
