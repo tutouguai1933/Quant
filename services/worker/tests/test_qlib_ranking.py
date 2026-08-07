@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from services.worker.qlib_ranking import rank_candidates  # noqa: E402
+from services.worker.qlib_ranking import _evaluate_backtest_gate, rank_candidates  # noqa: E402
 
 
 class QlibRankingTests(unittest.TestCase):
@@ -580,6 +580,56 @@ class QlibRankingTests(unittest.TestCase):
         self.assertFalse(result["items"][0]["allowed_to_live"])
         self.assertEqual(result["items"][0]["live_gate"]["status"], "failed")
         self.assertIn("live_win_rate_too_low", result["items"][0]["live_gate"]["reasons"])
+
+
+    def test_backtest_gate_rejects_tiny_trade_count(self) -> None:
+        """交易笔数过少时回测门直接拦截（防止2笔交易造出100%胜率假指标）。"""
+        from services.worker.qlib_ranking import _evaluate_backtest_gate
+
+        thresholds = {
+            "dry_run_min_sample_count": 20,
+            "dry_run_min_net_return_pct": "0",
+            "dry_run_min_sharpe": "0.25",
+            "dry_run_max_drawdown_pct": "15",
+            "dry_run_min_win_rate": "0.5",
+            "dry_run_max_turnover": "0.6",
+            "dry_run_max_loss_streak": "3",
+        }
+        metrics = {
+            "trades_count": "2",
+            "sample_count": "24",
+            "net_return_pct": "5.0",
+            "sharpe": "44.0",
+            "win_rate": "1.0",
+            "max_drawdown_pct": "0",
+        }
+        result = _evaluate_backtest_gate(metrics, thresholds=thresholds)
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(any("insufficient" in r or "样本" in r for r in result["reasons"]))
+
+    def test_backtest_gate_passes_with_enough_trades(self) -> None:
+        """交易笔数充足时回测门正常放行。"""
+        from services.worker.qlib_ranking import _evaluate_backtest_gate
+
+        thresholds = {
+            "dry_run_min_sample_count": 20,
+            "dry_run_min_net_return_pct": "0",
+            "dry_run_min_sharpe": "0.25",
+            "dry_run_max_drawdown_pct": "15",
+            "dry_run_min_win_rate": "0.5",
+            "dry_run_max_turnover": "0.6",
+            "dry_run_max_loss_streak": "3",
+        }
+        metrics = {
+            "trades_count": "24",
+            "sample_count": "24",
+            "net_return_pct": "5.0",
+            "sharpe": "1.0",
+            "win_rate": "0.6",
+            "max_drawdown_pct": "-3.0",
+        }
+        result = _evaluate_backtest_gate(metrics, thresholds=thresholds)
+        self.assertEqual(result["status"], "passed")
 
 
 def _passing_metrics() -> dict[str, str]:

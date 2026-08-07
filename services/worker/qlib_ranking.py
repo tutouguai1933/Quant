@@ -190,7 +190,16 @@ def _apply_recommendation_order(items: list[dict[str, object]]) -> list[dict[str
 
 
 def _evaluate_backtest_gate(metrics: dict[str, object], *, thresholds: dict[str, Decimal | int]) -> dict[str, object]:
-    """根据最小回测指标判断是否允许进入 dry-run。"""
+    """根据最小回测指标判断是否允许进入 dry-run，样本/交易笔数过少时直接拦截。"""
+
+    # 最小样本保护：交易笔数不足时指标没有统计意义（例如 2 笔就能造出 100% 胜率假指标）
+    raw_trade_count = metrics.get("trades_count")
+    if raw_trade_count is None:
+        raw_trade_count = metrics.get("sample_count")
+    sample_count_guard = int(str(raw_trade_count or "0"))
+    min_sample_guard = int(thresholds["dry_run_min_sample_count"])
+    if sample_count_guard < min_sample_guard:
+        return {"status": "failed", "reasons": [f"insufficient_trades (模拟交易 {sample_count_guard} 笔 < 最少 {min_sample_guard} 笔)"]}
 
     total_return_pct = _to_decimal(metrics.get("net_return_pct") or metrics.get("total_return_pct"))
     max_drawdown_pct = _to_decimal(metrics.get("max_drawdown_pct"))
