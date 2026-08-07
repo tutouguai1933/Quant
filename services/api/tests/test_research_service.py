@@ -830,6 +830,7 @@ class _FakeMarketReader:
         interval: str = "1h",
         limit: int = 120,
         allowed_symbols: tuple[str, ...] | None = None,
+        store_days: int | None = None,
     ) -> dict[str, object]:
         self.calls.append((symbol, interval, limit))
         base_price = 100 if symbol == "BTCUSDT" else 50
@@ -861,6 +862,7 @@ class _AlwaysEmptyMarketReader:
         interval: str = "1h",
         limit: int = 120,
         allowed_symbols: tuple[str, ...] | None = None,
+        store_days: int | None = None,
     ) -> dict[str, object]:
         self.calls.append((symbol, interval, limit))
         return {
@@ -878,6 +880,7 @@ class _EmptyThenReadyMarketReader(_AlwaysEmptyMarketReader):
         interval: str = "1h",
         limit: int = 120,
         allowed_symbols: tuple[str, ...] | None = None,
+        store_days: int | None = None,
     ) -> dict[str, object]:
         self.calls.append((symbol, interval, limit))
         if len(self.calls) == 1:

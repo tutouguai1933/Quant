@@ -140,8 +140,13 @@ class MarketService:
         interval: str = "4h",
         limit: int = 200,
         allowed_symbols: tuple[str, ...] | None = None,
+        store_days: int | None = None,
     ) -> dict[str, object]:
-        """返回指定币种的标准化图表数据。"""
+        """返回指定币种的标准化图表数据。
+
+        store_days: KlineStore 读取窗口天数，None 时用默认 30。
+        研究链路传入 lookback_days 以支持长窗口训练数据。
+        """
 
         normalized_symbol = symbol.strip().upper()
         active_interval = normalize_market_interval(interval)
@@ -155,6 +160,7 @@ class MarketService:
                     interval=active_interval,
                     limit=limit,
                     allowed_symbols=allowed_symbols,
+                    store_days=store_days,
                 )
                 strategy_context = _build_empty_strategy_context(normalized_symbol, "symbol_not_in_market_whitelist")
                 markers = build_empty_marker_groups()
@@ -182,6 +188,7 @@ class MarketService:
             interval=active_interval,
             limit=limit,
             allowed_symbols=allowed_symbols,
+            store_days=store_days,
         )
         items = list(chart.get("items", []))
         if not items:
@@ -275,6 +282,7 @@ class MarketService:
         interval: str,
         limit: int,
         allowed_symbols: tuple[str, ...] | None,
+        store_days: int | None = None,
     ) -> dict[str, object]:
         """读取不带策略上下文的原始图表数据。"""
 
@@ -295,7 +303,7 @@ class MarketService:
                 bars = self.get_klines_with_store(
                     symbol=symbol,
                     interval=interval,
-                    days=30,
+                    days=store_days if store_days is not None else 30,
                 )
                 if bars:
                     # store 返回升序（旧→新），取最新 limit 根

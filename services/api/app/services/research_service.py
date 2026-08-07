@@ -365,6 +365,7 @@ class ResearchService:
                     interval="1h",
                     limit=limit_1h,
                     allowed_symbols=tuple(whitelist),
+                    store_days=lookback_days,
                 )
                 candles_1h = list(chart_1h.get("items", []))
                 cache_summary["request_count"] += 1
@@ -384,6 +385,7 @@ class ResearchService:
                     interval="4h",
                     limit=limit_4h,
                     allowed_symbols=tuple(whitelist),
+                    store_days=lookback_days,
                 )
                 candles_4h = list(chart_4h.get("items", []))
                 cache_summary["request_count"] += 1
@@ -403,6 +405,7 @@ class ResearchService:
                     interval="15m",
                     limit=limit_15m,
                     allowed_symbols=tuple(whitelist),
+                    store_days=lookback_days,
                 )
                 candles_15m = list(chart_15m.get("items", []))
                 cache_summary["request_count"] += 1
@@ -471,6 +474,7 @@ class ResearchService:
         interval: str,
         limit: int,
         allowed_symbols: tuple[str, ...],
+        store_days: int | None = None,
     ) -> tuple[dict[str, object], bool]:
         """优先复用已读取的市场图表数据。"""
 
@@ -478,6 +482,7 @@ class ResearchService:
             symbol.strip().upper(),
             interval,
             limit,
+            store_days,
             tuple(sorted(item.strip().upper() for item in allowed_symbols)),
         )
         cached = self._market_cache.get(cache_key)
@@ -488,6 +493,7 @@ class ResearchService:
             interval=interval,
             limit=limit,
             allowed_symbols=allowed_symbols,
+            store_days=store_days,
         )
         items = list(chart.get("items", []))
         if items:
