@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from decimal import Decimal, InvalidOperation
 from statistics import mean, pstdev
 
@@ -320,10 +321,84 @@ def build_feature_rows(
     rolling_highs: list[Decimal] = []
     previous_close = valid_candles[0]["close"]
 
+    # 滚动窗口状态（增量维护，结果与逐根调用 _atr/_rsi/_volatility_contraction 完全一致）
+    atr_period = int(profile["atr_period"])
+    rsi_period = int(profile["rsi_period"])
+    atr_window: deque[Decimal] = deque(maxlen=atr_period)
+    atr_previous_close: Decimal | None = None
+    rsi_gains: deque[Decimal] = deque(maxlen=rsi_period)
+    rsi_losses: deque[Decimal] = deque(maxlen=rsi_period)
+    rsi_previous_close: Decimal | None = None
+    vc_period = 14  # 波动收缩因子固定使用 14 根窗口（与原实现一致）
+    vc_window: deque[Decimal] = deque(maxlen=vc_period)
+    vc_previous_close: Decimal | None = None
+    vc_atr_means: list[Decimal] = []  # 各前缀长度的滚动 ATR
+    vc_avg_sum = Decimal("0")  # 前缀长度大于 vc_period 的滚动 ATR 累计和
+    vc_avg_count = 0
+
     for index, candle in enumerate(valid_candles):
         rolling_closes.append(candle["close"])
         rolling_volumes.append(candle["volume"])
         rolling_highs.append(candle["high"])
+
+        # --- 滚动 ATR：等价于 _atr(valid_candles[:index+1], atr_period) ---
+        current_high = candle["high"]
+        current_low = candle["low"]
+        if atr_previous_close is None:
+            atr_window.append(current_high - current_low)
+        else:
+            atr_window.append(
+                max(
+                    current_high - current_low,
+                    abs(current_high - atr_previous_close),
+                    abs(current_low - atr_previous_close),
+                )
+            )
+        atr_previous_close = candle["close"]
+        atr_value = _mean(list(atr_window))
+
+        # --- 滚动 RSI：等价于 _rsi(valid_candles[:index+1], rsi_period) ---
+        if rsi_previous_close is not None:
+            rsi_change = candle["close"] - rsi_previous_close
+            if rsi_change > 0:
+                rsi_gains.append(rsi_change)
+            elif rsi_change < 0:
+                rsi_losses.append(-rsi_change)
+        rsi_previous_close = candle["close"]
+        average_gain = _mean(list(rsi_gains))
+        average_loss = _mean(list(rsi_losses))
+        if average_gain == 0 and average_loss == 0:
+            rsi_value = Decimal("50")
+        elif average_loss == 0:
+            rsi_value = Decimal("100")
+        else:
+            relative_strength = average_gain / average_loss
+            rsi_value = Decimal("100") - (Decimal("100") / (Decimal("1") + relative_strength))
+
+        # --- 滚动波动收缩：等价于 _volatility_contraction(valid_candles[:index+1], 14) ---
+        if vc_previous_close is None:
+            vc_window.append(current_high - current_low)
+        else:
+            vc_window.append(
+                max(
+                    current_high - current_low,
+                    abs(current_high - vc_previous_close),
+                    abs(current_low - vc_previous_close),
+                )
+            )
+        vc_previous_close = candle["close"]
+        vc_atr_means.append(sum(vc_window) / Decimal(len(vc_window)))
+        if index + 1 > vc_period:
+            vc_avg_sum += vc_atr_means[-1]
+            vc_avg_count += 1
+        if index + 1 < vc_period * 2:
+            volatility_contraction = Decimal("50")
+        elif vc_avg_sum == 0:
+            volatility_contraction = Decimal("50")
+        else:
+            avg_atr = vc_avg_sum / vc_avg_count
+            ratio = vc_atr_means[-1] / avg_atr
+            volatility_contraction = min(ratio * Decimal("50"), Decimal("100"))
 
         close_return_pct = _safe_pct_change(previous_close, candle["close"] - previous_close)
         range_pct = _safe_pct_change(candle["close"], candle["high"] - candle["low"])
@@ -335,8 +410,7 @@ def build_feature_rows(
         )
         ema20_gap_pct = _safe_pct_change(candle["close"], candle["close"] - _ema(rolling_closes, 20))
         ema55_gap_pct = _safe_pct_change(candle["close"], candle["close"] - _ema(rolling_closes, 55))
-        atr_pct = _safe_pct_change(candle["close"], _atr(valid_candles[: index + 1], profile["atr_period"]))
-        rsi14 = _rsi(valid_candles[: index + 1], profile["rsi_period"])
+        atr_pct = _safe_pct_change(candle["close"], atr_value)
         recent_high = _recent_high(rolling_highs[:-1], profile["breakout_lookback"])
         breakout_strength = _safe_pct_change(recent_high, candle["close"] - recent_high)
         roc6 = _roc(rolling_closes, profile["roc_period"])
@@ -346,7 +420,6 @@ def build_feature_rows(
         # 新增因子计算
         trend_strength = _trend_strength(rolling_closes, 20)
         momentum_accel = _momentum_accel(rolling_closes, 6)
-        volatility_contraction = _volatility_contraction(valid_candles[: index + 1], 14)
         volume_price_divergence = _volume_price_divergence(rolling_closes, rolling_volumes, 10)
         bull_bear_ratio = _bull_bear_ratio(valid_candles[: index + 1], 10)
 
@@ -370,7 +443,7 @@ def build_feature_rows(
             "bull_bear_ratio": bull_bear_ratio,
             "taker_buy_ratio": compute_taker_buy_ratio(float(candle["volume"]), candle.get("taker_buy_base_volume")),
             "btc_correlation": compute_btc_correlation([float(c["close"]) for c in valid_candles], btc_closes or []),
-            "rsi14": rsi14,
+            "rsi14": rsi_value,
             "cci20": cci20,
             "stoch_k14": stoch_k14,
         }
@@ -610,19 +683,23 @@ def _ema(values: list[Decimal], period: int) -> Decimal:
 
 
 def _atr(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
-    """计算平均真实波幅。"""
+    """计算平均真实波幅（滚动窗口实现，输出与原逐根实现完全一致）。
+
+    用定长滑动窗口只保留最近 period 个真实波幅，避免为超长序列构建全量列表。
+    period <= 0 时与原始语义一致：取全部真实波幅的均值。
+    """
 
     if not candles:
         return Decimal("0")
-    true_ranges: list[Decimal] = []
+    window: deque[Decimal] = deque() if period <= 0 else deque(maxlen=period)
     previous_close: Decimal | None = None
     for candle in candles:
         current_high = candle["high"]
         current_low = candle["low"]
         if previous_close is None:
-            true_ranges.append(current_high - current_low)
+            window.append(current_high - current_low)
         else:
-            true_ranges.append(
+            window.append(
                 max(
                     current_high - current_low,
                     abs(current_high - previous_close),
@@ -630,24 +707,28 @@ def _atr(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
                 )
             )
         previous_close = candle["close"]
-    return _mean(true_ranges[-period:])
+    return _mean(list(window))
 
 
 def _rsi(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
-    """计算 RSI。"""
+    """计算 RSI（滚动窗口实现，输出与原逐根实现完全一致）。
+
+    用定长滑动窗口只保留最近 period 个涨跌幅度，避免为超长序列构建全量列表。
+    period <= 0 时与原始语义一致：取全部涨跌幅度的均值。
+    """
 
     if len(candles) < 2:
         return Decimal("50")
-    gains: list[Decimal] = []
-    losses: list[Decimal] = []
+    gains: deque[Decimal] = deque() if period <= 0 else deque(maxlen=period)
+    losses: deque[Decimal] = deque() if period <= 0 else deque(maxlen=period)
     for previous, current in zip(candles, candles[1:]):
         change = current["close"] - previous["close"]
         if change > 0:
             gains.append(change)
         elif change < 0:
             losses.append(-change)
-    average_gain = _mean(gains[-period:])
-    average_loss = _mean(losses[-period:])
+    average_gain = _mean(list(gains))
+    average_loss = _mean(list(losses))
     if average_gain == 0 and average_loss == 0:
         return Decimal("50")
     if average_loss == 0:
@@ -758,33 +839,45 @@ def _momentum_accel(closes: list[Decimal], period: int) -> Decimal:
 
 
 def _volatility_contraction(candles: list[dict[str, Decimal | int]], period: int) -> Decimal:
-    """计算波动收缩因子。
+    """计算波动收缩因子（滚动 ATR 单遍实现，输出与原逐前缀实现完全一致）。
 
     识别突破前的能量积累。值越小表示波动越收缩，可能即将突破。
     返回当前 ATR 相对于历史平均 ATR 的比例。
+    原实现内部对每个前缀长度重复调用 _atr 为 O(n²)，这里单遍维护滑动窗口降为 O(n)。
     """
     if len(candles) < period * 2:
         return Decimal("50")
 
-    # 计算当前 ATR
-    current_atr = _atr(candles, period)
+    # 单遍遍历：维护最近 period 根真实波幅窗口，同时记录每个前缀长度的滚动 ATR
+    window: deque[Decimal] = deque() if period <= 0 else deque(maxlen=period)
+    previous_close: Decimal | None = None
+    atr_means: list[Decimal] = []  # atr_means[j-1] 为前 j 根 K 线的滚动 ATR
+    for candle in candles:
+        current_high = candle["high"]
+        current_low = candle["low"]
+        if previous_close is None:
+            window.append(current_high - current_low)
+        else:
+            window.append(
+                max(
+                    current_high - current_low,
+                    abs(current_high - previous_close),
+                    abs(current_low - previous_close),
+                )
+            )
+        previous_close = candle["close"]
+        atr_means.append(sum(window) / Decimal(len(window)))
 
-    # 计算历史 ATR 均值
-    atr_values: list[Decimal] = []
-    for i in range(period, len(candles)):
-        atr = _atr(candles[:i + 1], period)
-        atr_values.append(atr)
-
+    # 历史 ATR 序列与原实现一致：只取前缀长度在 (period, len] 之间的滚动 ATR
+    atr_values = atr_means[period:]
     if not atr_values:
         return Decimal("50")
-
     avg_atr = sum(atr_values) / len(atr_values)
-
     if avg_atr == 0:
         return Decimal("50")
 
-    # 返回当前 ATR 相对于历史的比例（归一化到 0-100）
-    ratio = current_atr / avg_atr
+    # 当前 ATR 即最后一个前缀长度的滚动 ATR，与原实现 _atr(candles, period) 一致
+    ratio = atr_means[-1] / avg_atr
     return min(ratio * Decimal("50"), Decimal("100"))
 
 
