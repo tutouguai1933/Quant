@@ -21,7 +21,6 @@ function resolveAuthorizationHeader(request: Request): string {
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${SESSION_COOKIE_NAME}=`))
     ?.split("=", 2)[1];
-  require("fs").appendFileSync("/tmp/proxy-debug.log", `${new Date().toISOString()} cookie=${JSON.stringify(cookieHeader)} token=${JSON.stringify(token)} auth=${JSON.stringify(directHeader)}\n`);
   return token ? `Bearer ${decodeURIComponent(token)}` : "";
 }
 
@@ -46,7 +45,6 @@ export async function GET(request: Request, context: RouteContext) {
       status: response.status,
       headers: {
         "Content-Type": response.headers.get("Content-Type") ?? "application/json; charset=utf-8",
-        "x-proxy-build": "v2-debug",
       },
     });
   } catch {
