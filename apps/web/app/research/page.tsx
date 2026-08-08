@@ -18,7 +18,6 @@ import {
   SegmentedControl,
   ChipList,
   MetricStrip,
-  IcBarChart,
   FeatureImportanceChart,
   ModelJsonPanel,
 } from "../../components/terminal";
@@ -264,6 +263,16 @@ export default function ResearchPage() {
     };
   }, [workspace, modelId, selectedFactors, forward, labelType, trees, learningRate]);
 
+  // 判断模型是否已训练过（有模型版本即视为已训练，IC 序列可能暂缺）
+  const hasTrained = useMemo(() => {
+    return Boolean(workspace.model?.model_version) || Boolean(workspace.artifact_templates?.training?.key);
+  }, [workspace]);
+
+  // IC 图表空状态文案：区分"已训练但 IC 暂缺"与"尚未训练"
+  const icEmptyState = hasTrained
+    ? { title: "IC 数据暂缺", hint: "可重新运行训练生成" }
+    : { title: "尚未运行模型训练", hint: "点击上方「训练模型」按钮开始" };
+
   return (
     <TerminalShell
       breadcrumb="研究 / 模型训练"
@@ -428,12 +437,13 @@ export default function ResearchPage() {
             isConfigWeight
           />
 
-          {/* IC 图表 */}
-          <IcBarChart
-            data={[]} // 后端暂无真实 IC 序列，显示空状态
-            height={280}
-          />
-
+          {/* IC 图表：后端暂无真实 IC 序列，按是否已训练显示区分空状态 */}
+          <div className="terminal-chart-panel flex items-center justify-center" style={{ height: 280 }}>
+            <div className="text-center">
+              <p className="text-[var(--terminal-muted)] text-[13px]">{icEmptyState.title}</p>
+              <p className="text-[var(--terminal-dim)] text-[11px] mt-1">{icEmptyState.hint}</p>
+            </div>
+          </div>
           {/* 模型信息 JSON */}
           <ModelJsonPanel
             data={modelInfoJson}

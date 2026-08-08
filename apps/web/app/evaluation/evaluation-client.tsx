@@ -166,6 +166,19 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
       .filter((item) => !isNaN(item.portfolio));
   }, [workspace]);
 
+  // 判断是否已运行过选币回测（有历史运行记录即视为已运行，可能只是本轮指标暂缺）
+  const hasRunSource = useMemo(() => {
+    return (
+      (workspace.recent_runs?.length || 0) > 0 ||
+      (workspace.candidate_scope?.candidate_symbols?.length || 0) > 0
+    );
+  }, [workspace]);
+
+  // 组合净值空状态文案：区分"已运行但指标暂缺"与"尚未运行"
+  const navEmptyState = hasRunSource
+    ? { title: "组合净值暂缺", hint: "可重新运行选币回测" }
+    : { title: "尚未运行选币回测", hint: "点击上方「运行选币回测」按钮开始" };
+
   if (isLoading) {
     return (
       <div className="text-center py-20 text-[var(--terminal-muted)]">
@@ -305,10 +318,19 @@ export function EvaluationClient({ token, isAuthenticated }: EvaluationClientPro
       )}
 
       {/* 组合净值图 */}
-      <PortfolioEquityChart
-        data={portfolioData}
-        height={400}
-      />
+      {portfolioData.length > 0 ? (
+        <PortfolioEquityChart
+          data={portfolioData}
+          height={400}
+        />
+      ) : (
+        <div className="terminal-chart-panel flex items-center justify-center" style={{ height: 400 }}>
+          <div className="text-center">
+            <p className="text-[var(--terminal-muted)] text-[13px]">{navEmptyState.title}</p>
+            <p className="text-[var(--terminal-dim)] text-[11px] mt-1">{navEmptyState.hint}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

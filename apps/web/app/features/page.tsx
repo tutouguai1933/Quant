@@ -194,6 +194,19 @@ export default function FeaturesPage() {
     return series;
   }, [workspace]);
 
+  // 判断数据源是否存在：已有因子产物（可能是上轮训练结果，只是指标还没算出来）
+  const hasFactorSource = useMemo(() => {
+    return (workspace.factors?.length || 0) > 0 || (workspace.overview?.factor_count || 0) > 0;
+  }, [workspace]);
+
+  // 图表空状态文案：区分"已训练但指标暂缺"与"尚未运行"
+  const quantileEmptyState = hasFactorSource
+    ? { title: "分位组合数据暂缺", hint: "可能正在计算或该轮未生成，可重新运行因子分析" }
+    : { title: "尚未运行因子分析", hint: "点击上方「运行分析」按钮开始" };
+  const icEmptyState = hasFactorSource
+    ? { title: "IC 数据暂缺", hint: "可重新运行训练生成" }
+    : { title: "尚未运行模型训练", hint: "点击上方「运行分析」按钮开始" };
+
   return (
     <TerminalShell
       breadcrumb="研究 / 因子研究"
@@ -252,8 +265,26 @@ export default function FeaturesPage() {
 
       {/* 图表区：左右两张图 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <QuantileNetChart data={quantileData} height={300} />
-        <IcBarChart data={icData} height={300} />
+        {quantileData.length > 0 ? (
+          <QuantileNetChart data={quantileData} height={300} />
+        ) : (
+          <div className="terminal-chart-panel flex items-center justify-center" style={{ height: 300 }}>
+            <div className="text-center">
+              <p className="text-[var(--terminal-muted)] text-[13px]">{quantileEmptyState.title}</p>
+              <p className="text-[var(--terminal-dim)] text-[11px] mt-1">{quantileEmptyState.hint}</p>
+            </div>
+          </div>
+        )}
+        {icData.length > 0 ? (
+          <IcBarChart data={icData} height={300} />
+        ) : (
+          <div className="terminal-chart-panel flex items-center justify-center" style={{ height: 300 }}>
+            <div className="text-center">
+              <p className="text-[var(--terminal-muted)] text-[13px]">{icEmptyState.title}</p>
+              <p className="text-[var(--terminal-dim)] text-[11px] mt-1">{icEmptyState.hint}</p>
+            </div>
+          </div>
+        )}
       </div>
     </TerminalShell>
   );
