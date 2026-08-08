@@ -96,12 +96,15 @@ export default function HomePage() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    Promise.allSettled([
+    // 4 个数据请求（共用一个 controller），allSettled 处理结果 + race 提前结束加载指示
+    const requests = [
       getAutomationStatus(undefined, controller.signal),
       getResearchRuntimeStatus(controller.signal),
       getPublicExecutorStatus(controller.signal),
       getPositionsSummary(undefined, controller.signal),
-    ])
+    ] as const;
+
+    Promise.allSettled(requests)
       .then(([automationRes, runtimeRes, executorRes, positionsRes]) => {
         clearTimeout(timeoutId);
 
@@ -146,6 +149,17 @@ export default function HomePage() {
         }
         setIsLoading(false);
       });
+
+    // 任一请求完成即结束加载指示（最快 ~0.3s 显示内容，慢请求数据渐进填充）
+    const racePromises: Promise<unknown>[] = [
+      requests[0],
+      requests[1],
+      requests[2],
+      requests[3],
+    ];
+    Promise.race(racePromises)
+      .then(() => setIsLoading(false))
+      .catch(() => setIsLoading(false));
 
     return () => {
       clearTimeout(timeoutId);
