@@ -47,7 +47,6 @@ export default function LoginPage() {
         // Keep default unauthenticated state
       }
     }
-
     async function fetchModel() {
       try {
         const data = await getLoginPageModel();
@@ -72,6 +71,22 @@ export default function LoginPage() {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-muted-foreground">加载中...</p>
+      </div>
+    );
+  }
+
+  // 已登录用户访问登录页：直接跳转到目标页或首页
+  if (session.isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">已登录，正在跳转...</p>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.location.replace(${JSON.stringify(
+              `/${nextPath.replace(/^\//, "") || ""}`,
+            )});`,
+          }}
+        />
       </div>
     );
   }
