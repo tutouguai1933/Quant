@@ -31,7 +31,7 @@ import {
 } from "../lib/api";
 import type { PublicExecutorStatus } from "../lib/api";
 import { FeedbackBanner } from "../components/feedback-banner";
-import { LoadingBanner } from "../components/loading-banner";
+import { Loader2 } from "lucide-react";
 import { ErrorBanner } from "../components/error-banner";
 import { OpenPositionsCard } from "../components/open-positions-card";
 
@@ -251,7 +251,13 @@ export default function HomePage() {
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
-      {isLoading && <LoadingBanner />}
+      {/* 紧凑加载指示：不阻塞首屏，卡片始终渲染（fallback 值），数据到位后渐进更新 */}
+      {isLoading && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span>数据加载中...</span>
+        </div>
+      )}
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       <div className="space-y-4">
