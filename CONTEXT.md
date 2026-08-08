@@ -10,6 +10,13 @@
 
 **本次更新（2026-08-08）**：
 
+### 研究流水线单页贯通（训练→因子→选币）
+- **新页面** `/pipeline`：从上到下三步骤卡片（① 训练模型 → ② 因子研究 → ③ 选币回测），每步一个运行按钮 + 结果指标 + 新手向数据说明；复用三个 workspace 接口展示，不重写数据层
+- **触发**：步骤按钮调用现有后端 POST（训练=`/signals/research/train`、因子=`/signals/research/infer`、选币=完整流水线 `/signals/pipeline/run`）；完成后轮询刷新并提示"✓ 完成"
+- **导航**：侧边栏"研究"组四链接（模型训练/回测训练/选币回测/因子研究）合并为一个"研究流水线"；旧页面仍可访问
+- **关键发现**：`/api/control/*` 被 next.config 重写直连后端（不经 route handler），cookie 鉴权无效 → 客户端 POST 改为显式携带会话令牌（query token + Bearer 头）
+- **验证**：Playwright 测试通过；三步骤按钮在真实浏览器全部验证（运行中→完成）
+
 ### 系统优化：可信训练-回测闭环（4 并行工作流 16 任务）
 - **数据量**：训练数据 60→365 天（sample_count 837→8372，10 倍）。修复了 market_service 硬编码 days=30 的隐藏瓶颈（store_days 参数透传 lookback_days）
 - **回测**：重写为真实交易模拟（simulate_trades：buy 开仓/止损/止盈/窗口结束平仓/手续费双扣）；run_backtest 字段名兼容，新增 trades_count/final_nav/exit_reasons；max_drawdown_pct 保持负值约定
