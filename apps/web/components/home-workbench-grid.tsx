@@ -1,6 +1,8 @@
 /* 这个文件负责渲染首页主工作台：首屏 3 个核心数字卡 + "更多详情"折叠区，以及原有的 6 卡摘要组（供旧版首页复用）。 */
 
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { DetailDrawer } from "./detail-drawer";
@@ -94,17 +96,31 @@ export type HomeMoreDetailsProps = {
   children: ReactNode;
 };
 
-/* 渲染"更多详情"折叠区：默认收起，点击展开完整卡片内容 */
+/* 渲染"更多详情"折叠区：默认收起且不挂载子组件，首次展开才加载内容。
+   折叠区卡片会触发 rsi-summary/entry-conditions/freqtrade 等重请求，
+   懒挂载避免切换首页时全部并发拉取导致 api 卡顿。 */
 export function HomeMoreDetails({ title = "更多详情", children }: HomeMoreDetailsProps) {
+  const [expanded, setExpanded] = useState(false);
   return (
-    <details className="terminal-card">
+    <details
+      className="terminal-card"
+      onToggle={(e) => {
+        if (e.currentTarget.open) {
+          setExpanded(true);
+        }
+      }}
+    >
       <summary className="cursor-pointer select-none px-4 py-3 flex items-center justify-between text-[13px] font-semibold text-[var(--terminal-text)]">
         <span>{title}</span>
-        <span className="text-[11px] font-normal text-[var(--terminal-dim)]">点击展开</span>
+        <span className="text-[11px] font-normal text-[var(--terminal-dim)]">
+          {expanded ? "已展开" : "点击展开"}
+        </span>
       </summary>
-      <div className="border-t border-[var(--terminal-border)] p-4 space-y-4">
-        {children}
-      </div>
+      {expanded && (
+        <div className="border-t border-[var(--terminal-border)] p-4 space-y-4">
+          {children}
+        </div>
+      )}
     </details>
   );
 }

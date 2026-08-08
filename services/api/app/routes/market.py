@@ -35,8 +35,8 @@ router = APIRouter(prefix="/api/v1/market", tags=["market"])
 alias_router = APIRouter(prefix="/api/v1/quotes", tags=["quotes"])
 service = MarketService(research_reader=research_service)
 
-_executor = ThreadPoolExecutor(max_workers=4)
-_entry_executor = ThreadPoolExecutor(max_workers=8)  # 入场条件专用，并发获取K线
+_executor = ThreadPoolExecutor(max_workers=8)
+_entry_executor = ThreadPoolExecutor(max_workers=16)  # 入场条件专用，并发获取K线（与候选币数匹配，避免排队）
 
 
 def _success(data: dict, meta: dict | None = None) -> dict:

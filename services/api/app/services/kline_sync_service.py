@@ -144,7 +144,7 @@ class KlineSyncService:
                 ))
         return reports
 
-    def ensure_window(self, symbol: str, interval: str, days: int, timeout_seconds: float = 8.0) -> None:
+    def ensure_window(self, symbol: str, interval: str, days: int, timeout_seconds: float = 3.0) -> None:
         """补齐指定天数内的缺口。
 
         检测缺口 → 按缺口头尾 fetch → upsert。
