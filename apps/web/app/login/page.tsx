@@ -5,7 +5,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   TerminalShell,
@@ -27,6 +27,7 @@ type SessionState = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [session, setSession] = useState<SessionState>({ token: "", isAuthenticated: false });
   const [model, setModel] = useState<LoginPageModel | null>(null);
@@ -67,6 +68,14 @@ export default function LoginPage() {
     Object.fromEntries(searchParams?.entries() ?? []) as Record<string, string | string[] | undefined>
   );
 
+  // 已登录用户访问登录页：跳转到目标页或首页（用 Next router 避免硬跳导致 hydration 不完整）
+  const targetPath = `/${nextPath.replace(/^\//, "") || ""}`;
+  useEffect(() => {
+    if (session.isAuthenticated) {
+      router.replace(targetPath);
+    }
+  }, [router, targetPath, session.isAuthenticated]);
+
   if (isLoading || !model) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -80,13 +89,6 @@ export default function LoginPage() {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-muted-foreground">已登录，正在跳转...</p>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `window.location.replace(${JSON.stringify(
-              `/${nextPath.replace(/^\//, "") || ""}`,
-            )});`,
-          }}
-        />
       </div>
     );
   }
