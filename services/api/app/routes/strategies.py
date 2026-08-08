@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.services.automation_workflow_service import automation_workflow_service
 from services.api.app.services.auth_service import auth_service
@@ -37,6 +38,10 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
+
+# strategies/workspace 30 秒缓存（get_workspace 聚合约 13 秒）
+_workspace_cache: dict[str, object] | None = None
+_workspace_cache_time: float = 0.0
 
 
 def _success(data: dict, meta: dict | None = None) -> dict:
@@ -173,8 +178,17 @@ def get_strategy_workspace(token: str = "", authorization: str = Header("")) -> 
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:
         return _unauthorized()
+    # 30 秒缓存：get_workspace 聚合 freqtrade+信号等约 13 秒，缓存避免高频访问拖慢 api
+    now = time.time()
+    if _workspace_cache is not None and now - _workspace_cache_time < 30.0:
+        return _success(
+            _workspace_cache,
+            {"source": "strategy-workspace-cache", "truth_source": "strategy-catalog+signal-store+freqtrade"},
+        )
     workspace = strategy_workspace_service.get_workspace()
     workspace["automation"] = automation_workflow_service.get_status()
+    _workspace_cache = workspace
+    _workspace_cache_time = now
     return _success(
         workspace,
         {

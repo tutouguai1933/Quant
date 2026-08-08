@@ -70,7 +70,9 @@ export default function StrategiesPage() {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    // strategies/workspace 内部聚合 freqtrade+自动化状态，正常耗时 10-20 秒，
+    // 超时设 30 秒避免误中止导致降级显示假数据（memory/demo）
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     Promise.allSettled([
       getStrategyWorkspace(session.token!, controller.signal),
