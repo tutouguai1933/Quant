@@ -63,6 +63,8 @@ export default function PipelinePage() {
   const [stepDegraded, setStepDegraded] = useState<Record<number, boolean>>({});
   const [stepMessage, setStepMessage] = useState<Record<number, string>>({});
   const [runningStep, setRunningStep] = useState<number | null>(null);
+  // 长任务超时后保持"等待中"：运行中禁用所有按钮，等待态显示"刷新查看"
+  const [waitingStep, setWaitingStep] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // 最新数据镜像（供轮询循环读取，避免闭包拿到旧值）
@@ -180,6 +182,7 @@ export default function PipelinePage() {
   const runStep = async (step: number, trigger: () => Promise<unknown>) => {
     if (runningStep !== null || !session.isAuthenticated) return;
     setRunningStep(step);
+    setWaitingStep(null);
     setStepMessage((prev) => ({ ...prev, [step]: "正在启动后台任务..." }));
     const beforeSignature = readStepSignature(step);
     const runtimeBefore = await getResearchRuntimeStatus().then((r) => r.error ? null : r.data.item.finished_at).catch(() => null);
@@ -192,7 +195,7 @@ export default function PipelinePage() {
       return;
     }
 
-    setStepMessage((prev) => ({ ...prev, [step]: "任务已在后台运行，正在等待结果（约 1-2 分钟）..." }));
+    setStepMessage((prev) => ({ ...prev, [step]: "任务已在后台运行，正在等待结果（训练约 30 分钟，请耐心等待，不要重复点击）..." }));
     let changed = false;
     for (let round = 0; round < POLL_MAX_ROUNDS; round++) {
       await sleep(POLL_INTERVAL_MS);
@@ -205,11 +208,32 @@ export default function PipelinePage() {
         break;
       }
     }
-    setStepMessage((prev) => ({
-      ...prev,
-      [step]: changed ? "✓ 完成，结果已更新。" : "任务仍在后台运行，稍后可点击再次刷新查看。",
-    }));
-    setRunningStep(null);
+    if (changed) {
+      setStepMessage((prev) => ({ ...prev, [step]: "✓ 完成，结果已更新。" }));
+      setRunningStep(null);
+    } else {
+      // 长任务（训练约30分钟）超出轮询窗口：保持"运行中"状态防重复点击，
+      // 提供"刷新查看"按钮，后台完成后数据会自动更新
+      setStepMessage((prev) => ({
+        ...prev,
+        [step]: "任务仍在后台运行（训练可能需要 30 分钟），点击「刷新查看」可随时查看最新进度。",
+      }));
+      setWaitingStep(step);
+    }
+  };
+
+  // 手动刷新当前步骤结果（长任务轮询超时后使用）
+  const refreshStep = async (step: number) => {
+    setStepMessage((prev) => ({ ...prev, [step]: "正在刷新..." }));
+    await refreshAll();
+    const runtime = await getResearchRuntimeStatus().then((r) => (r.error ? null : r.data.item)).catch(() => null);
+    if (runtime && runtime.status !== "running") {
+      setStepMessage((prev) => ({ ...prev, [step]: "✓ 任务已完成，结果已更新。" }));
+      setRunningStep(null);
+      setWaitingStep(null);
+    } else {
+      setStepMessage((prev) => ({ ...prev, [step]: "任务仍在后台运行，请稍后再试。" }));
+    }
   };
 
   /* 各步骤运行按钮 */
@@ -226,7 +250,8 @@ export default function PipelinePage() {
     onRun: () => void,
   ) => {
     const running = runningStep === step.key;
-    const disabled = runningStep !== null && !running;
+    const waiting = waitingStep === step.key;
+    const disabled = (runningStep !== null && !running) || waiting;
     const done = stepDone[step.key];
     const degraded = stepDegraded[step.key];
     const message = stepMessage[step.key];
@@ -247,9 +272,9 @@ export default function PipelinePage() {
                 ✓ 已有数据
               </span>
             )}
-            {running && (
+            {(running || waiting) && (
               <span className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-0.5 animate-pulse">
-                运行中...
+                {running ? "运行中..." : "等待完成..."}
               </span>
             )}
             <span className="ml-auto text-[12px] text-[var(--terminal-dim)]">{step.hint}</span>
@@ -273,16 +298,27 @@ export default function PipelinePage() {
 
           {/* 运行按钮 + 状态消息 */}
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="terminal-btn"
-              disabled={!session.isAuthenticated || disabled}
-              onClick={onRun}
-            >
-              {running ? "运行中..." : runLabel}
-            </button>
+            {waiting ? (
+              <button
+                type="button"
+                className="terminal-btn"
+                disabled={!session.isAuthenticated}
+                onClick={() => refreshStep(step.key)}
+              >
+                刷新查看
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="terminal-btn"
+                disabled={!session.isAuthenticated || disabled}
+                onClick={onRun}
+              >
+                {running ? "运行中..." : runLabel}
+              </button>
+            )}
             {message && (
-              <span className={`text-[12px] ${running ? "text-amber-400" : "text-[var(--terminal-muted)]"}`}>
+              <span className={`text-[12px] ${running || waiting ? "text-amber-400" : "text-[var(--terminal-muted)]"}`}>
                 {message}
               </span>
             )}
@@ -324,7 +360,7 @@ export default function PipelinePage() {
         {renderStepCard(
           STEPS[0],
           step1Metrics,
-          "AUC 越接近 1，说明模型区分涨跌的能力越强；0.5 约等于瞎猜。点击「运行训练」开始训练，约需 1-2 分钟。",
+          "AUC 越接近 1，说明模型区分涨跌的能力越强；0.5 约等于瞎猜。点击「运行训练」开始训练。首次全量训练约需 30 分钟（365 天数据），期间请勿重复点击。",
           "运行训练",
           handleRunTraining,
         )}
