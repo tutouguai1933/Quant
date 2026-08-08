@@ -3276,6 +3276,8 @@ function normalizeResearchWorkspaceModel(item: unknown): ResearchWorkspaceModel 
       model_key: String(model.model_key ?? ""),
       model_version: String(model.model_version ?? ""),
       backend: String(model.backend ?? "qlib-fallback"),
+      train_auc: typeof model.train_auc === "number" ? model.train_auc : null,
+      val_auc: typeof model.val_auc === "number" ? model.val_auc : null,
     },
     artifact_templates: {
       training: {
