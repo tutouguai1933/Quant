@@ -26,8 +26,6 @@ import {
   getAutomationStatusFallback,
   getResearchRuntimeStatus,
   getResearchRuntimeStatusFallback,
-  getStrategyWorkspace,
-  getStrategyWorkspaceFallback,
   getPublicExecutorStatus,
   fetchJson,
 } from "../lib/api";
@@ -70,7 +68,6 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [automationStatus, setAutomationStatus] = useState(getAutomationStatusFallback().item);
   const [researchRuntime, setResearchRuntime] = useState(getResearchRuntimeStatusFallback());
-  const [strategyWorkspace, setStrategyWorkspace] = useState(getStrategyWorkspaceFallback());
   const [executorStatus, setExecutorStatus] = useState<PublicExecutorStatus | null>(null);
   const [positionsSummary, setPositionsSummary] = useState<OpenTradesSummary | null>(null);
   // 三个核心数字的数据是否降级（接口失败时置 true，卡片显示"数据暂不可用"）
@@ -109,11 +106,10 @@ export default function HomePage() {
     Promise.allSettled([
       getAutomationStatus(token, controller.signal),
       getResearchRuntimeStatus(controller.signal),
-      getStrategyWorkspace(token, controller.signal),
       getPublicExecutorStatus(controller.signal),
       getPositionsSummary(token, controller.signal),
     ])
-      .then(([automationRes, runtimeRes, strategyRes, executorRes, positionsRes]) => {
+      .then(([automationRes, runtimeRes, executorRes, positionsRes]) => {
         clearTimeout(timeoutId);
 
         const errors: string[] = [];
@@ -129,12 +125,6 @@ export default function HomePage() {
           setResearchRuntime(runtimeRes.value.data.item);
         } else if (runtimeRes.status === "fulfilled" && runtimeRes.value.error) {
           errors.push(`研究运行状态加载失败: ${runtimeRes.value.error.message}`);
-        }
-
-        if (strategyRes.status === "fulfilled" && !strategyRes.value.error) {
-          setStrategyWorkspace(strategyRes.value.data);
-        } else if (strategyRes.status === "fulfilled" && strategyRes.value.error) {
-          errors.push(`策略工作区加载失败: ${strategyRes.value.error.message}`);
         }
 
         if (executorRes.status === "fulfilled" && !executorRes.value.error) {
@@ -178,7 +168,7 @@ export default function HomePage() {
       (Array.isArray(healthStatus.active_blockers) && healthStatus.active_blockers.length === 0);
 
     // 优先使用公开 API 的执行器状态，否则使用 workspace 的状态
-    const connectionStatus = executorStatus?.connection_status || strategyWorkspace.executor_runtime?.connection_status || "unknown";
+    const connectionStatus = executorStatus?.connection_status || "unknown";
     const isConnected = connectionStatus === "connected";
 
     return [
@@ -203,7 +193,7 @@ export default function HomePage() {
         colorType: "neutral" as const,
       },
     ];
-  }, [automationStatus, researchRuntime, strategyWorkspace, executorStatus]);
+  }, [automationStatus, researchRuntime, executorStatus]);
 
   // 首屏 3 个核心数字：持仓盈亏 / 自动化状态 / 执行器健康
   const coreNumbers = useMemo(() => {
@@ -232,7 +222,7 @@ export default function HomePage() {
 
     // 3. 执行器健康：freqtrade 连接状态 + 持仓数
     const connectionStatus =
-      executorStatus?.connection_status || strategyWorkspace.executor_runtime?.connection_status || "unknown";
+      executorStatus?.connection_status || "unknown";
     const isConnected = connectionStatus === "connected";
     const executorValue = executorStatus ? (isConnected ? "已连接" : "断开") : "未知";
     const executorDetail = executorStatus
@@ -240,7 +230,7 @@ export default function HomePage() {
       : "暂无执行器信息";
 
     return { positionsValue, positionsDetail, modeLabel, automationDetail, executorValue, executorDetail };
-  }, [positionsSummary, automationStatus, executorStatus, strategyWorkspace]);
+  }, [positionsSummary, automationStatus, executorStatus]);
 
   // 快速导航
   const quickLinks = [
@@ -346,7 +336,7 @@ export default function HomePage() {
           {/* 自动化周期候选 */}
           <CandidateQueueCard
             refreshInterval={60000}
-            fallbackSymbols={strategyWorkspace.whitelist || []}
+            fallbackSymbols={[]}
           />
 
           {/* 自动化周期历史 */}
