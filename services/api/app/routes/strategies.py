@@ -180,15 +180,23 @@ def get_strategy_workspace(token: str = "", authorization: str = Header("")) -> 
         return _unauthorized()
     # 30 秒缓存：get_workspace 聚合 freqtrade+信号等约 13 秒，缓存避免高频访问拖慢 api
     now = time.time()
-    if _workspace_cache is not None and now - _workspace_cache_time < 30.0:
+    cached_backend = str(((_workspace_cache or {}).get("executor_runtime") or {}).get("backend", ""))
+    if (
+        _workspace_cache is not None
+        and now - _workspace_cache_time < 30.0
+        and cached_backend not in ("", "memory")
+    ):
         return _success(
             _workspace_cache,
             {"source": "strategy-workspace-cache", "truth_source": "strategy-catalog+signal-store+freqtrade"},
         )
     workspace = strategy_workspace_service.get_workspace()
     workspace["automation"] = automation_workflow_service.get_status()
-    _workspace_cache = workspace
-    _workspace_cache_time = now
+    # 降级数据（memory/demo）不缓存：避免缓存假数据，下次请求重新拉真实数据
+    backend = str((workspace.get("executor_runtime") or {}).get("backend", ""))
+    if backend not in ("", "memory"):
+        _workspace_cache = workspace
+        _workspace_cache_time = now
     return _success(
         workspace,
         {
