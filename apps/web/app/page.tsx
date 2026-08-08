@@ -91,23 +91,16 @@ export default function HomePage() {
       });
   }, []);
 
-  // 获取数据 - 等 session 加载完成后执行
+  // 获取数据 - 不依赖 session（代理靠 cookie 自动鉴权），与 session 获取并行
   useEffect(() => {
-    if (!sessionLoaded) {
-      return;
-    }
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    // 使用 session token 进行认证
-    const token = session.token || undefined;
-
     Promise.allSettled([
-      getAutomationStatus(token, controller.signal),
+      getAutomationStatus(undefined, controller.signal),
       getResearchRuntimeStatus(controller.signal),
       getPublicExecutorStatus(controller.signal),
-      getPositionsSummary(token, controller.signal),
+      getPositionsSummary(undefined, controller.signal),
     ])
       .then(([automationRes, runtimeRes, executorRes, positionsRes]) => {
         clearTimeout(timeoutId);
@@ -158,7 +151,7 @@ export default function HomePage() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [sessionLoaded, session.token]);
+  }, []);
 
   // 系统状态指标
   const systemMetrics = useMemo(() => {
