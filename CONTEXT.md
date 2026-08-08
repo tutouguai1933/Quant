@@ -6,13 +6,36 @@
 
 ## 当前进度
 
-**状态**：系统优化（可信训练-回测闭环）已部署验证；训练数据 365 天、walk-forward 启用、回测真实模拟、阈值 0.45 全部生效
+**状态**：前端重构（3 阶段 15 任务）全部完成并部署验证；数据链路断点修复、新手交互动线重构、Playwright 测试收口
 
-**本次更新（2026-08-08）**：
+**本次更新（2026-08-08 晚）**：
 
-### 前端空状态区分（已训练 vs 未运行）
-- **问题**：因子页/选币页/研究页空状态一律提示"请先运行…"，用户已跑过训练也会被误导
-- **修复**：三个页面按数据源是否存在区分两类空状态文案——已有因子产物/运行记录时显示"XX 数据暂缺：可重新运行…"，完全无数据时显示"尚未运行：点击上方按钮开始"；并新建 `ui-empty-state.spec.cjs` 回归测试（断言已训练时不再提示"请先运行模型训练"）
+### 前端数据链路修复与重构（计划：docs/superpowers/plans/2026-08-08-frontend-refactor.md）
+
+**阶段一：数据链路断点修复（6 任务）**
+- 会话有效性校验：失效 token 跳登录而非静默显示假数据（新增 session-guard 组件 + session 接口后端校验）
+- 降级提示：策略/任务页 API 失败时显示黄色提示条（保留兜底数据但标记 error，不静默）
+- openclaw 巡检/审计接口统一 envelope 包裹
+- 因子页 IC 摘要指标（mean_ic/ic_std/icir/ic_win_rate）从 ic_series 真实计算（兼容 factory report 嵌套结构）
+- 选币页 terminal.metrics 补齐年化/夏普/超额/换手 4 个指标
+- 研究页测试样本数 + 训练/验证 AUC 打通
+
+**阶段二：前端重构（4 任务）**
+- 首页改为 3 个核心数字卡（持仓盈亏/自动化状态/执行器健康）+ 详情折叠
+- 新建 /pipeline 研究流水线页：训练→因子→选币一页走完（新手主入口）
+- 空状态区分"已训练但指标缺" vs "未运行"
+- 导航分组：研究员工具收进"高级模式"折叠
+
+**阶段三：测试收口**
+- 清理 26 个断言旧 UI 的失效 Playwright 测试
+- 新建 9 个测试（主链路冒烟/会话过期/降级提示/首页3数字/流水线/空状态/导航分组），**9/9 × 2 轮全过**
+
+**排查中发现的重大 bug 与修复**：
+- **cookie 鉴权失效根因**：next.config.mjs 的 rewrite 规则把 /api/control/* 直接转发后端（不经 route handler），cookie 无法转成 Bearer → 策略页一直显示假数据。移除 rewrite 改由 route handler 统一代理
+- **登录页已登录跳转**：window.location.replace 硬跳导致 hydration 不完整（页面 body 只有 websocket 横幅），改 Next router.replace
+- **api CPU 100% 堆积**：365 天数据训练耗时 31 分钟，超过 15 分钟周期 → 训练线程堆积。周期改为 60 分钟（QUANT_OPENCLAW_CYCLE_INTERVAL=3600，compose .env），重启 api 清堆积线程后 CPU 0.2%
+
+**当前状态**：服务全绿（api/web/openclaw/freqtrade healthy，api CPU 5%），自动化 auto_dry_run 已恢复（paused=False、failures=0，周期 60 分钟）
 - **注意**：图表组件（quantile-net-chart 等）内部默认空状态文案未改，页面层通过数据源判断后自行渲染空状态块替代图表组件，避免改公共组件影响其他页面
 
 ### 研究流水线单页贯通（训练→因子→选币）
