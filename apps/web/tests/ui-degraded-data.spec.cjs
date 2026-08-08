@@ -5,23 +5,13 @@ const { WEB_BASE_URL } = require("./test-urls.cjs");
 
 test.use(getPlaywrightUseOptions());
 
-// 登录并等待进入指定页面（若已有有效会话则跳过登录）
-async function loginIfNeeded(page, nextPath) {
-  await page.goto(`${WEB_BASE_URL}/login?next=${encodeURIComponent(nextPath)}`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(2000);
-  const loginBtn = page.getByRole("button", { name: "登录并继续" });
-  if (await loginBtn.isVisible().catch(() => false)) {
-    await page.locator('input[name="username"]').fill("admin");
-    await page.locator('input[name="password"]').fill("1933");
-    await loginBtn.click();
-    await page.waitForTimeout(3000);
-  }
-}
+// 登录辅助：统一使用可靠登录流程（clearCookies + 等表单 + 校验cookie）
+const { loginAsAdmin } = require("./test-auth.cjs");
 
 test("策略页API失败时显示降级提示条", async ({ page }) => {
   test.setTimeout(120000);
   // 先正常登录拿有效 cookie
-  await loginIfNeeded(page, "/strategies");
+  await loginAsAdmin(page, "/strategies");
   // 拦截数据接口返回 503，模拟后端不可达
   await page.route("**/api/control/strategies/workspace**", (route) =>
     route.fulfill({
@@ -42,7 +32,7 @@ test("策略页API失败时显示降级提示条", async ({ page }) => {
 test("任务页API失败时显示降级提示条", async ({ page }) => {
   test.setTimeout(120000);
   // 先正常登录拿有效 cookie
-  await loginIfNeeded(page, "/tasks");
+  await loginAsAdmin(page, "/tasks");
   // 拦截自动化状态接口返回 503，模拟后端不可达
   await page.route("**/api/control/tasks/automation**", (route) =>
     route.fulfill({
