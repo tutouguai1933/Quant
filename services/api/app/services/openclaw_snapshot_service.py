@@ -4,6 +4,7 @@
 输出给 Openclaw 的唯一结构化快照。
 """
 
+import logging
 import threading
 import time
 from datetime import datetime, timezone
@@ -16,6 +17,8 @@ from services.api.app.services.automation_workflow_service import automation_wor
 from services.api.app.services.service_health_service import ServiceHealthService, service_health_service
 from services.api.app.services.openclaw_restart_history_service import OpenclawRestartHistoryService, openclaw_restart_history_service
 from services.api.app.services.openclaw_audit_service import OpenclawAuditService, openclaw_audit_service
+
+logger = logging.getLogger(__name__)
 
 
 class OpenclawSnapshotService:
@@ -41,12 +44,35 @@ class OpenclawSnapshotService:
         self._snapshot_cache: dict[str, Any] | None = None
         self._snapshot_cache_time: float = 0.0
         self._cache_lock = threading.Lock()
+        # 单飞标志：快照正在构建时其他线程直接返回旧缓存，避免排队等锁
+        self._building = False
 
     def get_snapshot(self) -> dict[str, Any]:
-        """获取统一运维快照（带缓存）。"""
+        """获取统一运维快照（带缓存 + 单飞防并发）。
+
+        缓存未命中时：
+        - 若已有线程正在构建（freqtrade 慢等场景），直接返回旧缓存，
+          避免多线程排队等锁导致 api 线程池被占满（曾导致整体卡死）。
+        """
         # 先检查缓存（无锁）
         if self._snapshot_cache is not None and (time.time() - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
             return self._snapshot_cache
+
+        # 单飞：正在构建时其他线程直接返回旧缓存，不排队等锁
+        if self._building:
+            if self._snapshot_cache is not None:
+                return self._snapshot_cache
+            return {
+                "snapshot_id": "building",
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "overall_status": "building",
+                "mode": "unknown",
+                "paused": False,
+                "manual_takeover": False,
+                "automation_state": {},
+                "execution_health": {},
+                "service_status": {},
+            }
 
         # 获取锁后再检查一次（双重检查锁定模式）
         with self._cache_lock:
@@ -54,128 +80,159 @@ class OpenclawSnapshotService:
             if self._snapshot_cache is not None and (time.time() - self._snapshot_cache_time) < self._SNAPSHOT_CACHE_TTL:
                 return self._snapshot_cache
 
+            # 标记构建中（锁内设置，保证只有一个线程进入构建）
+            self._building = True
+
             snapshot_id = str(uuid.uuid4())
             generated_at = datetime.now(timezone.utc).isoformat()
 
-            state = self._automation.get_state()
-            mode = str(state.get("mode", "manual"))
-            paused = bool(state.get("paused", False))
-            manual_takeover = bool(state.get("manual_takeover", False))
-            automation_state = dict(state)
-
-            # 从 automation_workflow_service 获取完整的 runtime_guard 信息
-            workflow_status: dict[str, Any] = {}
             try:
-                workflow_status = dict(automation_workflow_service.get_status() or {})
-                runtime_guard = dict(workflow_status.get("runtime_guard") or {})
-            except Exception:
-                runtime_guard = dict(state.get("runtime_guard") or {})
-
-            recovery_review = dict(state.get("recovery_review") or {})
-            execution_health = dict(state.get("execution_health") or workflow_status.get("execution_health") or {})
-
-            executor_runtime = dict(state.get("executor_runtime") or {})
-            connection_status = str(executor_runtime.get("connection_status", "unknown"))
-
-            account_state = dict(state.get("account_state") or {})
-            account_status = str(account_state.get("status", "unknown"))
-
-            ready_for_cycle = bool(runtime_guard.get("ready_for_cycle", False))
-            blocked_reason = str(runtime_guard.get("blocked_reason", ""))
-
-            # 从 runtime_guard 获取建议动作
-            suggested_action = str(runtime_guard.get("suggested_action", "") or "")
-            suggested_action_reason = str(runtime_guard.get("suggested_action_reason", "") or "")
-            auto_run_allowed = bool(runtime_guard.get("auto_run_allowed", False))
-
-            overall_status = self._resolve_overall_status(
-                paused=paused,
-                manual_takeover=manual_takeover,
-                ready_for_cycle=ready_for_cycle,
-                blocked_reason=blocked_reason,
-            )
-
-            # 获取服务健康状态
-            service_health = self._health_service.get_all_health()
-
-            # 获取重启历史摘要
-            restart_history = self._restart_history.get_all_history()
-
-            # 获取最近动作记录
-            recent_audit = self._audit_service.get_recent_records(limit=1)
-            last_openclaw_action = recent_audit[0] if recent_audit else None
-
-            allowed_actions = self._resolve_allowed_actions(
-                overall_status=overall_status,
-                connection_status=connection_status,
-                account_status=account_status,
-                paused=paused,
-                manual_takeover=manual_takeover,
-                ready_for_cycle=ready_for_cycle,
-            )
-
-            # 为每个允许的动作添加前置条件检查
-            allowed_actions_with_preconditions = []
-            for action in allowed_actions:
-                can_execute, precondition_reason = self._check_action_preconditions(
-                    action_name=action["action"],
-                    overall_status=overall_status,
-                    service_health=service_health,
+                return self._build_snapshot_inner(
+                    snapshot_id=snapshot_id,
+                    generated_at=generated_at,
                 )
-                allowed_actions_with_preconditions.append({
-                    **action,
-                    "preconditions_met": can_execute,
-                    "precondition_reason": precondition_reason,
-                })
+            except Exception as exc:
+                logger.warning("快照构建失败（返回降级快照）: %s", exc)
+                self._building = False
+                return {
+                    "snapshot_id": snapshot_id,
+                    "generated_at": generated_at,
+                    "overall_status": "degraded",
+                    "mode": "unknown",
+                    "paused": False,
+                    "manual_takeover": False,
+                    "automation_state": {},
+                    "execution_health": {},
+                    "service_status": {},
+                }
 
-            result = {
-                "snapshot_id": snapshot_id,
-                "generated_at": generated_at,
-                "overall_status": overall_status,
-                "mode": mode,
-                "paused": paused,
-                "manual_takeover": manual_takeover,
-                "automation_state": automation_state,
-                "execution_health": execution_health,
-                "suggested_action": {
-                    "action": suggested_action,
-                    "reason": suggested_action_reason,
-                    "auto_run_allowed": auto_run_allowed,
-                },
-                "runtime_guard": {
-                    "ready_for_cycle": ready_for_cycle,
-                    "blocked_reason": blocked_reason,
-                },
-                "recovery_review": {
-                    "resume_needed": bool(recovery_review.get("resume_needed", False)),
-                    "cannot_resume_reason": str(recovery_review.get("cannot_resume_reason", "")),
-                },
-                "executor_runtime": {
-                    "connection_status": connection_status,
-                },
-                "account_state": {
-                    "status": account_status,
-                },
-                "service_status": {
-                    "api_expected_up": True,
-                    "web_expected_up": True,
-                    "freqtrade_expected_up": True,
-                },
-                "service_health": service_health,
-                "restart_history": restart_history,
-                "last_openclaw_action": last_openclaw_action,
-                "allowed_safe_actions": allowed_actions_with_preconditions,
-                "protection_boundaries": {
-                    "live_enable_allowed": False,
-                    "manual_takeover_release_allowed": False,
-                    "max_restart_attempts": 3,
-                    "restart_cooldown_seconds": 300,
-                },
-            }
-            # 保存到缓存（使用当前时间，而不是方法开始时的时间）
-            self._snapshot_cache = result
-            self._snapshot_cache_time = time.time()
-            return result
+    def _build_snapshot_inner(
+        self,
+        *,
+        snapshot_id: str,
+        generated_at: str,
+    ) -> dict[str, Any]:
+        """构建快照主体（在锁内调用，慢 IO 在此完成）。"""
+        state = self._automation.get_state()
+        mode = str(state.get("mode", "manual"))
+        paused = bool(state.get("paused", False))
+        manual_takeover = bool(state.get("manual_takeover", False))
+        automation_state = dict(state)
+
+        # 从 automation_workflow_service 获取完整的 runtime_guard 信息
+        workflow_status: dict[str, Any] = {}
+        try:
+            workflow_status = dict(automation_workflow_service.get_status() or {})
+            runtime_guard = dict(workflow_status.get("runtime_guard") or {})
+        except Exception:
+            runtime_guard = dict(state.get("runtime_guard") or {})
+
+        recovery_review = dict(state.get("recovery_review") or {})
+        execution_health = dict(state.get("execution_health") or workflow_status.get("execution_health") or {})
+
+        executor_runtime = dict(state.get("executor_runtime") or {})
+        connection_status = str(executor_runtime.get("connection_status", "unknown"))
+
+        account_state = dict(state.get("account_state") or {})
+        account_status = str(account_state.get("status", "unknown"))
+
+        ready_for_cycle = bool(runtime_guard.get("ready_for_cycle", False))
+        blocked_reason = str(runtime_guard.get("blocked_reason", ""))
+
+        # 从 runtime_guard 获取建议动作
+        suggested_action = str(runtime_guard.get("suggested_action", "") or "")
+        suggested_action_reason = str(runtime_guard.get("suggested_action_reason", "") or "")
+        auto_run_allowed = bool(runtime_guard.get("auto_run_allowed", False))
+
+        overall_status = self._resolve_overall_status(
+            paused=paused,
+            manual_takeover=manual_takeover,
+            ready_for_cycle=ready_for_cycle,
+            blocked_reason=blocked_reason,
+        )
+
+        # 获取服务健康状态
+        service_health = self._health_service.get_all_health()
+
+        # 获取重启历史摘要
+        restart_history = self._restart_history.get_all_history()
+
+        # 获取最近动作记录
+        recent_audit = self._audit_service.get_recent_records(limit=1)
+        last_openclaw_action = recent_audit[0] if recent_audit else None
+
+        allowed_actions = self._resolve_allowed_actions(
+            overall_status=overall_status,
+            connection_status=connection_status,
+            account_status=account_status,
+            paused=paused,
+            manual_takeover=manual_takeover,
+            ready_for_cycle=ready_for_cycle,
+        )
+
+        # 为每个允许的动作添加前置条件检查
+        allowed_actions_with_preconditions = []
+        for action in allowed_actions:
+            can_execute, precondition_reason = self._check_action_preconditions(
+                action_name=action["action"],
+                overall_status=overall_status,
+                service_health=service_health,
+            )
+            allowed_actions_with_preconditions.append({
+                **action,
+                "preconditions_met": can_execute,
+                "precondition_reason": precondition_reason,
+            })
+
+        result = {
+            "snapshot_id": snapshot_id,
+            "generated_at": generated_at,
+            "overall_status": overall_status,
+            "mode": mode,
+            "paused": paused,
+            "manual_takeover": manual_takeover,
+            "automation_state": automation_state,
+            "execution_health": execution_health,
+            "suggested_action": {
+                "action": suggested_action,
+                "reason": suggested_action_reason,
+                "auto_run_allowed": auto_run_allowed,
+            },
+            "runtime_guard": {
+                "ready_for_cycle": ready_for_cycle,
+                "blocked_reason": blocked_reason,
+            },
+            "recovery_review": {
+                "resume_needed": bool(recovery_review.get("resume_needed", False)),
+                "cannot_resume_reason": str(recovery_review.get("cannot_resume_reason", "")),
+            },
+            "executor_runtime": {
+                "connection_status": connection_status,
+            },
+            "account_state": {
+                "status": account_status,
+            },
+            "service_status": {
+                "api_expected_up": True,
+                "web_expected_up": True,
+                "freqtrade_expected_up": True,
+            },
+            "service_health": service_health,
+            "restart_history": restart_history,
+            "last_openclaw_action": last_openclaw_action,
+            "allowed_safe_actions": allowed_actions_with_preconditions,
+            "protection_boundaries": {
+                "live_enable_allowed": False,
+                "manual_takeover_release_allowed": False,
+                "max_restart_attempts": 3,
+                "restart_cooldown_seconds": 300,
+            },
+        }
+        # 保存到缓存（使用当前时间，而不是方法开始时的时间）
+        self._snapshot_cache = result
+        self._snapshot_cache_time = time.time()
+        self._building = False
+        return result
 
     def _resolve_overall_status(
         self,
