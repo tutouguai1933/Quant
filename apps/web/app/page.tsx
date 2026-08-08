@@ -169,10 +169,12 @@ export default function HomePage() {
 
   // 系统状态指标
   const systemMetrics = useMemo(() => {
-    // 判断健康状态：优先检查 status 字段，否则检查 active_blockers
+    // 判断健康状态：以 severity_summary.level 为准（"normal"= 风险可控）。
+    // 不用 health.status——它只要有 warning 告警就变 degraded（如候选被拦/dry-run 提示），
+    // 会误报"数据更新异常"。
     const healthStatus = (automationStatus.health as Record<string, unknown>) || {};
-    const isHealthy = healthStatus.status === "ok" ||
-      (Array.isArray(healthStatus.active_blockers) && healthStatus.active_blockers.length === 0);
+    const severity = (healthStatus.severity_summary as Record<string, unknown>) || {};
+    const isHealthy = String(severity.level ?? "") === "normal";
 
     // 优先使用公开 API 的执行器状态，否则使用 workspace 的状态
     const connectionStatus = executorStatus?.connection_status || "unknown";
