@@ -174,6 +174,7 @@ def get_strategy_catalog(token: str = "", authorization: str = Header("")) -> di
 
 @router.get("/workspace")
 def get_strategy_workspace(token: str = "", authorization: str = Header("")) -> dict:
+    global _workspace_cache, _workspace_cache_time
     try:
         auth_service.require_control_plane_access(auth_service.resolve_access_token(token, authorization))
     except PermissionError:
