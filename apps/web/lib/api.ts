@@ -3219,6 +3219,8 @@ function normalizeFeatureWorkspaceModel(item: unknown): FeatureWorkspaceModel {
     effectiveness_summary: isPlainObject(row.effectiveness_summary) ? row.effectiveness_summary : {},
     redundancy_summary: isPlainObject(row.redundancy_summary) ? row.redundancy_summary : {},
     score_story: isPlainObject(row.score_story) ? row.score_story : {},
+    /* 终端视图数据（research.metrics 含 mean_ic/ic_win_rate/icir 等 IC 摘要） */
+    terminal: isPlainObject(row.terminal) ? row.terminal : undefined,
   };
 }
 
