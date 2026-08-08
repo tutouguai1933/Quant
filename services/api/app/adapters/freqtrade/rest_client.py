@@ -138,6 +138,7 @@ class FreqtradeRestClient:
                 username=settings.freqtrade_api_username,
                 password=settings.freqtrade_api_password,
                 timeout_seconds=settings.freqtrade_api_timeout_seconds,
+                max_total_timeout_seconds=settings.freqtrade_api_max_total_timeout_seconds,
             )
         )
 

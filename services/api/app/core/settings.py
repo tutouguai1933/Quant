@@ -53,6 +53,7 @@ class Settings:
     freqtrade_api_username: str = field(default="", repr=False)
     freqtrade_api_password: str = field(default="", repr=False)
     freqtrade_api_timeout_seconds: float = 10.0
+    freqtrade_api_max_total_timeout_seconds: float = 20.0
     allow_live_execution: bool = False
     live_allowed_symbols: tuple[str, ...] = ()
     live_max_stake_usdt: Decimal | None = None
@@ -127,6 +128,13 @@ class Settings:
             raise ValueError("QUANT_FREQTRADE_API_TIMEOUT_SECONDS 必须是数字") from exc
         if freqtrade_api_timeout_seconds <= 0:
             raise ValueError("QUANT_FREQTRADE_API_TIMEOUT_SECONDS 必须大于 0")
+        raw_max_total = os.getenv("QUANT_FREQTRADE_API_MAX_TOTAL_TIMEOUT_SECONDS", "20").strip() or "20"
+        try:
+            freqtrade_api_max_total_timeout_seconds = float(raw_max_total)
+        except ValueError as exc:
+            raise ValueError("QUANT_FREQTRADE_API_MAX_TOTAL_TIMEOUT_SECONDS 必须是数字") from exc
+        if freqtrade_api_max_total_timeout_seconds <= 0:
+            raise ValueError("QUANT_FREQTRADE_API_MAX_TOTAL_TIMEOUT_SECONDS 必须大于 0")
         allow_live_execution = os.getenv("QUANT_ALLOW_LIVE_EXECUTION", "").strip().lower() == "true"
 
         raw_symbols = os.getenv("QUANT_MARKET_SYMBOLS")
@@ -236,6 +244,7 @@ class Settings:
             freqtrade_api_username=freqtrade_api_username,
             freqtrade_api_password=freqtrade_api_password,
             freqtrade_api_timeout_seconds=freqtrade_api_timeout_seconds,
+            freqtrade_api_max_total_timeout_seconds=freqtrade_api_max_total_timeout_seconds,
             allow_live_execution=allow_live_execution,
             live_allowed_symbols=live_allowed_symbols,
             live_max_stake_usdt=live_max_stake_usdt,
