@@ -11,7 +11,8 @@ test("流水线页三步骤可见", async ({ page }) => {
   await loginAsAdmin(page, "/pipeline");
   await page.goto(`${WEB_BASE_URL}/pipeline`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForTimeout(8000);
-  await expect(page.getByText("训练", { exact: false }).first()).toBeVisible();
-  await expect(page.getByText("因子", { exact: false }).first()).toBeVisible();
-  await expect(page.getByText("选币", { exact: false }).first()).toBeVisible();
+  // 用页面实际标题（含后缀），避免与侧边栏"因子知识库"混淆
+  await expect(page.getByRole("heading", { name: "训练模型" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "因子研究" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "选币回测" })).toBeVisible();
 });
