@@ -30,6 +30,10 @@ export async function GET(request: Request, context: RouteContext) {
   const upstreamUrl = new URL(buildUpstreamApiUrl(`/${path.join("/")}`, request));
   upstreamUrl.search = new URL(request.url).search;
   const authorization = resolveAuthorizationHeader(request);
+  // 调试日志：确认 cookie→Bearer 转换是否生效（排障用，稳定后移除）
+  if (!authorization) {
+    console.log(`[proxy-debug] ${path.join("/")} no-authorization cookie=${request.headers.get("cookie") ?? ""}`);
+  }
 
   try {
     const response = await fetch(upstreamUrl, {
