@@ -19,6 +19,7 @@ import {
   getResearchWorkspace,
   getFeatureWorkspace,
   getEvaluationWorkspace,
+  getResearchRuntimeStatus,
   runResearchTraining,
   runResearchInference,
   runQlibPipeline,
@@ -175,12 +176,13 @@ export default function PipelinePage() {
     return metrics.map((m) => m.value).join("|") + `|${evaluationWsRef.current?.candidate_scope?.candidate_symbols?.length ?? 0}`;
   };
 
-  // 触发后台任务并轮询刷新，直到该步骤数据变化或超时
+  // 触发后台任务并轮询刷新，直到该步骤数据变化或后台任务完成（runtime finished_at 变化）
   const runStep = async (step: number, trigger: () => Promise<unknown>) => {
     if (runningStep !== null || !session.isAuthenticated) return;
     setRunningStep(step);
     setStepMessage((prev) => ({ ...prev, [step]: "正在启动后台任务..." }));
     const beforeSignature = readStepSignature(step);
+    const runtimeBefore = await getResearchRuntimeStatus().then((r) => r.error ? null : r.data.item.finished_at).catch(() => null);
 
     const res = (await trigger()) as { error?: { message?: string } | null } | undefined;
     const err = res && "error" in res ? res.error : null;
@@ -195,7 +197,10 @@ export default function PipelinePage() {
     for (let round = 0; round < POLL_MAX_ROUNDS; round++) {
       await sleep(POLL_INTERVAL_MS);
       await refreshAll();
-      if (readStepSignature(step) !== beforeSignature) {
+      // 数据签名变化或后台任务出现新的完成时间，都视为已完成
+      const signatureChanged = readStepSignature(step) !== beforeSignature;
+      const runtimeNow = await getResearchRuntimeStatus().then((r) => (r.error ? null : r.data.item.finished_at)).catch(() => null);
+      if (signatureChanged || (runtimeNow && runtimeBefore !== null && runtimeNow !== runtimeBefore)) {
         changed = true;
         break;
       }
