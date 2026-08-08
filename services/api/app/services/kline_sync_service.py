@@ -79,6 +79,9 @@ def _now_ms() -> int:
 class KlineSyncService:
     """K 线同步服务，管理回填和增量同步。"""
 
+    # 同一 symbol+interval 的最小补齐间隔（秒），防止并发请求重复拉取占满线程
+    _BACKFILL_COOLDOWN_SECONDS = 30.0
+
     def __init__(
         self,
         store: KlineStore,
@@ -86,6 +89,8 @@ class KlineSyncService:
     ) -> None:
         self._store = store
         self._client = market_client
+        # 最近补齐时间：{(symbol, interval): epoch 秒}
+        self._last_backfill_time: dict[tuple[str, str], float] = {}
 
     def backfill(
         self,
@@ -139,18 +144,29 @@ class KlineSyncService:
                 ))
         return reports
 
-    def ensure_window(self, symbol: str, interval: str, days: int) -> None:
+    def ensure_window(self, symbol: str, interval: str, days: int, timeout_seconds: float = 8.0) -> None:
         """补齐指定天数内的缺口。
 
         检测缺口 → 按缺口头尾 fetch → upsert。
+        timeout_seconds：单次补齐总超时（秒），超时提前退出返回已有数据，
+        避免代理抖动时 K 线拉取占满请求线程池导致 api 整体卡死。
         """
+        key = (symbol, interval)
+        now = time.time()
+        # 冷却：最近 30 秒内补齐过则跳过（并发请求不重复拉取）
+        if now - self._last_backfill_time.get(key, 0.0) < self._BACKFILL_COOLDOWN_SECONDS:
+            return
+        self._last_backfill_time[key] = now
 
         interval_ms = _resolve_interval_ms(interval)
         end_ts = _now_ms()
         start_ts = end_ts - days * 86400000
         gaps = self._store.gaps(symbol, interval, start_ts, end_ts, interval_ms)
+        deadline = now + max(1.0, timeout_seconds)
         for gap_start, gap_end in gaps:
-            self._backfill_one(symbol, interval, gap_start, end_ts=gap_end)
+            if time.time() > deadline:
+                break
+            self._backfill_one(symbol, interval, gap_start, end_ts=gap_end, deadline_ts=deadline)
 
     # ── 内部方法 ──────────────────────────────────────────────────────────
 
@@ -160,8 +176,12 @@ class KlineSyncService:
         interval: str,
         start_ts: int,
         end_ts: int | None = None,
+        deadline_ts: float | None = None,
     ) -> tuple[int, int]:
-        """回填单个 symbol 的单个周期。返回 (fetched, inserted)。"""
+        """回填单个 symbol 的单个周期。返回 (fetched, inserted)。
+
+        deadline_ts：可选超时点（epoch 秒），超过则提前退出（防代理抖动占满线程）。
+        """
 
         total_fetched = 0
         total_inserted = 0
@@ -169,6 +189,10 @@ class KlineSyncService:
         interval_ms = _resolve_interval_ms(interval)
 
         while cursor_end > start_ts:
+            # 超时保护：超过截止时间提前退出（返回已有数据，由调用方降级）
+            if deadline_ts is not None and time.time() > deadline_ts:
+                break
+
             # 剩余区间单页能装下时收窄返回窗口，避免小缺口也下载整页 1000 根
             if cursor_end - start_ts <= 1000 * interval_ms:
                 raw = self._client.get_klines(
