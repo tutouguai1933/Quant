@@ -1,10 +1,10 @@
 /* 告警列表组件，展示最近的告警记录。 */
 "use client";
 
-import { AlertTriangle, Bell, Clock } from "lucide-react";
+import { AlertTriangle, Bell } from "lucide-react";
 
+import { TerminalCard } from "./terminal/terminal-card";
 import { Badge } from "./ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 export type AlertLevel = "critical" | "warning" | "info";
 
@@ -34,31 +34,22 @@ export function AlertList({ alerts, limit = 10 }: AlertListProps) {
   const displayAlerts = alerts.slice(0, limit);
 
   return (
-    <Card className="bg-card/90">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Bell className="size-4 text-primary" />
-            <CardTitle className="text-base">最近告警</CardTitle>
-          </div>
-          <span className="text-sm text-muted-foreground">
-            {alerts.length > limit ? `显示最近 ${limit} 条` : `${alerts.length} 条`}
-          </span>
+    <TerminalCard
+      title="最近告警"
+      actions={<span className="text-sm text-[var(--terminal-muted)]">{alerts.length > limit ? `显示最近 ${limit} 条` : `${alerts.length} 条`}</span>}
+    >
+      {displayAlerts.length === 0 ? (
+        <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-6 text-center">
+          <Bell className="mx-auto size-6 text-muted-foreground" />
+          <p className="mt-2 text-sm text-muted-foreground">暂无告警记录</p>
         </div>
-      </CardHeader>
-      <CardContent className="pt-2">
-        {displayAlerts.length === 0 ? (
-          <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-6 text-center">
-            <Bell className="mx-auto size-6 text-muted-foreground" />
-            <p className="mt-2 text-sm text-muted-foreground">暂无告警记录</p>
-          </div>
-        ) : (
-          <ul className="space-y-3">
-            {displayAlerts.map((alert) => (
-              <li key={alert.id} className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className={`size-4 mt-0.5 ${alert.level === "critical" ? "text-red-500" : alert.level === "warning" ? "text-amber-500" : "text-muted-foreground"}`} />
+      ) : (
+        <ul className="space-y-3">
+          {displayAlerts.map((alert) => (
+            <li key={alert.id} className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className={`size-4 mt-0.5 ${alert.level === "critical" ? "text-[var(--terminal-red)]" : alert.level === "warning" ? "text-[var(--terminal-yellow)]" : "text-muted-foreground"}`} />
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <Badge variant={levelConfig[alert.level].variant}>{levelConfig[alert.level].label}</Badge>
@@ -81,8 +72,7 @@ export function AlertList({ alerts, limit = 10 }: AlertListProps) {
             ))}
           </ul>
         )}
-      </CardContent>
-    </Card>
+    </TerminalCard>
   );
 }
 
@@ -113,35 +103,24 @@ function formatTime(value: string): string {
 
 export function AlertListSkeleton() {
   return (
-    <Card className="bg-card/90">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Bell className="size-4 text-muted" />
-            <div className="h-5 w-16 rounded bg-muted/40 animate-pulse" />
-          </div>
-          <div className="h-4 w-20 rounded bg-muted/40 animate-pulse" />
-        </div>
-      </CardHeader>
-      <CardContent className="pt-2">
-        <ul className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <li key={i} className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-              <div className="flex items-start gap-3">
-                <div className="size-4 rounded bg-muted/40 animate-pulse" />
-                <div className="space-y-2 flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="h-4 w-8 rounded bg-muted/40 animate-pulse" />
-                    <div className="h-3 w-16 rounded bg-muted/40 animate-pulse" />
-                  </div>
-                  <div className="h-4 w-48 rounded bg-muted/40 animate-pulse" />
+    <TerminalCard title="最近告警">
+      <ul className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <li key={i} className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="size-4 rounded bg-muted/40 animate-pulse" />
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center gap-2">
+                  <div className="h-4 w-8 rounded bg-muted/40 animate-pulse" />
+                  <div className="h-3 w-16 rounded bg-muted/40 animate-pulse" />
                 </div>
+                <div className="h-4 w-48 rounded bg-muted/40 animate-pulse" />
               </div>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </TerminalCard>
   );
 }
 

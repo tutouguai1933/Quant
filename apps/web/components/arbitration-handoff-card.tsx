@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { StatusBadge } from "./status-badge";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { TerminalCard } from "./terminal/terminal-card";
 
 type ArbitrationHandoffCardProps = {
   arbitration: Record<string, unknown>;
@@ -33,15 +33,14 @@ export function ArbitrationHandoffCard({
   const recommendedStage = normalizeStage(readText(arbitration.recommended_stage, "research"));
 
   return (
-    <Card className="border-emerald-500/25 bg-[color:var(--panel-strong)]/90">
-      <CardHeader>
-        <p className="eyebrow">当前仲裁动作</p>
-        <CardTitle>{readText(arbitration.headline, "当前还没有仲裁动作")}</CardTitle>
-        <CardDescription>
-          这一步和评估页顶部的当前仲裁结论保持一致，策略页和任务页不再各自猜下一步动作。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
+    <TerminalCard
+      title={readText(arbitration.headline, "当前还没有仲裁动作")}
+      className="border-[var(--terminal-green)]/25!"
+    >
+      <p className="text-xs text-[var(--terminal-muted)] mb-3">
+        这一步和评估页顶部的当前仲裁结论保持一致，策略页和任务页不再各自猜下一步动作。
+      </p>
+      <div className="space-y-5">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge value={status} />
           <StatusBadge value={recommendedStage} />
@@ -55,12 +54,12 @@ export function ArbitrationHandoffCard({
           <ArbitrationInfoBlock label="当前页面" value={surfaceLabel} />
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+        <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
           <p className="eyebrow">当前为什么这样</p>
-          <p className="mt-2 text-sm leading-6 text-foreground">
+          <p className="mt-2 text-sm leading-6 text-[var(--terminal-text)]">
             {readText(arbitration.detail, "当前还没有可用仲裁说明。")}
           </p>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          <p className="mt-3 text-sm leading-6 text-[var(--terminal-muted)]">
             {readText(
               primaryBlocker.detail,
               "当前没有额外阻塞，优先按这一块给出的主入口继续推进。",
@@ -69,7 +68,7 @@ export function ArbitrationHandoffCard({
         </div>
 
         {!isAuthenticated ? (
-          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-6 text-muted-foreground">
+          <div className="rounded border border-[var(--terminal-yellow)]/30 bg-[var(--terminal-yellow)]/10 p-4 text-sm leading-6 text-[var(--terminal-muted)]">
             <p>当前还没登录，所以这里只保留安全导航，不直接开放执行动作。</p>
             <p>登录后会继续沿用同一份仲裁动作，不需要重新猜下一步。</p>
           </div>
@@ -85,19 +84,19 @@ export function ArbitrationHandoffCard({
             </Button>
           </div>
         ) : (
-          <p className="text-sm leading-6 text-muted-foreground">具体动作已收口到当前页面的主动作区，这里只保留仲裁摘要。</p>
+          <p className="text-sm leading-6 text-[var(--terminal-muted)]">具体动作已收口到当前页面的主动作区，这里只保留仲裁摘要。</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </TerminalCard>
   );
 }
 
 /* 渲染仲裁卡片里的小信息块。 */
 function ArbitrationInfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
       <p className="eyebrow">{label}</p>
-      <p className="mt-2 text-sm font-medium leading-6 text-foreground break-all">{value}</p>
+      <p className="mt-2 text-sm font-medium leading-6 text-[var(--terminal-text)] break-all">{value}</p>
     </div>
   );
 }

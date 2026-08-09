@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
+import { TerminalCard } from "./terminal/terminal-card";
 
 type ConfirmDialogProps = {
   action: string;
@@ -35,11 +35,8 @@ export function OpenclawActionConfirmDialog({ action, label, riskLevel, onConfir
   const canConfirm = !requirement.requireInput || confirmText === (riskLevel === "medium" ? "CONFIRM" : action);
 
   return (
-    <Card className="border-destructive/50">
-      <CardHeader>
-        <CardTitle>确认执行: {label}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <TerminalCard title={`确认执行: ${label}`} className="border-[var(--terminal-red)]/50!">
+      <div className="space-y-4">
         {riskLevel !== "critical" && (
           <>
             {requirement.requireInput && (
@@ -57,9 +54,9 @@ export function OpenclawActionConfirmDialog({ action, label, riskLevel, onConfir
           </>
         )}
         {riskLevel === "critical" && (
-          <p className="text-sm text-destructive">此动作被系统禁止，无法执行。</p>
+          <p className="text-sm text-[var(--terminal-red)]">此动作被系统禁止，无法执行。</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </TerminalCard>
   );
 }

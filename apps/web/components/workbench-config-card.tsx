@@ -3,7 +3,7 @@
 import type { ComponentProps, ReactNode } from "react";
 
 import { FormSubmitButton } from "./form-submit-button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { TerminalCard } from "./terminal/terminal-card";
 import { Input } from "./ui/input";
 
 type WorkbenchConfigCardProps = {
@@ -41,38 +41,33 @@ export function WorkbenchConfigCard({
   disabledLabel = "当前不可保存",
 }: WorkbenchConfigCardProps) {
   return (
-    <Card className="bg-card/90">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form action="/actions" method="post" className="space-y-4">
-          <input type="hidden" name="action" value="update_workbench_config" />
-          <input type="hidden" name="section" value={scope} />
-          <input type="hidden" name="returnTo" value={returnTo} />
-          {disabled ? <p className="text-sm leading-6 text-amber-200">{disabledReason}</p> : null}
-          <fieldset disabled={disabled} className="grid gap-4 disabled:opacity-60">
-            {children}
-          </fieldset>
-          <FormSubmitButton
-            type="submit"
-            size="sm"
-            idleLabel={disabled ? disabledLabel : "保存当前配置"}
-            pendingLabel="保存中…"
-            pendingHint="配置已提交，当前工作台和后续研究链会按新配置刷新。"
-            disabled={disabled}
-          />
-        </form>
-      </CardContent>
-    </Card>
+    <TerminalCard title={title}>
+      <p className="mb-3 text-xs text-[var(--terminal-muted)]">{description}</p>
+      <form action="/actions" method="post" className="space-y-4">
+        <input type="hidden" name="action" value="update_workbench_config" />
+        <input type="hidden" name="section" value={scope} />
+        <input type="hidden" name="returnTo" value={returnTo} />
+        {disabled ? <p className="text-sm leading-6 text-[var(--terminal-yellow)]">{disabledReason}</p> : null}
+        <fieldset disabled={disabled} className="grid gap-4 disabled:opacity-60">
+          {children}
+        </fieldset>
+        <FormSubmitButton
+          type="submit"
+          size="sm"
+          idleLabel={disabled ? disabledLabel : "保存当前配置"}
+          pendingLabel="保存中…"
+          pendingHint="配置已提交，当前工作台和后续研究链会按新配置刷新。"
+          disabled={disabled}
+        />
+      </form>
+    </TerminalCard>
   );
 }
 
 /* 渲染统一字段块。 */
 export function ConfigField({ label, hint, children }: ConfigFieldProps) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
       <div className="mb-3">
         <p className="eyebrow">{label}</p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{hint}</p>

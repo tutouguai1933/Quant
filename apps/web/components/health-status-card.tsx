@@ -1,9 +1,7 @@
 /* 服务健康状态卡片组件，展示服务运行状态和响应时间。 */
 "use client";
 
-import { Activity, Clock, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
-
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { TerminalCard } from "./terminal/terminal-card";
 
 export type HealthStatus = "healthy" | "unhealthy" | "warning";
 
@@ -15,52 +13,45 @@ export type HealthStatusCardProps = {
   detail?: string;
 };
 
-const statusConfig: Record<HealthStatus, { color: string; bgColor: string; icon: typeof CheckCircle2; label: string }> = {
-  healthy: { color: "text-green-500", bgColor: "bg-green-500", icon: CheckCircle2, label: "运行正常" },
-  unhealthy: { color: "text-red-500", bgColor: "bg-red-500", icon: XCircle, label: "异常" },
-  warning: { color: "text-amber-500", bgColor: "bg-amber-500", icon: AlertTriangle, label: "警告" },
+const statusConfig: Record<HealthStatus, { color: string; bgColor: string; label: string }> = {
+  healthy: { color: "text-[var(--terminal-green)]", bgColor: "bg-[var(--terminal-green)]", label: "运行正常" },
+  unhealthy: { color: "text-[var(--terminal-red)]", bgColor: "bg-[var(--terminal-red)]", label: "异常" },
+  warning: { color: "text-[var(--terminal-yellow)]", bgColor: "bg-[var(--terminal-yellow)]", label: "警告" },
 };
 
 export function HealthStatusCard({ serviceName, status, responseTime, lastCheck, detail }: HealthStatusCardProps) {
   const config = statusConfig[status];
-  const IconComponent = config.icon;
 
   return (
-    <Card className="bg-card/90">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Activity className="size-4 text-primary" />
-            <CardTitle className="text-base">{serviceName}</CardTitle>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`size-2.5 rounded-full ${config.bgColor}`} />
-            <span className={`text-sm font-medium ${config.color}`}>{config.label}</span>
-          </div>
+    <TerminalCard
+      title={serviceName}
+      actions={
+        <div className="flex items-center gap-2">
+          <span className={`size-2.5 rounded-full ${config.bgColor}`} />
+          <span className={`text-sm font-medium ${config.color}`}>{config.label}</span>
         </div>
-      </CardHeader>
-      <CardContent className="pt-2">
-        <div className="grid gap-2 text-sm">
-          {responseTime !== undefined && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">响应时间</span>
-              <span className={`font-medium ${responseTime < 200 ? "text-green-500" : responseTime < 500 ? "text-amber-500" : "text-red-500"}`}>
-                {responseTime}ms
-              </span>
-            </div>
-          )}
+      }
+    >
+      <div className="grid gap-2 text-sm">
+        {responseTime !== undefined && (
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">最近检查</span>
-            <span className="text-foreground">{formatTime(lastCheck)}</span>
+            <span className="text-muted-foreground">响应时间</span>
+            <span className={`font-medium ${responseTime < 200 ? "text-[var(--terminal-green)]" : responseTime < 500 ? "text-[var(--terminal-yellow)]" : "text-[var(--terminal-red)]"}`}>
+              {responseTime}ms
+            </span>
           </div>
-          {detail && (
-            <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-              <p className="text-xs text-muted-foreground">{detail}</p>
-            </div>
-          )}
+        )}
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">最近检查</span>
+          <span className="text-foreground">{formatTime(lastCheck)}</span>
         </div>
-      </CardContent>
-    </Card>
+        {detail && (
+          <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+            <p className="text-xs text-muted-foreground">{detail}</p>
+          </div>
+        )}
+      </div>
+    </TerminalCard>
   );
 }
 
@@ -81,32 +72,18 @@ function formatTime(value: string): string {
 
 export function HealthStatusSkeleton() {
   return (
-    <Card className="bg-card/90">
-      <CardHeader className="pb-3">
+    <TerminalCard>
+      <div className="grid gap-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Activity className="size-4 text-muted" />
-            <div className="h-5 w-24 rounded bg-muted/40 animate-pulse" />
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="size-2.5 rounded-full bg-muted/40 animate-pulse" />
-            <div className="h-4 w-16 rounded bg-muted/40 animate-pulse" />
-          </div>
+          <div className="h-4 w-16 rounded bg-muted/40 animate-pulse" />
+          <div className="h-4 w-12 rounded bg-muted/40 animate-pulse" />
         </div>
-      </CardHeader>
-      <CardContent className="pt-2">
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between">
-            <div className="h-4 w-16 rounded bg-muted/40 animate-pulse" />
-            <div className="h-4 w-12 rounded bg-muted/40 animate-pulse" />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="h-4 w-16 rounded bg-muted/40 animate-pulse" />
-            <div className="h-4 w-20 rounded bg-muted/40 animate-pulse" />
-          </div>
+        <div className="flex items-center justify-between">
+          <div className="h-4 w-16 rounded bg-muted/40 animate-pulse" />
+          <div className="h-4 w-20 rounded bg-muted/40 animate-pulse" />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </TerminalCard>
   );
 }
 

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { TerminalCard } from "./terminal/terminal-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 
 type DataTableProps = {
@@ -17,21 +17,16 @@ type DataTableProps = {
 export function DataTable({ columns, rows, emptyTitle, emptyDetail, emptyEyebrow }: DataTableProps) {
   if (!rows.length) {
     return (
-      <Card className="bg-card/80">
-        <CardHeader>
-          {emptyEyebrow ? <p className="eyebrow">{emptyEyebrow}</p> : null}
-          <CardTitle>{emptyTitle}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm leading-6 text-muted-foreground">{emptyDetail}</p>
-        </CardContent>
-      </Card>
+      <TerminalCard title={emptyTitle}>
+        {emptyEyebrow ? <p className="eyebrow">{emptyEyebrow}</p> : null}
+        <p className="text-sm leading-6 text-muted-foreground">{emptyDetail}</p>
+      </TerminalCard>
     );
   }
 
   return (
-    <Card className="overflow-hidden bg-card/80">
-      <CardContent className="p-0">
+    <TerminalCard className="overflow-hidden">
+      <div className="-m-4">
         <Table className="table-fixed">
           <TableHeader className="bg-muted/20">
             <TableRow>
@@ -50,7 +45,7 @@ export function DataTable({ columns, rows, emptyTitle, emptyDetail, emptyEyebrow
             ))}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+      </div>
+    </TerminalCard>
   );
 }

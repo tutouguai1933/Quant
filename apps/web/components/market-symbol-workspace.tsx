@@ -18,9 +18,9 @@ import { DataTable } from "./data-table";
 import { MultiTimeframeSummary } from "./multi-timeframe-summary";
 import { ResearchSidecard } from "./research-sidecard";
 import { StatusBadge } from "./status-badge";
+import { TerminalCard } from "./terminal/terminal-card";
 import { TradingChartPanel } from "./trading-chart-panel";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 
@@ -158,7 +158,7 @@ export function MarketSymbolWorkspace({ symbol, initialData, candidate }: Market
         />
 
         {errorMessage ? (
-          <section className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5">
+          <section className="rounded border border-[var(--terminal-red)]/30 bg-[var(--terminal-red)]/10 p-5">
             <p className="eyebrow">切换反馈</p>
             <h3 className="text-lg font-semibold">图表没有切过去</h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
@@ -225,13 +225,9 @@ function CompactDecisionCard({
   const gateReasons = candidate?.dry_run_gate.reasons.length ? candidate.dry_run_gate.reasons.join(" / ") : "无";
 
   return (
-    <Card className="bg-card/92">
-      <CardHeader className="gap-3">
-        <p className="eyebrow">执行摘要</p>
-        <CardTitle>把判断压缩成一组可执行结论</CardTitle>
-        <CardDescription>这里不再拉长页面，只保留当前这个币最关键的研究结论、执行准备和下一步动作。</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <TerminalCard title="把判断压缩成一组可执行结论">
+      <p className="text-xs text-[var(--terminal-muted)] mb-3">这里不再拉长页面，只保留当前这个币最关键的研究结论、执行准备和下一步动作。</p>
+      <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
           <CompactStat label="研究分数" value={candidate?.score ?? "n/a"} />
           <CompactStat label="研究门" valueNode={<StatusBadge value={gateValue} />} />
@@ -242,7 +238,7 @@ function CompactDecisionCard({
         </div>
 
         {candidate ? (
-          <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+          <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-foreground">{candidate.symbol}</p>
@@ -259,7 +255,7 @@ function CompactDecisionCard({
           </div>
         ) : null}
 
-        <div className="rounded-2xl border border-border/70 bg-background/50 p-4">
+        <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">下一步动作</p>
           <p className="mt-2 text-sm leading-6 text-foreground">{formatText(nextStep, "先继续观察。")}</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -271,8 +267,8 @@ function CompactDecisionCard({
             </Button>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </TerminalCard>
   );
 }
 
@@ -286,7 +282,7 @@ function CompactStat({
   valueNode?: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-background/35 p-3">
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
       <div className="mt-2 text-sm font-medium text-foreground">{valueNode ?? value}</div>
     </div>
@@ -331,29 +327,20 @@ function RsiHistoryTabContent({
 }) {
   if (loading) {
     return (
-      <Card className="bg-card/80">
-        <CardHeader>
-          <CardTitle>加载中...</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <TerminalCard title="加载中...">
+        <div className="space-y-3">
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-32 w-full" />
-        </CardContent>
-      </Card>
+        </div>
+      </TerminalCard>
     );
   }
 
   if (error) {
     return (
-      <Card className="bg-card/80">
-        <CardHeader>
-          <p className="eyebrow">错误</p>
-          <CardTitle>获取数据失败</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </CardContent>
-      </Card>
+      <TerminalCard title="获取数据失败">
+        <p className="text-sm text-[var(--terminal-muted)]">{error}</p>
+      </TerminalCard>
     );
   }
 
@@ -369,15 +356,11 @@ function RsiHistoryTabContent({
 
   return (
     <section className="space-y-4">
-      <Card className="bg-card/80">
-        <CardHeader>
-          <p className="eyebrow">技术指标</p>
-          <CardTitle>{symbol} RSI 历史记录</CardTitle>
-          <CardDescription>
-            当前周期: {interval} | 共 {data?.total ?? 0} 条记录 | RSI(14)序列，超买区域(&gt;=70)和超卖区域(&lt;=30)标记。
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <TerminalCard title={`${symbol} RSI 历史记录`}>
+        <p className="text-xs text-[var(--terminal-muted)] mb-3">
+          当前周期: {interval} | 共 {data?.total ?? 0} 条记录 | RSI(14)序列，超买区域(&gt;=70)和超卖区域(&lt;=30)标记。
+        </p>
+      </TerminalCard>
       <DataTable
         columns={["时间", "RSI值", "状态", "信号"]}
         rows={rows}
@@ -420,29 +403,20 @@ function TradeHistoryTabContent({
 }) {
   if (loading) {
     return (
-      <Card className="bg-card/80">
-        <CardHeader>
-          <CardTitle>加载中...</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <TerminalCard title="加载中...">
+        <div className="space-y-3">
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-32 w-full" />
-        </CardContent>
-      </Card>
+        </div>
+      </TerminalCard>
     );
   }
 
   if (error) {
     return (
-      <Card className="bg-card/80">
-        <CardHeader>
-          <p className="eyebrow">错误</p>
-          <CardTitle>获取数据失败</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </CardContent>
-      </Card>
+      <TerminalCard title="获取数据失败">
+        <p className="text-sm text-[var(--terminal-muted)]">{error}</p>
+      </TerminalCard>
     );
   }
 
@@ -461,15 +435,11 @@ function TradeHistoryTabContent({
 
   return (
     <section className="space-y-4">
-      <Card className="bg-card/80">
-        <CardHeader>
-          <p className="eyebrow">执行记录</p>
-          <CardTitle>{symbol} 交易历史</CardTitle>
-          <CardDescription>
-            共 {data?.total_returned ?? 0} 条记录 | 显示入场价、出场价、盈亏和止损原因。
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <TerminalCard title={`${symbol} 交易历史`}>
+        <p className="text-xs text-[var(--terminal-muted)] mb-3">
+          共 {data?.total_returned ?? 0} 条记录 | 显示入场价、出场价、盈亏和止损原因。
+        </p>
+      </TerminalCard>
       <DataTable
         columns={["入场时间", "方向", "入场价", "出场价", "盈亏%", "持仓时长", "止损原因"]}
         rows={rows}

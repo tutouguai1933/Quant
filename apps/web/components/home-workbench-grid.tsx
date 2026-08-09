@@ -7,8 +7,8 @@ import Link from "next/link";
 
 import { DetailDrawer } from "./detail-drawer";
 import { SectionShell } from "./section-shell";
+import { TerminalCard } from "./terminal/terminal-card";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./ui/card";
 
 type HomeWorkbenchCardLink = {
   href: string;
@@ -135,21 +135,18 @@ export function HomeWorkbenchGrid({ cards }: HomeWorkbenchGridProps) {
     >
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
-          <Card key={card.id} className="bg-card/90">
-            <CardHeader>
-              <p className="eyebrow">{card.eyebrow}</p>
-              <CardTitle>{card.title}</CardTitle>
-              <CardDescription>{card.summary}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm leading-6 text-foreground">{card.detail}</p>
+          <TerminalCard key={card.id} title={card.title}>
+            <p className="text-[var(--terminal-dim)] text-[11px] font-medium mb-1">{card.eyebrow}</p>
+            <p className="text-xs text-[var(--terminal-muted)] mb-3">{card.summary}</p>
+            <div className="space-y-4">
+              <p className="text-sm leading-6 text-[var(--terminal-text)]">{card.detail}</p>
               <div className="grid gap-3">
                 {card.digests.map((item) => (
                   <DigestBlock key={`${card.id}-${item.label}`} label={item.label} value={item.value} detail={item.detail} />
                 ))}
               </div>
-            </CardContent>
-            <CardFooter className="border-t border-border/60 pt-4">
+            </div>
+            <div className="mt-4 border-t border-[var(--terminal-border)] pt-4">
               <DetailDrawer
                 triggerLabel={card.triggerLabel}
                 title={card.drawerTitle}
@@ -178,8 +175,8 @@ export function HomeWorkbenchGrid({ cards }: HomeWorkbenchGridProps) {
                   </div>
                 </div>
               </DetailDrawer>
-            </CardFooter>
-          </Card>
+            </div>
+          </TerminalCard>
         ))}
       </div>
     </SectionShell>
@@ -189,10 +186,10 @@ export function HomeWorkbenchGrid({ cards }: HomeWorkbenchGridProps) {
 /* 渲染首页主工作台卡片里的摘要块。 */
 function DigestBlock({ label, value, detail }: HomeWorkbenchCardDigest) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/70 p-4">
+    <div className="terminal-card p-4">
       <p className="eyebrow">{label}</p>
-      <p className="mt-2 text-sm font-semibold leading-6 text-foreground">{value}</p>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-[var(--terminal-text)]">{value}</p>
+      <p className="mt-2 text-sm leading-6 text-[var(--terminal-muted)]">{detail}</p>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 /* 这个文件提供工作台配置状态卡，统一展示配置与实际结果的对齐信息。 */
 
 import { resolveHumanStatus } from "../lib/status-language";
+import { TerminalCard } from "./terminal/terminal-card";
 import { Badge } from "./ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 
 type WorkbenchConfigStatusCardProps = {
   scope: string;
@@ -23,14 +23,11 @@ export function WorkbenchConfigStatusCard({
   const sanitizedFields = (staleFields ?? []).filter((item): item is string => Boolean(item?.toString().trim()));
 
   return (
-    <Card className="bg-card/95">
-      <CardHeader>
-        <CardTitle>{scope} 配置状态</CardTitle>
-        <CardDescription>
-          {editable ? "当前可以调整配置，系统会把下一轮研究按新口径跑。" : "当前配置被锁止，稍后再试。"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <TerminalCard title={`${scope} 配置状态`}>
+      <p className="mb-3 text-xs text-[var(--terminal-muted)]">
+        {editable ? "当前可以调整配置，系统会把下一轮研究按新口径跑。" : "当前配置被锁止，稍后再试。"}
+      </p>
+      <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant={humanStatus.badgeVariant} title={humanStatus.detail} aria-label={`${humanStatus.label}：${humanStatus.detail}`}>
             {humanStatus.label}
@@ -51,7 +48,7 @@ export function WorkbenchConfigStatusCard({
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </TerminalCard>
   );
 }

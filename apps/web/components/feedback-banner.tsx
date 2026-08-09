@@ -2,7 +2,7 @@
 
 import type { FeedbackState } from "../lib/feedback";
 
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { TerminalCard } from "./terminal/terminal-card";
 
 type FeedbackBannerProps = {
   feedback: FeedbackState;
@@ -17,20 +17,17 @@ export function FeedbackBanner({ feedback, fallbackTitle = "动作反馈" }: Fee
 
   const toneClass =
     feedback.tone === "error"
-      ? "border-destructive/50 bg-destructive/10"
+      ? "border border-[var(--terminal-red)]/40! bg-[var(--terminal-red)]/10"
       : feedback.tone === "warning"
-        ? "border-amber-500/50 bg-amber-500/10"
-        : "border-emerald-500/50 bg-emerald-500/10";
+        ? "border border-[var(--terminal-yellow)]/40! bg-[var(--terminal-yellow)]/10"
+        : "border border-[var(--terminal-green)]/40! bg-[var(--terminal-green)]/10";
 
   return (
-    <Card className={toneClass}>
-      <CardHeader className="pb-2">
-        <p className="eyebrow">{fallbackTitle}</p>
-        <CardTitle>{feedback.title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm leading-6 text-muted-foreground">{feedback.message}</p>
-      </CardContent>
-    </Card>
+    <TerminalCard title={fallbackTitle} className={toneClass}>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-[var(--terminal-text)]">{feedback.title}</p>
+        <p className="text-sm text-[var(--terminal-muted)]">{feedback.message}</p>
+      </div>
+    </TerminalCard>
   );
 }
