@@ -1,14 +1,40 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-08-08
+> 最后更新：2026-08-09
 
 ---
 
 ## 当前进度
 
-**状态**：前端重构（3 阶段 15 任务）全部完成并部署验证；数据链路断点修复、新手交互动线重构、Playwright 测试收口
+**状态**：UI 统一终端风格完成（18 个组件）；api 卡死可观测性补齐（日志落盘+指标）；ops 页前后端契约 bug 修复
 
-**本次更新（2026-08-08 晚）**：
+**本次更新（2026-08-09）**：
+
+### 1. UI 统一终端风格（计划：docs/superpowers/plans/2026-08-09-unify-terminal-ui.md）
+- 背景：19/24 个终端风格页面内部混用 shadcn 卡片（大圆角+大阴影+泛白），与终端卡片割裂
+- 决策：卡片容器统一终端风格（8px 圆角/深色实底/细边框），保留 shadcn 基础交互件（button/badge/tabs/dialog）
+- 4 个并行 agent 完成 13 个组件，验收后补改 8 个遗漏组件（research-runtime-panel、trading-chart-panel、multi-timeframe-summary、research-sidecard、full-screen-modal、timeframe-tabs、api-error-fallback、ui/tabs 激活态）
+- 技术点：`.terminal-card` 全局样式优先级高于 Tailwind 工具类，覆盖边框颜色需用 `!` 后缀（Tailwind v4）
+- 验证：Playwright 线上检查 8 个页面 terminal-card 计数、旧卡样式归零，全部通过
+
+### 2. api 频繁卡死排查（进行中）
+- **发现**：Prometheus 数据显示过去 24h api 重启 15 次（平均不到 2h 一次），非偶发
+- **可观测性补齐**（之前卡死无痕的原因）：
+  - api 日志从未落盘（logging_config 存在但从未启用）→ main.py startup 启用 + compose 挂载卷 `infra/data/logs/api/`
+  - /metrics 原来只有探活 → 现暴露线程数/内存/各端点延迟/慢请求计数
+  - 服务器监控脚本 /tmp/watch_api.sh：每 30s 查 health，卡死时自动 dump 线程栈
+- 已排除：快照单飞防护完整；openclaw hyperopt 401 是噪音（每天一次检查）
+- **根因待确认**：等下一次卡死时抓线程栈/Prometheus 曲线
+
+### 3. ops 页报错修复（发现于 UI 验收）
+- 根因：后端 /api/v1/health 返回 containers 结构，前端 ops 页期望 services 数组 → map 报错 → 错误降级卡
+- 修复：前端 fetchHealthStatus 适配转换 containers → services
+
+**当前状态**：服务全绿（api/web/openclaw/freqtrade healthy），UI 8 个页面无旧卡残留，ops 页正常渲染
+
+---
+
+## 上次进度（2026-08-08）
 
 ### 前端数据链路修复与重构（计划：docs/superpowers/plans/2026-08-08-frontend-refactor.md）
 
