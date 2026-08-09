@@ -2634,7 +2634,8 @@ class EvaluationWorkspaceService:
             turnover = float(metrics_b.get("turnover") or backtest.get("turnover", 0) or 0)
             if net_return > best_net_return_pct:
                 best_net_return_pct = net_return
-            if max_drawdown > 0 and (best_max_drawdown_pct == 0 or max_drawdown < best_max_drawdown_pct):
+            # 回撤为负数，取"最负"（绝对值最大）的那个作为最差回撤
+            if max_drawdown < best_max_drawdown_pct:
                 best_max_drawdown_pct = max_drawdown
             if sharpe > best_sharpe:
                 best_sharpe = sharpe
