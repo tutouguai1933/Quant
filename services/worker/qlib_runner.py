@@ -438,12 +438,12 @@ class QlibRunner:
             validator = WalkForwardValidator()
             folds = validator.split(all_rows, wf_config)
             if folds:
-                # 使用第一折 train 作为训练集，所有 test 合并为验证 + 回测
-                wf_training = list(folds[0].train)
-                wf_test = []
-                for f in folds:
-                    wf_test.extend(f.test)
-                # test 集按时间升序拆分：前半验证、后半回测（各 50%）
+                # 使用最后一折的累积训练集（expanding 模式越滚越大，覆盖最早到最后一折之前
+                # 的所有数据），验证/回测用最后一折的 test 段（时间严格在训练集之后，无泄漏）。
+                # 之前只取第一折（约 25% 数据）导致训练样本严重偏少。
+                last_fold = folds[-1]
+                wf_training = list(last_fold.train)
+                wf_test = list(last_fold.test)
                 wf_test.sort(key=lambda r: int(r.get("generated_at", 0)))
                 split_mid = len(wf_test) // 2
                 wf_validation = wf_test[:split_mid] if split_mid > 0 else wf_test
