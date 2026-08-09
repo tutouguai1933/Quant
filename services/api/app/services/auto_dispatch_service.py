@@ -33,6 +33,9 @@ from services.api.app.services.sync_service import sync_service
 
 logger = logging.getLogger(__name__)
 
+# 默认策略 ID（env 可覆盖，通常策略目录中 ID=1 是主策略）
+DEFAULT_STRATEGY_ID = int(os.getenv("QUANT_DEFAULT_STRATEGY_ID", "1"))
+
 
 def _utc_now() -> str:
     """返回当前 UTC 时间字符串。"""
@@ -337,7 +340,7 @@ class AutoDispatchService:
             return False, gates_reason, recommendation
 
         # 4. 检查风控熔断
-        strategy_id = 1  # 默认策略ID
+        strategy_id = DEFAULT_STRATEGY_ID
         risk_passed, risk_reason, risk_details = self.check_risk_guard(strategy_id)
         if not risk_passed:
             return False, risk_reason, recommendation
@@ -354,7 +357,7 @@ class AutoDispatchService:
             执行结果
         """
         symbol = str(recommendation.get("symbol", "")).strip().upper()
-        strategy_id = 1  # 默认策略ID
+        strategy_id = DEFAULT_STRATEGY_ID
         executed_at = _utc_now()
 
         logger.info("开始自动派发信号: %s", symbol)

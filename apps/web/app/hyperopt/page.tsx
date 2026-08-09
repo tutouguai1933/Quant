@@ -47,31 +47,36 @@ export default function HyperoptPage() {
       .catch(() => {});
   }, []);
 
+  // 拉取优化状态和任务列表
+  const fetchStatusAndJobs = async () => {
+    const statusRes = await getHyperoptStatus();
+    if (!statusRes.error && statusRes.data) {
+      setStatus(statusRes.data);
+    }
+
+    const jobsRes = await listHyperoptJobs(20);
+    if (!jobsRes.error && jobsRes.data?.jobs) {
+      setJobs(jobsRes.data.jobs);
+    }
+  };
+
   useEffect(() => {
     if (!session.isAuthenticated) {
       setIsLoading(false);
       return;
     }
 
-    const fetchStatus = async () => {
-      const statusRes = await getHyperoptStatus();
-      if (!statusRes.error && statusRes.data) {
-        setStatus(statusRes.data);
-      }
-
-      const jobsRes = await listHyperoptJobs(20);
-      if (!jobsRes.error && jobsRes.data?.jobs) {
-        setJobs(jobsRes.data.jobs);
-      }
-    };
-
-    fetchStatus();
+    fetchStatusAndJobs();
     setIsLoading(false);
-
-    // Poll every 5 seconds when running
-    const interval = setInterval(fetchStatus, 5000);
-    return () => clearInterval(interval);
   }, [session.isAuthenticated]);
+
+  // 仅当优化进行中时每 5 秒轮询,完成/失败后状态变化会自动停止轮询
+  useEffect(() => {
+    if (!session.isAuthenticated || status.status !== "running") return;
+
+    const interval = setInterval(fetchStatusAndJobs, 5000);
+    return () => clearInterval(interval);
+  }, [session.isAuthenticated, status.status]);
 
   const handleStartHyperopt = async () => {
     setIsStarting(true);

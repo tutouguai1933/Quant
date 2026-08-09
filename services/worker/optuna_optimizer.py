@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -17,6 +19,8 @@ import numpy as np
 
 from services.worker.ml.model import MLModel
 from services.worker.ml.trainer import ModelTrainer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -31,6 +35,7 @@ class OptimizationResult:
     trials: list[dict[str, Any]]
     param_importance: dict[str, float]
     generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    failed_trials: int = 0
 
 
 @dataclass(slots=True)
@@ -45,6 +50,7 @@ class OptimizationProgress:
     started_at: datetime | None
     elapsed_seconds: float
     message: str
+    failed_trials: int = 0
 
 
 class HyperparameterOptimizer:
@@ -86,6 +92,13 @@ class HyperparameterOptimizer:
             message="",
         )
         self._lock = threading.Lock()
+        self._failed_trials = 0
+
+    def mark_failed(self, message: str) -> None:
+        """把进度标记为失败（后台线程异常退出时由外部调用）。"""
+        with self._lock:
+            self._progress.status = "failed"
+            self._progress.message = message
 
     def optimize(
         self,
@@ -112,6 +125,7 @@ class HyperparameterOptimizer:
 
         with self._lock:
             self._is_running = True
+            self._failed_trials = 0
             self._progress = OptimizationProgress(
                 status="running",
                 current_trial=0,
@@ -168,6 +182,15 @@ class HyperparameterOptimizer:
 
                 return result.metrics.get("val_auc", 0.0)
             except Exception:
+                # 训练异常不能静默：记录完整堆栈，并统计失败试验数
+                with self._lock:
+                    self._failed_trials += 1
+                logger.error(
+                    "超参数优化试验 %s 失败（已记为 0 AUC），共失败 %d 次:\n%s",
+                    trial.number,
+                    self._failed_trials,
+                    traceback.format_exc(),
+                )
                 return 0.0
 
         # 运行优化
@@ -222,6 +245,7 @@ class HyperparameterOptimizer:
             duration_seconds=duration_seconds,
             trials=trials,
             param_importance=param_importance,
+            failed_trials=self._failed_trials,
         )
 
     def get_progress(self) -> OptimizationProgress:
@@ -236,6 +260,7 @@ class HyperparameterOptimizer:
                 started_at=self._progress.started_at,
                 elapsed_seconds=self._progress.elapsed_seconds,
                 message=self._progress.message,
+                failed_trials=self._failed_trials,
             )
             if self._progress.started_at:
                 progress.elapsed_seconds = (datetime.now(timezone.utc) - self._progress.started_at).total_seconds()
@@ -320,8 +345,14 @@ def start_optimization(
                 feature_columns=feature_columns,
             )
             _optimizer_results[optimizer_id] = result
-        except Exception:
-            pass
+        except Exception as exc:
+            # 后台优化失败不能静默：记录日志并把进度标记为失败，避免结果永远为空
+            logger.error(
+                "后台超参数优化 %s 失败:\n%s",
+                optimizer_id,
+                traceback.format_exc(),
+            )
+            optimizer.mark_failed(f"后台优化失败: {exc}")
         finally:
             _active_optimizers.pop(optimizer_id, None)
 
@@ -346,6 +377,7 @@ def get_optimization_progress(optimizer_id: str) -> OptimizationProgress | None:
             started_at=None,
             elapsed_seconds=result.duration_seconds,
             message="优化完成",
+            failed_trials=result.failed_trials,
         )
 
     return None

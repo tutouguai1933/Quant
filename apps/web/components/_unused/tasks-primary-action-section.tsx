@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 
-import { ActionForm } from "./action-form";
-import { AutomationControlCard } from "./automation-control-card";
-import { DetailDrawer } from "./detail-drawer";
-import { SectionShell } from "./section-shell";
-import { SummaryCard } from "./summary-card";
-import { Button } from "./ui/button";
+import { ActionForm } from "../action-form";
+import { AutomationControlCard } from "../automation-control-card";
+import { DetailDrawer } from "../detail-drawer";
+import { SectionShell } from "../section-shell";
+import { SummaryCard } from "../summary-card";
+import { Button } from "../ui/button";
 
 type DrawerControlAction = {
   action: string;

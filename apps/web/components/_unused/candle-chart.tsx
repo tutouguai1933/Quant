@@ -1,6 +1,6 @@
 /* 这个文件负责渲染最小 K 线摘要，当前阶段只输出标准化图表数据。 */
 
-import type { MarketCandle } from "../lib/api";
+import type { MarketCandle } from "../../lib/api";
 
 
 type CandleChartProps = {

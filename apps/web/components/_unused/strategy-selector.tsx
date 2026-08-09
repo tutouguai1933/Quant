@@ -4,10 +4,10 @@
 import { Settings, TrendingUp, Grid3X3, Check, RefreshCw } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Input } from "./ui/input";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Input } from "../ui/input";
 
 export type StrategyInfo = {
   name: string;

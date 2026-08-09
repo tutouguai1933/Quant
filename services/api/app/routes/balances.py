@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from services.api.app.core.settings import Settings
+from services.api.app.routes._helpers import _success
 from services.api.app.services.account_sync_service import account_sync_service
 from services.api.app.services.sync_service import sync_service
 
@@ -23,10 +24,6 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api/v1/balances", tags=["balances"])
-
-
-def _success(data: dict, meta: dict | None = None) -> dict:
-    return {"data": data, "error": None, "meta": meta or {}}
 
 
 def _build_freqtrade_meta(limit: int, detail: str = "") -> dict[str, object]:

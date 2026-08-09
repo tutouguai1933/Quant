@@ -6,6 +6,7 @@ from services.api.app.services.automation_service import automation_service
 from services.api.app.services.automation_workflow_service import automation_workflow_service
 from services.api.app.services.auth_service import auth_service
 from services.api.app.tasks.scheduler import task_scheduler
+from services.api.app.routes._helpers import _success, _unauthorized
 
 
 try:
@@ -33,18 +34,6 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
-
-
-def _success(data: dict, meta: dict | None = None) -> dict:
-    return {"data": data, "error": None, "meta": meta or {}}
-
-
-def _unauthorized() -> dict:
-    return {
-        "data": None,
-        "error": {"code": "unauthorized", "message": "当前页面需要先登录"},
-        "meta": {"source": "auth-service"},
-    }
 
 
 @router.get("")

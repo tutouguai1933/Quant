@@ -16,7 +16,8 @@ from typing import Any
 
 # 日志目录配置（支持 env 覆盖：容器内用 QUANT_LOG_DIR=/app/logs 挂载卷持久化）
 LOG_DIR_API = Path(os.getenv("QUANT_LOG_DIR", "/home/djy/Quant/services/api/logs"))
-LOG_DIR_FREQTRADE = Path("/home/djy/Quant/infra/freqtrade/user_data/logs")
+# Freqtrade 日志目录（支持 env 覆盖，避免本地绝对路径硬编码）
+LOG_DIR_FREQTRADE = Path(os.getenv("QUANT_FREQTRADE_LOG_DIR", "/home/djy/Quant/infra/freqtrade/user_data/logs"))
 
 # 日志轮转配置
 MAX_BYTES = 10 * 1024 * 1024  # 10MB

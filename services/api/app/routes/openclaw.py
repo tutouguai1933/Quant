@@ -12,18 +12,10 @@ from services.api.app.services.automation_workflow_service import automation_wor
 from services.api.app.services.openclaw_audit_service import openclaw_audit_service
 from services.api.app.services.openclaw_restart_history_service import openclaw_restart_history_service
 from services.api.app.services.auth_service import auth_service
+from services.api.app.routes._helpers import _success
 
 
 router = APIRouter(prefix="/api/v1/openclaw", tags=["openclaw"])
-
-
-def _success(data: dict, meta: dict | None = None) -> dict:
-    """统一成功响应包裹（与全站 envelope 约定一致）。"""
-    return {
-        "data": data,
-        "error": None,
-        "meta": meta or {},
-    }
 
 
 def get_snapshot_service() -> OpenclawSnapshotService:
@@ -57,7 +49,7 @@ def get_snapshot(
     """获取统一运维快照。"""
     try:
         snapshot = service.get_snapshot()
-        return snapshot
+        return _success(snapshot)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -85,7 +77,7 @@ def execute_action(
             action=request.action,
             payload=request.payload,
         )
-        return result
+        return _success(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -120,11 +112,11 @@ def get_restart_history():
     try:
         history = openclaw_restart_history_service.get_all_history()
         # 按服务分类返回
-        return {
+        return _success({
             "api": history.get("api", {}),
             "web": history.get("web", {}),
             "freqtrade": history.get("freqtrade", {}),
-        }
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -150,7 +142,7 @@ def execute_patrol(patrol_type: str = "full", token: str = "", authorization: st
 
     try:
         result = openclaw_patrol_service.patrol(patrol_type=patrol_type)
-        return result
+        return _success(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -184,7 +176,7 @@ def get_patrol_counters():
     """
     try:
         counters = openclaw_patrol_service.get_action_counters()
-        return {
+        return _success({
             "counters": counters,
             "config": {
                 "throttle_window_seconds": openclaw_patrol_service.THROTTLE_WINDOW_SECONDS,
@@ -192,7 +184,7 @@ def get_patrol_counters():
                 "max_consecutive_failures": openclaw_patrol_service.MAX_CONSECUTIVE_FAILURES,
                 "alert_threshold": openclaw_patrol_service.ALERT_THRESHOLD,
             },
-        }
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -209,10 +201,10 @@ def reset_patrol_counter(action: str):
     """
     try:
         openclaw_patrol_service.reset_action_counter(action=action)
-        return {
+        return _success({
             "success": True,
             "action": action,
             "message": f"已重置动作 {action} 的计数器",
-        }
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

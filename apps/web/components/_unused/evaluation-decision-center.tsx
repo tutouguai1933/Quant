@@ -4,12 +4,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DetailDialog } from "./detail-dialog";
-import { DetailDrawer } from "./detail-drawer";
-import { SectionShell } from "./section-shell";
-import { SummaryCard } from "./summary-card";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { StatusBadge } from "./status-badge";
+import { DetailDrawer } from "../detail-drawer";
+import { SectionShell } from "../section-shell";
+import { SummaryCard } from "../summary-card";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { StatusBadge } from "../status-badge";
 
 type DecisionCenterProps = {
   arbitration: Record<string, unknown>;

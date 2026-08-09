@@ -1,13 +1,13 @@
 /* 这个文件负责渲染首页驾驶舱，并把研究、执行、异常动作统一收进首页主动作区。 */
 
-import { AppShell } from "../components/app-shell";
-import { FeedbackBanner } from "../components/feedback-banner";
-import { HomePrimaryActionSection } from "../components/home-primary-action-section";
-import { HomeWorkbenchGrid, type HomeWorkbenchCardItem } from "../components/home-workbench-grid";
-import { MetricGrid } from "../components/metric-grid";
-import { PageHero } from "../components/page-hero";
-import { buildAutomationHandoffSummary } from "../lib/automation-handoff";
-import { readFeedback } from "../lib/feedback";
+import { AppShell } from "../../components/_unused/app-shell";
+import { FeedbackBanner } from "../../components/feedback-banner";
+import { HomePrimaryActionSection } from "../../components/home-primary-action-section";
+import { HomeWorkbenchGrid, type HomeWorkbenchCardItem } from "../../components/home-workbench-grid";
+import { MetricGrid } from "../../components/metric-grid";
+import { PageHero } from "../../components/page-hero";
+import { buildAutomationHandoffSummary } from "../../lib/automation-handoff";
+import { readFeedback } from "../../lib/feedback";
 import {
   getAutomationStatus,
   getAutomationStatusFallback,
@@ -21,8 +21,8 @@ import {
   listSignals,
   listStrategies,
   listTasks,
-} from "../lib/api";
-import { getControlSessionState } from "../lib/session";
+} from "../../lib/api";
+import { getControlSessionState } from "../../lib/session";
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;

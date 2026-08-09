@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,10 +37,28 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _synchronized(method):
+    """装饰器：给状态修改方法加可重入锁。
+
+    API 线程、scheduler 线程、巡检线程会并发调用本服务的写方法，
+    不加锁时 _consecutive_failure_count += 1 等读-改-写不原子，
+    且多个线程共用同一个 .tmp 临时文件会互相截断覆盖。
+    使用 RLock 保证嵌套调用（如 configure_mode -> record_alert -> set_mode）不死锁。
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class AutomationService:
     """保存自动化控制状态，并对外提供健康摘要。"""
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         self._state_path = self._resolve_state_path()
         # 默认模式从环境变量读取，如果没有配置则使用 auto_live
         self._mode = os.environ.get("QUANT_AUTOMATION_DEFAULT_MODE", "auto_live")
@@ -154,6 +174,7 @@ class AutomationService:
             "daily_summary": dict(self._daily_summary),
         }
 
+    @_synchronized
     def set_mode(self, mode: str) -> dict[str, object]:
         """切换自动化模式。"""
 
@@ -173,6 +194,7 @@ class AutomationService:
         self._persist_state()
         return self.get_state()
 
+    @_synchronized
     def configure_mode(self, mode: str, *, actor: str = "user") -> dict[str, object]:
         """兼容路由层的模式切换入口。"""
 
@@ -183,6 +205,7 @@ class AutomationService:
             "actor": actor,
         }
 
+    @_synchronized
     def enable_dry_run_only(self, *, actor: str = "user") -> dict[str, object]:
         """切到只保留 dry-run 的安全模式。"""
 
@@ -201,6 +224,7 @@ class AutomationService:
             "actor": actor,
         }
 
+    @_synchronized
     def kill_switch(self, *, actor: str = "user") -> dict[str, object]:
         """触发一键停机。"""
 
@@ -221,6 +245,7 @@ class AutomationService:
             "actor": actor,
         }
 
+    @_synchronized
     def pause(self, reason: str = "manual_pause", *, actor: str = "user") -> dict[str, object]:
         """暂停自动化。"""
 
@@ -239,6 +264,7 @@ class AutomationService:
             "actor": actor,
         }
 
+    @_synchronized
     def manual_takeover(self, reason: str = "manual_takeover", *, actor: str = "user") -> dict[str, object]:
         """显式进入人工接管。"""
 
@@ -263,6 +289,7 @@ class AutomationService:
             "actor": actor,
         }
 
+    @_synchronized
     def resume(self, *, actor: str = "user") -> dict[str, object]:
         """恢复自动化。"""
 
@@ -322,6 +349,7 @@ class AutomationService:
             "resume_checklist": [dict(item) for item in list(health_after.get("resume_checklist") or [])],
         }
 
+    @_synchronized
     def arm_symbol(self, symbol: str) -> dict[str, object]:
         """记录已通过 dry-run 的候选，供后续 live 验证使用。"""
 
@@ -332,6 +360,7 @@ class AutomationService:
         self._persist_state()
         return self.get_state()
 
+    @_synchronized
     def clear_armed_symbol(self) -> dict[str, object]:
         """清掉当前已 armed 的候选。"""
 
@@ -341,6 +370,7 @@ class AutomationService:
         self._persist_state()
         return self.get_state()
 
+    @_synchronized
     def record_cycle(self, payload: dict[str, object], *, count_towards_daily: bool = True) -> None:
         """记录最近一次工作流结果。"""
 
@@ -409,6 +439,7 @@ class AutomationService:
 
         return result
 
+    @_synchronized
     def record_alert(self, *, level: str, code: str, message: str, source: str, detail: str = "") -> dict[str, object]:
         """记录自动化告警。"""
 
@@ -445,6 +476,7 @@ class AutomationService:
 
         return dict(item)
 
+    @_synchronized
     def _pop_alert(self, alert_id: int) -> dict[str, object] | None:
         """按 ID 弹出告警项。"""
 
@@ -458,6 +490,7 @@ class AutomationService:
         self._alerts = remaining
         return found
 
+    @_synchronized
     def confirm_alert(self, alert_id: int, *, actor: str = "user") -> dict[str, object]:
         """确认单条告警并记录操作提醒。"""
 
@@ -468,6 +501,7 @@ class AutomationService:
         self._persist_state()
         return alert
 
+    @_synchronized
     def clear_alerts(self, *, levels: list[str] | None = None, actor: str = "user") -> list[dict[str, object]]:
         """按级别清空告警并记录清理信息。"""
 
@@ -1814,6 +1848,7 @@ class AutomationService:
             candidate = Path.cwd() / candidate
         return candidate
 
+    @_synchronized
     def _load_state(self) -> None:
         """在服务启动时恢复最近一次自动化状态。"""
 
@@ -1832,6 +1867,7 @@ class AutomationService:
                 return
         self._apply_state_payload(payload)
 
+    @_synchronized
     def _persist_state(self) -> None:
         """把当前自动化状态写回本地状态文件，使用原子写入。"""
 
@@ -1859,7 +1895,9 @@ class AutomationService:
         self._backup_state()
 
         # Atomic write: write to temp file then rename
-        temp_path = self._state_path.with_suffix(".tmp")
+        # 临时文件名用 pid+线程id 唯一化，避免多个线程共用同名 .tmp 互相截断覆盖；
+        # 写完后 os.replace 原子替换，任何时刻状态文件都是完整内容。
+        temp_path = Path(f"{self._state_path}.{os.getpid()}.{threading.get_ident()}.tmp")
         try:
             temp_path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),
@@ -1870,7 +1908,7 @@ class AutomationService:
                 f.flush()
                 os.fsync(f.fileno())
             # Atomic rename
-            shutil.move(str(temp_path), str(self._state_path))
+            os.replace(str(temp_path), str(self._state_path))
         except Exception:
             # Clean up temp file if write failed
             if temp_path.exists():
@@ -1880,8 +1918,12 @@ class AutomationService:
                     pass
             raise
 
+    @_synchronized
     def _backup_state(self) -> None:
-        """备份当前状态文件，保留最近 MAX_BACKUP_COUNT 个备份。"""
+        """备份当前状态文件，保留最近 MAX_BACKUP_COUNT 个备份。
+
+        由 _persist_state 在持锁状态下调用（RLock 可重入），无需单独加锁。
+        """
 
         if not self._state_path.exists():
             return
@@ -1934,6 +1976,7 @@ class AutomationService:
 
         return None
 
+    @_synchronized
     def _apply_state_payload(self, payload: dict[str, object]) -> None:
         """把状态载荷恢复到当前实例。"""
 
@@ -2019,6 +2062,7 @@ class AutomationService:
             "alert_level_counts": {},
         }
 
+    @_synchronized
     def _ensure_daily_summary(self) -> None:
         """跨天时自动重置日报摘要。"""
 

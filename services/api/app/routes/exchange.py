@@ -29,6 +29,7 @@ except ImportError:
         return default
 
 
+from services.api.app.routes._helpers import _success, _error_with_code as _error
 from services.api.app.services.exchange.exchange_service import (
     exchange_service,
     SUPPORTED_EXCHANGES,
@@ -36,14 +37,6 @@ from services.api.app.services.exchange.exchange_service import (
 
 
 router = APIRouter(prefix="/api/v1/exchange", tags=["exchange"])
-
-
-def _success(data: dict, meta: dict | None = None) -> dict:
-    return {"data": data, "error": None, "meta": meta or {}}
-
-
-def _error(code: str, message: str, meta: dict | None = None) -> dict:
-    return {"data": None, "error": {"code": code, "message": message}, "meta": meta or {}}
 
 
 @router.get("/list")

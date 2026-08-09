@@ -216,10 +216,10 @@ def _split_rows(
     *,
     split_ratios: tuple[Decimal, Decimal, Decimal],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
-    """把样本按时间块分层切成训练、验证和测试三段。
+    """把样本按时间升序切成训练、验证和测试三段。
 
-    使用时间块分层抽样，确保训练集和验证集的正样本比例更一致，
-    同时保持时间顺序（训练数据在验证数据之前）。
+    纯时间序切分：整个数据集排序后，前 train_ratio 训练、中间 validation_ratio
+    验证、最后一段回测，保证回测只用更早的数据训练，避免前视偏差。
     """
 
     if not rows:
@@ -229,50 +229,15 @@ def _split_rows(
 
     train_ratio, validation_ratio, _ = split_ratios
 
-    # 如果样本数较少，使用简单的顺序划分
-    if len(rows) < 100:
-        train_end = max(1, int(len(rows) * float(train_ratio)))
-        valid_end = max(train_end + 1, int(len(rows) * float(train_ratio + validation_ratio)))
-        if valid_end >= len(rows):
-            valid_end = len(rows) - 1
-        return rows[:train_end], rows[train_end:valid_end], rows[valid_end:]
+    # 按时间升序排列（调用方一般已排序，这里再确保一次）
+    sorted_rows = sorted(rows, key=lambda item: int(item["generated_at"]))
 
-    # 时间块分层抽样：将数据分成多个时间块，每个块内按比例划分
-    n_blocks = 5  # 分成 5 个时间块
-    block_size = len(rows) // n_blocks
-
-    train_rows: list[dict[str, object]] = []
-    validation_rows: list[dict[str, object]] = []
-    test_rows: list[dict[str, object]] = []
-
-    for i in range(n_blocks):
-        start_idx = i * block_size
-        end_idx = start_idx + block_size if i < n_blocks - 1 else len(rows)
-        block = rows[start_idx:end_idx]
-
-        if len(block) < 3:
-            train_rows.extend(block)
-            continue
-
-        # 在每个块内按比例划分
-        block_train_end = max(1, int(len(block) * float(train_ratio)))
-        block_valid_end = max(block_train_end + 1, int(len(block) * float(train_ratio + validation_ratio)))
-        if block_valid_end >= len(block):
-            block_valid_end = len(block) - 1
-
-        train_rows.extend(block[:block_train_end])
-        validation_rows.extend(block[block_train_end:block_valid_end])
-        test_rows.extend(block[block_valid_end:])
-
-    # 确保至少有一些验证和测试数据
-    if not validation_rows and len(train_rows) > 10:
-        validation_rows = train_rows[-int(len(train_rows) * 0.2):]
-        train_rows = train_rows[:-int(len(train_rows) * 0.2)]
-    if not test_rows and len(validation_rows) > 5:
-        test_rows = validation_rows[-int(len(validation_rows) * 0.3):]
-        validation_rows = validation_rows[:-int(len(validation_rows) * 0.3)]
-
-    return train_rows, validation_rows, test_rows
+    # 前 train_ratio 训练、中间 validation_ratio 验证、最后一段回测
+    train_end = max(1, int(len(sorted_rows) * float(train_ratio)))
+    valid_end = max(train_end + 1, int(len(sorted_rows) * float(train_ratio + validation_ratio)))
+    if valid_end >= len(sorted_rows):
+        valid_end = len(sorted_rows) - 1
+    return sorted_rows[:train_end], sorted_rows[train_end:valid_end], sorted_rows[valid_end:]
 
 
 def _resolve_split_ratios(

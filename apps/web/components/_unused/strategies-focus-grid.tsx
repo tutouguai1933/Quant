@@ -3,10 +3,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { DetailDrawer } from "./detail-drawer";
-import { SectionShell } from "./section-shell";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./ui/card";
+import { DetailDrawer } from "../detail-drawer";
+import { SectionShell } from "../section-shell";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 
 type StrategiesFocusLink = {
   href: string;

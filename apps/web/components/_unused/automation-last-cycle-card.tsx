@@ -4,8 +4,8 @@
 
 import { useMemo } from "react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { useAutomationStatus } from "../lib/use-realtime-status";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { useAutomationStatus } from "../../lib/use-realtime-status";
 
 type AutomationLastCycleCardProps = {
   initialCycle: Record<string, unknown>;

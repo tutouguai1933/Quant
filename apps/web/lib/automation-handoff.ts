@@ -1,6 +1,7 @@
 /* 这个文件负责把自动化状态压成首页、评估页、策略页共用的一份承接摘要。 */
 
 import type { AutomationStatusModel } from "./api";
+import { asRecord, readText as readTextBase } from "./utils/helpers";
 
 export type AutomationHandoffSummary = {
   status: string;
@@ -88,18 +89,9 @@ export function buildAutomationHandoffSummary({
   };
 }
 
-/* 安全读取对象。 */
-function asRecord(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
-}
-
-/* 安全读取文本。 */
+/* 安全读取文本（复用 utils/helpers 的 readText，并保持候选篮子/执行篮子口径一致）。 */
 function readText(value: unknown, fallback: string): string {
-  const text = String(value ?? "").trim();
-  return text.length > 0 ? normalizeBasketTerms(text) : fallback;
+  return normalizeBasketTerms(readTextBase(value, fallback));
 }
 
 /* 保持候选篮子 / 执行篮子口径一致。 */

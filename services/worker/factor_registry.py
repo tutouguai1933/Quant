@@ -60,8 +60,11 @@ class FactorRegistry:
     def _save_locked(self) -> None:
         try:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._state_path, "w", encoding="utf-8") as fh:
+            # 原子写：先写临时文件再替换，避免写一半被读取
+            temp_path = self._state_path.with_name(f".{self._state_path.name}.tmp")
+            with open(temp_path, "w", encoding="utf-8") as fh:
                 json.dump({"overrides": self._overrides}, fh, ensure_ascii=False, indent=2)
+            temp_path.replace(self._state_path)
         except (OSError, IOError) as exc:
             logger.warning("保存因子注册表状态失败: %s", exc)
 

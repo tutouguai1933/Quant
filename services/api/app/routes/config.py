@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.api.app.routes._helpers import _success, _error_with_code as _error, _unauthorized
 from services.api.app.services.config_center_service import (
     config_center_service,
     detect_environment,
@@ -57,25 +58,6 @@ except ImportError:
 
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
-
-
-def _success(data: dict[str, Any] | list[Any], meta: dict[str, Any] | None = None) -> dict[str, Any]:
-    """成功响应格式。"""
-    return {"data": data, "error": None, "meta": meta or {}}
-
-
-def _error(code: str, message: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
-    """错误响应格式。"""
-    return {"data": None, "error": {"code": code, "message": message}, "meta": meta or {}}
-
-
-def _unauthorized() -> dict[str, Any]:
-    """未授权响应格式。"""
-    return {
-        "data": None,
-        "error": {"code": "unauthorized", "message": "authentication required"},
-        "meta": {"source": "config-center"},
-    }
 
 
 @router.get("")

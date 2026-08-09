@@ -194,7 +194,8 @@ def test_run_with_model_predictor_uses_predictions():
     validator = WalkForwardValidator()
     config = WalkForwardConfig(n_folds=4, min_train_bars=50, gap_bars=6)
     report = validator.run(fake_predictor, rows, config)
-    assert calls["count"] == 4  # 每折调用一次
+    # 修复标签泄漏后训练集不再越过 gap 扩张，360 根数据只够 2 折（原先 4 折是泄漏换来的）
+    assert calls["count"] == 2  # 每折调用一次
     assert report.folds
 
 

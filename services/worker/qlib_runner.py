@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
+import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -42,6 +44,42 @@ from services.worker.qlib_labels import LABEL_COLUMNS
 from services.worker.qlib_ranking import rank_candidates
 from services.worker.qlib_rule_gate import evaluate_rule_gate
 from services.worker.qlib_walk_forward import WalkForwardConfig, WalkForwardValidator
+
+logger = logging.getLogger("qlib_runner")
+
+# 磁盘清理保留数量配置（可用环境变量调整）
+PRUNE_RUNS_KEEP = max(1, int(os.getenv("QUANT_PRUNE_RUNS_KEEP", "10")))
+PRUNE_ARTIFACTS_KEEP = max(1, int(os.getenv("QUANT_PRUNE_ARTIFACTS_KEEP", "10")))
+PRUNE_SNAPSHOTS_KEEP = max(1, int(os.getenv("QUANT_PRUNE_SNAPSHOTS_KEEP", "10")))
+PRUNE_CACHE_KEEP = max(1, int(os.getenv("QUANT_PRUNE_CACHE_KEEP", "20")))
+# 运行记录目录里不属于记录文件的保留文件名（如实验索引）
+_PRUNE_EXCLUDE_NAMES = frozenset({"experiment_index.json"})
+
+
+def _prune_directory(directory: Path, *, keep: int, label: str) -> None:
+    """按数量清理目录：只保留最近 keep 个文件，删除前记录日志。
+
+    按文件修改时间倒序排列，保留最新的 keep 个，其余删除。
+    """
+    if not directory.exists():
+        return
+    files = sorted(
+        (
+            path
+            for path in directory.iterdir()
+            if path.is_file()
+            and not path.name.startswith(".")
+            and path.name not in _PRUNE_EXCLUDE_NAMES
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old in files[keep:]:
+        try:
+            old.unlink()
+            logger.info("清理旧%s文件: %s", label, old)
+        except OSError as exc:
+            logger.warning("清理旧%s文件失败 %s: %s", label, old, exc)
 
 
 @dataclass(slots=True)
@@ -106,6 +144,7 @@ class QlibRunner:
         }
         artifact_path = self._config.paths.artifacts_dir / f"{model_version}.json"
         self._write_json(artifact_path, model_payload)
+        _prune_directory(self._config.paths.artifacts_dir, keep=PRUNE_ARTIFACTS_KEEP, label="训练产物")
 
         result = {
             "run_id": run_id,
@@ -247,8 +286,8 @@ class QlibRunner:
                 }
             )
 
-            # 记录 ML 预测用于实盘追踪
-            if ml_prediction_data and signal == "buy":
+            # 记录 ML 预测用于实盘追踪（_classify_signal 只返回 long/short/flat）
+            if ml_prediction_data and signal == "long":
                 self._track_ml_prediction(
                     symbol=symbol,
                     probability=float(str(ml_prediction_data["probability"])),
@@ -546,6 +585,7 @@ class QlibRunner:
             "path": str(cache_path),
         }
         self._write_json(cache_path, serialize_dataset_bundle(bundle))
+        _prune_directory(self._config.paths.dataset_cache_dir, keep=PRUNE_CACHE_KEEP, label="数据集缓存")
         return bundle
 
     def _pick_latest_row(self, bundle: DatasetBundle) -> dict[str, object] | None:
@@ -739,6 +779,7 @@ class QlibRunner:
         # 保存模型
         model_path = self._config.paths.artifacts_dir / f"{result.model_version}.model"
         result.model.save(model_path)
+        _prune_directory(self._config.paths.artifacts_dir, keep=PRUNE_ARTIFACTS_KEEP, label="模型文件")
 
         # 构建训练曲线数据
         training_curve = [
@@ -1639,6 +1680,7 @@ class QlibRunner:
         self._write_json(run_path, payload)
         self._write_json(latest_path, payload)
         self._append_experiment_index(run_type=run_type, payload=payload)
+        _prune_directory(self._config.paths.runs_dir, keep=PRUNE_RUNS_KEEP, label="运行记录")
 
     def _write_dataset_snapshot(
         self,
@@ -1658,6 +1700,7 @@ class QlibRunner:
                 payload["generated_at"] = str(existing_payload.get("generated_at"))
         self._write_json(snapshot_path, payload)
         self._write_json(self._config.paths.latest_dataset_snapshot_path, payload)
+        _prune_directory(self._config.paths.dataset_snapshots_dir, keep=PRUNE_SNAPSHOTS_KEEP, label="数据集快照")
         return snapshot_path, payload
 
     def _build_dataset_snapshot(

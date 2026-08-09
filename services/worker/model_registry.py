@@ -6,11 +6,18 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
+
+# 注册表按类型保留的版本数（可用环境变量调整）
+DEFAULT_REGISTRY_KEEP = max(1, int(os.getenv("QUANT_MODEL_REGISTRY_KEEP", "10")))
 
 
 @dataclass(slots=True)
@@ -121,6 +128,8 @@ class ModelRegistry:
 
         self._index[version_id] = record
         self._save_index()
+        # 注册后按类型裁剪旧版本，防止索引只增不减
+        self.prune(keep=DEFAULT_REGISTRY_KEEP)
 
         return version_id
 
@@ -326,6 +335,41 @@ class ModelRegistry:
         del self._index[version_id]
         self._save_index()
         return True
+
+    def prune(self, keep: int = DEFAULT_REGISTRY_KEEP) -> int:
+        """按模型类型各保留最近 keep 个非生产版本，其余从索引删除。
+
+        只清理索引条目，不删除磁盘上的模型文件（模型文件由产物目录清理负责）。
+        生产版本始终保留，不参与裁剪。
+
+        Args:
+            keep: 每种模型类型保留的版本数
+
+        Returns:
+            int: 删除的版本数量
+        """
+        if keep < 1:
+            return 0
+        removed = 0
+        by_type: dict[str, list[str]] = {}
+        for version_id, record in self._index.items():
+            by_type.setdefault(str(record["model_type"]), []).append(version_id)
+        for version_ids in by_type.values():
+            non_production = [
+                vid for vid in version_ids
+                if self._index[vid]["stage"] != "production"
+            ]
+            non_production.sort(
+                key=lambda vid: self._index[vid]["created_at"],
+                reverse=True,
+            )
+            for vid in non_production[keep:]:
+                self._index.pop(vid, None)
+                removed += 1
+        if removed:
+            self._save_index()
+            logger.info("模型注册表清理 %d 个旧版本（每类型保留最近 %d 个）", removed, keep)
+        return removed
 
     def add_tags(self, version_id: str, tags: list[str]) -> bool:
         """添加标签。

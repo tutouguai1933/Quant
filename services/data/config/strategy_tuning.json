@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "tuning_status": "ready",
-  "last_updated": "2026-08-08T09:52:55.136973+00:00",
+  "last_updated": "2026-08-09T13:16:59.311435+00:00",
   "parameters": {
     "min_entry_score": {
       "current": 0.7,
@@ -635,6 +635,86 @@
     },
     {
       "timestamp": "2026-08-08T09:52:55.108553+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-08-09T12:49:50.709344+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-08-09T12:53:50.225886+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-08-09T12:57:41.834274+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-08-09T13:02:25.538464+00:00",
+      "applied": [
+        {
+          "param": "factor_weights",
+          "value": {
+            "rsi": 1.5,
+            "macd": 1.0,
+            "volume": 1.0,
+            "volatility": 0.8,
+            "trend": 1.5,
+            "momentum": 1.0
+          }
+        }
+      ]
+    },
+    {
+      "timestamp": "2026-08-09T13:16:59.295584+00:00",
       "applied": [
         {
           "param": "factor_weights",

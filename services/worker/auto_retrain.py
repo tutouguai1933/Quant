@@ -66,12 +66,57 @@ class AutoRetrainer:
         self._last_retrain_time: datetime | None = None
         self._last_sample_count: int = 0
         self._last_metrics: dict[str, float] = {}
+        # 状态持久化：进程重启后恢复上次训练时间，避免误触发首次重训练
+        self._state_path = self._resolve_state_path()
+        self._load_state()
+
+    def _resolve_state_path(self) -> Path:
+        """解析状态文件路径：优先环境变量，否则放在运行时目录下。"""
+        env_path = os.getenv("QUANT_AUTO_RETRAIN_STATE_PATH", "").strip()
+        if env_path:
+            return Path(env_path).expanduser()
+        return self._config.paths.runtime_root / DEFAULT_STATE_FILENAME
+
+    def _load_state(self) -> None:
+        """从 JSON 文件恢复上次训练状态。"""
+        if not self._state_path.exists():
+            return
+        try:
+            with open(self._state_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            raw_time = str(data.get("last_retrain_time") or "").strip()
+            if raw_time:
+                self._last_retrain_time = datetime.fromisoformat(raw_time)
+            self._last_sample_count = int(data.get("last_sample_count") or 0)
+            self._last_metrics = {
+                str(k): float(v)
+                for k, v in dict(data.get("last_metrics") or {}).items()
+            }
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            logger.warning("加载自动重训练状态失败（使用默认状态）: %s", exc)
+
+    def _save_state(self) -> None:
+        """把上次训练状态写入 JSON 文件（原子写：先写临时文件再替换）。"""
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "last_retrain_time": self._last_retrain_time.isoformat() if self._last_retrain_time else None,
+                "last_sample_count": self._last_sample_count,
+                "last_metrics": self._last_metrics,
+            }
+            temp_path = self._state_path.with_name(f".{self._state_path.name}.tmp")
+            with open(temp_path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
+            temp_path.replace(self._state_path)
+        except (OSError, IOError) as exc:
+            logger.warning("保存自动重训练状态失败: %s", exc)
 
     def check_retrain_needed(
         self,
         current_metrics: dict[str, float] | None = None,
         current_sample_count: int | None = None,
         current_feature_distribution: dict[str, float] | None = None,
+        model_version: str = "",
     ) -> RetrainDecision:
         """检查是否需要重训练。
 
@@ -109,7 +154,7 @@ class AutoRetrainer:
                     reasons.append(f"AUC 下降了 {drop:.4f}，超过阈值 {self._retrain_config.performance_drop_threshold}")
                     metrics["auc_drop"] = drop
                     # 推送性能下降告警
-                    self._push_performance_drop_alert(last_auc, current_auc, drop)
+                    self._push_performance_drop_alert(last_auc, current_auc, drop, model_version)
 
         # 3. 检查样本数量增加
         if current_sample_count is not None and self._last_sample_count > 0:
@@ -168,6 +213,7 @@ class AutoRetrainer:
         self._last_retrain_time = datetime.now(timezone.utc)
         self._last_sample_count = sample_count
         self._last_metrics = dict(metrics)
+        self._save_state()
 
         # 推送训练完成告警
         self._push_retrain_completed_alert(
@@ -206,14 +252,19 @@ class AutoRetrainer:
         previous_auc: float,
         current_auc: float,
         drop: float,
+        model_version: str = "current",
     ) -> None:
-        """推送模型性能下降告警。"""
+        """推送模型性能下降告警。
+
+        告警里的模型版本号由调用方传入（如传入训练产生的具体版本号）；
+        没有传入时保持默认 "current"，避免硬编码在调用链里。
+        """
         try:
             from services.api.app.services.alert_push_service import (
                 push_model_performance_drop_alert,
             )
             push_model_performance_drop_alert(
-                model_version="current",
+                model_version=model_version or "current",
                 previous_auc=previous_auc,
                 current_auc=current_auc,
                 drop_threshold=self._retrain_config.performance_drop_threshold,

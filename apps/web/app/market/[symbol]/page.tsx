@@ -57,9 +57,13 @@ export default function MarketSymbolPage() {
     const loadData = async () => {
       setIsLoading(true);
 
+      // 保留原始请求：超时降级后数据到达时仍能补更新状态
+      const chartPromise = getMarketChart(symbol, interval);
+      const candidatePromise = getResearchCandidate(normalizedSymbol);
+
       const [chartResult, candidateResult] = await Promise.all([
-        withTimeout(getMarketChart(symbol, interval), getMarketChartTimeoutFallback(), 2500),
-        withTimeout(getResearchCandidate(normalizedSymbol), getResearchCandidateTimeoutFallback(), 1500),
+        withTimeout(chartPromise, getMarketChartTimeoutFallback(), 2500),
+        withTimeout(candidatePromise, getResearchCandidateTimeoutFallback(), 1500),
       ]);
 
       if (!mounted) return;
@@ -72,6 +76,22 @@ export default function MarketSymbolPage() {
       }
 
       setIsLoading(false);
+
+      // 超时降级后原始请求仍在进行：数据到达时补更新状态，避免慢网络下空图永不到达
+      chartPromise
+        .then((result) => {
+          if (mounted && result && !result.error) {
+            setChartData(result.data);
+          }
+        })
+        .catch(() => {});
+      candidatePromise
+        .then((result) => {
+          if (mounted && result && !result.error) {
+            setCandidate(result.data.item);
+          }
+        })
+        .catch(() => {});
     };
 
     loadData();

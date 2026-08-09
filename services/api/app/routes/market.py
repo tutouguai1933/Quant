@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from services.api.app.core.settings import Settings
+from services.api.app.routes._helpers import _success
 from services.api.app.services.cache_service import cache
 from services.api.app.services.market_service import MarketService, normalize_kline_series
 from services.api.app.services.research_service import research_service
@@ -37,12 +38,6 @@ service = MarketService(research_reader=research_service)
 
 _executor = ThreadPoolExecutor(max_workers=8)
 _entry_executor = ThreadPoolExecutor(max_workers=16)  # 入场条件专用，并发获取K线（与候选币数匹配，避免排队）
-
-
-def _success(data: dict, meta: dict | None = None) -> dict:
-    """统一成功 envelope。"""
-
-    return {"data": data, "error": None, "meta": meta or {}}
 
 
 @router.get("")

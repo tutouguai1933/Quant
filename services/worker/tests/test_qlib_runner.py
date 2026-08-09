@@ -880,8 +880,8 @@ class QlibRunnerTests(unittest.TestCase):
             runner = QlibRunner(config=config)
             runner.train(
                 dataset={
-                    "BTCUSDT": _sample_timing_candles(step_hours=4, count=160),
-                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=160),
+                    "BTCUSDT": _sample_timing_candles(step_hours=4, count=480),
+                    "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=480),
                 }
             )
             with mock.patch.object(
@@ -914,8 +914,8 @@ class QlibRunnerTests(unittest.TestCase):
             ):
                 result = runner.infer(
                     dataset={
-                        "BTCUSDT": _sample_timing_candles(step_hours=4, count=160),
-                        "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=160),
+                        "BTCUSDT": _sample_timing_candles(step_hours=4, count=480),
+                        "DOGEUSDT": _sample_negative_timing_candles(step_hours=4, count=480),
                     }
                 )
 

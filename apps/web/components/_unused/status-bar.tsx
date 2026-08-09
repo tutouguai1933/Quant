@@ -1,6 +1,6 @@
 /* 统一的状态栏组件，显示系统关键状态指标 */
 
-import { StatusBadge } from "./status-badge";
+import { StatusBadge } from "../status-badge";
 
 type StatusItem = {
   label: string;

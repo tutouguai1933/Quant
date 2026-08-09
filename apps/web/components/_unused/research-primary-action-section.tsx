@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 
-import { FullScreenModal } from "./full-screen-modal";
-import { FormSubmitButton } from "./form-submit-button";
-import { SectionShell } from "./section-shell";
-import { SummaryCard } from "./summary-card";
-import { Button } from "./ui/button";
-import { Card, CardContent } from "./ui/card";
+import { FullScreenModal } from "../full-screen-modal";
+import { FormSubmitButton } from "../form-submit-button";
+import { SectionShell } from "../section-shell";
+import { SummaryCard } from "../summary-card";
+import { Button } from "../ui/button";
+import { Card, CardContent } from "../ui/card";
 
 type ResearchPrimaryActionSectionProps = {
   primaryActionLabel: string;

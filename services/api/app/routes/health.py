@@ -30,19 +30,12 @@ except ImportError:
             self.body = content.encode("utf-8")
             self.media_type = media_type
 
+from services.api.app.routes._helpers import _success, _error
 from services.api.app.services.auth_service import auth_service
 
 
 router = APIRouter(tags=["health"])
 _PROCESS_START_TIME_SECONDS = __import__("time").time()
-
-
-def _success(data: dict, meta: dict | None = None) -> dict:
-    return {"data": data, "error": None, "meta": meta or {}}
-
-
-def _error(message: str, code: str = "INTERNAL_ERROR") -> dict:
-    return {"data": None, "error": {"message": message, "code": code}, "meta": {}}
 
 
 @router.get("/health")

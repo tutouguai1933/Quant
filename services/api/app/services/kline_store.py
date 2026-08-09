@@ -29,6 +29,10 @@ class KlineStore:
         # 内存索引：{(symbol, interval): set[open_time]}
         self._index: dict[tuple[str, str], set[int]] = {}
         self._index_lock = threading.Lock()
+        # 读缓存：{filepath: (mtime, bars)}，mtime 未变化时直接返回缓存，
+        # 避免 read/last_timestamp/gaps 每次全量扫描解析整个 JSONL（图表热路径）
+        self._read_cache: dict[Path, tuple[float, list[dict]]] = {}
+        self._read_cache_lock = threading.Lock()
         self._rebuild_index()
 
     # ── 公共接口 ──────────────────────────────────────────────────────────
@@ -186,10 +190,37 @@ class KlineStore:
         return (symbol, interval)
 
     def _load_bars(self, filepath: Path) -> list[dict]:
-        """从 JSONL 文件加载所有 bar 记录，按 open_time 升序。"""
+        """从 JSONL 文件加载所有 bar 记录，按 open_time 升序。
+
+        按文件 mtime 做内存缓存：mtime 没变直接返回解析结果，
+        文件变化（upsert 追加）时重新解析。返回列表只读使用，调用方不得原地修改。
+        """
 
         if not filepath.exists():
+            # 文件不存在时清掉对应缓存，避免误用旧内容
+            with self._read_cache_lock:
+                self._read_cache.pop(filepath, None)
             return []
+
+        try:
+            mtime = filepath.stat().st_mtime
+        except OSError:
+            return []
+
+        # 命中缓存直接返回
+        with self._read_cache_lock:
+            cached = self._read_cache.get(filepath)
+            if cached is not None and cached[0] == mtime:
+                return cached[1]
+
+        bars = self._parse_bars(filepath)
+
+        with self._read_cache_lock:
+            self._read_cache[filepath] = (mtime, bars)
+        return bars
+
+    def _parse_bars(self, filepath: Path) -> list[dict]:
+        """解析 JSONL 文件内容，按 open_time 升序返回。"""
 
         bars: list[dict] = []
         try:

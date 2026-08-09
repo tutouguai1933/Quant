@@ -321,6 +321,12 @@ def build_feature_rows(
     rolling_highs: list[Decimal] = []
     previous_close = valid_candles[0]["close"]
 
+    # btc_correlation 语义是整段序列与 BTC 的收益率相关性（只看最后 20 根），
+    # 与当前 K 线位置无关，循环外只算一次即可
+    btc_correlation = compute_btc_correlation(
+        [float(c["close"]) for c in valid_candles], btc_closes or []
+    )
+
     # 滚动窗口状态（增量维护，结果与逐根调用 _atr/_rsi/_volatility_contraction 完全一致）
     atr_period = int(profile["atr_period"])
     rsi_period = int(profile["rsi_period"])
@@ -414,14 +420,20 @@ def build_feature_rows(
         recent_high = _recent_high(rolling_highs[:-1], profile["breakout_lookback"])
         breakout_strength = _safe_pct_change(recent_high, candle["close"] - recent_high)
         roc6 = _roc(rolling_closes, profile["roc_period"])
-        cci20 = _cci(valid_candles[: index + 1], profile["cci_period"])
-        stoch_k14 = _stoch_k(valid_candles[: index + 1], profile["stoch_period"])
+        cci20 = _cci(
+            valid_candles[max(0, index + 1 - profile["cci_period"]): index + 1],
+            profile["cci_period"],
+        )
+        stoch_k14 = _stoch_k(
+            valid_candles[max(0, index + 1 - profile["stoch_period"]): index + 1],
+            profile["stoch_period"],
+        )
 
         # 新增因子计算
         trend_strength = _trend_strength(rolling_closes, 20)
         momentum_accel = _momentum_accel(rolling_closes, 6)
         volume_price_divergence = _volume_price_divergence(rolling_closes, rolling_volumes, 10)
-        bull_bear_ratio = _bull_bear_ratio(valid_candles[: index + 1], 10)
+        bull_bear_ratio = _bull_bear_ratio(valid_candles[max(0, index - 9): index + 1], 10)
 
         raw_row = {
             "symbol": symbol.strip().upper(),
@@ -442,7 +454,7 @@ def build_feature_rows(
             "volume_price_divergence": volume_price_divergence,
             "bull_bear_ratio": bull_bear_ratio,
             "taker_buy_ratio": compute_taker_buy_ratio(float(candle["volume"]), candle.get("taker_buy_base_volume")),
-            "btc_correlation": compute_btc_correlation([float(c["close"]) for c in valid_candles], btc_closes or []),
+            "btc_correlation": btc_correlation,
             "rsi14": rsi_value,
             "cci20": cci20,
             "stoch_k14": stoch_k14,

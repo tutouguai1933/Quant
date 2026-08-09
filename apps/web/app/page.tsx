@@ -44,6 +44,8 @@ type OpenTradesSummary = {
 };
 
 /* 加载持仓汇总：失败时标记降级，页面显示"数据暂不可用" */
+/* 说明：open-positions-card 也会请求 /freqtrade/open-trades（完整列表），
+   两处同 URL 请求由 fetchJson 的 inflight 合并 + 15s 响应缓存去重，不会重复打到后端 */
 async function getPositionsSummary(token?: string, signal?: AbortSignal) {
   const response = await fetchJson<OpenTradesSummary>("/freqtrade/open-trades", token, signal);
   if (response.error) {
@@ -340,19 +342,20 @@ export default function HomePage() {
           {/* RSI概览 */}
           <RsiSummaryCard refreshInterval={300000} />
 
-          {/* 两个策略的交易记录 */}
+          {/* 两个策略的交易记录：请求 URL 相同（limit=200），strategyType 仅在前端过滤，
+              fetchJson 的 inflight 合并 + 15s 缓存会吸收重复请求 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <TradeHistorySummaryCard strategyType="enhanced" refreshInterval={60000} />
             <TradeHistorySummaryCard strategyType="automation" refreshInterval={60000} />
           </div>
 
-          {/* 自动化周期候选 */}
+          {/* 自动化周期候选：limit=10 */}
           <CandidateQueueCard
             refreshInterval={60000}
             fallbackSymbols={[]}
           />
 
-          {/* 自动化周期历史 */}
+          {/* 自动化周期历史：limit=100（与候选卡片参数不同，缓存 key 不同，各自独立请求） */}
           <AutomationCycleHistoryCard refreshInterval={60000} />
         </HomeMoreDetails>
       </div>

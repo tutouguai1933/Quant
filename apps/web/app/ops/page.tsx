@@ -480,13 +480,14 @@ async function fetchPatrolStatus(signal?: AbortSignal): Promise<{ data: { status
     }
 
     const json = await response.json();
-    // patrol/schedule returns status directly
+    // patrol/schedule 返回 envelope 结构，状态在 data 里
+    const patrolData = json.data || {};
     const status: PatrolStatus = {
-      is_running: json.running || false,
-      schedule_enabled: json.running || false,
-      interval_minutes: json.interval_minutes || 60,
-      last_run_at: json.last_run_at,
-      last_run_status: json.last_run_status,
+      is_running: patrolData.running || false,
+      schedule_enabled: patrolData.running || false,
+      interval_minutes: patrolData.interval_minutes || 60,
+      last_run_at: patrolData.last_run_at,
+      last_run_status: patrolData.last_run_status,
     };
     return { data: { status }, error: null };
   } catch (error) {
@@ -508,15 +509,16 @@ async function fetchPatrolSchedule(signal?: AbortSignal): Promise<{ data: { sche
     }
 
     const json = await response.json();
-    // patrol/schedule returns status directly
+    // patrol/schedule 返回 envelope 结构，状态在 data 里
+    const patrolData = json.data || {};
     const schedule: PatrolSchedule = {
-      enabled: json.running || false,
-      interval_minutes: json.interval_minutes || 60,
-      last_run_at: json.last_run_at,
-      last_run_status: json.last_run_status,
-      total_runs: json.total_runs,
-      failed_runs: json.failed_runs,
-      success_rate: json.success_rate,
+      enabled: patrolData.running || false,
+      interval_minutes: patrolData.interval_minutes || 60,
+      last_run_at: patrolData.last_run_at,
+      last_run_status: patrolData.last_run_status,
+      total_runs: patrolData.total_runs,
+      failed_runs: patrolData.failed_runs,
+      success_rate: patrolData.success_rate,
     };
     return { data: { schedule }, error: null };
   } catch (error) {

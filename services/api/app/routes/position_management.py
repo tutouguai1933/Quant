@@ -14,6 +14,7 @@ except ImportError:
     BaseModel = object  # type: ignore[misc,assignment]
     Field = None  # type: ignore[misc,assignment]
 
+from services.api.app.routes._helpers import _success
 from services.api.app.services.position_management_service import (
     PositionManagementService,
     RiskLevel,
@@ -118,7 +119,7 @@ if router is not None:
             - can_open_new: 是否可以开新仓
         """
         status = position_management_service.get_position_status()
-        return status.to_dict()
+        return _success(status.to_dict())
 
     @router.post("/calculate")
     def calculate_position(request: PositionCalculateRequest) -> dict:
@@ -155,7 +156,7 @@ if router is not None:
             method=request.method,
         )
 
-        return suggestion.to_dict()
+        return _success(suggestion.to_dict())
 
     @router.get("/drawdown")
     def get_drawdown_status() -> dict:
@@ -172,7 +173,7 @@ if router is not None:
             - alert_sent: 是否已发送预警
         """
         state = position_management_service.get_drawdown_status()
-        return state.to_dict()
+        return _success(state.to_dict())
 
     @router.post("/capital/update")
     def update_capital(request: UpdateCapitalRequest) -> dict:
@@ -190,7 +191,7 @@ if router is not None:
         if new_capital is None:
             raise HTTPException(status_code=400, detail="new_capital is required")
 
-        return position_management_service.update_capital(new_capital)
+        return _success(position_management_service.update_capital(new_capital))
 
     @router.post("/trade/record")
     def record_trade_result(request: RecordTradeRequest) -> dict:
@@ -212,11 +213,11 @@ if router is not None:
 
         position_size = _parse_decimal(request.position_size, "position_size")
 
-        return position_management_service.record_trade_result(
+        return _success(position_management_service.record_trade_result(
             symbol=request.symbol,
             pnl=pnl,
             position_size=position_size,
-        )
+        ))
 
     @router.post("/add")
     def add_position(request: AddPositionRequest) -> dict:
@@ -241,12 +242,12 @@ if router is not None:
 
         stop_loss = _parse_decimal(request.stop_loss, "stop_loss")
 
-        return position_management_service.add_position(
+        return _success(position_management_service.add_position(
             symbol=request.symbol,
             size=size,
             entry_price=entry_price,
             stop_loss=stop_loss,
-        )
+        ))
 
     @router.post("/remove")
     def remove_position(request: RemovePositionRequest) -> dict:
@@ -258,7 +259,7 @@ if router is not None:
         Returns:
             操作结果，包括移除的仓位详情
         """
-        return position_management_service.remove_position(symbol=request.symbol)
+        return _success(position_management_service.remove_position(symbol=request.symbol))
 
     @router.post("/drawdown/reset")
     def reset_drawdown_trigger() -> dict:
@@ -269,7 +270,7 @@ if router is not None:
         Returns:
             重置结果，包括新的回撤状态
         """
-        return position_management_service.reset_drawdown_trigger()
+        return _success(position_management_service.reset_drawdown_trigger())
 
     @router.post("/risk-level/set")
     def set_risk_level(request: SetRiskLevelRequest) -> dict:
@@ -285,7 +286,7 @@ if router is not None:
         if risk_level is None:
             raise HTTPException(status_code=400, detail="level is required")
 
-        return position_management_service.set_risk_level(risk_level)
+        return _success(position_management_service.set_risk_level(risk_level))
 
     @router.get("/statistics")
     def get_trade_statistics() -> dict:
@@ -301,7 +302,7 @@ if router is not None:
             - avg_loss: 平均亏损
             - net_pnl: 净盈亏
         """
-        return position_management_service.get_trade_statistics()
+        return _success(position_management_service.get_trade_statistics())
 
     @router.get("/config")
     def get_position_config() -> dict:
@@ -311,7 +312,7 @@ if router is not None:
             配置参数，包括最大回撤、风险百分比等
         """
         config = position_management_service._config
-        return {
+        return _success({
             "max_drawdown_pct": str(config.max_drawdown_pct),
             "position_risk_pct": str(config.position_risk_pct),
             "max_position_count": config.max_position_count,
@@ -321,4 +322,4 @@ if router is not None:
             "trading_paused_on_drawdown": config.trading_paused_on_drawdown,
             "drawdown_alert_threshold": str(config.drawdown_alert_threshold),
             "risk_levels": config.risk_levels,
-        }
+        })

@@ -4,11 +4,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DetailDialog } from "./detail-dialog";
-import { DetailDrawer } from "./detail-drawer";
-import { FormSubmitButton } from "./form-submit-button";
-import { SectionShell } from "./section-shell";
-import { SummaryCard } from "./summary-card";
-import { Button } from "./ui/button";
+import { DetailDrawer } from "../detail-drawer";
+import { FormSubmitButton } from "../form-submit-button";
+import { SectionShell } from "../section-shell";
+import { SummaryCard } from "../summary-card";
+import { Button } from "../ui/button";
 
 type CompareOption = {
   id: string;

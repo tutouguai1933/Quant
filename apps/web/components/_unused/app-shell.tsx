@@ -3,12 +3,12 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useWebSocket } from "../lib/websocket-context";
+import { useWebSocket } from "../../lib/websocket-context";
 
-import { FormSubmitButton } from "./form-submit-button";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Separator } from "./ui/separator";
+import { FormSubmitButton } from "../form-submit-button";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Separator } from "../ui/separator";
 
 type AppShellProps = {
   title: string;

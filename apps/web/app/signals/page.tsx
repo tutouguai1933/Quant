@@ -67,6 +67,13 @@ export default function SignalsPage() {
   }, []);
 
   useEffect(() => {
+    // session 未就绪时跳过数据请求：避免 token="" 的首轮无效请求，
+    // 以及 session 返回后 token 变化导致的 cleanup abort + 重复请求
+    if (!session.token) {
+      setIsLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 

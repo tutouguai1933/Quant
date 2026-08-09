@@ -1,26 +1,26 @@
-/* 这个文件负责渲染评估页默认首屏的 5 张摘要卡，把细节统一收进详情抽屉。 */
+/* 这个文件负责渲染任务页默认首屏的 5 张运维摘要卡，把细节统一收进详情抽屉。 */
 
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { DetailDrawer } from "./detail-drawer";
-import { SectionShell } from "./section-shell";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./ui/card";
+import { DetailDrawer } from "../detail-drawer";
+import { SectionShell } from "../section-shell";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
 
-type EvaluationFocusLink = {
+type TasksFocusLink = {
   href: string;
   label: string;
   variant?: "terminal" | "secondary" | "outline";
 };
 
-type EvaluationFocusDigest = {
+type TasksFocusDigest = {
   label: string;
   value: string;
   detail: string;
 };
 
-export type EvaluationFocusCard = {
+export type TasksFocusCard = {
   id: string;
   eyebrow: string;
   title: string;
@@ -30,22 +30,22 @@ export type EvaluationFocusCard = {
   drawerTitle: string;
   drawerDescription: string;
   drawerNotes?: string[];
-  digests: EvaluationFocusDigest[];
-  links?: EvaluationFocusLink[];
+  digests: TasksFocusDigest[];
+  links?: TasksFocusLink[];
   detailContent?: ReactNode;
 };
 
-type EvaluationFocusGridProps = {
-  cards: EvaluationFocusCard[];
+type TasksFocusGridProps = {
+  cards: TasksFocusCard[];
 };
 
-/* 渲染评估页默认首屏的摘要卡。 */
-export function EvaluationFocusGrid({ cards }: EvaluationFocusGridProps) {
+/* 渲染任务页默认首屏的摘要卡。 */
+export function TasksFocusGrid({ cards }: TasksFocusGridProps) {
   return (
     <SectionShell
       eyebrow="默认视图"
-      title="当前评估摘要"
-      description="默认只保留当前推荐、当前阻塞、当前下一步动作、推荐摘要和淘汰摘要，候选篮子与执行篮子的承接关系放在摘要卡里说明。"
+      title="当前运维摘要"
+      description="默认只保留自动化模式、头号告警、人工接管、恢复建议和最近工作流摘要，细节按需展开。"
     >
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
@@ -104,7 +104,7 @@ export function EvaluationFocusGrid({ cards }: EvaluationFocusGridProps) {
 }
 
 /* 渲染摘要块。 */
-function DigestBlock({ label, value, detail }: EvaluationFocusDigest) {
+function DigestBlock({ label, value, detail }: TasksFocusDigest) {
   return (
     <div className="rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/70 p-4">
       <p className="eyebrow">{label}</p>

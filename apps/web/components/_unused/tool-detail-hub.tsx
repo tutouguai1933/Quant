@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 
-import { SectionShell } from "./section-shell";
-import { SummaryCard } from "./summary-card";
-import { Button } from "./ui/button";
+import { SectionShell } from "../section-shell";
+import { SummaryCard } from "../summary-card";
+import { Button } from "../ui/button";
 
 type ToolDetailHubProps = {
   summary: string;

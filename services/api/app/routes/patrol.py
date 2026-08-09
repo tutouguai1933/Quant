@@ -6,6 +6,7 @@
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
+from services.api.app.routes._helpers import _success, _error
 from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
 from services.api.app.services.auth_service import auth_service
 
@@ -17,17 +18,7 @@ class StartPatrolRequest(BaseModel):
     interval_minutes: int = 60
 
 
-class PatrolResponse(BaseModel):
-    """巡检操作响应。"""
-    success: bool
-    message: str
-    status: dict | None = None
-    interval_minutes: int | None = None
-    result: dict | None = None
-    error: str | None = None
-
-
-@router.post("/start", response_model=PatrolResponse)
+@router.post("/start")
 def start_patrol(
     request: StartPatrolRequest = StartPatrolRequest(),
     token: str = "",
@@ -47,17 +38,17 @@ def start_patrol(
         result = scheduled_patrol_service.start_schedule(
             interval_minutes=request.interval_minutes,
         )
-        return PatrolResponse(
-            success=result.get("success", False),
-            message=result.get("message", ""),
-            status=result.get("status"),
-            interval_minutes=result.get("interval_minutes"),
-        )
+        return _success({
+            "success": result.get("success", False),
+            "message": result.get("message", ""),
+            "status": result.get("status"),
+            "interval_minutes": result.get("interval_minutes"),
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/stop", response_model=PatrolResponse)
+@router.post("/stop")
 def stop_patrol(token: str = "", authorization: str = Header("")):
     """停止定时巡检。需要控制平面认证。
 
@@ -68,11 +59,11 @@ def stop_patrol(token: str = "", authorization: str = Header("")):
 
     try:
         result = scheduled_patrol_service.stop_schedule()
-        return PatrolResponse(
-            success=result.get("success", False),
-            message=result.get("message", ""),
-            status=result.get("status"),
-        )
+        return _success({
+            "success": result.get("success", False),
+            "message": result.get("message", ""),
+            "status": result.get("status"),
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -93,12 +84,12 @@ def get_patrol_schedule():
     """
     try:
         status = scheduled_patrol_service.get_schedule_status()
-        return status
+        return _success(status)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/run-now", response_model=PatrolResponse)
+@router.post("/run-now")
 def run_patrol_now(patrol_type: str = "full", token: str = "", authorization: str = Header("")):
     """立即执行一次巡检（不依赖调度状态）。需要控制平面认证。
 
@@ -112,11 +103,11 @@ def run_patrol_now(patrol_type: str = "full", token: str = "", authorization: st
 
     try:
         result = scheduled_patrol_service.run_patrol_now(patrol_type=patrol_type)
-        return PatrolResponse(
-            success=result.get("success", False),
-            message=result.get("message", ""),
-            result=result.get("result"),
-            error=result.get("error"),
-        )
+        return _success({
+            "success": result.get("success", False),
+            "message": result.get("message", ""),
+            "result": result.get("result"),
+            "error": result.get("error"),
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

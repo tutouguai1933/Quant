@@ -11,8 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-# Stale lock detection threshold in seconds (5 minutes by default)
-STALE_LOCK_THRESHOLD_SECONDS = 300
+# 陈旧锁判定阈值（秒）。
+# 注意：自动化工作流单轮会依次执行多个子任务，每个子任务默认超时 300s（见 tasks/scheduler.py），
+# 阈值设太小会把仍在正常执行的长任务误判为陈旧并强制夺锁，导致两个周期同时运行。
+# 默认 600s 与任务超时错开，可通过环境变量 QUANT_CYCLE_LOCK_STALE_SECONDS 覆盖。
+STALE_LOCK_THRESHOLD_SECONDS = int(os.getenv("QUANT_CYCLE_LOCK_STALE_SECONDS", "600"))
 
 
 class CycleLock:
@@ -37,22 +40,28 @@ class CycleLock:
             是否成功获取锁
         """
         try:
-            # Write lock metadata before acquiring lock
-            lock_metadata = {
-                "pid": os.getpid(),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
             self.lock_file.parent.mkdir(parents=True, exist_ok=True)
-            # Open file for writing metadata
-            self._fd = open(self.lock_file, 'w')
-            self._fd.write(json.dumps(lock_metadata, ensure_ascii=False))
-            self._fd.flush()
-            os.fsync(self._fd.fileno())
+            # 先打开文件但不截断内容（O_CREAT 只负责创建），flock 成功后才写元数据。
+            # 之前先写 pid/timestamp 再 flock，非阻塞获取失败时会把持锁者的元数据
+            # 覆盖掉，导致陈旧检测完全失效；现在失败时文件内容保持不变。
+            fd = os.open(self.lock_file, os.O_CREAT | os.O_RDWR)
+            self._fd = os.fdopen(fd, "r+")
 
             flags = fcntl.LOCK_EX
             if not blocking:
                 flags |= fcntl.LOCK_NB
             fcntl.flock(self._fd.fileno(), flags)
+
+            # flock 成功后才写入持有者元数据
+            lock_metadata = {
+                "pid": os.getpid(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            self._fd.seek(0)
+            self._fd.truncate(0)
+            self._fd.write(json.dumps(lock_metadata, ensure_ascii=False))
+            self._fd.flush()
+            os.fsync(self._fd.fileno())
             return True
         except (IOError, OSError):
             if self._fd:
@@ -119,26 +128,22 @@ class CycleLock:
     def force_release(self) -> bool:
         """强制释放陈旧锁。
 
-        Returns:
-            是否成功释放
+        flock 绑定的是文件 inode，unlink 删除文件并不能释放旧持有者的锁，
+        新进程在新建文件上加锁后会与旧持锁者同时进入临界区（旧文件句柄仍持有锁）。
+        因此这里改为：先读元数据判断是否陈旧，陈旧时阻塞获取锁——真正的持锁进程
+        已退出时内核会自动释放 flock，阻塞获取会立即成功；拿到后立即释放即可。
         """
         if not self._is_stale_lock():
             return False
 
         try:
-            # Try to acquire and immediately release to clear stale lock
-            if self.acquire(blocking=False):
+            if self.acquire(blocking=True):
                 self.release()
                 return True
         except Exception:
             pass
 
-        # If flock approach didn't work, try to remove the file directly
-        try:
-            self.lock_file.unlink(missing_ok=True)
-            return True
-        except OSError:
-            return False
+        return False
 
     def __enter__(self):
         if not self.acquire(blocking=False):

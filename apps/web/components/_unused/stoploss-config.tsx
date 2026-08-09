@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Shield, TrendingUp, TrendingDown, RefreshCw, AlertTriangle, CheckCircle2, Settings } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
 
 type StoplossConfig = {
   base_stoploss: string;

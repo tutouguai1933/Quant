@@ -6,8 +6,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { TerminalCard } from "./terminal";
-import { getSystemStatus, type SystemStatus } from "../lib/api";
+import { TerminalCard } from "../terminal";
+import { getSystemStatus, type SystemStatus } from "../../lib/api";
 
 // 默认状态（用于加载中或出错时）
 const defaultStatus: SystemStatus = {

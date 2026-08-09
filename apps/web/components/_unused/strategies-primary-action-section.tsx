@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 
-import { AutomationControlCard } from "./automation-control-card";
-import { DetailDrawer } from "./detail-drawer";
-import { FormSubmitButton } from "./form-submit-button";
-import { SectionShell } from "./section-shell";
-import { SummaryCard } from "./summary-card";
-import { Button } from "./ui/button";
+import { AutomationControlCard } from "../automation-control-card";
+import { DetailDrawer } from "../detail-drawer";
+import { FormSubmitButton } from "../form-submit-button";
+import { SectionShell } from "../section-shell";
+import { SummaryCard } from "../summary-card";
+import { Button } from "../ui/button";
 
 type StrategyControlAction = {
   action: string;

@@ -26,6 +26,7 @@ except ImportError:
         return None
 
 
+from services.api.app.routes._helpers import _success
 from services.api.app.services.feishu_push_service import (
     FeishuConfig,
     FeishuAlertLevel,
@@ -89,17 +90,17 @@ async def test_feishu_push(request: FeishuTestRequest | None = None) -> dict[str
     """
     if request and request.custom_message:
         success = feishu_push_service.send_text(request.custom_message)
-        return {
+        return _success({
             "success": success,
             "message": "自定义消息已发送" if success else "消息发送失败",
             "webhook_configured": feishu_push_service.config.has_webhook(),
-        }
+        })
 
     result = feishu_push_service.test_push()
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("message"))
 
-    return result
+    return _success(result)
 
 
 @router.get("/config")
@@ -109,12 +110,12 @@ async def get_feishu_config() -> dict[str, Any]:
     返回当前飞书推送服务的配置状态。
     """
     config = feishu_push_service.config
-    return {
+    return _success({
         "enabled": config.enabled,
         "webhook_configured": config.has_webhook(),
         "webhook_url": "(已配置)" if config.has_webhook() else "(未配置)",
         "app_credentials_configured": config.has_app_credentials(),
-    }
+    })
 
 
 @router.post("/config")
@@ -130,14 +131,14 @@ async def update_feishu_config(request: FeishuConfigRequest) -> dict[str, Any]:
     if request.enabled is not None:
         feishu_push_service._config.enabled = request.enabled
 
-    return {
+    return _success({
         "success": True,
         "message": "运行时配置已更新（注意：重启后将恢复为环境变量配置）",
         "config": {
             "enabled": feishu_push_service._config.enabled,
             "webhook_configured": feishu_push_service.config.has_webhook(),
         },
-    }
+    })
 
 
 @router.post("/alert")
@@ -163,14 +164,14 @@ async def send_feishu_alert(request: FeishuAlertRequest) -> dict[str, Any]:
 
     success = feishu_push_service.send_alert(alert)
 
-    return {
+    return _success({
         "success": success,
         "message": "告警已推送" if success else "告警推送失败",
         "alert": {
             "level": level.value,
             "title": request.title,
         },
-    }
+    })
 
 
 @router.post("/signal")
@@ -196,14 +197,14 @@ async def send_feishu_signal(request: FeishuTradeSignalRequest) -> dict[str, Any
 
     success = feishu_push_service.send_trade_signal(signal)
 
-    return {
+    return _success({
         "success": success,
         "message": "交易信号已推送" if success else "交易信号推送失败",
         "signal": {
             "type": request.signal_type,
             "symbol": request.symbol,
         },
-    }
+    })
 
 
 @router.post("/report")
@@ -226,13 +227,13 @@ async def send_feishu_report(request: FeishuReportRequest) -> dict[str, Any]:
 
     success = feishu_push_service.send_report(report)
 
-    return {
+    return _success({
         "success": success,
         "message": "报告已推送" if success else "报告推送失败",
         "report": {
             "type": request.report_type,
         },
-    }
+    })
 
 
 @router.get("/status")
@@ -241,9 +242,9 @@ async def get_feishu_status() -> dict[str, Any]:
 
     返回飞书推送服务的当前状态信息。
     """
-    return {
+    return _success({
         "service": "feishu_push_service",
         "enabled": feishu_push_service.enabled,
         "webhook_configured": feishu_push_service.config.has_webhook(),
         "ready": feishu_push_service.enabled,
-    }
+    })

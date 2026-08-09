@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from contextlib import asynccontextmanager
 
 try:
     from fastapi import FastAPI, Request, Response
@@ -85,10 +86,77 @@ from services.api.app.websocket.manager import connection_manager
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI 生命周期：启动时初始化事件循环/健康监控等，关闭时清理。
+
+    替代已废弃的 @app.on_event("startup"/"shutdown")。
+    """
+    # ==================== 启动逻辑（原 setup_event_loop） ====================
+    # 启用文件日志（持久化到挂载卷，容器重建后日志仍可回溯卡死原因）
+    try:
+        from services.api.app.core.logging_config import LOG_DIR_API, setup_logging
+
+        setup_logging(LOG_DIR_API)
+        logger.info("文件日志已启用: %s", LOG_DIR_API)
+    except Exception as exc:
+        logger.warning("文件日志启用失败（继续使用 stdout）: %s", exc)
+
+    loop = asyncio.get_running_loop()
+    connection_manager.set_loop(loop)
+
+    # 启动健康监控服务
+    from services.api.app.services.health_monitor_service import health_monitor_service
+    health_monitor_service.start_monitoring(interval_seconds=60)
+    logger.info("健康监控服务已启动")
+
+    # 启动定时巡检（默认禁用，由 OpenClaw 容器统一调度）
+    import os
+    auto_start = os.getenv("QUANT_PATROL_AUTO_START", "false").lower() == "true"
+    interval_minutes = int(os.getenv("QUANT_PATROL_INTERVAL_MINUTES", "60"))
+
+    if auto_start:
+        from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
+        result = scheduled_patrol_service.start_schedule(interval_minutes=interval_minutes)
+        if result.get("success"):
+            logger.info("定时巡检已自动启动: interval=%d 分钟", interval_minutes)
+        else:
+            logger.warning("定时巡检自动启动失败: %s", result.get("message"))
+
+    # 启动定时报告生成（可通过环境变量 QUANT_SCHEDULED_REPORTS_AUTO_START 控制）
+    reports_auto_start = os.getenv("QUANT_SCHEDULED_REPORTS_AUTO_START", "false").lower() == "true"
+    if reports_auto_start:
+        from services.api.app.services.report_service import report_service
+        result = report_service.start_scheduled_reports()
+        if result.get("success"):
+            logger.info("定时报告生成已自动启动: 每日6:00 UTC日报, 每周一6:00 UTC周报")
+        else:
+            logger.warning("定时报告生成自动启动失败: %s", result.get("message"))
+
+    try:
+        yield
+    finally:
+        # ==================== 关闭逻辑（原 shutdown_event_loop） ====================
+        from services.api.app.services.health_monitor_service import health_monitor_service
+        health_monitor_service.stop_monitoring()
+        logger.info("健康监控服务已停止")
+
+        # 停止定时巡检
+        from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
+        scheduled_patrol_service.stop_schedule()
+        logger.info("定时巡检已停止")
+
+        # 停止定时报告生成
+        from services.api.app.services.report_service import report_service
+        report_service.stop_scheduled_reports()
+        logger.info("定时报告生成已停止")
+
+
 app = FastAPI(
     title="Quant Control Plane API",
     version="0.1.0",
     description="Phase-1 skeleton for crypto + Binance + Freqtrade.",
+    lifespan=lifespan,
 )
 
 if not hasattr(app, "routers"):
@@ -231,64 +299,3 @@ async def performance_monitor_middleware(request: Request, call_next) -> Respons
 
     return response
 
-
-@app.on_event("startup")
-async def setup_event_loop() -> None:
-    """在 FastAPI 启动时设置事件循环引用，用于 WebSocket 推送，并启动健康监控。"""
-    # 启用文件日志（持久化到挂载卷，容器重建后日志仍可回溯卡死原因）
-    try:
-        from services.api.app.core.logging_config import LOG_DIR_API, setup_logging
-
-        setup_logging(LOG_DIR_API)
-        logger.info("文件日志已启用: %s", LOG_DIR_API)
-    except Exception as exc:
-        logger.warning("文件日志启用失败（继续使用 stdout）: %s", exc)
-
-    loop = asyncio.get_running_loop()
-    connection_manager.set_loop(loop)
-
-    # 启动健康监控服务
-    from services.api.app.services.health_monitor_service import health_monitor_service
-    health_monitor_service.start_monitoring(interval_seconds=60)
-    logger.info("健康监控服务已启动")
-
-    # 启动定时巡检（默认禁用，由 OpenClaw 容器统一调度）
-    import os
-    auto_start = os.getenv("QUANT_PATROL_AUTO_START", "false").lower() == "true"
-    interval_minutes = int(os.getenv("QUANT_PATROL_INTERVAL_MINUTES", "60"))
-
-    if auto_start:
-        from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
-        result = scheduled_patrol_service.start_schedule(interval_minutes=interval_minutes)
-        if result.get("success"):
-            logger.info("定时巡检已自动启动: interval=%d 分钟", interval_minutes)
-        else:
-            logger.warning("定时巡检自动启动失败: %s", result.get("message"))
-
-    # 启动定时报告生成（可通过环境变量 QUANT_SCHEDULED_REPORTS_AUTO_START 控制）
-    reports_auto_start = os.getenv("QUANT_SCHEDULED_REPORTS_AUTO_START", "false").lower() == "true"
-    if reports_auto_start:
-        from services.api.app.services.report_service import report_service
-        result = report_service.start_scheduled_reports()
-        if result.get("success"):
-            logger.info("定时报告生成已自动启动: 每日6:00 UTC日报, 每周一6:00 UTC周报")
-        else:
-            logger.warning("定时报告生成自动启动失败: %s", result.get("message"))
-
-
-@app.on_event("shutdown")
-async def shutdown_event_loop() -> None:
-    """在 FastAPI 关闭时停止健康监控和定时巡检。"""
-    from services.api.app.services.health_monitor_service import health_monitor_service
-    health_monitor_service.stop_monitoring()
-    logger.info("健康监控服务已停止")
-
-    # 停止定时巡检
-    from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
-    scheduled_patrol_service.stop_schedule()
-    logger.info("定时巡检已停止")
-
-    # 停止定时报告生成
-    from services.api.app.services.report_service import report_service
-    report_service.stop_scheduled_reports()
-    logger.info("定时报告生成已停止")

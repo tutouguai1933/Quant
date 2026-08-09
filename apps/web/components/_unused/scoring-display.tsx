@@ -4,9 +4,9 @@
 import { Gauge, TrendingUp, TrendingDown, Activity, Volume2, BarChart3, Zap, Settings2, RefreshCw } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Slider } from "./ui/slider";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Button } from "../ui/button";
+import { Slider } from "../ui/slider";
 
 export type FactorResult = {
   name: string;

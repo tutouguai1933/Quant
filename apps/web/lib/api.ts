@@ -1404,6 +1404,7 @@ const NO_CACHE_PATHS: string[] = [
   "/signals/research/runtime",
   "/tasks/automation",
   "/hyperopt/jobs",
+  "/hyperopt/status",
 ];
 
 // 手动触发类操作成功后清空全部缓存，确保页面立即拉到最新数据
@@ -1467,9 +1468,19 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
         }
         return result;
       } catch (error) {
-        const errorCode = error instanceof Error && error.name === "AbortError"
-          ? "request_timeout"
-          : "network_error";
+        // AbortError（超时或主动取消）不重试：信号已中止，重试只会立即再次失败
+        if (error instanceof Error && error.name === "AbortError") {
+          return {
+            data: {} as T,
+            error: {
+              code: "request_timeout",
+              message: "请求超时",
+            },
+            meta: { aborted: true },
+          };
+        }
+
+        const errorCode = "network_error";
 
         if (isRetryableError({ code: errorCode }) && attempt < MAX_RETRIES) {
           await sleep(RETRY_DELAY_BASE * Math.pow(2, attempt));
@@ -1480,9 +1491,9 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
           data: {} as T,
           error: {
             code: errorCode,
-            message: errorCode === "request_timeout" ? "请求超时" : (error instanceof Error ? error.message : "网络连接失败"),
+            message: error instanceof Error ? error.message : "网络连接失败",
           },
-          meta: errorCode === "request_timeout" ? { aborted: true } : {},
+          meta: {},
         };
       }
     }
@@ -4742,13 +4753,15 @@ export async function executeOpenclawPatrol(
     }
 
     const data = await response.json();
+    // /openclaw/patrol 返回 envelope，结果在 data 里
+    const payload = data.data || {};
     return {
       error: null,
       data: {
-        patrolled: Boolean(data.patrolled),
-        status: String(data.status || "unknown"),
-        message: String(data.message || ""),
-        actions_taken: Array.isArray(data.actions_taken) ? data.actions_taken : [],
+        patrolled: Boolean(payload.patrolled),
+        status: String(payload.status || "unknown"),
+        message: String(payload.message || ""),
+        actions_taken: Array.isArray(payload.actions_taken) ? payload.actions_taken : [],
       },
       meta: {},
     };
@@ -4835,10 +4848,12 @@ export async function executeOpenclawAction(
     }
 
     const json = await response.json() as Record<string, unknown>;
+    // /openclaw/actions 返回 envelope，结果在 data 里（兼容旧裸结构）
+    const actionResult = (isPlainObject(json.data) ? json.data : json) as Record<string, unknown>;
     return {
       data: {
-        success: Boolean(json.success),
-        message: String(json.message ?? json.reason ?? ""),
+        success: Boolean(actionResult.success),
+        message: String(actionResult.message ?? actionResult.reason ?? ""),
       },
       error: null,
       meta: {},

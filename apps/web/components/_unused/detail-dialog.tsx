@@ -5,8 +5,8 @@
 import { X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
-import { cn } from "../lib/utils";
-import { Button, type ButtonProps } from "./ui/button";
+import { cn } from "../../lib/utils";
+import { Button, type ButtonProps } from "../ui/button";
 
 type DetailDialogProps = {
   triggerLabel: string;

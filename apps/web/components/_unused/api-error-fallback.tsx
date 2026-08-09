@@ -1,5 +1,5 @@
 import { AlertCircle } from "lucide-react";
-import { TerminalCard } from "./terminal/terminal-card";
+import { TerminalCard } from "../terminal/terminal-card";
 
 type ApiErrorFallbackProps = {
   title?: string;

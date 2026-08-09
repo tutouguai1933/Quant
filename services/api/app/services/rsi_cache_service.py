@@ -54,7 +54,10 @@ class RsiCacheService:
         with self._lock:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             data["cached_at"] = datetime.now(timezone.utc).isoformat()
-            self._cache_file.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            # 写临时文件 + os.replace 原子替换，避免读取方读到半个文件
+            temp_path = Path(f"{self._cache_file}.{os.getpid()}.{threading.get_ident()}.tmp")
+            temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(str(temp_path), str(self._cache_file))
 
     def get_summary(self, interval: str = "1h") -> dict[str, Any] | None:
         """获取缓存的RSI摘要，用于API返回。"""

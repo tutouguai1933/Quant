@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -155,6 +156,19 @@ class FactorAnalysisService:
         except Exception as e:
             logger.warning("加载因子分析历史数据失败: %s", e)
 
+    def _atomic_write_json(self, path: Path, data: dict[str, Any]) -> None:
+        """写临时文件 + os.replace 原子替换。
+
+        临时文件名带 pid+线程id 唯一化，避免并发写时多个线程共用同名
+        临时文件互相截断覆盖；os.replace 保证目标文件任何时刻都是完整内容。
+        """
+
+        temp_path = Path(f"{path}.{os.getpid()}.{threading.get_ident()}.tmp")
+        temp_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        os.replace(str(temp_path), str(path))
+
     def _save_history(self) -> None:
         """保存历史数据到文件。"""
         if self._config_path is None:
@@ -167,8 +181,8 @@ class FactorAnalysisService:
                     "pnl_records": self._pnl_records,
                     "updated_at": utc_now().isoformat(),
                 }
-            with open(self._config_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+                # 在锁内完成写入，避免数据快照与写文件之间被其他线程改掉状态
+                self._atomic_write_json(self._config_path, data)
             logger.info("因子分析历史数据已保存: %s", self._config_path)
         except Exception as e:
             logger.warning("保存因子分析历史数据失败: %s", e)

@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from services.api.app.routes._helpers import _success, _error
 from services.api.app.services.alert_upgrade_service import (
     alert_upgrade_service,
     AlertLevel,
@@ -34,15 +35,6 @@ router = APIRouter(prefix="/api/v1/alert", tags=["alert-management"])
 # ==================== 响应模型 ====================
 
 
-class AlertLevelResponse(BaseModel):
-    """告警级别响应。"""
-
-    success: bool
-    alert_key: str | None = None
-    level: str | None = None
-    counters: dict[str, Any] | None = None
-    upgrade_history: list[dict[str, Any]] | None = None
-    error: str | None = None
 
 
 class SilenceRequest(BaseModel):
@@ -53,13 +45,6 @@ class SilenceRequest(BaseModel):
     reason: str = ""
 
 
-class SilenceResponse(BaseModel):
-    """静默响应。"""
-
-    success: bool
-    silence: dict[str, Any] | None = None
-    silences: list[dict[str, Any]] | None = None
-    error: str | None = None
 
 
 class RecoveryRequest(BaseModel):
@@ -68,20 +53,12 @@ class RecoveryRequest(BaseModel):
     service_name: str
 
 
-class RecoveryResponse(BaseModel):
-    """恢复响应。"""
-
-    success: bool
-    recovery: dict[str, Any] | None = None
-    history: list[dict[str, Any]] | None = None
-    health: dict[str, Any] | None = None
-    error: str | None = None
 
 
 # ==================== 告警级别 API ====================
 
 
-@router.get("/level", response_model=AlertLevelResponse)
+@router.get("/level")
 def get_alert_levels():
     """获取所有告警级别状态。
 
@@ -91,17 +68,17 @@ def get_alert_levels():
     try:
         counters = alert_upgrade_service.get_all_counters()
         upgrade_history = alert_upgrade_service.get_upgrade_history(limit=20)
-        return AlertLevelResponse(
-            success=True,
-            counters=counters,
-            upgrade_history=upgrade_history,
-        )
+        return _success({
+            "success": True,
+            "counters": counters,
+            "upgrade_history": upgrade_history,
+        })
     except Exception as e:
         logger.error("获取告警级别失败: %s", e)
-        return AlertLevelResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.get("/level/{alert_key}", response_model=AlertLevelResponse)
+@router.get("/level/{alert_key}")
 def get_alert_level(alert_key: str):
     """获取指定告警的级别。
 
@@ -114,23 +91,23 @@ def get_alert_level(alert_key: str):
     try:
         status = alert_upgrade_service.get_counter_status(alert_key)
         if status is None:
-            return AlertLevelResponse(
-                success=True,
-                alert_key=alert_key,
-                level=AlertLevel.INFO.value,
-            )
-        return AlertLevelResponse(
-            success=True,
-            alert_key=alert_key,
-            level=status["level"],
-            counters=status,
-        )
+            return _success({
+                "success": True,
+                "alert_key": alert_key,
+                "level": AlertLevel.INFO.value,
+            })
+        return _success({
+            "success": True,
+            "alert_key": alert_key,
+            "level": status["level"],
+            "counters": status,
+        })
     except Exception as e:
         logger.error("获取告警级别失败: %s", e)
-        return AlertLevelResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.post("/level/reset", response_model=AlertLevelResponse)
+@router.post("/level/reset")
 def reset_alert_counter(alert_key: str):
     """重置告警计数器。
 
@@ -142,17 +119,17 @@ def reset_alert_counter(alert_key: str):
     """
     try:
         success = alert_upgrade_service.reset_counter(alert_key)
-        return AlertLevelResponse(
-            success=success,
-            alert_key=alert_key,
-            level=AlertLevel.INFO.value if success else None,
-        )
+        return _success({
+            "success": success,
+            "alert_key": alert_key,
+            "level": AlertLevel.INFO.value if success else None,
+        })
     except Exception as e:
         logger.error("重置告警计数器失败: %s", e)
-        return AlertLevelResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.get("/upgrade/history", response_model=AlertLevelResponse)
+@router.get("/upgrade/history")
 def get_upgrade_history(limit: int = 50):
     """获取告警升级历史。
 
@@ -164,19 +141,19 @@ def get_upgrade_history(limit: int = 50):
     """
     try:
         history = alert_upgrade_service.get_upgrade_history(limit=limit)
-        return AlertLevelResponse(
-            success=True,
-            upgrade_history=history,
-        )
+        return _success({
+            "success": True,
+            "upgrade_history": history,
+        })
     except Exception as e:
         logger.error("获取升级历史失败: %s", e)
-        return AlertLevelResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
 # ==================== 告警静默 API ====================
 
 
-@router.get("/silence", response_model=SilenceResponse)
+@router.get("/silence")
 def get_active_silences():
     """获取所有活跃的告警静默。
 
@@ -185,16 +162,16 @@ def get_active_silences():
     """
     try:
         silences = alert_silence_service.get_active_silences()
-        return SilenceResponse(
-            success=True,
-            silences=silences,
-        )
+        return _success({
+            "success": True,
+            "silences": silences,
+        })
     except Exception as e:
         logger.error("获取静默列表失败: %s", e)
-        return SilenceResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.post("/silence", response_model=SilenceResponse)
+@router.post("/silence")
 def add_silence(request: SilenceRequest):
     """添加告警静默。
 
@@ -211,16 +188,16 @@ def add_silence(request: SilenceRequest):
             reason=request.reason,
         )
         logger.info("添加告警静默: %s, duration=%ds", request.alert_key, request.duration_seconds)
-        return SilenceResponse(
-            success=True,
-            silence=silence,
-        )
+        return _success({
+            "success": True,
+            "silence": silence,
+        })
     except Exception as e:
         logger.error("添加静默失败: %s", e)
-        return SilenceResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.delete("/silence/{alert_key}", response_model=SilenceResponse)
+@router.delete("/silence/{alert_key}")
 def remove_silence(alert_key: str):
     """移除告警静默。
 
@@ -232,16 +209,16 @@ def remove_silence(alert_key: str):
     """
     try:
         success = alert_silence_service.remove_silence(alert_key)
-        return SilenceResponse(
-            success=success,
-            silence={"alert_key": alert_key, "removed": success},
-        )
+        return _success({
+            "success": success,
+            "silence": {"alert_key": alert_key, "removed": success},
+        })
     except Exception as e:
         logger.error("移除静默失败: %s", e)
-        return SilenceResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.post("/silence/clear-expired", response_model=SilenceResponse)
+@router.post("/silence/clear-expired")
 def clear_expired_silences():
     """清理过期静默。
 
@@ -250,19 +227,19 @@ def clear_expired_silences():
     """
     try:
         cleared = alert_silence_service.clear_expired_silences()
-        return SilenceResponse(
-            success=True,
-            silence={"cleared_count": cleared},
-        )
+        return _success({
+            "success": True,
+            "silence": {"cleared_count": cleared},
+        })
     except Exception as e:
         logger.error("清理过期静默失败: %s", e)
-        return SilenceResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
 # ==================== 自动恢复 API ====================
 
 
-@router.get("/recovery/history", response_model=RecoveryResponse)
+@router.get("/recovery/history")
 def get_recovery_history(limit: int = 50):
     """获取恢复历史。
 
@@ -274,16 +251,16 @@ def get_recovery_history(limit: int = 50):
     """
     try:
         history = auto_recovery_service.get_recovery_history(limit=limit)
-        return RecoveryResponse(
-            success=True,
-            history=history,
-        )
+        return _success({
+            "success": True,
+            "history": history,
+        })
     except Exception as e:
         logger.error("获取恢复历史失败: %s", e)
-        return RecoveryResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.get("/recovery/status", response_model=RecoveryResponse)
+@router.get("/recovery/status")
 def get_recovery_status():
     """获取恢复服务状态。
 
@@ -292,9 +269,9 @@ def get_recovery_status():
     """
     try:
         config = auto_recovery_service.config
-        return RecoveryResponse(
-            success=True,
-            recovery={
+        return _success({
+            "success": True,
+            "recovery": {
                 "auto_recovery_enabled": config.auto_recovery_enabled,
                 "cooldown_seconds": config.cooldown_seconds,
                 "max_recovery_attempts": config.max_recovery_attempts,
@@ -302,13 +279,13 @@ def get_recovery_status():
                 "enabled_services": config.enabled_services,
                 "is_running": auto_recovery_service.is_running,
             },
-        )
+        })
     except Exception as e:
         logger.error("获取恢复状态失败: %s", e)
-        return RecoveryResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.get("/recovery/health", response_model=RecoveryResponse)
+@router.get("/recovery/health")
 def check_services_health():
     """检查所有服务健康状态。
 
@@ -317,16 +294,16 @@ def check_services_health():
     """
     try:
         health = auto_recovery_service.check_all_services_health()
-        return RecoveryResponse(
-            success=True,
-            health=health,
-        )
+        return _success({
+            "success": True,
+            "health": health,
+        })
     except Exception as e:
         logger.error("检查服务健康状态失败: %s", e)
-        return RecoveryResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.get("/recovery/health/{service_name}", response_model=RecoveryResponse)
+@router.get("/recovery/health/{service_name}")
 def check_service_health(service_name: str):
     """检查单个服务健康状态。
 
@@ -338,16 +315,16 @@ def check_service_health(service_name: str):
     """
     try:
         health = auto_recovery_service.check_service_health(service_name)
-        return RecoveryResponse(
-            success=True,
-            health=health,
-        )
+        return _success({
+            "success": True,
+            "health": health,
+        })
     except Exception as e:
         logger.error("检查服务健康状态失败: %s", e)
-        return RecoveryResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.post("/recovery/manual", response_model=RecoveryResponse)
+@router.post("/recovery/manual")
 def manual_recovery(request: RecoveryRequest):
     """手动触发服务恢复。
 
@@ -374,16 +351,16 @@ def manual_recovery(request: RecoveryRequest):
         else:
             logger.warning("手动恢复失败: %s, 错误: %s", request.service_name, record.error)
 
-        return RecoveryResponse(
-            success=record.status == RecoveryStatus.SUCCESS,
-            recovery=recovery_dict,
-        )
+        return _success({
+            "success": record.status == RecoveryStatus.SUCCESS,
+            "recovery": recovery_dict,
+        })
     except Exception as e:
         logger.error("手动恢复失败: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/recovery/reset-attempts", response_model=RecoveryResponse)
+@router.post("/recovery/reset-attempts")
 def reset_recovery_attempts(service_name: str):
     """重置服务恢复尝试次数。
 
@@ -395,16 +372,16 @@ def reset_recovery_attempts(service_name: str):
     """
     try:
         auto_recovery_service.reset_recovery_attempts(service_name)
-        return RecoveryResponse(
-            success=True,
-            recovery={"service_name": service_name, "attempts_reset": True},
-        )
+        return _success({
+            "success": True,
+            "recovery": {"service_name": service_name, "attempts_reset": True},
+        })
     except Exception as e:
         logger.error("重置恢复尝试次数失败: %s", e)
-        return RecoveryResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.post("/recovery/clear-history", response_model=RecoveryResponse)
+@router.post("/recovery/clear-history")
 def clear_recovery_history():
     """清空恢复历史。
 
@@ -413,13 +390,13 @@ def clear_recovery_history():
     """
     try:
         count = auto_recovery_service.clear_recovery_history()
-        return RecoveryResponse(
-            success=True,
-            recovery={"cleared_count": count},
-        )
+        return _success({
+            "success": True,
+            "recovery": {"cleared_count": count},
+        })
     except Exception as e:
         logger.error("清空恢复历史失败: %s", e)
-        return RecoveryResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
 # ==================== 交易告警 API ====================
@@ -435,14 +412,6 @@ class TradeAlertRequest(BaseModel):
     timestamp: str | None = None
 
 
-class TradeAlertResponse(BaseModel):
-    """交易告警响应。"""
-
-    success: bool
-    alert_type: str | None = None
-    symbol: str | None = None
-    message: str | None = None
-    error: str | None = None
 
 
 class TradeExitAlertRequest(BaseModel):
@@ -464,7 +433,7 @@ class TradeEntryAlertRequest(BaseModel):
     trade_id: str | None = None
 
 
-@router.post("/trade", response_model=TradeAlertResponse)
+@router.post("/trade")
 def send_trade_alert(request: TradeAlertRequest):
     """发送交易告警。
 
@@ -485,10 +454,7 @@ def send_trade_alert(request: TradeAlertRequest):
 
         alert_type = alert_type_map.get(request.alert_type)
         if alert_type is None:
-            return TradeAlertResponse(
-                success=False,
-                error=f"未知的告警类型: {request.alert_type}",
-            )
+            return _error(f"未知的告警类型: {request.alert_type}")
 
         # 根据告警类型设置级别
         level_map = {
@@ -519,18 +485,18 @@ def send_trade_alert(request: TradeAlertRequest):
 
         logger.info("交易告警发送: type=%s, symbol=%s, success=%s", request.alert_type, request.symbol, success)
 
-        return TradeAlertResponse(
-            success=success,
-            alert_type=request.alert_type,
-            symbol=request.symbol,
-            message=request.message,
-        )
+        return _success({
+            "success": success,
+            "alert_type": request.alert_type,
+            "symbol": request.symbol,
+            "message": request.message,
+        })
     except Exception as e:
         logger.error("发送交易告警失败: %s", e)
-        return TradeAlertResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.post("/trade/exit", response_model=TradeAlertResponse)
+@router.post("/trade/exit")
 def check_trade_exit_alert(request: TradeExitAlertRequest):
     """检查交易退出告警条件。
 
@@ -558,17 +524,17 @@ def check_trade_exit_alert(request: TradeExitAlertRequest):
             triggered_types,
         )
 
-        return TradeAlertResponse(
-            success=True,
-            symbol=request.symbol,
-            message=f"告警检查完成，触发: {triggered_types}" if triggered_types else "无告警触发",
-        )
+        return _success({
+            "success": True,
+            "symbol": request.symbol,
+            "message": f"告警检查完成，触发: {triggered_types}" if triggered_types else "无告警触发",
+        })
     except Exception as e:
         logger.error("检查交易退出告警失败: %s", e)
-        return TradeAlertResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
-@router.post("/trade/entry", response_model=TradeAlertResponse)
+@router.post("/trade/entry")
 def check_trade_entry_alert(request: TradeEntryAlertRequest):
     """检查交易入场告警条件。
 
@@ -594,14 +560,14 @@ def check_trade_entry_alert(request: TradeEntryAlertRequest):
             triggered,
         )
 
-        return TradeAlertResponse(
-            success=True,
-            symbol=request.symbol,
-            message="价格偏离告警触发" if triggered else "入场价格正常",
-        )
+        return _success({
+            "success": True,
+            "symbol": request.symbol,
+            "message": "价格偏离告警触发" if triggered else "入场价格正常",
+        })
     except Exception as e:
         logger.error("检查交易入场告警失败: %s", e)
-        return TradeAlertResponse(success=False, error=str(e))
+        return _error(str(e))
 
 
 @router.get("/trade/stats/{symbol}", response_model=dict)
@@ -616,7 +582,7 @@ def get_trade_alert_stats(symbol: str):
     """
     try:
         stats = trade_alert_service.get_trade_stats(symbol)
-        return {"success": True, "stats": stats}
+        return _success({"success": True, "stats": stats})
     except Exception as e:
         logger.error("获取交易告警统计失败: %s", e)
-        return {"success": False, "error": str(e)}
+        return _error(str(e))

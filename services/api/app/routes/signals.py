@@ -14,6 +14,7 @@ from services.api.app.services.research_runtime_service import research_runtime_
 from services.api.app.services.research_service import research_service
 from services.api.app.services.signal_service import SignalPipelineUnavailableError, signal_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
+from services.api.app.routes._helpers import _success, _unauthorized
 
 
 try:
@@ -42,18 +43,6 @@ except ImportError:
 
 router = APIRouter(prefix="/api/v1/signals", tags=["signals"])
 market_service = MarketService()
-
-
-def _success(data: dict, meta: dict | None = None) -> dict:
-    return {"data": data, "error": None, "meta": meta or {}}
-
-
-def _unauthorized() -> dict:
-    return {
-        "data": None,
-        "error": {"code": "unauthorized", "message": "authentication required"},
-        "meta": {"source": "control-plane-api"},
-    }
 
 
 @router.get("")

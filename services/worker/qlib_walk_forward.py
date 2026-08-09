@@ -5,9 +5,13 @@
 
 from __future__ import annotations
 
+import logging
 import statistics
 from dataclasses import dataclass
 from typing import Callable
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -76,8 +80,8 @@ class WalkForwardValidator:
         total_bars = len(sorted_rows)
         min_train = max(1, config.min_train_bars)
 
-        # 自动减少折数：每折至少需要 min_train + 1 test bar
-        while n_folds > 1 and total_bars < n_folds * (min_train + 1):
+        # 自动减少折数：每折至少需要 min_train 训练 + gap 间隔 + 1 根测试
+        while n_folds > 1 and total_bars < n_folds * (min_train + config.gap_bars + 1):
             n_folds -= 1
         if n_folds < 1:
             n_folds = 1
@@ -107,13 +111,21 @@ class WalkForwardValidator:
             else:
                 train_start = 0
             train_end = test_start - config.gap_bars
-            if train_end < min_train:
-                train_end = min_train
 
+            # 样本不足时不扩张训练集越过 gap（会把标签泄漏进测试），整折跳过并记录日志
+            if train_end < min_train:
+                logger.warning(
+                    "Walk-forward 第 %d 折训练样本不足（需要 %d 根，可用 %d 根），跳过该折",
+                    i + 1,
+                    min_train,
+                    max(train_end, 0),
+                )
+                continue
             if train_end <= train_start:
-                train_rows = sorted_rows[train_start:train_end]
-            else:
-                train_rows = sorted_rows[train_start:train_end]
+                # rolling 固定窗口下训练区间为空，跳过该折
+                continue
+
+            train_rows = sorted_rows[train_start:train_end]
 
             test_rows = sorted_rows[test_start:test_end]
 

@@ -15,7 +15,7 @@ export function asRecord(value: unknown): Record<string, unknown> {
 /**
  * 读取文本值，如果为空则返回默认值
  */
-export function readText(value: unknown, fallback: string): string {
+export function readText(value: unknown, fallback: string = ""): string {
   const text = String(value ?? "").trim();
   return text.length > 0 ? text : fallback;
 }

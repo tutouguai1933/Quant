@@ -14,6 +14,7 @@ approves installing qlib later.
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,10 @@ from decimal import Decimal
 from services.api.app.domain.contracts import SignalContract, SignalSide, SignalSource, SignalStatus
 from services.api.app.services.research_service import research_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
+
+
+# 默认策略 ID（env 可覆盖，通常策略目录中 ID=1 是主策略）
+DEFAULT_STRATEGY_ID = int(os.getenv("QUANT_DEFAULT_STRATEGY_ID", "1"))
 
 
 @dataclass(slots=True)
@@ -128,7 +133,7 @@ class SignalService:
                     for signal in generic_candidates
                     if self._matches_strategy_context(signal=signal, strategy_id=strategy_id)
                 ]
-                if strategy_id == 1:
+                if strategy_id == DEFAULT_STRATEGY_ID:
                     source_candidates = matched_candidates or generic_candidates
                 else:
                     source_candidates = matched_candidates
@@ -352,7 +357,7 @@ class SignalService:
         return [
             SignalContract(
                 signal_id=self._allocate_signal_id(),
-                strategy_id=1,
+                strategy_id=DEFAULT_STRATEGY_ID,
                 symbol=str(latest["symbol"]),
                 side=side,
                 score=score,
@@ -401,7 +406,7 @@ class SignalService:
     def _matches_strategy_context(self, *, signal: SignalContract, strategy_id: int) -> bool:
         """判断一条通用研究信号是否适合当前策略实例。"""
 
-        if strategy_id == 1:
+        if strategy_id == DEFAULT_STRATEGY_ID:
             return True
         metadata = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
         strategy_template = str(metadata.get("strategy_template", "")).strip()

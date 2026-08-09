@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +98,8 @@ class MLPredictionTracker:
         }
         self._records.append(record)
         self._save_records()
+        # 每次记录后顺带清理过旧记录，防止只增不减
+        self.clear_old_records()
         logger.info("记录 ML 预测: %s prob=%.3f score=%.3f", symbol, probability, score)
         return record_id
 
@@ -225,13 +227,32 @@ class MLPredictionTracker:
             "heuristic": _stats(heuristic_records),
         }
 
-    def clear_old_records(self, keep_count: int = 200) -> int:
-        """清理过旧的记录，返回删除条数。"""
-        if len(self._records) <= keep_count:
-            return 0
-        removed = len(self._records) - keep_count
-        self._records = self._records[-keep_count:]
-        self._save_records()
+    def clear_old_records(self, keep_count: int = 200, keep_days: int = 30) -> int:
+        """清理过旧的记录，返回删除条数。
+
+        先按天数裁剪（默认只保留最近 30 天），再按条数裁剪（默认最多 200 条）。
+        """
+        removed = 0
+        if keep_days > 0:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+            kept: list[dict[str, object]] = []
+            for record in self._records:
+                try:
+                    generated_at = datetime.fromisoformat(str(record.get("generated_at", "")))
+                except (ValueError, TypeError):
+                    generated_at = None
+                # 时间无法解析的记录保留，避免误删
+                if generated_at is None or generated_at >= cutoff:
+                    kept.append(record)
+                else:
+                    removed += 1
+            self._records = kept
+        if len(self._records) > keep_count:
+            removed += len(self._records) - keep_count
+            self._records = self._records[-keep_count:]
+        if removed:
+            self._save_records()
+            logger.info("清理旧预测记录 %d 条（保留最近 %d 天 / %d 条）", removed, keep_days, keep_count)
         return removed
 
 

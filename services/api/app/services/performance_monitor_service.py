@@ -8,6 +8,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import queue
 import threading
 import time
 from collections import defaultdict
@@ -126,6 +127,18 @@ class PerformanceMonitorService:
         self._last_log_time: float = time.time()
         self._lock = threading.RLock()
         self._start_time: float = time.time()
+
+        # 告警推送队列：track_* 在锁内只做数据组装和入队（非阻塞），
+        # 真正的网络推送放到后台单线程消费，避免慢网络（推送超时 10s）时
+        # 所有请求的性能埋点排队等锁，拖死 API 线程池。
+        # 有界队列防止告警风暴时无限堆积内存，满时丢弃并记日志。
+        self._alert_queue: "queue.Queue[Any]" = queue.Queue(maxsize=500)
+        self._alert_worker = threading.Thread(
+            target=self._alert_worker_loop,
+            name="performance-alert-pusher",
+            daemon=True,
+        )
+        self._alert_worker.start()
 
         # 延迟导入以避免循环依赖
         self._alert_service: Any = None
@@ -250,7 +263,12 @@ class PerformanceMonitorService:
         duration_ms: float,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """触发慢响应告警。"""
+        """触发慢响应告警。
+
+        调用方（track_*）在持有 self._lock 时调用本方法，因此这里只能做
+        数据组装和入队（非阻塞），网络推送由 _alert_worker_loop 后台线程执行，
+        避免锁内同步推送阻塞所有请求。
+        """
         self._alert_count += 1
 
         if not self._config.enable_alerts:
@@ -289,31 +307,35 @@ class PerformanceMonitorService:
                 message=message,
                 details=details,
             )
-
-            # 异步推送告警
-            import asyncio
-
-            try:
-                loop = asyncio.get_running_loop()
-                asyncio.create_task(self._push_alert_async(alert))
-            except RuntimeError:
-                # 没有运行的事件循环，使用同步推送
-                self._push_alert_sync(alert)
-
         except Exception as e:
-            logger.error("发送性能告警失败: %s", e)
+            logger.error("构造性能告警失败: %s", e)
+            return
+
+        try:
+            # 非阻塞入队，队列满时丢弃并记日志，绝不阻塞请求线程
+            self._alert_queue.put_nowait(alert)
+        except queue.Full:
+            logger.warning(
+                "性能告警队列已满，丢弃告警: %s %s", latency_type.value, endpoint
+            )
+
+    def _alert_worker_loop(self) -> None:
+        """后台线程：消费告警队列并同步推送，失败只记日志不重试。"""
+
+        while True:
+            alert = self._alert_queue.get()
+            try:
+                self._push_alert_sync(alert)
+            except Exception as e:
+                logger.error("发送性能告警失败: %s", e)
+            finally:
+                self._alert_queue.task_done()
 
     def _push_alert_sync(self, alert: Any) -> None:
         """同步推送告警。"""
         alert_service = self._get_alert_service()
         if alert_service:
             alert_service.push_sync(alert)
-
-    async def _push_alert_async(self, alert: Any) -> None:
-        """异步推送告警。"""
-        alert_service = self._get_alert_service()
-        if alert_service:
-            await alert_service.push_async(alert)
 
     def _maybe_log_metrics(self) -> None:
         """定期记录性能指标日志。"""

@@ -3,11 +3,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { FullScreenModal } from "./full-screen-modal";
-import { FeaturesMainlineSteps } from "./features-mainline-steps";
-import { SectionShell } from "./section-shell";
-import { SummaryCard } from "./summary-card";
-import { Button } from "./ui/button";
+import { FullScreenModal } from "../full-screen-modal";
+import { FeaturesMainlineSteps } from "../features-mainline-steps";
+import { SectionShell } from "../section-shell";
+import { SummaryCard } from "../summary-card";
+import { Button } from "../ui/button";
 
 type FeaturesPrimaryActionSectionProps = {
   primaryActionLabel: string;

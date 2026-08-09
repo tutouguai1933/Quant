@@ -2,10 +2,8 @@
 
 import type { ReactNode } from "react";
 
-/* 安全读取对象。 */
-export function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
+/* asRecord/readText 统一来自 utils/helpers（消除重复定义），这里 re-export 保持调用方不变 */
+export { asRecord, readText } from "./utils/helpers";
 
 /* 安全读取字符串数组。 */
 export function toStringArray(value: unknown, fallback: string[] = []): string[] {
@@ -21,18 +19,6 @@ export function toRecordArray(value: unknown): Record<string, unknown>[] {
     return [];
   }
   return value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item)));
-}
-
-/* 读取对象字段的文本值，支持嵌套字段路径。 */
-export function readText(value: unknown, fallback: string = ""): string {
-  if (typeof value === "string") {
-    const text = value.trim();
-    return text || fallback;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return fallback;
 }
 
 /* 简单读取文本值。 */

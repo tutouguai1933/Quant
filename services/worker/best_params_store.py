@@ -64,10 +64,13 @@ class BestParamsStore:
             "model_type": model_type,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
-        self._store_path.write_text(
+        # 原子写：先写临时文件再替换，避免写一半被读取
+        temp_path = self._store_path.with_name(f".{self._store_path.name}.tmp")
+        temp_path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        temp_path.replace(self._store_path)
 
     def load(self) -> BestParams | None:
         """加载最优参数。

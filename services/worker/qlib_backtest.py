@@ -258,22 +258,6 @@ def _build_performance_series(
     return series
 
 
-def _max_drawdown_pct(returns: list[float]) -> float:
-    """根据累计收益计算最大回撤。"""
-
-    equity = 1.0
-    peak = 1.0
-    max_drawdown = 0.0
-    for item in returns:
-        equity *= 1 + (item / 100.0)
-        peak = max(peak, equity)
-        if peak == 0:
-            continue
-        drawdown = ((equity / peak) - 1.0) * 100.0
-        max_drawdown = min(max_drawdown, drawdown)
-    return max_drawdown
-
-
 def _sharpe_ratio(returns: list[float]) -> float:
     """计算最小 Sharpe。"""
 
@@ -284,14 +268,6 @@ def _sharpe_ratio(returns: list[float]) -> float:
     if variance <= 0:
         return 0.0
     return average / math.sqrt(variance)
-
-
-def _win_rate(returns: list[float]) -> float:
-    """计算正收益占比。"""
-
-    if not returns:
-        return 0.0
-    return sum(1 for item in returns if item > 0) / len(returns)
 
 
 def _turnover_ratio(rows: list[dict[str, object]]) -> float:

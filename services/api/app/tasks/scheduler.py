@@ -15,6 +15,9 @@ from services.api.app.services.sync_service import sync_service
 
 logger = logging.getLogger(__name__)
 
+# 训练类任务：超时不自动重试，且同一类型只允许一个在跑（单飞），避免双写同一文件
+_TRAINING_TASK_TYPES: frozenset[str] = frozenset({"train", "research_train", "research_infer"})
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -54,6 +57,22 @@ class TaskScheduler:
             "consecutive_failure_count_by_type": {},
         }
         self._task_timeout_seconds = dict(_TASK_TIMEOUT_SECONDS)
+        # 单飞：记录正在运行的任务类型，训练类任务不允许多个同时执行
+        self._running_task_types: set[str] = set()
+        self._running_task_types_lock = threading.Lock()
+
+    def _acquire_task_type(self, task_type: str) -> bool:
+        """尝试占用任务类型；已有人在跑则返回 False。"""
+        with self._running_task_types_lock:
+            if task_type in self._running_task_types:
+                return False
+            self._running_task_types.add(task_type)
+            return True
+
+    def _release_task_type(self, task_type: str) -> None:
+        """释放任务类型占用。"""
+        with self._running_task_types_lock:
+            self._running_task_types.discard(task_type)
 
     def get_task_timeout(self, task_type: str) -> int:
         """获取指定任务类型的超时配置。"""
@@ -77,17 +96,24 @@ class TaskScheduler:
     ) -> dict[str, object]:
         task = self._create_task(task_type, source, target_type, target_id, payload)
         self._set_status(task, "running")
-        try:
-            result = self._execute_named_task(task_type, payload or {})
-        except Exception as exc:
-            task["error_message"] = str(exc)
-            self._set_status(task, "failed")
+        # 单飞：训练类任务同类型已在跑时直接返回运行中状态，不启动第二个线程
+        if task_type in _TRAINING_TASK_TYPES and not self._acquire_task_type(task_type):
+            task["error_message"] = f"{task_type} 任务已在运行，本次提交已跳过"
             return dict(task)
+        try:
+            try:
+                result = self._execute_named_task(task_type, payload or {})
+            except Exception as exc:
+                task["error_message"] = str(exc)
+                self._set_status(task, "failed")
+                return dict(task)
 
-        task["result"] = result
-        self._set_status(task, "succeeded")
-        self._apply_success_side_effects(task)
-        return dict(task)
+            task["result"] = result
+            self._set_status(task, "succeeded")
+            self._apply_success_side_effects(task)
+            return dict(task)
+        finally:
+            self._release_task_type(task_type)
 
     def run_custom_task(
         self,
@@ -125,17 +151,26 @@ class TaskScheduler:
             task["payload"] = payload
 
         self._set_status(task, "running")
+        acquired = False
+        task_type = str(task["task_type"])
+        # 重试训练类任务同样遵守单飞，避免和仍在后台的旧线程同时跑
+        if task_type in _TRAINING_TASK_TYPES and self._acquire_task_type(task_type):
+            acquired = True
         try:
-            result = self._execute_named_task(str(task["task_type"]), payload)
-        except Exception as exc:
-            task["error_message"] = str(exc)
-            self._set_status(task, "failed")
-            return dict(task)
+            try:
+                result = self._execute_named_task(task_type, payload)
+            except Exception as exc:
+                task["error_message"] = str(exc)
+                self._set_status(task, "failed")
+                return dict(task)
 
-        task["result"] = result
-        self._set_status(task, "succeeded")
-        self._apply_success_side_effects(task)
-        return dict(task)
+            task["result"] = result
+            self._set_status(task, "succeeded")
+            self._apply_success_side_effects(task)
+            return dict(task)
+        finally:
+            if acquired:
+                self._release_task_type(task_type)
 
     def get_health_summary(self) -> dict[str, object]:
         """返回任务与执行健康摘要。"""
@@ -197,9 +232,22 @@ class TaskScheduler:
 
         try:
             return self._run_with_timeout(_run_task, timeout_seconds, task_type)
-        except (TaskTimeoutError, OSError) as exc:
-            # Auto-retry once for network_error/task_timeout with 5-second delay
-            logger.info(f"{task_type} task failed with {type(exc).__name__}, retrying after 5s delay")
+        except TaskTimeoutError as exc:
+            # 训练类任务超时不自动重试：底层训练线程可能仍在后台写文件，重试会造成双写
+            if task_type in _TRAINING_TASK_TYPES:
+                raise
+            # 其他任务最多自动重试一次，但重试前必须确认原线程已退出
+            thread = getattr(exc, "thread", None)
+            if thread is not None:
+                thread.join(timeout=float(timeout_seconds))
+                if thread.is_alive():
+                    raise TaskTimeoutError(f"{task_type} 任务超时后原线程仍未退出，放弃自动重试") from exc
+            logger.info(f"{task_type} task failed with TaskTimeoutError, retrying after 5s delay")
+            time.sleep(5)
+            return self._run_with_timeout(_run_task, timeout_seconds, task_type)
+        except OSError as exc:
+            # 网络类错误自动重试一次
+            logger.info(f"{task_type} task failed with OSError, retrying after 5s delay")
             time.sleep(5)
             return self._run_with_timeout(_run_task, timeout_seconds, task_type)
 
@@ -276,8 +324,10 @@ class TaskScheduler:
         thread.join(timeout=float(timeout_seconds))
 
         if thread.is_alive():
-            # Task exceeded timeout - raise error
-            raise TaskTimeoutError(f"{task_type} task exceeded timeout of {timeout_seconds}s")
+            # 任务超时：抛出带线程引用的错误，供上层确认原线程退出情况
+            exc = TaskTimeoutError(f"{task_type} task exceeded timeout of {timeout_seconds}s")
+            exc.thread = thread
+            raise exc
 
         if exception is not None:
             raise exception

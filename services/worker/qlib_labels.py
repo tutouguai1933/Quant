@@ -567,16 +567,6 @@ def _normalize_candle(candle: dict[str, object]) -> dict[str, Decimal | int] | N
         return None
 
 
-def _classify_label(value: Decimal) -> str:
-    """把未来收益转成择时标签。"""
-
-    if value >= Decimal("1"):
-        return "buy"
-    if value <= Decimal("-1"):
-        return "sell"
-    return "watch"
-
-
 def _format_decimal(value: Decimal) -> str:
     """把数值统一成字符串。"""
 

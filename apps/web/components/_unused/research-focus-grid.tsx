@@ -3,9 +3,9 @@
 import type { ReactNode } from "react";
 
 import { DetailDialog } from "./detail-dialog";
-import { FullScreenModal } from "./full-screen-modal";
-import { SectionShell } from "./section-shell";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "./ui/card";
+import { FullScreenModal } from "../full-screen-modal";
+import { SectionShell } from "../section-shell";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../ui/card";
 
 type ResearchFocusDigest = {
   label: string;
