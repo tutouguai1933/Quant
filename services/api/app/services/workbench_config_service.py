@@ -136,11 +136,12 @@ RESEARCH_PRESET_VALUES = {
         "label_preset_key": "balanced_window",
         "research_template": "single_asset_timing",
         "model_key": "heuristic_v1",
-        "label_mode": "earliest_hit",
+        # 与 balanced_window 标签实验最优配置保持一致（close_only/2%/2-5d）
+        "label_mode": "close_only",
         "label_trigger_basis": "close",
-        "holding_window_label": "1-3d",
+        "holding_window_label": "2-5d",
         "force_validation_top_candidate": False,
-        "label_target_pct": "1",
+        "label_target_pct": "2",
         "label_stop_pct": "-1",
         "signal_confidence_floor": "0.55",
         "trend_weight": "1.3",
@@ -226,12 +227,13 @@ RESEARCH_PRESET_VALUES = {
 
 LABEL_PRESET_VALUES = {
     "balanced_window": {
-        "label_mode": "earliest_hit",
+        # 2026-08-09 标签实验最优配置：close_only/2%/2-5d（val_auc 0.5421 vs 旧配置 0.5138）
+        "label_mode": "close_only",
         "label_trigger_basis": "close",
-        "holding_window_label": "1-3d",
-        "min_holding_days": 1,
-        "max_holding_days": 3,
-        "label_target_pct": "1",
+        "holding_window_label": "2-5d",
+        "min_holding_days": 2,
+        "max_holding_days": 5,
+        "label_target_pct": "2",
         "label_stop_pct": "-1",
     },
     "breakout_path": {

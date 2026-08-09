@@ -19,7 +19,7 @@ DEFAULT_RUNTIME_ROOT = Path("/tmp/quant-qlib-runtime")
 DEFAULT_BACKTEST_FEE_BPS = Decimal("10")
 DEFAULT_BACKTEST_SLIPPAGE_BPS = Decimal("5")
 DEFAULT_BACKTEST_COST_MODEL = "round_trip_basis_points"
-DEFAULT_LABEL_TARGET_PCT = Decimal("1")
+DEFAULT_LABEL_TARGET_PCT = Decimal("2")
 DEFAULT_LABEL_STOP_PCT = Decimal("-1")
 DEFAULT_LOOKBACK_DAYS = 60
 DEFAULT_TRAIN_SPLIT_RATIO = Decimal("0.6")
@@ -56,7 +56,8 @@ DEFAULT_LIVE_MIN_SAMPLE_COUNT = 24
 DEFAULT_LIVE_MIN_ML_PROBABILITY = Decimal("0.55")
 DEFAULT_ENABLE_ML_LIVE_GATE = True
 DEFAULT_RESEARCH_TEMPLATE = "single_asset_timing"
-DEFAULT_LABEL_MODE = "earliest_hit"
+# 2026-08-09 标签实验最优配置：close_only 比 earliest_hit 高 +0.028 val_auc
+DEFAULT_LABEL_MODE = "close_only"
 DEFAULT_LABEL_TRIGGER_BASIS = "close"
 DEFAULT_OUTLIER_POLICY = "clip"
 DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
@@ -355,13 +356,13 @@ def load_qlib_config(
     )
     holding_window_min_days = _read_int(
         values.get("QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS"),
-        default=1,
+        default=2,
         env_name="QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS",
         minimum=1,
     )
     holding_window_max_days = _read_int(
         values.get("QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS"),
-        default=3,
+        default=5,
         env_name="QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS",
         minimum=1,
     )

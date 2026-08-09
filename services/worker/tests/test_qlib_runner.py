@@ -92,7 +92,7 @@ class QlibConfigTests(unittest.TestCase):
         self.assertEqual(config.primary_feature_columns, ("ema20_gap_pct", "trend_gap_pct"))
         self.assertEqual(config.auxiliary_feature_columns, ("rsi14",))
         self.assertEqual(config.research_template, "single_asset_timing_strict")
-        self.assertEqual(config.label_mode, "earliest_hit")
+        self.assertEqual(config.label_mode, "close_only")
         self.assertEqual(config.label_trigger_basis, "high_low")
         self.assertEqual(str(config.label_target_pct), "1.5")
         self.assertEqual(str(config.label_stop_pct), "-0.8")
