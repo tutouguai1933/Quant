@@ -74,6 +74,8 @@ export default function HomePage() {
   const [positionsDegraded, setPositionsDegraded] = useState(false);
   const [automationDegraded, setAutomationDegraded] = useState(false);
   const [executorDegraded, setExecutorDegraded] = useState(false);
+  // 数据是否已就绪（未就绪时卡片用中性色，避免加载期全屏红色误报异常）
+  const [automationLoaded, setAutomationLoaded] = useState(false);
 
   // 获取会话状态
   useEffect(() => {
@@ -112,6 +114,7 @@ export default function HomePage() {
 
         if (automationRes.status === "fulfilled" && !automationRes.value.error) {
           setAutomationStatus(automationRes.value.data.item);
+          setAutomationLoaded(true);
         } else if (automationRes.status === "fulfilled" && automationRes.value.error) {
           errors.push(`自动化状态加载失败: ${automationRes.value.error.message}`);
           setAutomationDegraded(true);
@@ -183,8 +186,8 @@ export default function HomePage() {
     return [
       {
         label: "数据更新",
-        value: isHealthy ? "正常" : "异常",
-        colorType: isHealthy ? "positive" as const : "negative" as const,
+        value: automationLoaded ? (isHealthy ? "正常" : "异常") : "--",
+        colorType: automationLoaded ? (isHealthy ? "positive" as const : "negative" as const) : "neutral" as const,
       },
       {
         label: "控程引擎",
@@ -193,8 +196,8 @@ export default function HomePage() {
       },
       {
         label: "实盘连接",
-        value: isConnected ? "已连接" : "断开",
-        colorType: isConnected ? "positive" as const : "negative" as const,
+        value: executorStatus !== null ? (isConnected ? "已连接" : "断开") : "--",
+        colorType: executorStatus !== null ? (isConnected ? "positive" as const : "negative" as const) : "neutral" as const,
       },
       {
         label: "研究状态",
@@ -202,7 +205,7 @@ export default function HomePage() {
         colorType: "neutral" as const,
       },
     ];
-  }, [automationStatus, researchRuntime, executorStatus]);
+  }, [automationStatus, researchRuntime, executorStatus, automationLoaded]);
 
   // 首屏 3 个核心数字：持仓盈亏 / 自动化状态 / 执行器健康
   const coreNumbers = useMemo(() => {
@@ -260,13 +263,8 @@ export default function HomePage() {
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
-      {/* 紧凑加载指示：不阻塞首屏，卡片始终渲染（fallback 值），数据到位后渐进更新 */}
-      {isLoading && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          <span>数据加载中...</span>
-        </div>
-      )}
+      {/* 加载指示：延迟 1.5 秒才显示，正常请求不闪提示，只有慢请求才给出"数据加载中" */}
+      {isLoading && <DelayedLoadingHint />}
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       <div className="space-y-4">
@@ -289,7 +287,7 @@ export default function HomePage() {
             value={coreNumbers.positionsValue}
             detail={coreNumbers.positionsDetail}
             href="/positions"
-            tone={positionsSummary && positionsSummary.total_profit >= 0 ? "positive" : "negative"}
+            tone={positionsSummary !== null ? (positionsSummary.total_profit >= 0 ? "positive" : "negative") : "neutral"}
             degraded={positionsDegraded}
           />
           <CoreNumberCard
@@ -297,7 +295,7 @@ export default function HomePage() {
             value={coreNumbers.modeLabel}
             detail={coreNumbers.automationDetail}
             href="/tasks"
-            tone={automationStatus.mode === "manual" ? "negative" : "positive"}
+            tone={automationLoaded ? (automationStatus.mode === "manual" ? "negative" : "positive") : "neutral"}
             degraded={automationDegraded}
           />
           <CoreNumberCard
@@ -305,7 +303,7 @@ export default function HomePage() {
             value={coreNumbers.executorValue}
             detail={coreNumbers.executorDetail}
             href="/strategies"
-            tone={coreNumbers.executorValue === "已连接" ? "positive" : "negative"}
+            tone={executorStatus !== null ? (coreNumbers.executorValue === "已连接" ? "positive" : "negative") : "neutral"}
             degraded={executorDegraded}
           />
         </div>
@@ -359,5 +357,21 @@ export default function HomePage() {
         </HomeMoreDetails>
       </div>
     </TerminalShell>
+  );
+}
+
+/* 延迟显示加载提示：请求 1.5 秒内完成不出现，避免正常加载时闪烁提示条 */
+function DelayedLoadingHint() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 1500);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!visible) return null;
+  return (
+    <div className="flex items-center gap-2 text-xs text-[var(--terminal-muted)] py-1">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      <span>数据加载中...</span>
+    </div>
   );
 }

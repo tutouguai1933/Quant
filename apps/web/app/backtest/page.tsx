@@ -149,7 +149,7 @@ export default function BacktestPage() {
         label: "年化收益",
         value: m.annual_return_pct || "--",
         detail: m.net_return_pct ? `累计 ${m.net_return_pct}` : undefined,
-        colorType: m.annual_return_pct && parseFloat(m.annual_return_pct) >= 0 ? "positive" as const : "negative" as const,
+        colorType: m.annual_return_pct ? (parseFloat(m.annual_return_pct) >= 0 ? "positive" as const : "negative" as const) : "neutral" as const,
       },
       {
         label: "夏普比率",
@@ -161,7 +161,7 @@ export default function BacktestPage() {
         label: "最大回撤",
         value: m.max_drawdown_pct || "--",
         detail: m.volatility ? `波动率 ${m.volatility}` : undefined,
-        colorType: "negative" as const,
+        colorType: m.max_drawdown_pct ? "negative" as const : "neutral" as const,
       },
       {
         label: "胜率 / 盈亏比",
