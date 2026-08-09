@@ -103,9 +103,9 @@ class ModelPredictor:
         # 准备特征向量
         X = self._prepare_features(feature_row, feature_columns)
 
-        # 获取预测概率
+        # 获取预测分数：二分类返回 (n,2) 概率取正类；排序模型返回一维分数
         proba = self._model.predict_proba(X.reshape(1, -1))[0]
-        score = float(proba[1])  # 正类概率
+        score = float(proba[1]) if np.ndim(proba) > 0 and len(proba) > 1 else float(proba)
 
         # 计算置信度
         confidence = max(score, 1 - score)
@@ -171,8 +171,9 @@ class ModelPredictor:
             for row in feature_rows
         ], dtype=np.float64)
 
-        # 批量预测
-        probas = self._model.predict_proba(X)[:, 1]  # 正类概率
+        # 批量预测：二分类返回 (n,2) 概率取正类；排序模型返回一维分数
+        raw_probas = self._model.predict_proba(X)
+        probas = raw_probas[:, 1] if raw_probas.ndim > 1 and raw_probas.shape[1] > 1 else raw_probas
 
         # 批量获取特征贡献
         all_contributions = None
