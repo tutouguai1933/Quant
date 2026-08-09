@@ -20,6 +20,7 @@ import {
   getFeatureWorkspace,
   getEvaluationWorkspace,
   getResearchRuntimeStatus,
+  clearResponseCache,
   runResearchTraining,
   runResearchInference,
   runQlibPipeline,
@@ -209,6 +210,9 @@ export default function PipelinePage() {
       }
     }
     if (changed) {
+      // 任务完成：清空请求缓存再重新拉取，避免轮询期间缓存了任务前的旧数据
+      clearResponseCache();
+      await refreshAll();
       setStepMessage((prev) => ({ ...prev, [step]: "✓ 完成，结果已更新。" }));
       setRunningStep(null);
     } else {

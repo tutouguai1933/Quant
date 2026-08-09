@@ -1408,7 +1408,7 @@ const NO_CACHE_PATHS: string[] = [
 ];
 
 // 手动触发类操作成功后清空全部缓存，确保页面立即拉到最新数据
-function clearResponseCache(): void {
+export function clearResponseCache(): void {
   responseCache.clear();
 }
 
