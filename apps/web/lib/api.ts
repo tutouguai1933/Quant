@@ -3606,6 +3606,8 @@ function normalizeEvaluationWorkspaceModel(item: unknown): EvaluationWorkspaceMo
     alignment_actions: Array.isArray(row.alignment_actions) ? row.alignment_actions.filter(isPlainObject) : [],
     priority_queue: normalizePriorityQueue(row.priority_queue),
     priority_queue_summary: isPlainObject(row.priority_queue_summary) ? row.priority_queue_summary : {},
+    /* 终端视图数据（指标卡/图表/表格）——之前遗漏导致指标无法显示 */
+    terminal: isPlainObject(row.terminal) ? row.terminal : undefined,
   };
 }
 
