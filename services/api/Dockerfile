@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
 
 COPY services /app/services
 COPY packages /app/packages
+COPY scripts /app/scripts
 COPY docs /app/docs
 COPY README.md /app/README.md
 COPY CONTEXT.md /app/CONTEXT.md
