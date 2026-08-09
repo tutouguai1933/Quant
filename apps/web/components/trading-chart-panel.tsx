@@ -10,7 +10,6 @@ import { ProChartScript } from "./pro-chart-script";
 import { ProKlineChart } from "./pro-kline-chart";
 import { TimeframeTabs } from "./timeframe-tabs";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 
 type TradingChartPanelProps = {
@@ -74,16 +73,16 @@ export function TradingChartPanel({
   }, []);
 
   return (
-    <Card className="overflow-hidden bg-card/90">
+    <div className="terminal-card p-4">
       <ProChartScript onReady={() => setRuntimeReady(true)} />
-      <CardHeader className="space-y-4">
+      <div className="space-y-4">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-2">
             <p className="eyebrow">交易主区</p>
-            <CardTitle className="text-2xl">{symbol.toUpperCase()}</CardTitle>
-            <p className="text-sm leading-6 text-muted-foreground">图表是主角，研究层只做辅助判断。</p>
+            <h3 className="text-2xl font-semibold tracking-tight text-[var(--terminal-text)]">{symbol.toUpperCase()}</h3>
+            <p className="text-sm leading-6 text-[var(--terminal-muted)]">图表是主角，研究层只做辅助判断。</p>
           </div>
-          <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-2 text-sm text-[var(--terminal-muted)] sm:grid-cols-2 xl:grid-cols-3">
             <ChartStat label="当前周期" value={interval} />
             <ChartStat label="当前价格" value={currentPrice} />
             <ChartStat label="最近图表点" value={latestSignal} />
@@ -91,9 +90,9 @@ export function TradingChartPanel({
             <ChartStat label="止损" value={formatLatestMarkerPrice(markers.stops)} />
           </div>
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-4">
+      <div className="space-y-4">
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <TimeframeTabs
             symbol={symbol}
@@ -114,16 +113,16 @@ export function TradingChartPanel({
         </section>
 
         <div className="space-y-4">
-          <section className="rounded-2xl border border-border/60 bg-background/70 p-3">
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/60 bg-card/80 px-4 py-3">
+          <section className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-3">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3 rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] px-4 py-3">
               <div>
                 <p className="eyebrow">本地主图</p>
-                <h3 className="text-lg font-semibold text-foreground">先看稳定可见的 K 线、入场位和止损位</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                <h3 className="text-lg font-semibold text-[var(--terminal-text)]">先看稳定可见的 K 线、入场位和止损位</h3>
+                <p className="mt-1 text-sm leading-6 text-[var(--terminal-muted)]">
                   这块主图完全基于当前接口数据生成，不依赖额外脚本，保证打开页面就能先看清趋势和关键价格。
                 </p>
               </div>
-              <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-5">
+              <div className="grid gap-2 text-sm text-[var(--terminal-muted)] sm:grid-cols-2 lg:grid-cols-5">
                 <ChartStat label="当前周期" value={interval} />
                 <ChartStat label="当前价格" value={currentPrice} />
                 <ChartStat label="最近图表点" value={latestSignal} />
@@ -134,20 +133,20 @@ export function TradingChartPanel({
             {renderFallbackChart(symbol, interval, normalizedItems, markers)}
           </section>
 
-          <section className="rounded-2xl border border-border/60 bg-card/70 p-4">
+          <section className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="eyebrow">交互增强</p>
-                <h3 className="text-lg font-semibold text-foreground">放大查看、拖拽缩放和十字光标</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                <h3 className="text-lg font-semibold text-[var(--terminal-text)]">放大查看、拖拽缩放和十字光标</h3>
+                <p className="mt-1 text-sm leading-6 text-[var(--terminal-muted)]">
                   这块是增强层。它能提供更细的查看体验，但不应该决定你能不能看见 K 线。
                 </p>
               </div>
-              <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
+              <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] px-3 py-2 text-sm text-[var(--terminal-muted)]">
                 {runtimeReady && normalizedItems.length ? "交互增强已连接" : "交互增强暂未连接"}
               </div>
             </div>
-            <div className="mt-4 min-w-0 rounded-2xl border border-border/60 bg-background/70 p-3">
+            <div className="mt-4 min-w-0 rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-3">
               {runtimeReady && normalizedItems.length ? (
                 <ProKlineChart
                   symbol={symbol}
@@ -158,7 +157,7 @@ export function TradingChartPanel({
                   runtimeReady={runtimeReady}
                 />
               ) : (
-                <div className="rounded-2xl border border-dashed border-border/60 bg-card/70 px-5 py-8 text-sm leading-6 text-muted-foreground">
+                <div className="rounded border border-dashed border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] px-5 py-8 text-sm leading-6 text-[var(--terminal-muted)]">
                   当前页面已经显示了完整本地主图。交互增强层如果没有连上，多半是外部图表脚本暂时不可用，不影响你继续查看趋势、信号点和关键价位。
                 </div>
               )}
@@ -166,27 +165,27 @@ export function TradingChartPanel({
           </section>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+        <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
           <p className="eyebrow">图表下一步</p>
           <h3 className="text-lg font-semibold">看完图以后直接进入执行判断</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">最近图表点：{latestSignal}</p>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">如果这根图和你的判断一致，下一步就去策略中心确认执行动作。</p>
+          <p className="mt-2 text-sm leading-6 text-[var(--terminal-muted)]">最近图表点：{latestSignal}</p>
+          <p className="mt-1 text-sm leading-6 text-[var(--terminal-muted)]">如果这根图和你的判断一致，下一步就去策略中心确认执行动作。</p>
           <div className="mt-4">
             <Button asChild variant="outline">
               <Link href={`/strategies?symbol=${encodeURIComponent(symbol.toUpperCase())}`}>进入策略中心</Link>
             </Button>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
 function ChartStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className="mt-1 text-sm font-medium text-[var(--terminal-text)]">{value}</p>
     </div>
   );
 }

@@ -83,7 +83,7 @@ export function FullScreenModal({
         <div className="fixed inset-0 z-[9999] flex items-center justify-center">
           {/* 背景：完全模糊，覆盖所有内容 */}
           <div
-            className="absolute inset-0 bg-background/80 backdrop-blur-xl"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             aria-hidden="true"
           />
 
@@ -94,17 +94,17 @@ export function FullScreenModal({
             aria-modal="true"
             aria-labelledby={titleId}
             className={cn(
-              "relative z-[10000] flex max-h-[90vh] w-full max-w-[1200px] flex-col rounded-2xl border border-border/70 bg-card shadow-[0_24px_60px_rgba(2,6,23,0.45)]",
+              "terminal-card relative z-[10000] flex max-h-[90vh] w-full max-w-[1200px] flex-col",
               className,
             )}
           >
             {/* 头部 */}
-            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/60 px-6 py-5">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--terminal-border)] px-6 py-5">
               <div className="space-y-2">
-                <h4 id={titleId} className="text-xl font-semibold tracking-tight text-foreground">
+                <h4 id={titleId} className="text-xl font-semibold tracking-tight text-[var(--terminal-text)]">
                   {title}
                 </h4>
-                {description ? <p className="text-sm leading-6 text-muted-foreground">{description}</p> : null}
+                {description ? <p className="text-sm leading-6 text-[var(--terminal-muted)]">{description}</p> : null}
               </div>
               <Button ref={closeButtonRef} type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} aria-label={closeLabel}>
                 <X className="size-4" />
@@ -116,7 +116,7 @@ export function FullScreenModal({
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
 
             {/* 底部 */}
-            {footer ? <div className="shrink-0 border-t border-border/60 px-6 py-4 text-sm leading-6 text-muted-foreground">{footer}</div> : null}
+            {footer ? <div className="shrink-0 border-t border-[var(--terminal-border)] px-6 py-4 text-sm leading-6 text-[var(--terminal-muted)]">{footer}</div> : null}
           </div>
         </div>
       ) : null}

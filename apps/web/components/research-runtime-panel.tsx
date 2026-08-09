@@ -66,23 +66,23 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
   const isRunning = status.status === "running";
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-card/90 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.28)] backdrop-blur">
+    <section className="terminal-card p-5">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
           <p className="eyebrow">研究运行状态</p>
           {isRunning && (
-            <div className="flex items-center gap-2 text-primary">
+            <div className="flex items-center gap-2 text-[var(--terminal-green)]">
               <Loader2 className="size-4 animate-spin" />
               <span className="text-xs font-medium">正在运行</span>
             </div>
           )}
         </div>
-        <h3 className="text-lg font-semibold tracking-tight text-foreground">
+        <h3 className="text-lg font-semibold tracking-tight text-[var(--terminal-text)]">
           {isRunning ? `${actionLabel} - ${stageLabel}` : "当前没有研究任务在运行"}
         </h3>
-        <p className="text-sm leading-6 text-muted-foreground">{status.message}</p>
+        <p className="text-sm leading-6 text-[var(--terminal-muted)]">{status.message}</p>
         {isPollingFallback && (
-          <p className="text-xs text-muted-foreground/60">WebSocket 断开，已切换为轮询模式</p>
+          <p className="text-xs text-[var(--terminal-muted)]/60">WebSocket 断开，已切换为轮询模式</p>
         )}
       </div>
 
@@ -90,12 +90,12 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
       {isRunning && (
         <div className="mt-5 space-y-3">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">进度</span>
-            <span className="font-medium text-foreground">{Math.max(0, Math.min(100, status.progress_pct))}%</span>
+            <span className="text-[var(--terminal-muted)]">进度</span>
+            <span className="font-medium text-[var(--terminal-text)]">{Math.max(0, Math.min(100, status.progress_pct))}%</span>
           </div>
-          <div className="h-3 overflow-hidden rounded-full bg-muted/30">
+          <div className="h-3 overflow-hidden rounded-full bg-[var(--terminal-border)]/30">
             <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
+              className="h-full rounded-full bg-[var(--terminal-green)] transition-all duration-500"
               style={{ width: `${Math.max(0, Math.min(100, status.progress_pct))}%` }}
             />
           </div>
@@ -110,7 +110,7 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
 
       {/* 运行历史记录 */}
       {hasHistory && (
-        <div className="mt-5 rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/80 p-4">
+        <div className="mt-5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
           <p className="eyebrow">运行历史</p>
           <div className="mt-3 grid gap-4">
             {Object.entries(history).map(([action, records]) => {
@@ -126,8 +126,8 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
               return (
                 <div key={action} className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-foreground">{actionLabel}</p>
-                    <p className="text-xs text-muted-foreground">共 {records.length} 条记录</p>
+                    <p className="text-sm font-medium text-[var(--terminal-text)]">{actionLabel}</p>
+                    <p className="text-xs text-[var(--terminal-muted)]">共 {records.length} 条记录</p>
                   </div>
 
                   <div className="grid gap-2">
@@ -151,7 +151,7 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
                       >
                         上一页
                       </Button>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-[var(--terminal-muted)]">
                         第 {currentPage} 页 / 共 {totalPages} 页
                       </p>
                       <Button
@@ -171,14 +171,14 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
         </div>
       )}
 
-      <div className="mt-5 rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/80 p-4">
+      <div className="mt-5 rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
         <p className="eyebrow">完成后去哪里看</p>
         <div className="mt-3 flex flex-wrap gap-3">
           {status.result_paths.map((path) => (
             <Link
               key={path}
               href={path}
-              className="inline-flex items-center justify-center rounded-xl border border-border bg-transparent px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="inline-flex items-center justify-center rounded border border-[var(--terminal-border)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--terminal-text)] transition-colors hover:border-[var(--terminal-cyan)]"
             >
               {path === "/research" ? "研究工作台" : path === "/evaluation" ? "评估与实验中心" : path === "/signals" ? "信号页" : path}
             </Link>
@@ -191,9 +191,9 @@ export function ResearchRuntimePanel({ initialStatus }: ResearchRuntimePanelProp
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-[color:var(--panel-strong)]/80 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-3 text-base font-semibold text-foreground">{value}</p>
+    <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--terminal-muted)]">{label}</p>
+      <p className="mt-3 text-base font-semibold text-[var(--terminal-text)]">{value}</p>
     </div>
   );
 }
@@ -203,7 +203,7 @@ function RunHistoryItem({ record, actionLabel }: { record: ResearchRunRecord; ac
   const finishedTime = record.finished_at ? formatTimestamp(record.finished_at) : "未知时间";
   const duration = record.duration_seconds ? `${record.duration_seconds} 秒` : "未知时长";
   const statusLabel = record.status === "succeeded" ? "成功" : record.status === "failed" ? "失败" : "未知状态";
-  const statusColor = record.status === "succeeded" ? "text-green-600" : record.status === "failed" ? "text-red-600" : "text-muted-foreground";
+  const statusColor = record.status === "succeeded" ? "text-[var(--terminal-green)]" : record.status === "failed" ? "text-[var(--terminal-red)]" : "text-[var(--terminal-muted)]";
 
   return (
     <FullScreenModal
@@ -215,7 +215,7 @@ function RunHistoryItem({ record, actionLabel }: { record: ResearchRunRecord; ac
     >
       <div className="space-y-5">
         {/* 运行元数据 */}
-        <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+        <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
           <p className="eyebrow">运行元数据</p>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <DetailItem label="开始时间" value={record.started_at ? formatTimestamp(record.started_at) : "未记录"} />
@@ -227,21 +227,21 @@ function RunHistoryItem({ record, actionLabel }: { record: ResearchRunRecord; ac
 
         {/* 运行消息 */}
         {record.message && (
-          <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+          <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
             <p className="eyebrow">运行消息</p>
-            <p className="mt-3 text-sm leading-6 text-foreground">{record.message}</p>
+            <p className="mt-3 text-sm leading-6 text-[var(--terminal-text)]">{record.message}</p>
           </div>
         )}
 
         {/* 运行结果快照 */}
         {record.result_snapshot && (
-          <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+          <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
             <p className="eyebrow">运行结果快照</p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <DetailItem
                 label="推荐币种"
                 value={record.result_snapshot.recommended_symbol || "无推荐"}
-                valueClassName={record.result_snapshot.recommended_symbol ? "text-primary font-semibold" : ""}
+                valueClassName={record.result_snapshot.recommended_symbol ? "text-[var(--terminal-cyan)] font-semibold" : ""}
               />
               <DetailItem
                 label="推荐策略"
@@ -268,7 +268,7 @@ function RunHistoryItem({ record, actionLabel }: { record: ResearchRunRecord; ac
         )}
 
         {/* 快捷跳转 */}
-        <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+        <div className="rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-4">
           <p className="eyebrow">快捷跳转</p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Button asChild variant="terminal" size="sm">
@@ -288,8 +288,8 @@ function RunHistoryItem({ record, actionLabel }: { record: ResearchRunRecord; ac
 function DetailItem({ label, value, valueClassName = "" }: { label: string; value: string; valueClassName?: string }) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`text-sm leading-6 text-foreground ${valueClassName}`}>{value}</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-[var(--terminal-muted)]">{label}</p>
+      <p className={`text-sm leading-6 text-[var(--terminal-text)] ${valueClassName}`}>{value}</p>
     </div>
   );
 }
