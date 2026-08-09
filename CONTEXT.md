@@ -32,6 +32,19 @@
 
 **当前状态**：服务全绿（api/web/openclaw/freqtrade healthy），UI 8 个页面无旧卡残留，ops 页正常渲染
 
+### 4. 服务器卡死事件（08-09 14:48 重启）
+- **现象**：服务器上 docker build web 期间系统完全无响应（SSH/端口全不通），用户手动重启服务器
+- **根因**：1.6G 小内存服务器上 next build（npm install + 编译）时 node 无堆内存限制，吃满内存 + 3G swap 打满 → 系统 thrashing 假死
+- **修复**：apps/web/Dockerfile 加 `NODE_OPTIONS=--max-old-space-size=1024`（install 和 build 阶段都生效）
+- **验证**：重启后构建全程内存稳定（可用 650MB+、swap ~950MB 未打满），构建成功系统无卡顿
+- **教训**：小内存服务器构建重型前端项目必须限制 node 堆内存
+
+### 5. 首页加载体验修复
+- 首页 3 个核心卡 + 2 个系统指标在数据未就绪时显示红色负面（fallback 值触发 negative）→ 改为未就绪用中性色，数据到位后再显示真实状态色
+- "数据加载中"提示改为延迟 1.5 秒显示（正常请求不闪烁）
+- backtest 页无数据时不再显示红色（年化/回撤）
+- 验证：Playwright 模拟慢网络确认加载过程无红色元素
+
 ---
 
 ## 上次进度（2026-08-08）
