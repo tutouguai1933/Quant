@@ -79,16 +79,21 @@ class ModelTrainer:
         effective_label_column = label_column or self.label_column
         effective_model_params = model_params or self.model_params
 
+        # 排序模式判定：objective 为 lambdarank
+        is_ranking = str(effective_model_params.get("objective", "")).lower() == "lambdarank"
+
         # 准备特征矩阵
         X_train, y_train = self._prepare_data(
             training_rows,
             feature_columns,
             effective_label_column,
+            ranking=is_ranking,
         )
         X_val, y_val = self._prepare_data(
             validation_rows,
             feature_columns,
             effective_label_column,
+            ranking=is_ranking,
         )
 
         # 创建模型
@@ -97,12 +102,18 @@ class ModelTrainer:
             params=effective_model_params,
         )
 
+        # 排序模式构建 group（同一时间戳的样本一组）
+        groups = self._build_groups(training_rows) if is_ranking else None
+        eval_groups = self._build_groups(validation_rows) if is_ranking else None
+
         # 训练模型
         training_curve = model.fit(
             X_train,
             y_train,
             feature_names=list(feature_columns),
             eval_set=(X_val, y_val) if len(X_val) > 0 else None,
+            groups=groups,
+            eval_groups=eval_groups,
         )
 
         # 获取特征重要性
@@ -110,6 +121,13 @@ class ModelTrainer:
 
         # 计算评估指标
         metrics = self._calculate_metrics(model, X_train, y_train, X_val, y_val)
+
+        # 排序模式追加排序指标
+        if is_ranking and len(X_val) > 0:
+            val_scores = model.predict_proba(X_val)
+            if eval_groups is not None and len(eval_groups) > 0:
+                metrics["val_ndcg_at_5"] = self._mean_grouped_ndcg(y_val, val_scores, eval_groups, k=5)
+                metrics["val_top5_hit_rate"] = self._top5_hit_rate(y_val, val_scores, eval_groups, k=5)
 
         # 生成模型版本
         model_version = self._generate_model_version()
@@ -141,6 +159,7 @@ class ModelTrainer:
         rows: list[dict[str, Any]],
         feature_columns: tuple[str, ...],
         label_column: str,
+        ranking: bool = False,
     ) -> tuple[np.ndarray, np.ndarray]:
         """准备训练数据。
 
@@ -148,6 +167,7 @@ class ModelTrainer:
             rows: 数据行
             feature_columns: 特征列名
             label_column: 标签列名
+            ranking: 排序模式（relevance 转 0-3 级，不做 0/1 二分类）
 
         Returns:
             (X, y) 元组
@@ -166,14 +186,42 @@ class ModelTrainer:
                 features.append(self._to_float(value))
             X_list.append(features)
 
-            # 提取标签并转换为二分类
+            # 提取标签：排序模式转 0-3 级 relevance；否则二分类
             label_value = self._to_float(row.get(label_column))
-            y_list.append(1 if label_value > self.label_threshold else 0)
+            if ranking:
+                y_list.append(int(np.clip(np.round(label_value), 0, 3)))
+            else:
+                y_list.append(1 if label_value > self.label_threshold else 0)
 
         X = np.array(X_list, dtype=np.float64)
         y = np.array(y_list, dtype=np.int32)
 
         return X, y
+
+    def _build_groups(self, rows: list[dict[str, Any]]) -> np.ndarray:
+        """按 generated_at 构建 lightgbm group（同一时间戳的样本一组）。
+
+        Args:
+            rows: 数据行（保持训练数据顺序）
+
+        Returns:
+            每组样本数数组
+        """
+        if not rows:
+            return np.array([], dtype=np.int32)
+        timestamps = [int(r.get("generated_at", 0)) for r in rows]
+        groups: list[int] = []
+        prev = timestamps[0]
+        count = 0
+        for ts in timestamps:
+            if ts == prev:
+                count += 1
+            else:
+                groups.append(count)
+                prev = ts
+                count = 1
+        groups.append(count)
+        return np.array(groups, dtype=np.int32)
 
     def _calculate_metrics(
         self,
@@ -197,14 +245,26 @@ class ModelTrainer:
         """
         metrics: dict[str, float] = {}
 
+        # 排序模式：predict_proba 返回一维分数；二分类返回 (n, 2) 概率
+        is_ranking = model.is_ranking
+
+        def _scores(proba: np.ndarray) -> np.ndarray:
+            if is_ranking:
+                return proba
+            return proba[:, 1]
+
+        def _positive(y: np.ndarray) -> np.ndarray:
+            # 排序模式 relevance > 0 视为正类（用于 AUC 参考）
+            return (y > 0).astype(int) if is_ranking else y
+
         # 训练集指标
         if len(X_train) > 0:
-            train_proba = model.predict_proba(X_train)[:, 1]
+            train_proba = _scores(model.predict_proba(X_train))
             train_pred = (train_proba >= 0.5).astype(int)
-            metrics["train_auc"] = self._calculate_auc(y_train, train_proba)
-            metrics["train_accuracy"] = float(np.mean(train_pred == y_train))
-            metrics["train_precision"] = self._calculate_precision(y_train, train_pred)
-            metrics["train_recall"] = self._calculate_recall(y_train, train_pred)
+            metrics["train_auc"] = self._calculate_auc(_positive(y_train), train_proba)
+            metrics["train_accuracy"] = float(np.mean(train_pred == _positive(y_train)))
+            metrics["train_precision"] = self._calculate_precision(_positive(y_train), train_pred)
+            metrics["train_recall"] = self._calculate_recall(_positive(y_train), train_pred)
             metrics["train_f1"] = self._calculate_f1(
                 metrics["train_precision"],
                 metrics["train_recall"],
@@ -212,18 +272,65 @@ class ModelTrainer:
 
         # 验证集指标
         if len(X_val) > 0:
-            val_proba = model.predict_proba(X_val)[:, 1]
+            val_proba = _scores(model.predict_proba(X_val))
             val_pred = (val_proba >= 0.5).astype(int)
-            metrics["val_auc"] = self._calculate_auc(y_val, val_proba)
-            metrics["val_accuracy"] = float(np.mean(val_pred == y_val))
-            metrics["val_precision"] = self._calculate_precision(y_val, val_pred)
-            metrics["val_recall"] = self._calculate_recall(y_val, val_pred)
+            metrics["val_auc"] = self._calculate_auc(_positive(y_val), val_proba)
+            metrics["val_accuracy"] = float(np.mean(val_pred == _positive(y_val)))
+            metrics["val_precision"] = self._calculate_precision(_positive(y_val), val_pred)
+            metrics["val_recall"] = self._calculate_recall(_positive(y_val), val_pred)
             metrics["val_f1"] = self._calculate_f1(
                 metrics["val_precision"],
                 metrics["val_recall"],
             )
 
         return metrics
+
+    def _mean_grouped_ndcg(self, y_true: np.ndarray, y_score: np.ndarray, groups: np.ndarray, k: int = 5) -> float:
+        """按 group 计算 ndcg@k 的平均值（排序模式验证指标）。"""
+        values: list[float] = []
+        start = 0
+        for size in groups:
+            end = start + int(size)
+            if end - start < 2:
+                start = end
+                continue
+            values.append(self._ndcg_at_k(y_true[start:end], y_score[start:end], k=k))
+            start = end
+        return float(np.mean(values)) if values else 0.0
+
+    def _top5_hit_rate(self, y_true: np.ndarray, y_score: np.ndarray, groups: np.ndarray, k: int = 5) -> float:
+        """top-k 命中率：每组预测分最高的 k 个里，真实 relevance 最高的是否被选中。
+
+        模拟"从候选里选出 top-k 买入"的场景。
+        """
+        hits: list[float] = []
+        start = 0
+        for size in groups:
+            end = start + int(size)
+            if end - start < 2:
+                start = end
+                continue
+            group_y = y_true[start:end]
+            group_s = y_score[start:end]
+            top_k = min(k, len(group_y))
+            if top_k == 0:
+                start = end
+                continue
+            order = np.argsort(-group_s)[:top_k]
+            best_true = int(np.argmax(group_y))
+            hits.append(1.0 if best_true in order else 0.0)
+            start = end
+        return float(np.mean(hits)) if hits else 0.0
+
+    @staticmethod
+    def _ndcg_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int = 5) -> float:
+        """按单组计算 ndcg@k。"""
+        order = np.argsort(-y_score)[:k]
+        rel = y_true[order].astype(float)
+        dcg = sum((2 ** r - 1) / np.log2(i + 2) for i, r in enumerate(rel))
+        ideal = np.sort(y_true)[::-1][:k].astype(float)
+        idcg = sum((2 ** r - 1) / np.log2(i + 2) for i, r in enumerate(ideal))
+        return float(dcg / idcg) if idcg > 0 else 0.0
 
     def _calculate_auc(self, y_true: np.ndarray, y_proba: np.ndarray) -> float:
         """计算 AUC。"""
