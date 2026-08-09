@@ -92,12 +92,17 @@ class WalkForwardValidator:
             return []
 
         folds: list[Fold] = []
+        prev_test_end = fold_size  # 第一折 test 从 fold_size 开始
         for i in range(n_folds):
-            test_start = (i + 1) * fold_size
+            # test 段连续覆盖 [fold_size, total]：最后一折的起点紧接上一折终点，
+            # 而不是 (i+1)*fold_size（那会把最后一折 test 挤到文件末尾只剩几行）
             if i == n_folds - 1:
+                test_start = prev_test_end
                 test_end = total_bars
             else:
+                test_start = (i + 1) * fold_size
                 test_end = min(total_bars, test_start + fold_size)
+                prev_test_end = test_end
 
             # 确保 test 最少 1 条
             if test_end - test_start < 1:
