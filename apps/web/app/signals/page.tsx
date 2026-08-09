@@ -168,20 +168,21 @@ export default function SignalsPage() {
     >
       <FeedbackBanner feedback={feedback} />
 
-      <MetricStrip metrics={statusMetrics} />
+      <div className="space-y-4">
+        <MetricStrip metrics={statusMetrics} />
 
-      <ResearchRuntimePanel initialStatus={runtimeStatus} />
+        <ResearchRuntimePanel initialStatus={runtimeStatus} />
 
-      {isLoading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-48 rounded-lg" />
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Skeleton className="h-64 rounded-lg" />
-            <Skeleton className="h-80 rounded-lg" />
+        {isLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-48 rounded-lg" />
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Skeleton className="h-64 rounded-lg" />
+              <Skeleton className="h-80 rounded-lg" />
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
           <div className="space-y-4">
             {/* 自动化状态 */}
             <TerminalCard>
@@ -310,6 +311,7 @@ export default function SignalsPage() {
           </div>
         </div>
       )}
+      </div>
     </TerminalShell>
   );
 }

@@ -204,15 +204,16 @@ export default function StrategiesPage() {
     >
       <FeedbackBanner feedback={feedback} />
 
-      {/* 降级提示：后端不可达时页面仍渲染兜底数据，但明确告知用户数据可能不真实 */}
-      {degradedMessage && <ErrorBanner message={degradedMessage} tone="warning" />}
+      <div className="space-y-4">
+        {/* 降级提示：后端不可达时页面仍渲染兜底数据，但明确告知用户数据可能不真实 */}
+        {degradedMessage && <ErrorBanner message={degradedMessage} tone="warning" />}
 
-      <ArbitrationHandoffCard
-        arbitration={arbitration}
-        isAuthenticated={session.isAuthenticated}
-        surfaceLabel="策略页"
-        showActions={!session.isAuthenticated}
-      />
+        <ArbitrationHandoffCard
+          arbitration={arbitration}
+          isAuthenticated={session.isAuthenticated}
+          surfaceLabel="策略页"
+          showActions={!session.isAuthenticated}
+        />
 
       {!session.isAuthenticated ? (
         <TerminalCard title="需要登录">
@@ -454,6 +455,7 @@ export default function StrategiesPage() {
           </TerminalCard>
         </>
       )}
+      </div>
     </TerminalShell>
   );
 }
