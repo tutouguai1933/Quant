@@ -66,10 +66,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../data/runtime:/app/.runtime
+      - ../data/logs/api:/app/logs
     environment:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,172.17.0.1,api,web,freqtrade,mihomo
+      QUANT_LOG_DIR: /app/logs
       QUANT_PATROL_AUTO_START: "true"
       QUANT_PATROL_INTERVAL_MINUTES: "15"
     env_file:

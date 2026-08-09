@@ -60,18 +60,69 @@ def get_healthz() -> dict:
 @router.get("/metrics")
 def get_metrics() -> Response:
     """提供 Prometheus 可抓取的 API 基础存活指标。"""
-    payload = "\n".join(
-        [
-            "# HELP quant_api_up Control plane API process is serving requests.",
-            "# TYPE quant_api_up gauge",
-            "quant_api_up 1",
-            "# HELP quant_api_process_start_time_seconds API process start time.",
-            "# TYPE quant_api_process_start_time_seconds gauge",
-            f"quant_api_process_start_time_seconds {_PROCESS_START_TIME_SECONDS:.0f}",
-            "",
-        ]
-    )
-    return Response(content=payload, media_type="text/plain; version=0.0.4")
+    import threading
+    import time
+
+    # 线程数反映线程堆积（卡死前线程数会飙升）
+    thread_count = threading.active_count()
+
+    # 尝试读取进程 CPU/内存（/proc 在容器内可用）
+    cpu_usage = ""
+    mem_rss = ""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    mem_rss = line.split()[1]
+    except OSError:
+        pass
+
+    lines = [
+        "# HELP quant_api_up Control plane API process is serving requests.",
+        "# TYPE quant_api_up gauge",
+        "quant_api_up 1",
+        "# HELP quant_api_process_start_time_seconds API process start time.",
+        "# TYPE quant_api_process_start_time_seconds gauge",
+        f"quant_api_process_start_time_seconds {_PROCESS_START_TIME_SECONDS:.0f}",
+        "# HELP quant_api_threads_active Number of active threads (proxy for thread pool saturation).",
+        "# TYPE quant_api_threads_active gauge",
+        f"quant_api_threads_active {thread_count}",
+    ]
+    if mem_rss:
+        lines.extend(
+            [
+                "# HELP quant_api_process_memory_rss_bytes Resident memory in bytes.",
+                "# TYPE quant_api_process_memory_rss_bytes gauge",
+                f"quant_api_process_memory_rss_bytes {int(mem_rss) * 1024}",
+            ]
+        )
+
+    # 输出每个端点的延迟统计（卡死前慢请求会在这里留下痕迹）
+    try:
+        from services.api.app.services.performance_monitor_service import (
+            performance_monitor_service,
+        )
+
+        for endpoint, metrics in sorted(performance_monitor_service._api_metrics.items()):
+            ep = endpoint.replace('"', '\\"')
+            lines.extend(
+                [
+                    f'# HELP quant_api_latency_count_total Requests completed per endpoint.',
+                    f'# TYPE quant_api_latency_count_total counter',
+                    f'quant_api_latency_count_total{{endpoint="{ep}"}} {metrics.count}',
+                    f'# TYPE quant_api_latency_max_seconds gauge',
+                    f'quant_api_latency_max_seconds{{endpoint="{ep}"}} {metrics.max_ms / 1000.0:.6f}',
+                    f'# TYPE quant_api_latency_avg_seconds gauge',
+                    f'quant_api_latency_avg_seconds{{endpoint="{ep}"}} {(metrics.total_ms / metrics.count if metrics.count else 0) / 1000.0:.6f}',
+                    f'# TYPE quant_api_slow_count_total counter',
+                    f'quant_api_slow_count_total{{endpoint="{ep}"}} {metrics.slow_count}',
+                ]
+            )
+    except Exception:
+        pass
+
+    lines.append("")
+    return Response(content="\n".join(lines), media_type="text/plain; version=0.0.4")
 
 
 @router.get("/api/v1/health")

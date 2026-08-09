@@ -235,6 +235,15 @@ async def performance_monitor_middleware(request: Request, call_next) -> Respons
 @app.on_event("startup")
 async def setup_event_loop() -> None:
     """在 FastAPI 启动时设置事件循环引用，用于 WebSocket 推送，并启动健康监控。"""
+    # 启用文件日志（持久化到挂载卷，容器重建后日志仍可回溯卡死原因）
+    try:
+        from services.api.app.core.logging_config import LOG_DIR_API, setup_logging
+
+        setup_logging(LOG_DIR_API)
+        logger.info("文件日志已启用: %s", LOG_DIR_API)
+    except Exception as exc:
+        logger.warning("文件日志启用失败（继续使用 stdout）: %s", exc)
+
     loop = asyncio.get_running_loop()
     connection_manager.set_loop(loop)
 
