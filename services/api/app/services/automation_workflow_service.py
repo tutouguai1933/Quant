@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 import threading
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -358,12 +359,37 @@ class AutomationWorkflowService:
                 detail=str(retrain_check),
             )
 
-        train_task = self._scheduler.run_named_task(
-            task_type="research_train",
-            source=source,
-            target_type="system",
-            payload={"source": source},
-        )
+        # 训练节流：距上次训练完成不足 N 小时则跳过重训，直接用现有模型推理选币。
+        # 4h K 线数据 1 小时内变化极小，频繁重训收益低且浪费服务器算力（1.6G 小内存）。
+        # 推理每轮照常执行（轻量），训练默认每天一次，可配 QUANT_AUTO_TRAIN_INTERVAL_HOURS。
+        try:
+            train_interval_hours = float(os.getenv("QUANT_AUTO_TRAIN_INTERVAL_HOURS", "24"))
+        except (TypeError, ValueError):
+            train_interval_hours = 24.0
+        skip_train, last_train_finished = self._should_skip_training(interval_hours=train_interval_hours)
+        if skip_train:
+            train_task = {
+                "status": "succeeded",
+                "task_type": "research_train",
+                "skipped": True,
+                "message": (
+                    f"距上次训练完成 {last_train_finished} 不足 {train_interval_hours:g} 小时，"
+                    "跳过本轮重训，直接用现有模型推理"
+                ),
+            }
+            self._automation.record_alert(
+                level="info",
+                code="train_skipped_throttled",
+                message=str(train_task["message"]),
+                source=source,
+            )
+        else:
+            train_task = self._scheduler.run_named_task(
+                task_type="research_train",
+                source=source,
+                target_type="system",
+                payload={"source": source},
+            )
         if train_task["status"] != "succeeded":
             self._automation.record_alert(
                 level="error",
@@ -711,6 +737,45 @@ class AutomationWorkflowService:
                 "metrics": {},
                 "thresholds": {},
             }
+
+    def _should_skip_training(self, *, interval_hours: float) -> tuple[bool, str]:
+        """判断本轮自动化周期是否应跳过重训练（训练节流）。
+
+        依据：研究运行时历史里最近一次训练任务的完成时间。
+        从未训练过（无模型）时返回 False，必须训练。
+
+        Returns:
+            (是否跳过, 最近一次训练完成时间字符串)
+        """
+        try:
+            from services.api.app.services.research_runtime_service import research_runtime_service
+
+            status = research_runtime_service.get_status()
+            history = dict(status.get("history") or {})
+            train_entries = [
+                dict(entry)
+                for entry in list(history.get("training") or [])
+                if isinstance(entry, dict) and str(entry.get("status", "")).lower() == "succeeded"
+            ]
+            if not train_entries:
+                # 从未成功训练过，必须训练
+                return False, ""
+            last_finished = str(train_entries[-1].get("finished_at") or train_entries[-1].get("started_at") or "")
+            if not last_finished:
+                return False, ""
+
+            from datetime import datetime, timezone
+
+            last_time = datetime.fromisoformat(last_finished.replace("Z", "+00:00"))
+            if last_time.tzinfo is None:
+                last_time = last_time.replace(tzinfo=timezone.utc)
+            elapsed_hours = (datetime.now(timezone.utc) - last_time).total_seconds() / 3600.0
+            if elapsed_hours < interval_hours:
+                return True, last_finished
+            return False, last_finished
+        except Exception:
+            # 检查失败不阻断工作流，按"不跳过"处理
+            return False, ""
 
     @staticmethod
     def _build_scheduler_plan(*, review_limit: int) -> list[dict[str, str]]:
