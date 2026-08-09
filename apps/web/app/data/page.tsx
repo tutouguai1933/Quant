@@ -77,7 +77,6 @@ export default function DataPage() {
         isAuthenticated={session.isAuthenticated}
       >
         <div className="space-y-4">
-        <div className="space-y-4">
           <div className="terminal-card p-4 animate-pulse">
             <div className="h-4 w-32 bg-[var(--terminal-border)] rounded" />
           </div>
@@ -88,8 +87,6 @@ export default function DataPage() {
             <div className="h-48 bg-[var(--terminal-border)] rounded" />
           </div>
         </div>
-
-      </div>
       </TerminalShell>
     );
   }
@@ -140,6 +137,7 @@ export default function DataPage() {
       currentPath="/data"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       <MetricStrip metrics={statusMetrics} />
 
       <WorkbenchConfigStatusCard
@@ -483,6 +481,7 @@ export default function DataPage() {
             </div>
           </TerminalCard>
         </div>
+      </div>
       </div>
     </TerminalShell>
   );
