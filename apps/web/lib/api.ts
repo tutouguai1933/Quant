@@ -1394,6 +1394,23 @@ export function isProtectedRoute(path: string): boolean {
 
 const inflightRequests = new Map<string, Promise<ApiEnvelope<any>>>();
 
+// 响应缓存（带 TTL）：切换页面回来时直接命中缓存，避免重复加载。
+// 数据本身是低频变化的系统状态，15 秒缓存足够新鲜且能消除页面切换的重新加载。
+const responseCache = new Map<string, { data: ApiEnvelope<unknown>; expiresAt: number }>();
+const CACHE_TTL_MS = 15_000;
+
+// 需要实时性的接口不缓存（轮询、任务状态等）
+const NO_CACHE_PATHS: string[] = [
+  "/signals/research/runtime",
+  "/tasks/automation",
+  "/hyperopt/jobs",
+];
+
+// 手动触发类操作成功后清空全部缓存，确保页面立即拉到最新数据
+function clearResponseCache(): void {
+  responseCache.clear();
+}
+
 function buildRequestKey(url: string, token?: string): string {
   return `${url}::${token || ''}`;
 }
@@ -1401,6 +1418,16 @@ function buildRequestKey(url: string, token?: string): string {
 export async function fetchJson<T>(path: string, token?: string, signal?: AbortSignal): Promise<ApiEnvelope<T>> {
   const url = await resolveControlPlaneUrl(path);
   const requestKey = buildRequestKey(url, token);
+
+  // 命中未过期缓存直接返回（切回页面不重新加载）；实时性接口跳过
+  const shouldCache = !NO_CACHE_PATHS.some((p) => path.includes(p));
+  if (shouldCache && responseCache.has(requestKey)) {
+    const cached = responseCache.get(requestKey)!;
+    if (cached.expiresAt > Date.now()) {
+      return Promise.resolve(cached.data as ApiEnvelope<T>);
+    }
+    responseCache.delete(requestKey);
+  }
 
   if (inflightRequests.has(requestKey)) {
     return inflightRequests.get(requestKey)! as Promise<ApiEnvelope<T>>;
@@ -1431,7 +1458,14 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
           };
         }
 
-        return response.json() as Promise<ApiEnvelope<T>>;
+        const result = (await response.json()) as ApiEnvelope<T>;
+        if (shouldCache && !result.error) {
+          responseCache.set(requestKey, {
+            data: result,
+            expiresAt: Date.now() + CACHE_TTL_MS,
+          });
+        }
+        return result;
       } catch (error) {
         const errorCode = error instanceof Error && error.name === "AbortError"
           ? "request_timeout"
@@ -2346,7 +2380,12 @@ async function postControlAction<T>(path: string, signal?: AbortSignal): Promise
       };
     }
 
-    return response.json() as Promise<ApiEnvelope<T>>;
+    const result = (await response.json()) as ApiEnvelope<T>;
+    // 操作成功时清空缓存，让页面立即拿到最新数据
+    if (!result.error) {
+      clearResponseCache();
+    }
+    return result;
   } catch (error) {
     return {
       data: {} as T,
