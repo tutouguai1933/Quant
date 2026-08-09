@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -30,7 +31,12 @@ class HyperoptScheduleService:
     """
 
     def __init__(self) -> None:
-        self._schedule = HyperoptSchedule()
+        # enabled 支持 env 控制：QUANT_HYPEROPT_ENABLED=false 禁用（服务器资源有限时）
+        enabled_env = os.getenv("QUANT_HYPEROPT_ENABLED", "").strip().lower()
+        schedule_enabled = True
+        if enabled_env in ("0", "false", "no"):
+            schedule_enabled = False
+        self._schedule = HyperoptSchedule(enabled=schedule_enabled)
         self._running = False
         self._lock = threading.Lock()
 
