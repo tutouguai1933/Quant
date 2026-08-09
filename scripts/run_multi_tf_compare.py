@@ -162,7 +162,9 @@ def run_experiment(kline_dir: str, with_aux: bool) -> dict[str, Any]:
             aux_map = all_aux.get(symbol)
             if aux_map is None:
                 continue
-            merged_rows.append(merge_aux_features([row], aux_map)[0])
+            merged_single = merge_aux_features([row], aux_map)
+            if merged_single:
+                merged_rows.append(merged_single[0])
         rows = merged_rows
         feature_cols = list(BASE_FEATURE_COLS) + AUX_1H_COLS
 
