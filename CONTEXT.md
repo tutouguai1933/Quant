@@ -32,6 +32,15 @@
 
 **当前状态**：服务全绿（api/web/openclaw/freqtrade healthy），UI 8 个页面无旧卡残留，ops 页正常渲染
 
+### 7. 模型优化（计划：docs/superpowers/plans/2026-08-09-model-optimization.md）
+- **标签质量实验**：6 组配置对比（服务器真实 K 线重建特征+标签），结论：close_only/2%/2-5d 最优（val_auc 0.514→0.542）。当前线上"earliest_hit/1%/1-3d"是 6 组中最差的
+- **排序学习（lambdarank）**：MLModel/trainer/qlib_runner 三层实现 + 配置开关 QUANT_QLIB_MODEL_MODE（binary/ranking）
+- **对比实验结论**：ranking 未优于 binary（AUC 0.495 vs 0.542，top5 命中 31.7%≈随机），保持 binary 默认；ranking 能力保留可切换
+- **线上效果**：验证 AUC 0.532→**0.5658**，训练/验证差距 0.223→0.098（过拟合显著改善）
+- Review：Task3 后标签结论 review；Task7 前排序代码 review（发现并修复 predictor 兼容排序模型问题）
+- 测试：新增 10 个测试（标签实验/排序模型/排序训练/model_mode），全量失败数与基线一致
+- 备注：Dockerfile 增加 COPY scripts 持久化实验脚本；服务器跑实验用 docker cp 临时同步
+
 ### 6. 全库代码审查与优化（5 个并行 agent）
 - 审查：4 个 agent 覆盖 13.3 万行代码，产出 60+ 优化点；安全漏洞类（默认密码/接口无鉴权）按用户要求跳过
 - 修复（按优先级 6-29）：
