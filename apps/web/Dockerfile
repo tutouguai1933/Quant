@@ -18,6 +18,8 @@ WORKDIR /app/apps/web
 COPY apps/web/package.json /app/apps/web/package.json
 COPY apps/web/pnpm-lock.yaml /app/apps/web/pnpm-lock.yaml
 COPY apps/web/.npmrc /app/apps/web/.npmrc
+# 限制 Node 堆内存：服务器只有 1.6G 内存，install/build 不限内存会让系统 swap 打满卡死
+ENV NODE_OPTIONS=--max-old-space-size=1024
 # 使用 npm 安装避免 pnpm 的 sharp 构建问题
 RUN npm install --legacy-peer-deps
 
