@@ -32,6 +32,18 @@
 
 **当前状态**：服务全绿（api/web/openclaw/freqtrade healthy），UI 8 个页面无旧卡残留，ops 页正常渲染
 
+### 6. 全库代码审查与优化（5 个并行 agent）
+- 审查：4 个 agent 覆盖 13.3 万行代码，产出 60+ 优化点；安全漏洞类（默认密码/接口无鉴权）按用户要求跳过
+- 修复（按优先级 6-29）：
+  - **训练正确性**：qlib_dataset 切分修复前视偏差（纯时间序 60/20/20）；walk-forward 修复标签泄漏（训练集不再越过 gap 扩张）；btc_correlation O(n²) 循环优化
+  - **并发锁**：cycle_lock 先 flock 后写元数据、force_release 不再删文件；cache_service 单飞；performance_monitor 告警推送移出锁（后台队列）；automation_service 全写方法加 RLock + 原子写；kline_store 按 mtime 缓存
+  - **调度**：训练任务超时不重试+同类型单飞；auto_retrain 状态持久化；模型/缓存/快照磁盘清理（保留 N 个）；optuna 异常不再静默
+  - **前端**：28 个死组件移到 _unused/；AbortError 不再重试；hyperopt 仅 running 时轮询；market 超时数据不丢；signals 补 session 守卫
+  - **质量**：feishu/patrol/alert/openclaw/position 接口统一 envelope；新建 routes/_helpers.py 公共 _success/_error（10 个路由文件）；前端 asRecord/readText 合并；硬编码阈值/路径进 env；main.py 迁移 lifespan；死函数清理
+- 验证：失败数 70 = 基线 70（零新失败；2 个因修复导致断言变化的测试已更新）；前端 tsc/build 通过；8 页面无 JS 错误
+- 部署：api/openclaw/web 已重建上线；openclaw 调度代码本次未改无需重建
+- 注意：70 个基线测试失败是历史断言问题（未在本次范围）；两个过时 stash 已清理
+
 ### 4. 服务器卡死事件（08-09 14:48 重启）
 - **现象**：服务器上 docker build web 期间系统完全无响应（SSH/端口全不通），用户手动重启服务器
 - **根因**：1.6G 小内存服务器上 next build（npm install + 编译）时 node 无堆内存限制，吃满内存 + 3G swap 打满 → 系统 thrashing 假死
