@@ -586,8 +586,38 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertIn("assumptions", result["backtest"])
         self.assertIn("training_context", result)
         self.assertEqual(result["training_context"]["feature_version"], "v2")
-        self.assertEqual(result["training_context"]["holding_window"], "1-3d")
+        self.assertEqual(result["training_context"]["holding_window"], "2-5d")
         self.assertIn("sample_window", result["training_context"])
+
+    def test_training_records_model_mode_binary(self) -> None:
+        """默认训练记录 model_mode=binary。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(runtime_root)},
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            result = runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4)})
+        self.assertEqual(result.get("model_mode"), "binary")
+        self.assertIn("val_auc", (result.get("metrics") or {}).get("ml_metrics", {}) or result.get("ml_metrics", {}))
+
+    def test_training_records_model_mode_ranking(self) -> None:
+        """QUANT_QLIB_MODEL_MODE=ranking 时记录 model_mode=ranking 且输出排序指标。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir)
+            runtime_root.mkdir(exist_ok=True)
+            config = load_qlib_config(
+                env={
+                    "QUANT_QLIB_RUNTIME_ROOT": str(runtime_root),
+                    "QUANT_QLIB_MODEL_MODE": "ranking",
+                },
+                require_explicit=True,
+            )
+            runner = QlibRunner(config=config)
+            result = runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
+        self.assertEqual(result.get("model_mode"), "ranking")
 
     def test_training_writes_dataset_snapshot_and_experiment_index(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

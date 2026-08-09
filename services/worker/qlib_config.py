@@ -240,6 +240,7 @@ class QlibRuntimeConfig:
     strict_penalty_weight: Decimal
     # ML 模型相关配置
     model_type: str
+    model_mode: str  # "binary"（二分类） | "ranking"（lambdarank 排序）
     model_params: dict[str, object]
     model_label_threshold: Decimal
     enable_ml_training: bool
@@ -628,6 +629,10 @@ def load_qlib_config(
         allowed=SUPPORTED_MODEL_TYPES,
     )
     model_params = _read_model_params(values.get("QUANT_QLIB_MODEL_PARAMS"), model_type=model_type)
+    # 模型训练模式：binary（二分类）或 ranking（lambdarank 排序学习，更贴合选币任务）
+    model_mode = str(values.get("QUANT_QLIB_MODEL_MODE", "binary") or "binary").strip().lower()
+    if model_mode not in ("binary", "ranking"):
+        model_mode = "binary"
     model_label_threshold = _read_decimal(
         values.get("QUANT_QLIB_MODEL_LABEL_THRESHOLD"),
         default=DEFAULT_MODEL_LABEL_THRESHOLD,
@@ -754,6 +759,7 @@ def load_qlib_config(
             holding_window_min_days=holding_window_min_days,
             holding_window_max_days=holding_window_max_days,
             holding_window_label=holding_window_label,
+            model_mode=model_mode,
             model_key=model_key,
             train_split_ratio=train_split_ratio,
             validation_split_ratio=validation_split_ratio,
@@ -898,6 +904,7 @@ def load_qlib_config(
         volatility_weight=volatility_weight,
         strict_penalty_weight=strict_penalty_weight,
         model_type=model_type,
+        model_mode=model_mode,
         model_params=model_params,
         model_label_threshold=model_label_threshold,
         enable_ml_training=enable_ml_training,
@@ -991,6 +998,7 @@ def _build_config(
     volatility_weight: Decimal,
     strict_penalty_weight: Decimal,
     model_type: str,
+    model_mode: str,
     model_params: dict[str, object],
     model_label_threshold: Decimal,
     enable_ml_training: bool,
@@ -1100,6 +1108,7 @@ def _build_config(
         volatility_weight=volatility_weight,
         strict_penalty_weight=strict_penalty_weight,
         model_type=model_type,
+        model_mode=model_mode,
         model_params=model_params,
         model_label_threshold=model_label_threshold,
         enable_ml_training=enable_ml_training,

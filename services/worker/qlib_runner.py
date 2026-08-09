@@ -154,6 +154,7 @@ class QlibRunner:
             "research_template": str(self._config.research_template),
             "generated_at": generated_at.isoformat(),
             "model_version": model_version,
+            "model_mode": str(metrics.get("model_mode", "binary")),
             "sample_count": len(bundle.training_rows),
             "feature_columns": list(bundle.feature_columns),
             "auxiliary_feature_columns": list(bundle.auxiliary_feature_columns),
@@ -746,22 +747,35 @@ class QlibRunner:
         from services.worker.best_params_store import BestParamsStore
 
         model_type = str(self._config.model_type)
+        model_mode = str(self._config.model_mode or "binary")
 
         # 尝试加载最优参数
         model_params = dict(self._config.model_params)
         best_params_source = "default"
 
-        try:
-            store = BestParamsStore(self._config.paths.best_params_path)
-            best_params = store.load()
+        if model_mode == "ranking":
+            # 排序模式：强制 lambdarank 参数；optuna 最优参数是 binary 调优的，不适用
+            model_params.update(
+                {
+                    "objective": "lambdarank",
+                    "metric": "ndcg",
+                    "label_gain": [0, 1, 2, 3],
+                    "ndcg_eval_at": [5],
+                }
+            )
+            best_params_source = "ranking-mode"
+        else:
+            try:
+                store = BestParamsStore(self._config.paths.best_params_path)
+                best_params = store.load()
 
-            if best_params and best_params.auc > 0.55:
-                # 使用优化过的参数
-                model_params = best_params.params
-                best_params_source = f"optimized (AUC={best_params.auc:.4f}, trials={best_params.n_trials})"
-                logger.info(f"使用优化参数训练模型: AUC={best_params.auc:.4f}, trials={best_params.n_trials}")
-        except Exception as e:
-            logger.debug(f"加载最优参数失败，使用默认参数: {e}")
+                if best_params and best_params.auc > 0.55:
+                    # 使用优化过的参数
+                    model_params = best_params.params
+                    best_params_source = f"optimized (AUC={best_params.auc:.4f}, trials={best_params.n_trials})"
+                    logger.info(f"使用优化参数训练模型: AUC={best_params.auc:.4f}, trials={best_params.n_trials}")
+            except Exception as e:
+                logger.debug(f"加载最优参数失败，使用默认参数: {e}")
 
         trainer = ModelTrainer(
             model_type=model_type,
@@ -817,6 +831,7 @@ class QlibRunner:
         # 基础返回数据
         base_result = {
             "model_type": model_type,
+            "model_mode": model_mode,
             "model_path": str(model_path),
             "model_version": result.model_version,
             "feature_averages": {},  # ML 模型不需要特征平均值
@@ -831,6 +846,8 @@ class QlibRunner:
                 "val_accuracy": result.metrics.get("val_accuracy", 0.0),
                 "train_f1": result.metrics.get("train_f1", 0.0),
                 "val_f1": result.metrics.get("val_f1", 0.0),
+                "val_ndcg_at_5": result.metrics.get("val_ndcg_at_5", 0.0),
+                "val_top5_hit_rate": result.metrics.get("val_top5_hit_rate", 0.0),
             },
             "training_context": result.training_context,
             "best_params_source": best_params_source,
