@@ -17,7 +17,9 @@ import {
 import {
   HealthStatusCard,
   HealthStatusSkeleton,
+  HealthServiceItem,
   HealthServiceStatus,
+  HealthStatus,
   getHealthStatusFallback,
 } from "../../components/health-status-card";
 import {
@@ -395,7 +397,34 @@ async function fetchHealthStatus(signal?: AbortSignal): Promise<{ data: HealthSe
     }
 
     const json = await response.json();
-    return { data: json.data?.status || json.data || null, error: null };
+
+    // 适配后端 /api/v1/health 的 containers 结构（前端期望 services 数组）
+    const rawData = json.data?.status || json.data;
+    const containers = rawData?.containers;
+    if (containers) {
+      const checkedAt = rawData.checked_at || new Date().toISOString();
+      const services: HealthServiceItem[] = Object.values(containers).map((c: any) => {
+        const health = String(c?.health || "none");
+        const status: HealthStatus =
+          health === "healthy" ? "healthy" : health === "none" ? "warning" : "unhealthy";
+        return {
+          name: String(c?.name || "unknown"),
+          status,
+          last_check: checkedAt,
+          detail: c?.error ? String(c.error) : `状态: ${String(c?.status || "unknown")}`,
+        };
+      });
+      return {
+        data: {
+          services,
+          overall_status: rawData.all_healthy ? "healthy" : "unhealthy",
+          checked_at: checkedAt,
+        },
+        error: null,
+      };
+    }
+
+    return { data: rawData || null, error: null };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       return { data: null, error: { code: "request_timeout", message: "请求超时" } };

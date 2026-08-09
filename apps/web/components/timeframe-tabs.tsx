@@ -25,7 +25,7 @@ export function TimeframeTabs({
   const intervals = supportedIntervals.length ? supportedIntervals : ["1m", "5m", "15m", "1h", "4h", "1d"];
 
   return (
-    <div className={cn("rounded-2xl border border-border/60 bg-card/70 p-3", align === "right" ? "lg:order-last" : "")}>
+    <div className={cn("rounded border border-[var(--terminal-border)] bg-[var(--terminal-panel-deep)] p-3", align === "right" ? "lg:order-last" : "")}>
       <p className="eyebrow">{align === "right" ? "高周期" : "快周期"}</p>
       <div className="grid gap-2">
         {intervals.map((interval) => {

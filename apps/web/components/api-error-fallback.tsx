@@ -1,5 +1,5 @@
 import { AlertCircle } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { TerminalCard } from "./terminal/terminal-card";
 
 type ApiErrorFallbackProps = {
   title?: string;
@@ -13,18 +13,13 @@ export function ApiErrorFallback({
   detail = "当前显示的是降级数据，请稍后刷新页面重试。",
 }: ApiErrorFallbackProps) {
   return (
-    <Card className="border-amber-500/50 bg-amber-500/10">
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <AlertCircle className="size-4 text-amber-500" />
-          <p className="eyebrow text-amber-500">降级模式</p>
-        </div>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{message}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">{detail}</p>
-      </CardContent>
-    </Card>
+    <TerminalCard title={title} className="border border-[var(--terminal-yellow)]/40! bg-[var(--terminal-yellow)]/10">
+      <div className="flex items-center gap-3 mb-2">
+        <AlertCircle className="size-4 text-[var(--terminal-yellow)]" />
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--terminal-yellow)]">降级模式</p>
+      </div>
+      <p className="text-sm text-[var(--terminal-muted)]">{message}</p>
+      <p className="text-sm text-[var(--terminal-muted)] mt-1">{detail}</p>
+    </TerminalCard>
   );
 }
