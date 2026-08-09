@@ -76,6 +76,7 @@ export default function PositionsPage() {
       currentPath="/positions"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       {isLoading && <LoadingBanner />}
 
       {/* 指标卡 */}
@@ -174,6 +175,8 @@ export default function PositionsPage() {
           </div>
         )}
       </TerminalCard>
+
+    </div>
     </TerminalShell>
   );
 }

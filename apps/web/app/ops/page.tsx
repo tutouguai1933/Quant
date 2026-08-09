@@ -199,6 +199,7 @@ export default function OpsPage() {
       currentPath="/ops"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       <MetricStrip metrics={statusMetrics} />
 
       {isLoading ? (
@@ -363,6 +364,8 @@ export default function OpsPage() {
           </TerminalCard>
         </div>
       )}
+
+    </div>
     </TerminalShell>
   );
 }

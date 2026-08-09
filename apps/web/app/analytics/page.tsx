@@ -159,6 +159,7 @@ export default function AnalyticsPage() {
       currentPath="/analytics"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       {/* 反馈横幅 */}
       <FeedbackBanner feedback={feedback} />
 
@@ -445,6 +446,8 @@ export default function AnalyticsPage() {
           </TerminalCard>
         </div>
       )}
+
+    </div>
     </TerminalShell>
   );
 }

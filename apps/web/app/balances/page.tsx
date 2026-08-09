@@ -169,6 +169,7 @@ export default function BalancesPage() {
       currentPath="/balances"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       {isLoading && <LoadingBanner />}
 
       {/* 总价值概览 */}
@@ -305,6 +306,8 @@ export default function BalancesPage() {
           </div>
         )}
       </TerminalCard>
+
+    </div>
     </TerminalShell>
   );
 }

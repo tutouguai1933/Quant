@@ -60,6 +60,7 @@ export default function MarketPage() {
       currentPath="/market"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       {isLoading ? (
         <div className="space-y-4">
           <div className="terminal-card p-4 animate-pulse">
@@ -92,6 +93,8 @@ export default function MarketPage() {
           )}
         </>
       )}
+
+    </div>
     </TerminalShell>
   );
 }

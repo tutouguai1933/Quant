@@ -165,7 +165,8 @@ export default function TrainingPage() {
       currentPath="/training"
       isAuthenticated={isAuthenticated}
     >
-      <div className="flex items-center justify-end mb-4">
+      <div className="space-y-4">
+      <div className="flex items-center justify-end">
         <Button variant="outline" size="sm" onClick={fetchData} disabled={isLoading}>
           <RefreshCw className={`size-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
           刷新
@@ -402,6 +403,8 @@ export default function TrainingPage() {
           )}
         </div>
       )}
+
+    </div>
     </TerminalShell>
   );
 }

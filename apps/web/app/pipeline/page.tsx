@@ -336,11 +336,12 @@ export default function PipelinePage() {
       currentPath="/pipeline"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       <FeedbackBanner feedback={feedback} />
       {isLoading && <LoadingBanner />}
 
       {/* 顶部进度指引 */}
-      <div className="terminal-card p-4 mb-4">
+      <div className="terminal-card p-4">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           {STEPS.map((step) => (
             <div key={step.key} className="flex items-center gap-2 text-[13px]">
@@ -381,7 +382,7 @@ export default function PipelinePage() {
       </div>
 
       {/* 第三步附加：候选数统计 */}
-      <div className="terminal-card p-4 mt-4">
+      <div className="terminal-card p-4">
         <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-[13px]">
           <span className="text-[var(--terminal-dim)]">当前候选数</span>
           <span className="text-[var(--terminal-text)] font-mono">
@@ -396,6 +397,8 @@ export default function PipelinePage() {
           </span>
         </div>
       </div>
+
+    </div>
     </TerminalShell>
   );
 }

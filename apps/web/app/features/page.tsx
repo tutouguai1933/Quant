@@ -215,6 +215,7 @@ export default function FeaturesPage() {
       currentPath="/features"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       <FeedbackBanner feedback={feedback} />
       {isLoading && <LoadingBanner />}
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
@@ -286,6 +287,8 @@ export default function FeaturesPage() {
           </div>
         )}
       </div>
+
+    </div>
     </TerminalShell>
   );
 }

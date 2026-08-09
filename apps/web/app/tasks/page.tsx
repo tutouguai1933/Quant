@@ -237,6 +237,7 @@ export default function TasksPage() {
       isAuthenticated={session.isAuthenticated}
     >
       <FeedbackBanner feedback={feedback} />
+      <div className="space-y-4">
       {/* 降级提示：后端不可达时页面仍渲染兜底数据，但明确告知用户数据可能不真实 */}
       {degradedMessage && <ErrorBanner message={degradedMessage} tone="warning" />}
       {isLoading && <LoadingBanner />}
@@ -542,6 +543,7 @@ export default function TasksPage() {
           </TerminalCard>
         </>
       )}
+      </div>
     </TerminalShell>
   );
 }

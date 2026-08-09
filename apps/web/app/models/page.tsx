@@ -150,7 +150,8 @@ export default function ModelsPage() {
       currentPath="/models"
       isAuthenticated={isAuthenticated}
     >
-      <div className="flex items-center justify-between mb-4">
+      <div className="space-y-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {selectedModels.length > 0 && (
             <span className="text-xs text-[var(--terminal-muted)]">
@@ -284,6 +285,8 @@ export default function ModelsPage() {
           </div>
         </TerminalCard>
       )}
+
+    </div>
     </TerminalShell>
   );
 }

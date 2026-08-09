@@ -75,6 +75,7 @@ export default function OrdersPage() {
       currentPath="/orders"
       isAuthenticated={session.isAuthenticated}
     >
+      <div className="space-y-4">
       {isLoading && <LoadingBanner />}
 
       {/* 指标卡 */}
@@ -203,6 +204,8 @@ export default function OrdersPage() {
           </div>
         </div>
       </TerminalCard>
+
+    </div>
     </TerminalShell>
   );
 }
