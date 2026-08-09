@@ -57,6 +57,12 @@ class MLModel:
         self.feature_names: list[str] = []
         self._is_fitted = False
 
+    @property
+    def is_ranking(self) -> bool:
+        """是否为排序学习模式（lambdarank）。"""
+
+        return str(self.params.get("objective", "")).lower() == "lambdarank"
+
     def _default_params(self) -> dict[str, Any]:
         """返回默认模型参数。"""
         if self.model_type == "lightgbm":
@@ -96,6 +102,8 @@ class MLModel:
         y: np.ndarray,
         feature_names: list[str] | None = None,
         eval_set: tuple[np.ndarray, np.ndarray] | None = None,
+        groups: np.ndarray | None = None,
+        eval_groups: np.ndarray | None = None,
     ) -> TrainingCurve:
         """训练模型。
 
@@ -104,6 +112,8 @@ class MLModel:
             y: 目标变量，形状为 (n_samples,)
             feature_names: 特征名称列表
             eval_set: 验证集元组 (X_val, y_val)
+            groups: 排序模式（lambdarank）的样本分组（每组样本数）
+            eval_groups: 验证集的样本分组
 
         Returns:
             TrainingCurve: 训练曲线数据
@@ -111,8 +121,10 @@ class MLModel:
         self.feature_names = feature_names or [f"feature_{i}" for i in range(X.shape[1])]
 
         if self.model_type == "lightgbm":
-            return self._fit_lightgbm(X, y, eval_set)
+            return self._fit_lightgbm(X, y, eval_set, groups, eval_groups)
         elif self.model_type == "xgboost":
+            if groups is not None:
+                raise ValueError("xgboost 不支持 group 分组（仅 lightgbm lambdarank 排序模式使用）")
             return self._fit_xgboost(X, y, eval_set)
         else:
             raise ValueError(f"不支持的模型类型: {self.model_type}")
@@ -122,19 +134,33 @@ class MLModel:
         X: np.ndarray,
         y: np.ndarray,
         eval_set: tuple[np.ndarray, np.ndarray] | None = None,
+        groups: np.ndarray | None = None,
+        eval_groups: np.ndarray | None = None,
     ) -> TrainingCurve:
         """训练 LightGBM 模型。"""
         import lightgbm as lgb
 
-        # 创建数据集
-        train_data = lgb.Dataset(X, label=y, feature_name=self.feature_names)
+        if self.is_ranking:
+            # 排序模式（lambdarank）：必须提供 group；binary 模式禁止传 group
+            if groups is None:
+                raise ValueError("排序模式（lambdarank）必须提供 groups 参数（每组样本数）")
+            train_data = lgb.Dataset(X, label=y, group=groups, feature_name=self.feature_names)
+        else:
+            if groups is not None:
+                raise ValueError("binary 模式不接受 groups 参数（仅排序模式使用）")
+            train_data = lgb.Dataset(X, label=y, feature_name=self.feature_names)
 
         callbacks = []
         eval_result: dict[str, list[float]] = {}
 
         if eval_set is not None:
             X_val, y_val = eval_set
-            valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+            if self.is_ranking:
+                if eval_groups is None:
+                    raise ValueError("排序模式必须提供 eval_groups 参数（验证集分组）")
+                valid_data = lgb.Dataset(X_val, label=y_val, group=eval_groups, reference=train_data)
+            else:
+                valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
             callbacks.append(lgb.record_evaluation(eval_result))
             callbacks.append(lgb.early_stopping(int(self.params.get("early_stopping_rounds", 10))))
             fit_params = {"valid_sets": [valid_data]}
@@ -154,13 +180,14 @@ class MLModel:
 
         self._is_fitted = True
 
-        # 构建训练曲线
-        steps = list(range(1, len(eval_result.get("valid_0 auc", [])) + 1))
-        train_scores = eval_result.get("training auc", [0.0] * len(steps))
-        val_scores = eval_result.get("valid_0 auc", [0.0] * len(steps))
+        # 构建训练曲线（排序模式用 ndcg@5 指标名，binary 用 auc）
+        metric_name = "ndcg@5" if self.is_ranking else "auc"
+        steps = list(range(1, len(eval_result.get(f"valid_0 {metric_name}", [])) + 1))
+        train_scores = eval_result.get(f"training {metric_name}", [0.0] * len(steps))
+        val_scores = eval_result.get(f"valid_0 {metric_name}", [0.0] * len(steps))
 
         if steps:
-            best_idx = np.argmax(val_scores)
+            best_idx = int(np.argmax(val_scores))
             best_step = steps[best_idx]
             best_score = val_scores[best_idx]
         else:
@@ -240,17 +267,23 @@ class MLModel:
         )
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """预测类别。
+        """预测。
+
+        排序模式（lambdarank）返回原始分数（可直接排序）；
+        二分类模式返回预测类别。
 
         Args:
             X: 特征矩阵，形状为 (n_samples, n_features)
 
         Returns:
-            预测类别数组
+            预测结果数组
         """
         if not self._is_fitted:
             raise RuntimeError("模型尚未训练，请先调用 fit() 方法")
 
+        if self.is_ranking:
+            # 排序模式：返回分数，由调用方排序
+            return self.model.predict(X)
         if self.model_type == "lightgbm":
             # LightGBM 返回概率，需要转换
             proba = self.model.predict(X)
@@ -259,17 +292,12 @@ class MLModel:
             return self.model.predict(X)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """预测概率。
-
-        Args:
-            X: 特征矩阵，形状为 (n_samples, n_features)
-
-        Returns:
-            预测概率数组，形状为 (n_samples, 2)
-        """
+        """预测概率（排序模式返回原始分数，形状 (n_samples,)）。"""
         if not self._is_fitted:
             raise RuntimeError("模型尚未训练，请先调用 fit() 方法")
 
+        if self.is_ranking:
+            return self.model.predict(X)
         if self.model_type == "lightgbm":
             # LightGBM 直接返回正类概率
             positive_proba = self.model.predict(X)
