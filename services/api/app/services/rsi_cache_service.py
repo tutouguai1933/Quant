@@ -21,12 +21,13 @@ class RsiCacheService:
         self._cache_file = self._cache_dir / "rsi_cache.json"
         self._lock = threading.RLock()
 
-    def get(self, interval: str = "1h", ttl_seconds: int = 300) -> dict[str, Any] | None:
+    def get(self, interval: str = "1h", ttl_seconds: int = 900) -> dict[str, Any] | None:
         """读取缓存的RSI数据。
 
         Args:
             interval: 数据间隔，如 "1h", "4h", "1d"
-            ttl_seconds: 缓存有效期，默认 5 分钟。过期后返回 None 触发重新计算
+            ttl_seconds: 缓存有效期，默认 15 分钟（RSI 是慢变量；5 分钟过期会让
+                         16 币全量重算（约 70 秒）频繁触发，曾导致 api 线程堆积卡死）
         """
         with self._lock:
             if not self._cache_file.exists():

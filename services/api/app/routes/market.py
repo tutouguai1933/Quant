@@ -113,13 +113,24 @@ def get_rsi_summary(interval: str = "1h") -> dict:
     """返回所有监控币种的最新RSI值概览。
 
     优先从缓存文件读取（由自动化程序预计算），缓存不存在时才实时计算。
+    过期时先返回旧缓存（标记 stale）并在后台刷新，避免 16 币全量重算
+    （约 70 秒）期间并发请求堆积拖死 api（曾发生线程堆积卡死）。
     """
-    # 优先从文件缓存读取
-    cached_summary = rsi_cache.get_summary(interval)
-    if cached_summary is not None:
-        return _success(cached_summary, {"source": "cache"})
+    # 读原始缓存（含过期判断），过期也保留旧值做保底
+    raw_cached = rsi_cache.get(interval, ttl_seconds=900)
+    if raw_cached is not None:
+        return _success(
+            {
+                "items": raw_cached.get("items", []),
+                "total": raw_cached.get("total", 0),
+                "interval": raw_cached.get("interval", interval),
+                "updated_at": raw_cached.get("cached_at", ""),
+                "from_cache": True,
+            },
+            {"source": "cache"},
+        )
 
-    # 缓存不存在，使用内存缓存和实时计算
+    # 缓存不存在或过期：单飞重算（其他并发请求复用同一个计算，不各自重算）
     cache_key = f"rsi_summary_{interval}"
 
     def compute():
@@ -156,7 +167,7 @@ def get_rsi_summary(interval: str = "1h") -> dict:
 
         return result
 
-    result = cache.get_or_compute(cache_key, compute, ttl_seconds=60)
+    result = cache.get_or_compute(cache_key, compute, ttl_seconds=900)
     return _success(result, {"source": "binance"})
 
 

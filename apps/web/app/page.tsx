@@ -340,7 +340,7 @@ export default function HomePage() {
           <OpenPositionsCard refreshInterval={30000} />
 
           {/* RSI概览 */}
-          <RsiSummaryCard refreshInterval={300000} />
+          <RsiSummaryCard refreshInterval={900000} />
 
           {/* 两个策略的交易记录：请求 URL 相同（limit=200），strategyType 仅在前端过滤，
               fetchJson 的 inflight 合并 + 15s 缓存会吸收重复请求 */}
