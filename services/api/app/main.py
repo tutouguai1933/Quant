@@ -111,6 +111,7 @@ async def lifespan(app: FastAPI):
     logger.info("健康监控服务已启动")
 
     # 启动 K 线定时同步（避免页面请求时现场拉币安补缺口导致卡死）
+    import os
     try:
         from services.api.app.services.kline_sync_scheduler import kline_sync_scheduler
 
@@ -120,7 +121,6 @@ async def lifespan(app: FastAPI):
         logger.warning("K 线定时同步启动失败: %s", exc)
 
     # 启动定时巡检（默认禁用，由 OpenClaw 容器统一调度）
-    import os
     auto_start = os.getenv("QUANT_PATROL_AUTO_START", "false").lower() == "true"
     interval_minutes = int(os.getenv("QUANT_PATROL_INTERVAL_MINUTES", "60"))
 
