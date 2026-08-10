@@ -238,16 +238,35 @@ class AutomationWorkflowService:
         mode = str(state.get("mode", "manual"))
         armed_symbol = str(state.get("armed_symbol", "")).strip().upper()
         if bool(state.get("paused")):
-            summary = {
-                "status": "paused",
-                "mode": mode,
-                "recommended_symbol": "",
-                "next_action": "manual_takeover",
-                "message": "自动化当前处于暂停状态",
-                "armed_symbol": armed_symbol,
-            }
-            self._automation.record_cycle(summary, count_towards_daily=False)
-            return summary
+            # 先尝试自动恢复（基础设施类失败且连续失败 ≤3 时自动恢复，否则保持暂停）
+            try:
+                auto_resume = self._automation.maybe_auto_resume()
+                if str(auto_resume.get("status", "")) == "succeeded":
+                    state = self._automation.get_state()
+                    mode = str(state.get("mode", "manual"))
+                    armed_symbol = str(state.get("armed_symbol", "")).strip().upper()
+                else:
+                    summary = {
+                        "status": "paused",
+                        "mode": mode,
+                        "recommended_symbol": "",
+                        "next_action": "manual_takeover",
+                        "message": "自动化当前处于暂停状态",
+                        "armed_symbol": armed_symbol,
+                    }
+                    self._automation.record_cycle(summary, count_towards_daily=False)
+                    return summary
+            except Exception:
+                summary = {
+                    "status": "paused",
+                    "mode": mode,
+                    "recommended_symbol": "",
+                    "next_action": "manual_takeover",
+                    "message": "自动化当前处于暂停状态",
+                    "armed_symbol": armed_symbol,
+                }
+                self._automation.record_cycle(summary, count_towards_daily=False)
+                return summary
 
         pause_after_failures = int(operations.get("pause_after_consecutive_failures", 2) or 2)
         consecutive_failures = int(run_health.get("consecutive_failure_count", 0) or 0)

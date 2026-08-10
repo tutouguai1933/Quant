@@ -290,8 +290,13 @@ class AutomationService:
         }
 
     @_synchronized
-    def resume(self, *, actor: str = "user") -> dict[str, object]:
-        """恢复自动化。"""
+    def resume(self, *, actor: str = "user", auto: bool = False) -> dict[str, object]:
+        """恢复自动化。
+
+        auto=True 表示自动恢复（maybe_auto_resume 调用）：跳过"人工确认类"
+        resume_checklist 检查——自动恢复已先验证基础设施健康与连续失败次数，
+        失败类暂停（如 VPN 故障导致的 infer 失败）无需人工点按钮。
+        """
 
         from services.api.app.tasks.scheduler import task_scheduler
 
@@ -308,16 +313,17 @@ class AutomationService:
                 "pending_items": [],
                 "resume_checklist": resume_checklist,
             }
-        pending_items = [item for item in resume_checklist if str(item.get("status", "") or "").strip().lower() == "pending"]
-        if pending_items:
-            return {
-                **self.get_state(),
-                "actor": actor,
-                "status": "blocked",
-                "blocked_reason": "resume_checklist_pending",
-                "pending_items": pending_items,
-                "resume_checklist": resume_checklist,
-            }
+        if not auto:
+            pending_items = [item for item in resume_checklist if str(item.get("status", "") or "").strip().lower() == "pending"]
+            if pending_items:
+                return {
+                    **self.get_state(),
+                    "actor": actor,
+                    "status": "blocked",
+                    "blocked_reason": "resume_checklist_pending",
+                    "pending_items": pending_items,
+                    "resume_checklist": resume_checklist,
+                }
         if self._mode == "auto_live" and not self._armed_symbol:
             return {
                 **self.get_state(),
@@ -348,6 +354,71 @@ class AutomationService:
             "pending_items": [],
             "resume_checklist": [dict(item) for item in list(health_after.get("resume_checklist") or [])],
         }
+
+    # 允许自动恢复的暂停原因（周期执行失败类，属基础设施/流程故障而非人为强制）
+    _AUTO_RESUMABLE_REASONS = frozenset(
+        {
+            "workflow_train_failed",
+            "workflow_infer_failed",
+            "workflow_signal_output_failed",
+            "dispatch_execution_failed",
+            "consecutive_failure_guard_triggered",
+            "stale_sync_guard_triggered",
+        }
+    )
+
+    # 自动恢复的最大连续失败次数（含）：≤ 该值可自动恢复，超过则必须人工
+    _AUTO_RESUME_MAX_FAILURES = 3
+
+    @_synchronized
+    def maybe_auto_resume(self) -> dict[str, object]:
+        """按容错策略尝试自动恢复自动化。
+
+        条件（全部满足才恢复）：
+        1. 处于暂停/人工接管状态
+        2. 暂停原因是"周期失败类"（基础设施/流程故障），非 kill_switch、非人工主动暂停
+        3. 连续失败次数 ≤ 3（用户容错标准：4 次及以上转人工）
+        4. 关键服务健康（api/web/freqtrade 可达），避免恢复后立即再次失败
+
+        Returns:
+            恢复结果（未恢复时 status=skipped 并附原因）
+        """
+        if not (self._paused and self._manual_takeover):
+            return {"status": "skipped", "reason": "not_paused"}
+        if self._paused_reason == "kill_switch":
+            return {"status": "skipped", "reason": "kill_switch_requires_manual"}
+        if str(self._paused_reason or "") not in self._AUTO_RESUMABLE_REASONS:
+            return {
+                "status": "skipped",
+                "reason": f"pause_reason_not_auto_resumable: {self._paused_reason}",
+            }
+        if self._consecutive_failure_count > self._AUTO_RESUME_MAX_FAILURES:
+            return {
+                "status": "skipped",
+                "reason": f"consecutive_failures_exceeded: {self._consecutive_failure_count} > {self._AUTO_RESUME_MAX_FAILURES}",
+            }
+        # 基础设施健康检查：api/web/freqtrade 需全部可达
+        try:
+            from services.api.app.services.service_health_service import service_health_service
+
+            health = service_health_service.get_all_health()
+            services = dict(health.get("services") or {})
+            unreachable = [
+                name for name, info in services.items() if not bool(info.get("reachable", False))
+            ]
+            if unreachable:
+                return {"status": "skipped", "reason": f"infra_unhealthy: {','.join(unreachable)}"}
+        except Exception as exc:
+            return {"status": "skipped", "reason": f"health_check_error: {exc}"}
+
+        # 满足条件，自动恢复（actor 标记 auto_recovery 便于审计区分）
+        self.record_alert(
+            level="info",
+            code="auto_recovery_triggered",
+            message=f"基础设施已恢复，自动恢复自动化（连续失败 {self._consecutive_failure_count} 次）",
+            source="auto_recovery",
+        )
+        return self.resume(actor="auto_recovery", auto=True)
 
     @_synchronized
     def arm_symbol(self, symbol: str) -> dict[str, object]:

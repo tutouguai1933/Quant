@@ -1655,5 +1655,112 @@ class _FakeSettings:
         self.allow_live_execution = runtime_mode == "live"
 
 
+class AutomationAutoResumeTests(unittest.TestCase):
+    """maybe_auto_resume 自动恢复策略测试（独立 setUp 隔离状态文件）。"""
+
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self._original_automation_config_service = automation_service_module.workbench_config_service
+        isolated_config = WorkbenchConfigService(
+            config_path=Path(self._temp_dir.name) / "workbench_config.json"
+        )
+        automation_service_module.workbench_config_service = isolated_config
+        self._env_patcher = mock.patch.dict(
+            os.environ,
+            {"QUANT_AUTOMATION_STATE_PATH": str(Path(self._temp_dir.name) / "automation.json")},
+            clear=False,
+        )
+        self._env_patcher.start()
+
+    def tearDown(self) -> None:
+        self._env_patcher.stop()
+        automation_service_module.workbench_config_service = self._original_automation_config_service
+        self._temp_dir.cleanup()
+
+    def test_maybe_auto_resume_skips_when_not_paused(self) -> None:
+        """未暂停时自动恢复直接跳过。"""
+        service = AutomationService()
+        service.configure_mode("auto_dry_run", actor="tester")
+        result = service.maybe_auto_resume()
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["reason"], "not_paused")
+
+    def test_maybe_auto_resume_skips_kill_switch(self) -> None:
+        """kill_switch 暂停不自动恢复（必须人工）。"""
+        service = AutomationService()
+        service.configure_mode("auto_dry_run", actor="tester")
+        service.manual_takeover(reason="kill_switch", actor="system")
+        result = service.maybe_auto_resume()
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["reason"], "kill_switch_requires_manual")
+
+    def test_maybe_auto_resume_skips_manual_reason(self) -> None:
+        """非周期失败类原因（如人工主动暂停）不自动恢复。"""
+        service = AutomationService()
+        service.configure_mode("auto_dry_run", actor="tester")
+        service.manual_takeover(reason="manual_review", actor="user")
+        result = service.maybe_auto_resume()
+        self.assertEqual(result["status"], "skipped")
+        self.assertTrue(str(result["reason"]).startswith("pause_reason_not_auto_resumable"))
+
+    def test_maybe_auto_resume_skips_when_failures_exceeded(self) -> None:
+        """连续失败超过 3 次不自动恢复（用户容错标准：4 次转人工）。"""
+        service = AutomationService()
+        service.configure_mode("auto_dry_run", actor="tester")
+        service.manual_takeover(reason="workflow_infer_failed", actor="openclaw")
+        # 模拟连续失败 4 次
+        for _ in range(4):
+            service.record_cycle({"status": "attention_required", "mode": "auto_dry_run"})
+        result = service.maybe_auto_resume()
+        self.assertEqual(result["status"], "skipped")
+        self.assertTrue(str(result["reason"]).startswith("consecutive_failures_exceeded"))
+
+    def test_maybe_auto_resume_recovers_when_infra_healthy(self) -> None:
+        """周期失败类 + 连续失败 <=3 + 服务健康 → 自动恢复。"""
+        service = AutomationService()
+        service.configure_mode("auto_dry_run", actor="tester")
+        service.manual_takeover(reason="workflow_infer_failed", actor="openclaw")
+        service.record_cycle({"status": "attention_required", "mode": "auto_dry_run"})
+
+        with mock.patch(
+            "services.api.app.services.service_health_service.service_health_service.get_all_health",
+            return_value={
+                "services": {
+                    "api": {"reachable": True},
+                    "web": {"reachable": True},
+                    "freqtrade": {"reachable": True},
+                }
+            },
+        ):
+            result = service.maybe_auto_resume()
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertFalse(result["paused"])
+        self.assertEqual(result["actor"], "auto_recovery")
+
+    def test_maybe_auto_resume_skips_when_infra_unhealthy(self) -> None:
+        """服务不健康时不自动恢复（避免恢复后立即再次失败）。"""
+        service = AutomationService()
+        service.configure_mode("auto_dry_run", actor="tester")
+        service.manual_takeover(reason="workflow_infer_failed", actor="openclaw")
+        service.record_cycle({"status": "attention_required", "mode": "auto_dry_run"})
+
+        with mock.patch(
+            "services.api.app.services.service_health_service.service_health_service.get_all_health",
+            return_value={
+                "services": {
+                    "api": {"reachable": True},
+                    "web": {"reachable": True},
+                    "freqtrade": {"reachable": False},
+                }
+            },
+        ):
+            result = service.maybe_auto_resume()
+
+        self.assertEqual(result["status"], "skipped")
+        self.assertTrue(str(result["reason"]).startswith("infra_unhealthy"))
+
+
+
 if __name__ == "__main__":
     unittest.main()
