@@ -128,7 +128,7 @@ class Settings:
             raise ValueError("QUANT_FREQTRADE_API_TIMEOUT_SECONDS 必须是数字") from exc
         if freqtrade_api_timeout_seconds <= 0:
             raise ValueError("QUANT_FREQTRADE_API_TIMEOUT_SECONDS 必须大于 0")
-        raw_max_total = os.getenv("QUANT_FREQTRADE_API_MAX_TOTAL_TIMEOUT_SECONDS", "20").strip() or "20"
+        raw_max_total = os.getenv("QUANT_FREQTRADE_API_MAX_TOTAL_TIMEOUT_SECONDS", "8").strip() or "8"
         try:
             freqtrade_api_max_total_timeout_seconds = float(raw_max_total)
         except ValueError as exc:

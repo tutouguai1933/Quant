@@ -88,7 +88,7 @@ class FreqtradeRestConfig:
     username: str
     password: str
     timeout_seconds: float = 10.0
-    max_retries: int = 3
+    max_retries: int = 1  # freqtrade 挂起时快速失败，避免多次重试占满线程池
     base_delay: float = 0.5
     max_total_timeout_seconds: float = 120.0
 
