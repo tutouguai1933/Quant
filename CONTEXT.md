@@ -56,6 +56,14 @@
 - **验证**：rsi-summary 69s→7ms；线程 39→9；页面 5.4s 加载完成、API 全 200
 - **经验**：py-spy 抓线程栈（faulthandler 在 docker exec 新进程无效）；performance 日志的慢接口统计是定位元凶的关键
 
+### 10. 页面卡死连环修复（08-11，三个独立根因）
+- **根因1（本次新发现，最隐蔽）**：health_monitor_service 在 uvicorn 主事件循环里**同步执行 docker 命令**（subprocess.run timeout=30s × 7 容器），docker daemon 响应慢时事件循环被阻塞最长 210 秒 → api 所有请求无响应（请求根本进不了 uvicorn）→ 页面"数据加载中"卡死。修复：asyncio.to_thread 移到线程池 + 超时 30→5 秒。**py-spy 显示主线程卡在 subprocess 是定位关键**
+- **根因2**：日本节点线路（45.95.212.x）对币安整体不稳定（kline 0.5s~9.7s 波动），日本¹ 一天切换 117 次；每次切换触发 freqtrade 全量重启（1-2 分钟）→ 期间接口超时。修复：VPN 去抖（FAIL_THRESHOLD 2→5、RECOVER 2→5、OBSERVE 120→1800s）+ freqtrade 快速失败（总超时 20→8s、不重试）
+- **根因3**：主节点更换后 mihomo 出口需手动同步（配置变更不自动切出口）
+- **主节点最终方案**：★ 香港³ | Gemini（白名单 152.175.1.118，kline 稳定 0.6-0.9s）；香港⁴（152.175.1.123）为第一备份；香港² 出口 IP 不在币安白名单不可用
+- **教训**：docker restart 不重新读取 env_file（需 compose up 重建）；验证 VPN 配置要看容器内 env 而非宿主机文件
+- 注意：mihomo 出口曾漂回日本¹（原因未完全定位，怀疑 select 组默认选择），当前已手动切回香港³ 并稳定 10 分钟+，需持续观察
+
 ### 6. 全库代码审查与优化（5 个并行 agent）
 - 审查：4 个 agent 覆盖 13.3 万行代码，产出 60+ 优化点；安全漏洞类（默认密码/接口无鉴权）按用户要求跳过
 - 修复（按优先级 6-29）：
