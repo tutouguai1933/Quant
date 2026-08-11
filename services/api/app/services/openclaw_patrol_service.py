@@ -380,6 +380,20 @@ class OpenclawPatrolService:
         runtime_guard = dict(snapshot.get("runtime_guard") or {})
         suggested_action = dict(snapshot.get("suggested_action") or {})
 
+        # 自动化暂停时尝试自动恢复（基础设施类失败且连续失败<=3 时恢复，
+        # 恢复后 suggested_action 会变为 run_cycle，下一轮巡检自然触发周期）
+        try:
+            from services.api.app.services.automation_service import automation_service
+
+            auto_resume = automation_service.maybe_auto_resume()
+            if str(auto_resume.get("status", "")) == "succeeded":
+                logger.info("自动恢复自动化成功（周期检查入口触发）")
+                # 刷新快照，重新取 suggested_action
+                snapshot = self._snapshot_service.get_snapshot()
+                suggested_action = dict(snapshot.get("suggested_action") or {})
+        except Exception as exc:
+            logger.warning("周期检查入口自动恢复尝试失败: %s", exc)
+
         # 检查是否建议运行周期
         action = str(suggested_action.get("action", ""))
         auto_run_allowed = bool(suggested_action.get("auto_run_allowed", False))
