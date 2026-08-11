@@ -24,6 +24,6 @@ def test_compute_short_hit_rate() -> None:
         {"symbol": "D", "future_return_pct": "0.0"},   # 平（不计入命中分母）
     ]
     result = compute_short_hit_rate(pairs)
-    assert result["hit_rate"] == 0.5
+    assert result["hit_rate"] == round(2 / 3, 4)  # A、C 命中（未来收益为负）
     assert result["sample_count"] == 3
     assert result["avg_return"] == round((1.0 - 0.5 + 0.2) / 3, 4)  # 平均做空收益为正
