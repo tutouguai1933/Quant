@@ -115,7 +115,7 @@ class HealthMonitorService:
                 ["docker"] + args,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=5,
             )
             if result.returncode == 0:
                 return True, result.stdout.strip()
@@ -294,7 +294,9 @@ class HealthMonitorService:
 
         while self._running:
             try:
-                result = self.check_all_services()
+                # 同步 docker 检查移到线程池执行：避免阻塞 uvicorn 事件循环
+                # （docker daemon 响应慢时曾导致 api 整体卡死、请求全部超时）
+                result = await asyncio.to_thread(self.check_all_services)
 
                 # 推送异常告警
                 if self._config.alert_on_unhealthy:
