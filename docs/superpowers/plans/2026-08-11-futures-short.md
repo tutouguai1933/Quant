@@ -1,5 +1,18 @@
 # 合约做空：阶段 0 验证 + 阶段 1 模拟盘 实施计划
 
+## 更新（08-13）：方向做空验证通过，方案改为"方向做空 BTC"
+
+- 截面选币做空（原方案）：❌ 已验证 ≈随机，放弃
+- **时序方向做空（新方案）：✅ 已通过 OOS 验证**（TEST 段命中率 77.8%、平均收益 +2.58%/次）
+  - 规则：模型 16 币平均分数 < 0.38（极度看跌）时做空 BTCUSDT；回升 > 0.45 平仓
+  - 触发频率约 8% 时间点（保守）
+- 实施方式改为 **api 侧调度**（openclaw 巡检检查方向 → forceenter short）：
+  - api 新增市场方向接口（读 latest_inference 平均分数）
+  - 方向做空调度服务（空头仓位状态机：开空/平空）
+  - futures 模拟盘独立容器（9014）先行验证 1-2 周
+  - 实盘需币安合约账户+key（用户后续准备）
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** ①验证模型"做空方向"（选最低分币做空）是否有效（命中率 ≥55% 硬门槛）；②搭建 freqtrade futures 模拟盘并验证做空信号到下单的完整链路，为后续实盘合约做准备。
