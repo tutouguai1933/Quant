@@ -99,6 +99,15 @@
 - **修复**：docker builder prune -a 清 16.7GB + docker image prune 清 3GB → 磁盘 91%→46%（可用 21G）；api 重启恢复；freqtrade 手动 start 恢复 RUNNING；自动化自动恢复
 - **预防**：磁盘 >85% 时应清理 build cache；建议加磁盘告警
 
+
+### 12. 方向做空落地（08-12，模拟盘验证通过）
+- **验证结论**（scripts/run_direction_short.py，OOS 隔离）：模型 16 币平均分数 <0.38 时做空 BTC，TEST 段命中率 77.8%、平均收益 +2.58%/次（模型方向判断可靠，区别于"选币做空≈随机"）
+- **落地架构**：api 侧调度（openclaw 巡检 cycle_check → direction_short_service 决策 → 独立 freqtrade 客户端 forceenter short BTC/USDT:USDT），与实盘 9013 完全隔离
+- **模拟盘**：quant-freqtrade-sim 容器（futures dry_run，9014，杠杆 1x，独立 sqlite）
+- **踩坑记录**：期货交易对格式 BTC/USDT:USDT（_normalize_symbol 已支持）；ccxt 4.5 代理参数 aiohttp_proxy 失效需用 proxies（双保险+环境变量）；forceenter 超时但成交需查持仓同步状态
+- **当前状态**：模拟盘已开空 BTC（avg=0.370 触发），状态机运行中；观察期 1-2 周
+- **后续**：实盘需币安合约账户+key；模拟盘观察收益后决定
+
 ## 上次进度（2026-08-08）
 
 ### 前端数据链路修复与重构（计划：docs/superpowers/plans/2026-08-08-frontend-refactor.md）
