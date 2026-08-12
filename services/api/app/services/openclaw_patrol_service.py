@@ -875,8 +875,9 @@ class OpenclawPatrolService:
 
         if action == "open_short":
             try:
+                # 期货模式下交易对格式为 BTC/USDT:USDT（币安永续合约）
                 sim_client.submit_execution_action({
-                    "symbol": "BTCUSDT",
+                    "symbol": "BTC/USDT:USDT",
                     "side": "short",
                     "quantity": 1,
                 })
