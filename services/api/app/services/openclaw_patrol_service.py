@@ -186,6 +186,15 @@ class OpenclawPatrolService:
                 patrol_status = dispatch_result.get("patrol_status", patrol_status)
                 patrol_message = dispatch_result.get("message", patrol_message)
 
+        # 5. 方向做空检查（cycle_check 或 full；模型极度看跌时做空 BTC 的调度）
+        if patrol_type in ("cycle_check", "full"):
+            try:
+                direction_result = self._check_direction_short()
+                if direction_result.get("action_taken"):
+                    actions_taken.append(direction_result)
+            except Exception as exc:
+                logger.warning("方向做空检查失败: %s", exc)
+
         # 记录巡检结果
         patrol_record = {
             "patrol_type": patrol_type,
@@ -820,6 +829,73 @@ class OpenclawPatrolService:
         with self._lock:
             self._vpn_switch_counter = {}
             self._save()
+
+    def _check_direction_short(self) -> dict[str, Any]:
+        """方向做空检查：模型极度看跌时做空 BTCUSDT（futures 模拟盘/实盘）。
+
+        决策来自 direction_short_service（阈值来自 OOS 验证：<0.38 开空、>0.45 平空）。
+        执行通过 freqtrade 客户端 forceenter/forceexit（仅限 futures 后端）。
+
+        Returns:
+            {action_taken, action, message}
+        """
+        from services.api.app.adapters.freqtrade.client import freqtrade_client
+        from services.api.app.core.settings import Settings
+        from services.api.app.services.direction_short_service import direction_short_service
+        from services.api.app.services.research_service import research_service
+
+        # 1. 读取模型平均分数（最近一次推理）
+        latest = research_service.get_latest_result()
+        inference = dict(latest.get("latest_inference") or {})
+        signals = list(inference.get("signals") or [])
+        if not signals:
+            return {"action_taken": False, "action": "direction_short", "message": "无推理信号，跳过方向做空"}
+        avg_score = sum(float(str(s.get("score", "0"))) for s in signals) / len(signals)
+
+        # 2. 决策
+        decision = direction_short_service.decide(avg_score=avg_score)
+        action = str(decision.get("action", "hold"))
+
+        if action == "open_short":
+            try:
+                settings = Settings.from_env()
+                if not settings.has_freqtrade_rest_config():
+                    return {"action_taken": False, "action": "direction_short", "message": "未配置 freqtrade REST，跳过"}
+                # 开空 BTCUSDT（futures 模拟盘）
+                result = freqtrade_client.submit_execution_action({
+                    "symbol": "BTCUSDT",
+                    "side": "short",
+                    "quantity": 1,
+                })
+                direction_short_service.mark_short_open(symbol="BTCUSDT")
+                logger.info("方向做空开仓: avg=%.4f result=%s", avg_score, str(result)[:120])
+                return {
+                    "action_taken": True,
+                    "action": "direction_short_open",
+                    "message": f"模型极度看跌（avg={avg_score:.3f}<0.38），已开空 BTCUSDT",
+                }
+            except Exception as exc:
+                logger.warning("方向做空开仓失败: %s", exc)
+                return {"action_taken": False, "action": "direction_short", "message": f"开空失败: {exc}"}
+
+        if action == "close_short":
+            try:
+                result = freqtrade_client.submit_execution_action({
+                    "symbol": "BTCUSDT",
+                    "side": "flat",
+                })
+                direction_short_service.mark_short_closed()
+                logger.info("方向做空平仓: avg=%.4f", avg_score)
+                return {
+                    "action_taken": True,
+                    "action": "direction_short_close",
+                    "message": f"模型转暖（avg={avg_score:.3f}>0.45），已平空 BTCUSDT",
+                }
+            except Exception as exc:
+                logger.warning("方向做空平仓失败: %s", exc)
+                return {"action_taken": False, "action": "direction_short", "message": f"平空失败: {exc}"}
+
+        return {"action_taken": False, "action": "direction_short", "message": f"方向做空保持（avg={avg_score:.3f}）"}
 
     def _check_auto_dispatch(self, snapshot: dict) -> dict[str, Any]:
         """检查是否需要自动派发信号。

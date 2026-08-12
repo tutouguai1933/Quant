@@ -116,6 +116,45 @@ def get_research_runtime() -> dict:
     )
 
 
+@router.get("/research/market-direction")
+def get_market_direction() -> dict:
+    """返回模型的市场方向判断（16 币平均上涨概率）。
+
+    供方向做空调度使用：平均分数 < 0.38 视为极度看跌（做空信号），
+    > 0.45 视为转暖（平空信号）。数据来自最近一次推理的 signals。
+    """
+    item = research_service.get_latest_result()
+    inference = dict(item.get("latest_inference") or {})
+    signals = list(inference.get("signals") or [])
+    if not signals:
+        return _success(
+            {
+                "avg_score": None,
+                "direction": "unknown",
+                "signal_count": 0,
+                "model_version": str(inference.get("model_version", "")),
+                "generated_at": str(inference.get("generated_at", "")),
+                "short_trigger": False,
+                "flat_trigger": False,
+            },
+            {"source": "control-plane-api", "action": "market-direction", "status": "no_signals"},
+        )
+    scores = [float(str(s.get("score", "0"))) for s in signals]
+    avg_score = sum(scores) / len(scores)
+    return _success(
+        {
+            "avg_score": round(avg_score, 4),
+            "direction": "bearish" if avg_score < 0.38 else ("bullish" if avg_score > 0.55 else "neutral"),
+            "signal_count": len(scores),
+            "model_version": str(inference.get("model_version", "")),
+            "generated_at": str(inference.get("generated_at", "")),
+            "short_trigger": avg_score < 0.38,
+            "flat_trigger": avg_score > 0.45,
+        },
+        {"source": "control-plane-api", "action": "market-direction"},
+    )
+
+
 @router.post("/research/train")
 def run_research_training(token: str = "", authorization: str = Header("")) -> dict:
     try:

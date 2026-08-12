@@ -36,3 +36,20 @@ services:
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PRIVATE_CONFIG:-config.private.json}
       --config /freqtrade/user_data/${QUANT_FREQTRADE_PROXY_CONFIG:-config.proxy.noop.json}
       --strategy ${QUANT_FREQTRADE_STRATEGY:-SampleStrategy}
+
+  # 合约模拟盘（futures dry_run，方向做空验证专用，端口 9014，与实盘 9013 完全隔离）
+  freqtrade-sim:
+    image: ${QUANT_FREQTRADE_IMAGE:-freqtradeorg/freqtrade:stable}
+    container_name: ${QUANT_FREQTRADE_SIM_CONTAINER_NAME:-quant-freqtrade-sim}
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    environment:
+      HTTP_PROXY: ${QUANT_PROXY_HTTP:-}
+      HTTPS_PROXY: ${QUANT_PROXY_HTTP:-}
+      NO_PROXY: ${NO_PROXY:-127.0.0.1,localhost,freqtrade,mihomo}
+    command: >
+      trade
+      --config /freqtrade/user_data/config.futures.sim.json
+      --strategy EnhancedStrategy
