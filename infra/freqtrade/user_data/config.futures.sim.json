@@ -33,11 +33,19 @@
     "secret": "",
     "enable_ws": false,
     "ccxt_config": {
-      "enableRateLimit": true
+      "enableRateLimit": true,
+      "proxies": {
+        "http": "http://127.0.0.1:7890",
+        "https": "http://127.0.0.1:7890"
+      }
     },
     "ccxt_async_config": {
       "enableRateLimit": true,
-      "rateLimit": 200
+      "rateLimit": 200,
+      "proxies": {
+        "http": "http://127.0.0.1:7890",
+        "https": "http://127.0.0.1:7890"
+      }
     },
     "pair_whitelist": [
       "BTC/USDT:USDT"
