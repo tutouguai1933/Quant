@@ -91,6 +91,14 @@
 
 ---
 
+
+### 11. Freqtrade 停止排查（08-12，磁盘满根因）
+- **现象**：freqtrade 显示"已停止"，api 反复卡死（health 8 秒超时）
+- **根因链**：磁盘 91% 满 + IO 打满（util 91%）→ api 主线程 import 模块卡在磁盘读 → 事件循环阻塞 → api 卡死 → 自动化周期 infer 失败 → manual_takeover → freqtrade 同步暂停
+- **磁盘大头**：Docker Build Cache 17GB + 旧镜像 21GB（docker system df 确认）
+- **修复**：docker builder prune -a 清 16.7GB + docker image prune 清 3GB → 磁盘 91%→46%（可用 21G）；api 重启恢复；freqtrade 手动 start 恢复 RUNNING；自动化自动恢复
+- **预防**：磁盘 >85% 时应清理 build cache；建议加磁盘告警
+
 ## 上次进度（2026-08-08）
 
 ### 前端数据链路修复与重构（计划：docs/superpowers/plans/2026-08-08-frontend-refactor.md）
