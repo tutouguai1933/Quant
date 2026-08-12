@@ -831,16 +831,21 @@ class OpenclawPatrolService:
             self._save()
 
     def _check_direction_short(self) -> dict[str, Any]:
-        """方向做空检查：模型极度看跌时做空 BTCUSDT（futures 模拟盘/实盘）。
+        """方向做空检查：模型极度看跌时做空 BTCUSDT（futures 模拟盘）。
 
         决策来自 direction_short_service（阈值来自 OOS 验证：<0.38 开空、>0.45 平空）。
-        执行通过 freqtrade 客户端 forceenter/forceexit（仅限 futures 后端）。
+        执行通过独立的 freqtrade 客户端（指向模拟盘 9014，与实盘 9013 完全隔离）。
+        QUANT_DIRECTION_SHORT_FREQTRADE_URL 可切换（实盘时改为实盘地址）。
 
         Returns:
             {action_taken, action, message}
         """
-        from services.api.app.adapters.freqtrade.client import freqtrade_client
-        from services.api.app.core.settings import Settings
+        import os
+
+        from services.api.app.adapters.freqtrade.rest_client import (
+            FreqtradeRestClient,
+            FreqtradeRestConfig,
+        )
         from services.api.app.services.direction_short_service import direction_short_service
         from services.api.app.services.research_service import research_service
 
@@ -856,23 +861,31 @@ class OpenclawPatrolService:
         decision = direction_short_service.decide(avg_score=avg_score)
         action = str(decision.get("action", "hold"))
 
+        # 3. 独立客户端（默认模拟盘 9014，与实盘隔离）
+        sim_url = os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_URL", "http://127.0.0.1:9014").strip()
+        sim_client = FreqtradeRestClient(
+            FreqtradeRestConfig(
+                base_url=sim_url,
+                username=os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_USERNAME", "Freqtrader"),
+                password=os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_PASSWORD", "jianyu0.0."),
+                timeout_seconds=8,
+                max_total_timeout_seconds=10,
+            )
+        )
+
         if action == "open_short":
             try:
-                settings = Settings.from_env()
-                if not settings.has_freqtrade_rest_config():
-                    return {"action_taken": False, "action": "direction_short", "message": "未配置 freqtrade REST，跳过"}
-                # 开空 BTCUSDT（futures 模拟盘）
-                result = freqtrade_client.submit_execution_action({
+                sim_client.submit_execution_action({
                     "symbol": "BTCUSDT",
                     "side": "short",
                     "quantity": 1,
                 })
                 direction_short_service.mark_short_open(symbol="BTCUSDT")
-                logger.info("方向做空开仓: avg=%.4f result=%s", avg_score, str(result)[:120])
+                logger.info("方向做空开仓(模拟盘 %s): avg=%.4f", sim_url, avg_score)
                 return {
                     "action_taken": True,
                     "action": "direction_short_open",
-                    "message": f"模型极度看跌（avg={avg_score:.3f}<0.38），已开空 BTCUSDT",
+                    "message": f"模型极度看跌（avg={avg_score:.3f}<0.38），已开空 BTCUSDT（模拟盘）",
                 }
             except Exception as exc:
                 logger.warning("方向做空开仓失败: %s", exc)
@@ -880,16 +893,16 @@ class OpenclawPatrolService:
 
         if action == "close_short":
             try:
-                result = freqtrade_client.submit_execution_action({
+                sim_client.submit_execution_action({
                     "symbol": "BTCUSDT",
                     "side": "flat",
                 })
                 direction_short_service.mark_short_closed()
-                logger.info("方向做空平仓: avg=%.4f", avg_score)
+                logger.info("方向做空平仓(模拟盘 %s): avg=%.4f", sim_url, avg_score)
                 return {
                     "action_taken": True,
                     "action": "direction_short_close",
-                    "message": f"模型转暖（avg={avg_score:.3f}>0.45），已平空 BTCUSDT",
+                    "message": f"模型转暖（avg={avg_score:.3f}>0.45），已平空 BTCUSDT（模拟盘）",
                 }
             except Exception as exc:
                 logger.warning("方向做空平仓失败: %s", exc)
