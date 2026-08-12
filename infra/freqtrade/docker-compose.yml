@@ -52,4 +52,5 @@ services:
     command: >
       trade
       --config /freqtrade/user_data/config.futures.sim.json
+      --config /freqtrade/user_data/config.proxy.mihomo.json
       --strategy EnhancedStrategy
