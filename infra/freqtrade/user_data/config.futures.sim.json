@@ -64,6 +64,8 @@
     "enabled": true,
     "listen_ip_address": "0.0.0.0",
     "listen_port": 9014,
+    "username": "Freqtrader",
+    "password": "jianyu0.0.",
     "verbosity": "error",
     "enable_openapi": false,
     "CORS_origins": []
