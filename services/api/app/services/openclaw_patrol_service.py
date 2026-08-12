@@ -875,7 +875,6 @@ class OpenclawPatrolService:
 
         if action == "open_short":
             try:
-                # 期货模式下交易对格式为 BTC/USDT:USDT（币安永续合约）
                 sim_client.submit_execution_action({
                     "symbol": "BTC/USDT:USDT",
                     "side": "short",
@@ -889,6 +888,20 @@ class OpenclawPatrolService:
                     "message": f"模型极度看跌（avg={avg_score:.3f}<0.38），已开空 BTCUSDT（模拟盘）",
                 }
             except Exception as exc:
+                # forceenter 可能超时但订单实际成交：查询实际持仓确认真实状态
+                try:
+                    trades = sim_client.list_open_trades()
+                    has_short = any(str(t.get("is_short", "")).lower() == "true" for t in trades)
+                    if has_short:
+                        direction_short_service.mark_short_open(symbol="BTCUSDT")
+                        logger.info("方向做空开仓确认（forceenter 超时但持仓已存在）")
+                        return {
+                            "action_taken": True,
+                            "action": "direction_short_open",
+                            "message": f"开空确认成功（avg={avg_score:.3f}，forceenter 超时但持仓已开）",
+                        }
+                except Exception:
+                    pass
                 logger.warning("方向做空开仓失败: %s", exc)
                 return {"action_taken": False, "action": "direction_short", "message": f"开空失败: {exc}"}
 
