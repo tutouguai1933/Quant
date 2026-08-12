@@ -25,9 +25,24 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_symbol(symbol: str) -> str:
-    """把控制平面的交易对符号归一成 Freqtrade 使用的 pair。"""
+    """把控制平面的交易对符号归一成 Freqtrade 使用的 pair。
 
-    compact = symbol.strip().upper().replace("/", "")
+    支持现货格式（BTCUSDT → BTC/USDT）和期货格式（BTC/USDT:USDT 保持、
+    BTCUSDT:USDT → BTC/USDT:USDT）。
+    """
+
+    raw = symbol.strip().upper()
+    if ":" in raw:
+        # 期货格式：BASE/QUOTE:SETTLE
+        base_settle = raw.split(":", 1)
+        pair_part = base_settle[0].replace("/", "")
+        settle = base_settle[1]
+        if pair_part.endswith(settle) and len(pair_part) > len(settle):
+            base = pair_part[: -len(settle)]
+        else:
+            base = pair_part
+        return f"{base}/{settle}:{settle}"
+    compact = raw.replace("/", "")
     if not compact:
         raise ValueError("symbol must not be empty")
     if compact.endswith("USDT") and len(compact) > 4:
