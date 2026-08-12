@@ -154,7 +154,7 @@ def train_evaluate(rows: list[dict[str, Any]], feature_cols: list[str]) -> dict[
     }
 
 
-def simulate_top_k_picking(val_rows: list[dict[str, Any]], model: Any, k: int = 3) -> dict[str, Any]:
+def simulate_top_k_picking(val_rows: list[dict[str, Any]], model: Any, feature_cols: list[str], k: int = 3) -> dict[str, Any]:
     """模拟"买相对最强的 top-k"的收益（用模型的绝对分数排序，横截面选币）。
 
     每个时间点：按模型分数排序，买 top-k，按未来收益结算。
@@ -170,7 +170,7 @@ def simulate_top_k_picking(val_rows: list[dict[str, Any]], model: Any, k: int = 
         group = ts_groups[ts]
         if len(group) < k:
             continue
-        X = np.array([[float(r.get(c, 0)) for c in BASE_FEATURE_COLS] for r in group])
+        X = np.array([[float(r.get(c, 0)) for c in feature_cols] for r in group])
         proba = model.predict_proba(X)
         scores = proba[:, 1] if proba.ndim > 1 else proba
         order = np.argsort(-scores)[:k]
@@ -202,7 +202,7 @@ def main() -> int:
     print("\n=== 实验 A: 基础 17 特征 ===", flush=True)
     base_result = train_evaluate([dict(r) for r in rows], BASE_FEATURE_COLS)
     print(f"  val_auc={base_result['val_auc']} train_auc={base_result['train_auc']}", flush=True)
-    topk_base = simulate_top_k_picking(base_result["val_rows"], base_result["model"])
+    topk_base = simulate_top_k_picking(base_result["val_rows"], base_result["model"], BASE_FEATURE_COLS)
     print(f"  top-3 选币: 平均收益={topk_base['avg_return']}% 胜率={topk_base['positive_rate']} 轮数={topk_base['rounds']}", flush=True)
 
     # 实验 B：基础 + 横截面特征
@@ -210,7 +210,7 @@ def main() -> int:
     enriched = add_cross_features([dict(r) for r in rows], kline_dir)
     cross_result = train_evaluate(enriched, BASE_FEATURE_COLS + CROSS_COLS)
     print(f"  val_auc={cross_result['val_auc']} train_auc={cross_result['train_auc']}", flush=True)
-    topk_cross = simulate_top_k_picking(cross_result["val_rows"], cross_result["model"])
+    topk_cross = simulate_top_k_picking(cross_result["val_rows"], cross_result["model"], BASE_FEATURE_COLS + CROSS_COLS)
     print(f"  top-3 选币: 平均收益={topk_cross['avg_return']}% 胜率={topk_cross['positive_rate']} 轮数={topk_cross['rounds']}", flush=True)
 
     print("\n=== 对比结果 ===")
