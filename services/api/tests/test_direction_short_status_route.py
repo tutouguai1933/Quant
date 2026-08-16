@@ -29,13 +29,17 @@ class _FakeStateService:
 
 
 class _FakeSimClient:
-    """测试用模拟盘客户端：返回固定交易列表。"""
+    """测试用模拟盘客户端：分别返回在场持仓与已平仓历史。"""
 
-    def __init__(self, trades: list[dict]) -> None:
-        self._trades = trades
+    def __init__(self, open_trades: list[dict] | None = None, closed_trades: list[dict] | None = None) -> None:
+        self._open_trades = open_trades or []
+        self._closed_trades = closed_trades or []
+
+    def list_open_trades(self) -> list[dict]:
+        return list(self._open_trades)
 
     def list_trades(self, limit: int | None = None) -> list[dict]:
-        return list(self._trades[:limit])
+        return list(self._closed_trades[:limit])
 
 
 def _signal_result(avg_score: float) -> dict:
@@ -75,7 +79,7 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
         self._patch_route(
             state={"has_short_position": True, "symbol": "BTCUSDT", "opened_at": "2026-08-12T19:29:16+00:00"},
             client=_FakeSimClient(
-                [
+                open_trades=[
                     {
                         "trade_id": 2,
                         "pair": "BTC/USDT:USDT",
@@ -110,7 +114,7 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
         self._patch_route(
             state={"has_short_position": True, "symbol": "BTCUSDT", "opened_at": "2026-08-12T19:29:16+00:00"},
             client=_FakeSimClient(
-                [
+                closed_trades=[
                     {
                         "trade_id": 1,
                         "pair": "BTC/USDT:USDT",
@@ -136,7 +140,7 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
         """状态文件与模拟盘都无空仓：正常等待状态。"""
         self._patch_route(
             state={"has_short_position": False, "symbol": "", "opened_at": ""},
-            client=_FakeSimClient([]),
+            client=_FakeSimClient(),
         )
 
         data = get_direction_short_status()["data"]
@@ -149,6 +153,9 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
         """模拟盘不可达：接口不崩溃，返回状态文件数据并标记连接失败。"""
 
         class _BrokenClient:
+            def list_open_trades(self):
+                raise RuntimeError("connection refused")
+
             def list_trades(self, limit: int | None = None):
                 raise RuntimeError("connection refused")
 

@@ -221,14 +221,26 @@ def get_direction_short_status() -> dict:
     }
     try:
         sim_client = build_sim_client()
-        trades = sim_client.list_trades(limit=10)
-        simulation["connected"] = True
-        open_trades = [t for t in trades if t.get("is_open") and _is_short_trade(t)]
-        closed_trades = [t for t in trades if not t.get("is_open")]
-        simulation["open_position"] = _summarize_trade(open_trades[0]) if open_trades else None
-        simulation["last_closed_trade"] = _summarize_trade(closed_trades[0]) if closed_trades else None
+        # 在场持仓走 /status（list_open_trades）；已平仓历史走 /trades（list_trades），
+        # 两者分开读取并独立降级，单边失败不影响另一边
+        try:
+            open_trades = sim_client.list_open_trades()
+            simulation["connected"] = True
+            short_open = [t for t in open_trades if _is_short_trade(t)]
+            simulation["open_position"] = _summarize_trade(short_open[0]) if short_open else None
+        except Exception as status_exc:
+            logger.warning("方向做空状态接口读取在场持仓失败: %s", status_exc)
+            if not simulation["message"]:
+                simulation["message"] = f"在场持仓读取失败: {status_exc}"
+        try:
+            closed_trades = sim_client.list_trades(limit=10)
+            simulation["last_closed_trade"] = _summarize_trade(closed_trades[0]) if closed_trades else None
+        except Exception as trades_exc:
+            logger.warning("方向做空状态接口读取平仓历史失败: %s", trades_exc)
+            if not simulation["message"]:
+                simulation["message"] = f"平仓历史读取失败: {trades_exc}"
     except Exception as exc:
-        # 模拟盘暂时不可达时保留状态文件数据，并明确标记连接失败
+        # 模拟盘完全不可达时保留状态文件数据，并明确标记连接失败
         logger.warning("方向做空状态接口读取模拟盘失败: %s", exc)
         simulation["message"] = str(exc)
 

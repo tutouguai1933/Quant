@@ -69,7 +69,7 @@ class DirectionShortServiceTests(unittest.TestCase):
         service = DirectionShortService()
         service.mark_short_open(symbol="BTCUSDT")
 
-        changed = service.reconcile_with_trades(
+        changed = service.reconcile_with_open_trades(
             [{"trade_id": 1, "is_open": False, "is_short": True, "exit_reason": "stop_loss"}]
         )
 
@@ -82,7 +82,7 @@ class DirectionShortServiceTests(unittest.TestCase):
         """状态文件说无空仓、真实持仓已有空仓 → 自动修正为已开空。"""
         service = DirectionShortService()
 
-        changed = service.reconcile_with_trades(
+        changed = service.reconcile_with_open_trades(
             [{"trade_id": 2, "is_open": True, "is_short": True, "pair": "BTC/USDT:USDT"}]
         )
 
@@ -96,7 +96,7 @@ class DirectionShortServiceTests(unittest.TestCase):
         service = DirectionShortService()
         service.mark_short_open(symbol="BTCUSDT")
 
-        changed = service.reconcile_with_trades(
+        changed = service.reconcile_with_open_trades(
             [{"trade_id": 2, "is_open": True, "is_short": True, "pair": "BTC/USDT:USDT"}]
         )
 
@@ -107,7 +107,7 @@ class DirectionShortServiceTests(unittest.TestCase):
         """只按 is_short 判断，多头持仓不参与方向做空状态对齐。"""
         service = DirectionShortService()
 
-        changed = service.reconcile_with_trades(
+        changed = service.reconcile_with_open_trades(
             [{"trade_id": 3, "is_open": True, "is_short": False, "pair": "BTC/USDT"}]
         )
 

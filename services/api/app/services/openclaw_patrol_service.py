@@ -854,12 +854,12 @@ class OpenclawPatrolService:
         avg_score = sum(float(str(s.get("score", "0"))) for s in signals) / len(signals)
 
         # 2. 构建独立客户端（默认模拟盘 9014，与实盘隔离），
-        #    并在决策前先用真实持仓对齐状态文件（自愈：止损平仓后状态文件残留会僵死观察期）
+        #    并在决策前先用在场持仓对齐状态文件（自愈：止损平仓后状态文件残留会僵死观察期）
         sim_url = os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_URL", "http://127.0.0.1:9014").strip()
         sim_client = build_sim_client()
         try:
-            trades = sim_client.list_trades(limit=5)
-            direction_short_service.reconcile_with_trades(trades)
+            open_trades = sim_client.list_open_trades()
+            direction_short_service.reconcile_with_open_trades(open_trades)
         except Exception as exc:
             # 查询失败时沿用内部状态决策，避免误改状态文件
             logger.warning("方向做空状态同步查询失败，沿用内部状态: %s", exc)
@@ -889,8 +889,8 @@ class OpenclawPatrolService:
                     import time
 
                     time.sleep(10)
-                    trades = sim_client.list_trades(limit=5)
-                    direction_short_service.reconcile_with_trades(trades)
+                    open_trades = sim_client.list_open_trades()
+                    direction_short_service.reconcile_with_open_trades(open_trades)
                     if direction_short_service.get_state().get("has_short_position"):
                         logger.info("方向做空开仓确认（forceenter 超时但成交已落库，状态已对齐）")
                         return {

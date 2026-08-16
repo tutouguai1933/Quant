@@ -408,10 +408,10 @@ class FreqtradeRestClient:
         return [item for item in self._get_status_items() if item.get("is_open")]
 
     def list_trades(self, limit: int | None = None) -> list[dict[str, object]]:
-        """返回交易历史原始条目（最新优先，可选截取条数）。
+        """返回已平仓/历史交易原始条目（最新优先，可选截取条数）。
 
-        供方向做空状态接口一次性拿到“当前持仓 + 最近平仓记录”，
-        避免先查 /status 再查 /trades 两次往返。
+        注意：Freqtrade 的 /trades 只返回已关闭的交易，不包含在场持仓；
+        在场持仓请用 list_open_trades（/status）。
         """
 
         payload = self._request_json("GET", "/api/v1/trades", auth=True)

@@ -122,14 +122,16 @@ class DirectionShortService:
             self._persist()
             logger.info("方向做空已平仓")
 
-    def reconcile_with_trades(self, trades: list[dict[str, Any]]) -> bool:
-        """按模拟盘真实交易列表对齐内部状态（自愈）。
+    def reconcile_with_open_trades(self, open_trades: list[dict[str, Any]]) -> bool:
+        """按模拟盘在场持仓列表（list_open_trades / Freqtrade /status）对齐内部状态。
 
         空单被止损/策略平仓后，状态文件会残留 has_short_position=true，
         导致调度永远 hold、观察期僵死；反之亦然。巡检每轮决策前调用本方法，
-        以真实持仓为准修正内部状态，返回是否发生了修正。
+        以真实在场持仓为准修正内部状态，返回是否发生了修正。
         """
-        has_open_short = any(t.get("is_open") and _is_short_value(t.get("is_short")) for t in trades)
+        has_open_short = any(
+            t.get("is_open") and _is_short_value(t.get("is_short")) for t in open_trades
+        )
         with self._lock:
             need_close = bool(self._state["has_short_position"]) and not has_open_short
             need_open = not bool(self._state["has_short_position"]) and has_open_short
