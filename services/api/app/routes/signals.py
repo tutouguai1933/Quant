@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -108,17 +110,35 @@ def get_research_report() -> dict:
     )
 
 
+# 研究运行状态 2 秒缓存：状态本身低频变化，避免 API 重启后首个慢初始化
+# 被首页并发请求重复承担；锁保证并发只计算一次
+_runtime_status_cache: dict | None = None
+_runtime_status_cache_time: float = 0.0
+_runtime_status_cache_lock = threading.Lock()
+_RUNTIME_STATUS_CACHE_TTL = 2.0
+
+
 @router.get("/research/runtime")
 def get_research_runtime() -> dict:
-    item = research_runtime_service.get_status()
-    return _success(
-        {"item": item},
-        {
-            "source": "control-plane-api",
-            "action": "research-runtime",
-            "status": item.get("status", "idle"),
-        },
-    )
+    global _runtime_status_cache, _runtime_status_cache_time
+    now = time.monotonic()
+    with _runtime_status_cache_lock:
+        if _runtime_status_cache is not None and now - _runtime_status_cache_time < _RUNTIME_STATUS_CACHE_TTL:
+            return _runtime_status_cache
+
+        # 首次调用可能承担较慢的初始化，持锁计算让并发请求排队等待同一结果
+        item = research_runtime_service.get_status()
+        payload = _success(
+            {"item": item},
+            {
+                "source": "control-plane-api",
+                "action": "research-runtime",
+                "status": item.get("status", "idle"),
+            },
+        )
+        _runtime_status_cache = payload
+        _runtime_status_cache_time = time.monotonic()
+        return payload
 
 
 def _market_direction_item() -> dict[str, Any]:
