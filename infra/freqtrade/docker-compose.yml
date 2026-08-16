@@ -9,8 +9,10 @@ services:
     env_file:
       - .env
     environment:
-      HTTP_PROXY: ${QUANT_PROXY_HTTP:-}
-      HTTPS_PROXY: ${QUANT_PROXY_HTTP:-}
+      # 默认走 mihomo 代理（与 sim 服务一致）：ccxt 4.5 的异步请求依赖环境变量兜底，
+      # 仅靠 config 里的 proxies 字段会导致账户接口直连超时、freqtrade 反复启动失败
+      HTTP_PROXY: ${QUANT_PROXY_HTTP:-http://127.0.0.1:7890}
+      HTTPS_PROXY: ${QUANT_PROXY_HTTP:-http://127.0.0.1:7890}
       ALL_PROXY: ${QUANT_PROXY_SOCKS:-}
       NO_PROXY: ${NO_PROXY:-127.0.0.1,localhost,freqtrade,mihomo}
       # Strategy configuration (passed from api.env)
