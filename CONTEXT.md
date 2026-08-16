@@ -20,6 +20,12 @@
 - **开仓确认修正**：forceenter 超时但 dry-run 成交有 ~10s 落库延迟 → 等落库后按在场持仓对齐状态确认，不再假失败
 - **结果实测**：状态文件与在场空仓已对齐一致（score=0.3696<0.38，持有 BTC/USDT:USDT 空仓）；13 个单测通过；前端真实页面显示"已开空 / -0.06 USDT"
 
+**首页数据加载故障排查与修复（08-17 晚）**：
+- **现象**：首页一直"数据加载中..."，实盘 freqtrade 反复启动失败（Up 秒级重启循环）
+- **根因链**：freqtrade `stable` 浮动镜像升级到 ccxt 4.5.44 → 异步客户端只认 `aiohttp_proxy` 字段、忽略 `proxies` dict → 实盘代理配置缺该字段 → 币安账户接口直连超时（10s×4 次）→ 启动失败 → auto_recovery 反复拉起 → 首页持仓/执行器接口在重启窗口等超时 3–24s
+- **修复**：`config.proxy.mihomo.json` 补 `aiohttp_proxy` 字段（sync/async 双保险）；freqtrade compose 默认注入 HTTP_PROXY/HTTPS_PROXY 环境变量
+- **验证**：freqtrade 启动成功 RUNNING；首页关键接口 20 连发全部 <1.7s；真实浏览器登录后首页无"数据加载中"、无错误横幅、实盘已连接、控制台 0 错误
+
 ### dsh-routing-suite 研究结论（08-17 调研已归档，见 .research/，与 Quant 无关）
 - **是什么**：DeepSeek Harness（DSH）的"运行时注入 + 思维模式路由"三件套，非 Quant 项目功能
   - injector（dsh-super-injector v0.3.3）：免重启的插件注入/热重载/卸载全家桶（17 个 dev_* 工具）
@@ -136,7 +142,7 @@
 - **验证结论**（scripts/run_direction_short.py，OOS 隔离）：模型 16 币平均分数 <0.38 时做空 BTC，TEST 段命中率 77.8%、平均收益 +2.58%/次（模型方向判断可靠，区别于"选币做空≈随机"）
 - **落地架构**：api 侧调度（openclaw 巡检 cycle_check → direction_short_service 决策 → 独立 freqtrade 客户端 forceenter short BTC/USDT:USDT），与实盘 9013 完全隔离
 - **模拟盘**：quant-freqtrade-sim 容器（futures dry_run，9014，杠杆 1x，独立 sqlite）
-- **踩坑记录**：期货交易对格式 BTC/USDT:USDT（_normalize_symbol 已支持）；ccxt 4.5 代理参数 aiohttp_proxy 失效需用 proxies（双保险+环境变量）；forceenter 超时但成交需查持仓同步状态
+- **踩坑记录**：期货交易对格式 BTC/USDT:USDT（_normalize_symbol 已支持）；**ccxt 4.5.44 异步客户端只认 `aiohttp_proxy`、不认 `proxies` dict（同步客户端仍认 proxies）**——两个字段都要配 + 容器注入代理环境变量；forceenter 超时但成交需查持仓同步状态
 - **当前状态**：模拟盘已开空 BTC（avg=0.370 触发），状态机运行中；观察期 1-2 周
 - **后续**：实盘需币安合约账户+key；模拟盘观察收益后决定
 

@@ -2,6 +2,8 @@
 
 ## 最近更新：2026-08-17
 
+> 08-17 晚：修复首页"数据加载中"——实盘 freqtrade 因 ccxt 4.5.44 异步代理字段变更反复启动失败；已补 `aiohttp_proxy` + 容器代理环境变量，freqtrade 恢复 RUNNING，首页接口与真实页面验证通过。
+
 ---
 
 ## 当前进行中的工作（新 session 从这里接手）
@@ -62,7 +64,7 @@ ssh ... "cd ~/Quant/infra/freqtrade && git pull && docker restart quant-freqtrad
 
 ### 关键坑（都踩过，别重复）
 1. **docker restart 不读 env_file**——改 api.env 后要 compose up -d 重建
-2. **ccxt 4.5 代理参数**：aiohttp_proxy 失效，用 `proxies` dict（config.futures.sim.json 已双保险）
+2. **ccxt 4.5.44 代理参数（08-17 已实锤）**：异步客户端只认 `aiohttp_proxy`、不认 `proxies` dict；同步客户端认 `proxies`。两个字段都要配（config.proxy.mihomo.json 已双保险），且 freqtrade 容器已默认注入 HTTP_PROXY/HTTPS_PROXY 环境变量
 3. **期货交易对格式**：BTC/USDT:USDT（`_normalize_symbol` 已支持）
 4. **forceenter 超时但订单成交**：需查持仓确认状态（已加容错）
 5. **磁盘**：Build Cache 会堆积（曾堆 17GB 导致卡死）——每天 03:00 crontab 自动清理（/home/djy/scripts/disk_maintenance.sh）
