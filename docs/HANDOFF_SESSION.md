@@ -3,6 +3,8 @@
 ## 最近更新：2026-08-17
 
 > 08-17 晚：修复首页"数据加载中"——实盘 freqtrade 因 ccxt 4.5.44 异步代理字段变更反复启动失败；已补 `aiohttp_proxy` + 容器代理环境变量，freqtrade 恢复 RUNNING，首页接口与真实页面验证通过。
+>
+> 08-17 深夜（二次修复）：慢请求（freqtrade/status 676s、entry-conditions 967s、cycle-history 688s）占满 API 线程池导致首页请求排队。已给 freqtrade 代理加 5s 缓存+单飞、执行器状态/入场条件旧值兜底+后台刷新、周期历史与 runtime 加短缓存，前端"数据加载中"最长显示 8s。验证：并发首轮 ≤4.5s、次轮 <2s，真实浏览器首页秒开、控制台 0 错误。
 
 ---
 

@@ -26,6 +26,16 @@
 - **修复**：`config.proxy.mihomo.json` 补 `aiohttp_proxy` 字段（sync/async 双保险）；freqtrade compose 默认注入 HTTP_PROXY/HTTPS_PROXY 环境变量
 - **验证**：freqtrade 启动成功 RUNNING；首页关键接口 20 连发全部 <1.7s；真实浏览器登录后首页无"数据加载中"、无错误横幅、实盘已连接、控制台 0 错误
 
+**首页"仍会加载中"二次修复（08-17 深夜）**：
+- **复现**：40 并发压测时首页四接口全部 30s 超时；perf 显示 freqtrade/status 最大 676s、entry-conditions 最大 967s、cycle-history 最大 688s——慢请求占满 API 线程池，首页请求排队
+- **修复（缓存+单飞+前端上限）**：
+  - freqtrade 代理全部只读请求：5 秒缓存 + 并发单飞（多卡片轮询只打一次）
+  - 执行器公开状态：5 秒缓存，过期旧值兜底 + 后台刷新（不再同步等 20s）
+  - 周期历史：5 秒缓存；入场条件：过期旧值兜底 + 后台刷新 + 并发只算一次
+  - research/runtime：2 秒缓存 + 并发单飞（避免 API 重启后首个慢初始化被并发重复承担）
+  - 前端首页"数据加载中"最长显示 8 秒，数据渐进填充
+- **验证**：并发 20 轮首轮最慢 4.5s（首次计算），第二轮全部 <2s；真实浏览器首页加载提示 0 秒消失、无错误、实盘已连接、控制台 0 错误
+
 ### dsh-routing-suite 研究结论（08-17 调研已归档，见 .research/，与 Quant 无关）
 - **是什么**：DeepSeek Harness（DSH）的"运行时注入 + 思维模式路由"三件套，非 Quant 项目功能
   - injector（dsh-super-injector v0.3.3）：免重启的插件注入/热重载/卸载全家桶（17 个 dev_* 工具）
