@@ -20,7 +20,7 @@
 - ✅ 后端接口 `GET /api/v1/signals/research/direction-short-status`：模型平均分数 + 状态文件 + 模拟盘真实持仓/最近平仓
 - ✅ 前端任务页"方向做空（模拟盘）"状态卡（60s 轮询）：平均分数 / 做空状态 / 开空时间 / 模拟盈亏
 - ✅ 共用重构：巡检与接口共用 `build_sim_client()`；`market-direction` 提取 `_market_direction_item`
-- ⚠️ **待部署**：代码已本地验证（tsc/build/接口单测通过），尚未 git push + 服务器部署
+- ✅ **已部署上线**：git push + 服务器重建 api/web；线上接口返回正确、Playwright 真实页面验证通过（显示 0.3696 / 已平仓状态待同步 / -0.53）
 
 **观察期注意**：
 - 首笔空单被止损后，状态文件仍 `has_short_position=true`（调度 hold 不会主动同步真实持仓）——若观察期要继续，需人工决策是否让调度同步状态文件（见下）
