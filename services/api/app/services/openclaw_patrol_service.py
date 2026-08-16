@@ -853,13 +853,20 @@ class OpenclawPatrolService:
             return {"action_taken": False, "action": "direction_short", "message": "无推理信号，跳过方向做空"}
         avg_score = sum(float(str(s.get("score", "0"))) for s in signals) / len(signals)
 
-        # 2. 决策
-        decision = direction_short_service.decide(avg_score=avg_score)
-        action = str(decision.get("action", "hold"))
-
-        # 3. 独立客户端（默认模拟盘 9014，与实盘隔离；构建逻辑与状态接口共用）
+        # 2. 构建独立客户端（默认模拟盘 9014，与实盘隔离），
+        #    并在决策前先用真实持仓对齐状态文件（自愈：止损平仓后状态文件残留会僵死观察期）
         sim_url = os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_URL", "http://127.0.0.1:9014").strip()
         sim_client = build_sim_client()
+        try:
+            trades = sim_client.list_trades(limit=5)
+            direction_short_service.reconcile_with_trades(trades)
+        except Exception as exc:
+            # 查询失败时沿用内部状态决策，避免误改状态文件
+            logger.warning("方向做空状态同步查询失败，沿用内部状态: %s", exc)
+
+        # 3. 决策（内部状态已按真实持仓对齐）
+        decision = direction_short_service.decide(avg_score=avg_score)
+        action = str(decision.get("action", "hold"))
 
         if action == "open_short":
             try:

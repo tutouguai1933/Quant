@@ -33,6 +33,11 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _is_short_value(value: Any) -> bool:
+    """判断 freqtrade 交易条目的 is_short 是否为真（兼容布尔/字符串）。"""
+    return value is True or str(value).lower() == "true"
+
+
 class DirectionShortService:
     """方向做空调度器。"""
 
@@ -116,6 +121,26 @@ class DirectionShortService:
             self._state["closed_at"] = _utc_now()
             self._persist()
             logger.info("方向做空已平仓")
+
+    def reconcile_with_trades(self, trades: list[dict[str, Any]]) -> bool:
+        """按模拟盘真实交易列表对齐内部状态（自愈）。
+
+        空单被止损/策略平仓后，状态文件会残留 has_short_position=true，
+        导致调度永远 hold、观察期僵死；反之亦然。巡检每轮决策前调用本方法，
+        以真实持仓为准修正内部状态，返回是否发生了修正。
+        """
+        has_open_short = any(t.get("is_open") and _is_short_value(t.get("is_short")) for t in trades)
+        with self._lock:
+            need_close = bool(self._state["has_short_position"]) and not has_open_short
+            need_open = not bool(self._state["has_short_position"]) and has_open_short
+
+        if need_close:
+            self.mark_short_closed()
+            return True
+        if need_open:
+            self.mark_short_open(symbol=SHORT_SYMBOL)
+            return True
+        return False
 
 
 def build_sim_client():

@@ -64,6 +64,56 @@ class DirectionShortServiceTests(unittest.TestCase):
         service2.mark_short_closed()
         self.assertFalse(service2.get_state()["has_short_position"])
 
+    def test_reconcile_closes_stale_open_state(self) -> None:
+        """状态文件说已开空、真实交易已平仓 → 自动修正为已平仓。"""
+        service = DirectionShortService()
+        service.mark_short_open(symbol="BTCUSDT")
+
+        changed = service.reconcile_with_trades(
+            [{"trade_id": 1, "is_open": False, "is_short": True, "exit_reason": "stop_loss"}]
+        )
+
+        self.assertTrue(changed)
+        state = service.get_state()
+        self.assertFalse(state["has_short_position"])
+        self.assertTrue(state["closed_at"])
+
+    def test_reconcile_opens_when_real_position_exists(self) -> None:
+        """状态文件说无空仓、真实持仓已有空仓 → 自动修正为已开空。"""
+        service = DirectionShortService()
+
+        changed = service.reconcile_with_trades(
+            [{"trade_id": 2, "is_open": True, "is_short": True, "pair": "BTC/USDT:USDT"}]
+        )
+
+        self.assertTrue(changed)
+        state = service.get_state()
+        self.assertTrue(state["has_short_position"])
+        self.assertEqual(state["symbol"], "BTCUSDT")
+
+    def test_reconcile_noop_when_state_matches(self) -> None:
+        """状态与真实持仓一致 → 不做修正。"""
+        service = DirectionShortService()
+        service.mark_short_open(symbol="BTCUSDT")
+
+        changed = service.reconcile_with_trades(
+            [{"trade_id": 2, "is_open": True, "is_short": True, "pair": "BTC/USDT:USDT"}]
+        )
+
+        self.assertFalse(changed)
+        self.assertTrue(service.get_state()["has_short_position"])
+
+    def test_reconcile_ignores_long_trades(self) -> None:
+        """只按 is_short 判断，多头持仓不参与方向做空状态对齐。"""
+        service = DirectionShortService()
+
+        changed = service.reconcile_with_trades(
+            [{"trade_id": 3, "is_open": True, "is_short": False, "pair": "BTC/USDT"}]
+        )
+
+        self.assertFalse(changed)
+        self.assertFalse(service.get_state()["has_short_position"])
+
 
 if __name__ == "__main__":
     unittest.main()
