@@ -1,10 +1,37 @@
 # Quant 项目状态文档
 
-> 最后更新：2026-08-09
+> 最后更新：2026-08-17
 
 ---
 
 ## 当前进度
+
+**状态**：方向做空（模拟盘）观察期进行中；已完成前端状态卡展示（方案 A），待部署验证
+
+**本次更新（2026-08-17 · 方案 A：前端展示模拟做空状态）**：
+- 后端新增 `GET /api/v1/signals/research/direction-short-status`：一次返回模型平均分数 + 调度状态文件 + 模拟盘真实持仓/最近平仓（以模拟盘为准）
+- **关键发现**：模拟盘第一笔空单已于 08-13 被止损平仓（-0.53 USDT，-0.84%），但状态文件仍记录"已开空"——接口如实标记 `position_state_mismatch`，前端提示"已平仓（状态待同步）"，不掩盖真实持仓
+- 前端任务页新增"方向做空（模拟盘）"状态卡（60 秒轮询）：显示模型平均分数、做空状态、开空时间、模拟盈亏
+- 巡检与接口共用 `build_sim_client()`（消除两处拼配置）；`rest_client` 增 `list_trades`；`market-direction` 提取 `_market_direction_item` 共用口径
+- 验证：新增 4 个接口测试通过；前端 tsc/build 通过；全量既有 1 处 review_limit 历史失败与本次无关
+
+### dsh-routing-suite 研究结论（08-17 调研已归档，见 .research/，与 Quant 无关）
+- **是什么**：DeepSeek Harness（DSH）的"运行时注入 + 思维模式路由"三件套，非 Quant 项目功能
+  - injector（dsh-super-injector v0.3.3）：免重启的插件注入/热重载/卸载全家桶（17 个 dev_* 工具）
+  - preset（dsh-router-standard v0.3.0）：任务感知路由预设，首条消息分类（建→react / 修→spec / 模糊→weak），首轮换 persona+收窄工具面，首个工具调用后放开全目录
+  - mode-boost（dsh-mode-boost v0.1.0）：同样路由做成宿主插件，装配在官方 Standard 预设之上，不 fork 预设
+- **理论依据**：21 点×n=2 实测发现 DeepSeek V4 Pro 沿 persona 轴行为塌缩为三个带（spec 稳定 / 0.2-0.49 过渡陷阱 / react 稳定）；"神鬼二象性"（同模型同任务换 persona 差 10 分）；首轮路径锁定→模型无法自路由，必须外部路由。n 小（每格 2-5）、关键词分类器、相关任务链（P21）引导为负等局限已记录
+- **与本地环境兼容**：本机 DSH 即 0.1.0-rc.6（注入器 SPEC 的推导版本，作者声称一行不改直接运行）；`~/.dsh/.agent-presets/` 已存在且为空；settings 已配 deepseek-v4-pro/v4-flash（套装实测的模型）。预设为纯 .mjs 可直接复制安装，无需注入器
+- **已安装完成（08-17 应要求装配）**：
+  - 注入器：官方 Release v0.3.3 解压至 .research/dsh-routing-suite/injector-release/，`dsh plugin --profile web add` 装配（bundles 已加 @dsh-external/dsh-super-injector，link 依赖）
+  - 预设：5 个文件复制到 ~/.dsh/.agent-presets/router-standard/
+  - 冒烟验证（临时端口 3099 HTTP 200）+ 正式重启（14:13，pid 13500，自检 HTTP 200）；插件清单确认 dsh-super-injector 与 router-bootstrap 均 active
+  - 手动重启命令：`pkill -f "node.*dsh web"; sleep 2; export PATH=/home/djy/.npm/_npx/1e7f6d9597241db0/node_modules/.bin:$PATH; cd /home/djy && nohup dsh web > /tmp/dsh-web.log 2>&1 &`
+- **结论**：已研究+已安装；新会话选择 Router Standard (experimental) 体验路由预设
+- 副本位置：.research/dsh-routing-suite/（含三个子模块，后续如安装可直接用）
+
+
+## 上次进度（2026-08-09）
 
 **状态**：UI 统一终端风格完成（18 个组件）；api 卡死可观测性补齐（日志落盘+指标）；ops 页前后端契约 bug 修复
 

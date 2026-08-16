@@ -842,11 +842,7 @@ class OpenclawPatrolService:
         """
         import os
 
-        from services.api.app.adapters.freqtrade.rest_client import (
-            FreqtradeRestClient,
-            FreqtradeRestConfig,
-        )
-        from services.api.app.services.direction_short_service import direction_short_service
+        from services.api.app.services.direction_short_service import build_sim_client, direction_short_service
         from services.api.app.services.research_service import research_service
 
         # 1. 读取模型平均分数（最近一次推理）
@@ -861,17 +857,9 @@ class OpenclawPatrolService:
         decision = direction_short_service.decide(avg_score=avg_score)
         action = str(decision.get("action", "hold"))
 
-        # 3. 独立客户端（默认模拟盘 9014，与实盘隔离）
+        # 3. 独立客户端（默认模拟盘 9014，与实盘隔离；构建逻辑与状态接口共用）
         sim_url = os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_URL", "http://127.0.0.1:9014").strip()
-        sim_client = FreqtradeRestClient(
-            FreqtradeRestConfig(
-                base_url=sim_url,
-                username=os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_USERNAME", "Freqtrader"),
-                password=os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_PASSWORD", "jianyu0.0."),
-                timeout_seconds=8,
-                max_total_timeout_seconds=10,
-            )
-        )
+        sim_client = build_sim_client()
 
         if action == "open_short":
             try:

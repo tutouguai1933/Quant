@@ -546,6 +546,85 @@ export type LatestResearchResponse = {
   item: LatestResearchItem;
 };
 
+/* 方向做空（模拟盘）状态模型：状态文件 + 模型分数 + 模拟盘真实持仓 */
+export type DirectionShortTrade = {
+  trade_id: number;
+  pair: string;
+  is_open: boolean;
+  is_short: boolean;
+  amount: number;
+  stake_amount: number;
+  open_rate: number | null;
+  current_rate: number | null;
+  close_rate: number | null;
+  profit_abs: number | null;
+  profit_pct: number | null;
+  realized_profit: number | null;
+  realized_profit_ratio: number | null;
+  open_date: string;
+  close_date: string;
+  exit_reason: string;
+  enter_tag: string;
+};
+
+export type DirectionShortMarketModel = {
+  avg_score: number | null;
+  direction: "unknown" | "bearish" | "neutral" | "bullish";
+  signal_count: number;
+  model_version: string;
+  generated_at: string;
+  short_trigger: boolean;
+  flat_trigger: boolean;
+};
+
+export type DirectionShortStatusModel = {
+  market: DirectionShortMarketModel;
+  state: {
+    has_short_position: boolean;
+    symbol: string;
+    opened_at: string;
+    closed_at: string;
+    last_avg_score: number | null;
+    last_decision_at: string;
+  };
+  simulation: {
+    connected: boolean;
+    open_position: DirectionShortTrade | null;
+    last_closed_trade: DirectionShortTrade | null;
+    message: string;
+  };
+  position_state_mismatch: boolean;
+};
+
+export function getDirectionShortStatusFallback(): DirectionShortStatusModel {
+  return {
+    market: {
+      avg_score: null,
+      direction: "unknown",
+      signal_count: 0,
+      model_version: "",
+      generated_at: "",
+      short_trigger: false,
+      flat_trigger: false,
+    },
+    state: {
+      has_short_position: false,
+      symbol: "",
+      opened_at: "",
+      closed_at: "",
+      last_avg_score: null,
+      last_decision_at: "",
+    },
+    simulation: {
+      connected: false,
+      open_position: null,
+      last_closed_trade: null,
+      message: "",
+    },
+    position_state_mismatch: false,
+  };
+}
+
 export type MLPredictionData = {
   probability: string;
   model_version: string;
@@ -1402,6 +1481,7 @@ const CACHE_TTL_MS = 15_000;
 // 需要实时性的接口不缓存（轮询、任务状态等）
 const NO_CACHE_PATHS: string[] = [
   "/signals/research/runtime",
+  "/signals/research/direction-short-status",
   "/tasks/automation",
   "/hyperopt/jobs",
   "/hyperopt/status",
@@ -1762,6 +1842,17 @@ export async function getResearchRuntimeStatus(signal?: AbortSignal): Promise<Ap
       item: normalizeResearchRuntimeStatus(response.data.item),
     },
   };
+}
+
+export async function getDirectionShortStatus(token?: string, signal?: AbortSignal): Promise<ApiEnvelope<DirectionShortStatusModel>> {
+  const response = await fetchJson<DirectionShortStatusModel>("/signals/research/direction-short-status", token, signal);
+  if (response.error) {
+    return {
+      ...response,
+      data: getDirectionShortStatusFallback(),
+    };
+  }
+  return response;
 }
 
 export async function listBalances(signal?: AbortSignal): Promise<

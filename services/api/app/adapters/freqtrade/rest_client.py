@@ -407,6 +407,17 @@ class FreqtradeRestClient:
 
         return [item for item in self._get_status_items() if item.get("is_open")]
 
+    def list_trades(self, limit: int | None = None) -> list[dict[str, object]]:
+        """返回交易历史原始条目（最新优先，可选截取条数）。
+
+        供方向做空状态接口一次性拿到“当前持仓 + 最近平仓记录”，
+        避免先查 /status 再查 /trades 两次往返。
+        """
+
+        payload = self._request_json("GET", "/api/v1/trades", auth=True)
+        trades = sorted(_payload_items(payload, "trades"), key=_trade_sort_key, reverse=True)
+        return trades[:limit] if limit else trades
+
     def _get_balances(self) -> list[dict[str, object]]:
         """读取账户余额列表。"""
 

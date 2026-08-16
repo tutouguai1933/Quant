@@ -118,5 +118,24 @@ class DirectionShortService:
             logger.info("方向做空已平仓")
 
 
+def build_sim_client():
+    """构建方向做空专用的 freqtrade 客户端（默认指向模拟盘 9014）。
+
+    与实盘客户端（9013）完全隔离；地址/凭据可通过环境变量切换，
+    供巡检执行和状态查询接口共用，避免两处重复拼配置。
+    """
+    from services.api.app.adapters.freqtrade.rest_client import FreqtradeRestClient, FreqtradeRestConfig
+
+    return FreqtradeRestClient(
+        FreqtradeRestConfig(
+            base_url=os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_URL", "http://127.0.0.1:9014").strip(),
+            username=os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_USERNAME", "Freqtrader"),
+            password=os.getenv("QUANT_DIRECTION_SHORT_FREQTRADE_PASSWORD", "jianyu0.0."),
+            timeout_seconds=8,
+            max_total_timeout_seconds=10,
+        )
+    )
+
+
 # 默认实例
 direction_short_service = DirectionShortService()

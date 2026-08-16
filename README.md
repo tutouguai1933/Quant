@@ -199,6 +199,7 @@ Quant/
 
 ## 搜索记录
 
+- 2026-08-17 研究 yjh051108/dsh-routing-suite（DSH 思维模式路由套装）：注入器+路由预设+模式提升三组件；与 DSH 0.1.0-rc.6 兼容，结论见 CONTEXT.md，克隆副本在 .research/dsh-routing-suite/
 - 本轮无新增外部方案搜索
 - 文档已按结构整理
 

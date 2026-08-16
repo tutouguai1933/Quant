@@ -19,6 +19,7 @@ import { LoadingBanner } from "../../components/loading-banner";
 import { ArbitrationHandoffCard } from "../../components/arbitration-handoff-card";
 import { FeedbackBanner } from "../../components/feedback-banner";
 import { OpenclawActionConfirmDialog } from "../../components/openclaw-action-confirm-dialog";
+import { DirectionShortStatusCard } from "../../components/direction-short-status-card";
 import { StatusBadge } from "../../components/status-badge";
 import { Button } from "../../components/ui/button";
 import { ErrorBanner } from "../../components/error-banner";
@@ -261,6 +262,9 @@ export default function TasksPage() {
       ) : (
         <>
           <MetricStrip metrics={statusMetrics} />
+
+          {/* 方向做空（模拟盘）观察期状态卡 */}
+          <DirectionShortStatusCard token={session.token} />
 
           <div className="grid gap-4 lg:grid-cols-2">
             {/* 当前恢复建议 */}

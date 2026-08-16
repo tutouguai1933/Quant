@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from services.api.app.services.auth_service import auth_service
 from services.api.app.services.strategy_engine import apply_research_soft_gate
@@ -14,7 +16,10 @@ from services.api.app.services.research_runtime_service import research_runtime_
 from services.api.app.services.research_service import research_service
 from services.api.app.services.signal_service import SignalPipelineUnavailableError, signal_service
 from services.api.app.services.strategy_catalog import strategy_catalog_service
+from services.api.app.services.direction_short_service import build_sim_client, direction_short_service
 from services.api.app.routes._helpers import _success, _unauthorized
+
+logger = logging.getLogger(__name__)
 
 
 try:
@@ -116,6 +121,38 @@ def get_research_runtime() -> dict:
     )
 
 
+def _market_direction_item() -> dict[str, Any]:
+    """汇总最近一次推理的 16 币平均上涨概率（市场方向判断）。
+
+    market-direction 与 direction-short-status 两个接口共用，
+    保证前端看到的平均分数和调度器使用的口径完全一致。
+    """
+    item = research_service.get_latest_result()
+    inference = dict(item.get("latest_inference") or {})
+    signals = list(inference.get("signals") or [])
+    if not signals:
+        return {
+            "avg_score": None,
+            "direction": "unknown",
+            "signal_count": 0,
+            "model_version": str(inference.get("model_version", "")),
+            "generated_at": str(inference.get("generated_at", "")),
+            "short_trigger": False,
+            "flat_trigger": False,
+        }
+    scores = [float(str(s.get("score", "0"))) for s in signals]
+    avg_score = sum(scores) / len(scores)
+    return {
+        "avg_score": round(avg_score, 4),
+        "direction": "bearish" if avg_score < 0.38 else ("bullish" if avg_score > 0.55 else "neutral"),
+        "signal_count": len(scores),
+        "model_version": str(inference.get("model_version", "")),
+        "generated_at": str(inference.get("generated_at", "")),
+        "short_trigger": avg_score < 0.38,
+        "flat_trigger": avg_score > 0.45,
+    }
+
+
 @router.get("/research/market-direction")
 def get_market_direction() -> dict:
     """返回模型的市场方向判断（16 币平均上涨概率）。
@@ -123,35 +160,89 @@ def get_market_direction() -> dict:
     供方向做空调度使用：平均分数 < 0.38 视为极度看跌（做空信号），
     > 0.45 视为转暖（平空信号）。数据来自最近一次推理的 signals。
     """
-    item = research_service.get_latest_result()
-    inference = dict(item.get("latest_inference") or {})
-    signals = list(inference.get("signals") or [])
-    if not signals:
-        return _success(
-            {
-                "avg_score": None,
-                "direction": "unknown",
-                "signal_count": 0,
-                "model_version": str(inference.get("model_version", "")),
-                "generated_at": str(inference.get("generated_at", "")),
-                "short_trigger": False,
-                "flat_trigger": False,
-            },
-            {"source": "control-plane-api", "action": "market-direction", "status": "no_signals"},
-        )
-    scores = [float(str(s.get("score", "0"))) for s in signals]
-    avg_score = sum(scores) / len(scores)
+    item = _market_direction_item()
+    status = "ok" if item.get("signal_count") else "no_signals"
+    return _success(item, {"source": "control-plane-api", "action": "market-direction", "status": status})
+
+
+# 交易历史条目里需要透出给前端的字段（保持原始值，避免逐字段猜类型）
+_DIRECTION_SHORT_TRADE_FIELDS = (
+    "trade_id",
+    "pair",
+    "is_open",
+    "is_short",
+    "amount",
+    "stake_amount",
+    "open_rate",
+    "current_rate",
+    "close_rate",
+    "profit_abs",
+    "profit_pct",
+    "realized_profit",
+    "realized_profit_ratio",
+    "open_date",
+    "close_date",
+    "exit_reason",
+    "enter_tag",
+)
+
+
+def _summarize_trade(trade: dict[str, Any]) -> dict[str, Any]:
+    """把 freqtrade 交易原始条目裁剪成状态接口需要的字段子集。"""
+    return {key: trade.get(key) for key in _DIRECTION_SHORT_TRADE_FIELDS}
+
+
+def _is_short_trade(trade: dict[str, Any]) -> bool:
+    """判断交易是否为做空（兼容布尔/字符串两种返回值）。"""
+    value = trade.get("is_short")
+    return value is True or str(value).lower() == "true"
+
+
+@router.get("/research/direction-short-status")
+def get_direction_short_status() -> dict:
+    """返回方向做空（模拟盘）的完整状态。
+
+    数据来源三部分：
+    1. market：模型 16 币平均分数（与 market-direction 同一口径）
+    2. state：调度器持久化状态（direction_short_state.json）
+    3. simulation：模拟盘真实持仓 + 最近一笔平仓记录（以模拟盘为准）
+
+    当状态文件记录“已开空”但模拟盘实际无空仓时，position_state_mismatch=true，
+    前端据此提示“已平仓（调度状态待同步）”，不掩盖真实持仓。
+    """
+    market_item = _market_direction_item()
+    state = direction_short_service.get_state()
+
+    simulation: dict[str, Any] = {
+        "connected": False,
+        "open_position": None,
+        "last_closed_trade": None,
+        "message": "",
+    }
+    try:
+        sim_client = build_sim_client()
+        trades = sim_client.list_trades(limit=10)
+        simulation["connected"] = True
+        open_trades = [t for t in trades if t.get("is_open") and _is_short_trade(t)]
+        closed_trades = [t for t in trades if not t.get("is_open")]
+        simulation["open_position"] = _summarize_trade(open_trades[0]) if open_trades else None
+        simulation["last_closed_trade"] = _summarize_trade(closed_trades[0]) if closed_trades else None
+    except Exception as exc:
+        # 模拟盘暂时不可达时保留状态文件数据，并明确标记连接失败
+        logger.warning("方向做空状态接口读取模拟盘失败: %s", exc)
+        simulation["message"] = str(exc)
+
+    # 只有在模拟盘确认可达且确实无空仓时，才判定状态文件与真实持仓不一致
+    position_state_mismatch = bool(state.get("has_short_position")) and simulation["connected"] and simulation["open_position"] is None
+
     return _success(
         {
-            "avg_score": round(avg_score, 4),
-            "direction": "bearish" if avg_score < 0.38 else ("bullish" if avg_score > 0.55 else "neutral"),
-            "signal_count": len(scores),
-            "model_version": str(inference.get("model_version", "")),
-            "generated_at": str(inference.get("generated_at", "")),
-            "short_trigger": avg_score < 0.38,
-            "flat_trigger": avg_score > 0.45,
+            "market": market_item,
+            "state": state,
+            "simulation": simulation,
+            "position_state_mismatch": position_state_mismatch,
         },
-        {"source": "control-plane-api", "action": "market-direction"},
+        {"source": "control-plane-api", "action": "direction-short-status"},
     )
 
 

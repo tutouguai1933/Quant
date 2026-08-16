@@ -1,32 +1,35 @@
 # 会话接力文档
 
-## 最近更新：2026-08-13
+## 最近更新：2026-08-17
 
 ---
 
 ## 当前进行中的工作（新 session 从这里接手）
 
-### 1. 方向做空（合约）观察期
+### 1. 方向做空（合约）观察期（进行中）
 
-**已完成**（本次会话）：
+**已完成**（08-13 前）：
 - ✅ OOS 隔离验证：模型 16 币平均分数 <0.38 时做空 BTC，TEST 段命中率 77.8%、平均收益 +2.58%/次
 - ✅ api 市场方向接口：`GET /api/v1/signals/research/market-direction`（返回 avg_score/direction/short_trigger）
 - ✅ 方向做空调度服务：`services/api/app/services/direction_short_service.py`（状态机：<0.38 开空、>0.45 平空，状态持久化）
 - ✅ 调度接入：openclaw 巡检 cycle_check 时检查方向（`openclaw_patrol_service.py:_check_direction_short`），独立 freqtrade 客户端指向模拟盘 9014（与实盘隔离，`QUANT_DIRECTION_SHORT_FREQTRADE_URL` 可切换）
 - ✅ futures 模拟盘容器：`quant-freqtrade-sim`（9014，dry_run，杠杆 1x，独立 sqlite）
-- ✅ **模拟盘已开出第一笔空单**（BTC/USDT:USDT，Short，成交价 63311.7）——全链路验证通过
+- ✅ **首笔空单已开出并被止损平仓**（BTC/USDT:USDT，Short，成交价 63311.7；08-13 止损平仓 -0.53 USDT / -0.84%）
 
-**观察期进行中**（1-2 周）：
-- 模拟盘自动运行：模型 avg<0.38 开空、>0.45 平空
-- 观察模拟收益是否符合验证预期（77.8% 命中率）
-- 观察期结束：决定是否上实盘（需用户准备币安合约账户+key）
+**08-17 完成（方案 A：前端展示模拟做空状态）**：
+- ✅ 后端接口 `GET /api/v1/signals/research/direction-short-status`：模型平均分数 + 状态文件 + 模拟盘真实持仓/最近平仓
+- ✅ 前端任务页"方向做空（模拟盘）"状态卡（60s 轮询）：平均分数 / 做空状态 / 开空时间 / 模拟盈亏
+- ✅ 共用重构：巡检与接口共用 `build_sim_client()`；`market-direction` 提取 `_market_direction_item`
+- ⚠️ **待部署**：代码已本地验证（tsc/build/接口单测通过），尚未 git push + 服务器部署
 
-### 2. 待办：前端展示模拟做空状态（方案 A）
+**观察期注意**：
+- 首笔空单被止损后，状态文件仍 `has_short_position=true`（调度 hold 不会主动同步真实持仓）——若观察期要继续，需人工决策是否让调度同步状态文件（见下）
+- 模拟盘实际无持仓；接口已暴露 `position_state_mismatch`，页面会提示"已平仓（状态待同步）"
 
-用户已确认要做（最后一条对话）：
-- 在任务页（或首页）加"方向做空（模拟盘）"状态卡
-- 显示：模型平均分数、做空状态（已开空/等待）、开空时间、模拟盈亏
-- 数据源：已有 `/research/market-direction` 接口 + direction_short_state.json（需加一个状态接口）
+### 2. ✅ 已完成：前端展示模拟做空状态（方案 A）
+
+- 状态卡在任务页 `/tasks`（登录后可见），含模型平均分数、做空状态、开空时间、模拟盈亏
+- 接口以模拟盘真实持仓为准，状态文件不一致时明确提示
 
 ### 3. 历史决策回顾（重要，避免重复实验）
 
