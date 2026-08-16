@@ -6,14 +6,19 @@
 
 ## 当前进度
 
-**状态**：方向做空（模拟盘）观察期进行中；已完成前端状态卡展示（方案 A）并部署上线
+**状态**：方向做空（模拟盘）观察期自动运行中；状态卡（方案 A）与调度状态自愈均已上线
 
 **本次更新（2026-08-17 · 方案 A：前端展示模拟做空状态）**：
 - 后端新增 `GET /api/v1/signals/research/direction-short-status`：一次返回模型平均分数 + 调度状态文件 + 模拟盘真实持仓/最近平仓（以模拟盘为准）
-- **关键发现**：模拟盘第一笔空单已于 08-13 被止损平仓（-0.53 USDT，-0.84%），但状态文件仍记录"已开空"——接口如实标记 `position_state_mismatch`，前端提示"已平仓（状态待同步）"，不掩盖真实持仓
 - 前端任务页新增"方向做空（模拟盘）"状态卡（60 秒轮询）：显示模型平均分数、做空状态、开空时间、模拟盈亏
-- 巡检与接口共用 `build_sim_client()`（消除两处拼配置）；`rest_client` 增 `list_trades`；`market-direction` 提取 `_market_direction_item` 共用口径
-- 验证与部署：新增 4 个接口测试通过；前端 tsc/build 通过；已 git push + 服务器重建 api/web；线上接口与 Playwright 真实页面验证通过（0.3696 / 已平仓状态待同步 / -0.53）
+- 巡检与接口共用 `build_sim_client()`；`rest_client` 增 `list_trades`；`market-direction` 提取 `_market_direction_item` 共用口径
+
+**收尾修复（08-17 继续，观察期恢复自动运行）**：
+- **根因**：空单被止损平仓后状态文件残留"已开空"，调度永远 hold、观察期僵死
+- **自愈**：巡检每轮决策前用在场持仓对齐状态文件（`reconcile_with_open_trades`）；查询失败沿用内部状态
+- **接口误用修正**：Freqtrade `/trades` 只返回已平仓历史，不含在场持仓 → 状态接口在场持仓改走 `/status`（`list_open_trades`），平仓历史走 `list_trades`，独立降级
+- **开仓确认修正**：forceenter 超时但 dry-run 成交有 ~10s 落库延迟 → 等落库后按在场持仓对齐状态确认，不再假失败
+- **结果实测**：状态文件与在场空仓已对齐一致（score=0.3696<0.38，持有 BTC/USDT:USDT 空仓）；13 个单测通过；前端真实页面显示"已开空 / -0.06 USDT"
 
 ### dsh-routing-suite 研究结论（08-17 调研已归档，见 .research/，与 Quant 无关）
 - **是什么**：DeepSeek Harness（DSH）的"运行时注入 + 思维模式路由"三件套，非 Quant 项目功能
