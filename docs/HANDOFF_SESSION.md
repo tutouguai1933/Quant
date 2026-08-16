@@ -1,170 +1,79 @@
 # 会话接力文档
 
-## 最近更新：2026-05-08
+## 最近更新：2026-08-13
 
 ---
 
-## 已完成功能
+## 当前进行中的工作（新 session 从这里接手）
 
-### 1. 自动化周期历史增强
+### 1. 方向做空（合约）观察期
 
-**前端组件**: `apps/web/components/automation-cycle-history-card.tsx`
+**已完成**（本次会话）：
+- ✅ OOS 隔离验证：模型 16 币平均分数 <0.38 时做空 BTC，TEST 段命中率 77.8%、平均收益 +2.58%/次
+- ✅ api 市场方向接口：`GET /api/v1/signals/research/market-direction`（返回 avg_score/direction/short_trigger）
+- ✅ 方向做空调度服务：`services/api/app/services/direction_short_service.py`（状态机：<0.38 开空、>0.45 平空，状态持久化）
+- ✅ 调度接入：openclaw 巡检 cycle_check 时检查方向（`openclaw_patrol_service.py:_check_direction_short`），独立 freqtrade 客户端指向模拟盘 9014（与实盘隔离，`QUANT_DIRECTION_SHORT_FREQTRADE_URL` 可切换）
+- ✅ futures 模拟盘容器：`quant-freqtrade-sim`（9014，dry_run，杠杆 1x，独立 sqlite）
+- ✅ **模拟盘已开出第一笔空单**（BTC/USDT:USDT，Short，成交价 63311.7）——全链路验证通过
 
-- ✅ 显示候选币种列表（TOP 5）
-- ✅ 显示任务执行状态（train/infer/signal/review）
-- ✅ 显示 RSI 快照（颜色指示：红色超买/绿色超卖）
-- ✅ 显示具体拦截原因（中文翻译）
-- ✅ 点击展开详情
+**观察期进行中**（1-2 周）：
+- 模拟盘自动运行：模型 avg<0.38 开空、>0.45 平空
+- 观察模拟收益是否符合验证预期（77.8% 命中率）
+- 观察期结束：决定是否上实盘（需用户准备币安合约账户+key）
 
-**后端服务**: `services/api/app/services/automation_cycle_history_service.py`
+### 2. 待办：前端展示模拟做空状态（方案 A）
 
-- ✅ 提取并保存 RSI 快照数据
-- ✅ 从 RSI 缓存获取相关币种 RSI 值
-- ✅ 每次获取历史时重新加载文件（解决多进程数据不同步问题）
+用户已确认要做（最后一条对话）：
+- 在任务页（或首页）加"方向做空（模拟盘）"状态卡
+- 显示：模型平均分数、做空状态（已开空/等待）、开空时间、模拟盈亏
+- 数据源：已有 `/research/market-direction` 接口 + direction_short_state.json（需加一个状态接口）
 
-### 2. 配置管理界面修复
+### 3. 历史决策回顾（重要，避免重复实验）
 
-**问题**：Docker 容器中没有 api.env 文件，配置通过 docker-compose 的 env_file 注入为环境变量
-
-**修复**：`services/api/app/services/config_center_service.py`
-
-- `_read_env_file` 方法现在同时读取系统环境变量
-- 环境变量优先级高于文件中的值
-
-### 3. 规则门控参数调整
-
-**服务器配置**: `infra/deploy/api.env`
-
-```bash
-QUANT_QLIB_RULE_MIN_VOLUME_RATIO=0.8  # 成交量阈值从 1.0 调整为 0.8
-```
-
----
-
-## 系统架构说明
-
-### 自动化周期触发流程
-
-1. `scheduled_patrol_service` 每 15 分钟执行巡检
-2. 巡检调用 `openclaw_patrol_service.patrol()`
-3. `_check_cycle_ready()` 检查是否满足条件：
-   - `suggested_action` 是 `run_cycle`
-   - `auto_run_allowed` 为 True
-   - `mode` 是 `auto_dry_run` 或 `auto_live`
-   - 冷却时间已过
-   - 每日限额未达
-4. 满足条件则执行 `automation_run_cycle`
-
-### 规则门控拦截原因
-
-| 英文代码 | 中文含义 | 说明 |
-|---------|---------|------|
-| `volume_not_confirmed` | 成交量不足 | 当前成交量低于历史平均的 80% |
-| `volatility_too_high` | 波动率过高 | ATR 波动率超过阈值 |
-| `validation_future_return_not_positive` | 预测收益为负 | 回测预测收益不满足要求 |
-| `trend_broken` | 趋势破位 | EMA 趋势线破位 |
-| `score_too_low` | 评分过低 | 综合评分低于阈值 |
-
-### 状态文件位置
-
-| 文件 | 说明 |
-|------|------|
-| `.runtime/automation_state.json` | 自动化状态 |
-| `.runtime/automation_cycle_history.json` | 周期历史 |
-| `.runtime/workbench_config.json` | 工作台配置 |
-| `.runtime/rsi_cache.json` | RSI 缓存数据 |
+| 已尝试 | 结果 |
+|--------|------|
+| 标签优化（close_only/2%/2-5d） | ✅ 唯一有效（0.532→0.566） |
+| walk-forward 数据量提升 | ✅ 采纳 |
+| 排序学习/多周期特征/分组训练/横截面特征 | ❌ 全部无提升 |
+| 截面选币做空 | ❌ ≈随机 |
+| 时序方向做空 | ✅ 有效（做空 BTC） |
+| 物理隔离 OOS 考核 | ✅ 已落地（基线 TEST auc=0.5287） |
 
 ---
 
-## 部署命令
+## 环境与操作要点
 
-### 重建并部署 API 容器
+### 本地开发
+- Python 统一用 conda 环境 `quant`：`source /home/djy/miniforge3/etc/profile.d/conda.sh && conda activate quant`
+- 禁止本地跑 Docker；部署走 git push + 服务器
 
+### 服务器部署（ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65）
 ```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra/deploy && docker compose build api && docker compose up -d --no-deps api"
+# api/web 更新：
+ssh ... "cd ~/Quant && git pull && cd infra/deploy && docker compose build api web && docker compose up -d --no-deps api web"
+# 注意：改 api.env 后必须 compose up 重建容器（docker restart 不重新读 env_file）
+# 模拟盘更新：
+ssh ... "cd ~/Quant/infra/freqtrade && git pull && docker restart quant-freqtrade-sim"
 ```
 
-### 重建并部署 Web 容器
+### 关键坑（都踩过，别重复）
+1. **docker restart 不读 env_file**——改 api.env 后要 compose up -d 重建
+2. **ccxt 4.5 代理参数**：aiohttp_proxy 失效，用 `proxies` dict（config.futures.sim.json 已双保险）
+3. **期货交易对格式**：BTC/USDT:USDT（`_normalize_symbol` 已支持）
+4. **forceenter 超时但订单成交**：需查持仓确认状态（已加容错）
+5. **磁盘**：Build Cache 会堆积（曾堆 17GB 导致卡死）——每天 03:00 crontab 自动清理（/home/djy/scripts/disk_maintenance.sh）
+6. **py-spy 抓线程栈**：容器重建后需重装；`docker exec --privileged quant-api py-spy dump --pid 1`
+7. **VPN 主节点**：香港³（152.175.1.118 白名单）；日本线路对币安不稳
+8. **api 卡死历史**：health_monitor 已移出事件循环；rsi-summary 缓存 15 分钟；kline 定时同步 15 分钟
 
-```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 "cd ~/Quant && git pull && cd infra/deploy && docker compose build web && docker compose up -d --no-deps web"
-```
-
-### 启动定时巡检服务
-
-```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 'docker exec quant-api python3 -c "
-import sys
-sys.path.insert(0, \"/app/services/api\")
-from services.api.app.services.scheduled_patrol_service import scheduled_patrol_service
-result = scheduled_patrol_service.start_schedule(interval_minutes=15)
-print(result)
-"'
-```
-
-### 手动触发自动化周期
-
-```bash
-ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65 'docker exec quant-api python3 -c "
-import sys
-sys.path.insert(0, \"/app/services/api\")
-from services.api.app.services.automation_workflow_service import automation_workflow_service
-result = automation_workflow_service.run_cycle(source=\"manual_trigger\")
-print(\"status:\", result.get(\"status\"))
-print(\"recommended_symbol:\", result.get(\"recommended_symbol\"))
-"'
-```
+### 测试基线
+- 全量测试当前基线失败数：约 70（历史断言问题，非本次引入）
+- 改动后对比：`pytest -q | grep -c FAILED` 与基线一致即可
 
 ---
 
-## 相关文件索引
-
-### 自动化工作流
-
-| 文件 | 说明 |
-|------|------|
-| `services/api/app/services/automation_workflow_service.py` | 自动化工作流主服务 |
-| `services/api/app/services/automation_service.py` | 自动化状态管理 |
-| `services/api/app/services/automation_cycle_history_service.py` | 历史记录服务 |
-| `services/api/app/services/scheduled_patrol_service.py` | 定时巡检服务 |
-| `services/api/app/services/openclaw_patrol_service.py` | 巡检执行服务 |
-
-### 规则门控
-
-| 文件 | 说明 |
-|------|------|
-| `services/worker/qlib_rule_gate.py` | 规则门控（趋势/波动/量能过滤） |
-| `services/worker/qlib_ranking.py` | 候选评分与验证 |
-| `services/worker/qlib_config.py` | Qlib 配置加载 |
-
-### 前端组件
-
-| 文件 | 说明 |
-|------|------|
-| `apps/web/components/automation-cycle-history-card.tsx` | 自动化周期历史卡片 |
-| `apps/web/app/config/page.tsx` | 配置管理页面 |
-
----
-
-## 接力提示词
-
-```
-请帮我检查系统运行状态：
-
-1. 检查自动化状态：
-   - 查看 .runtime/automation_state.json
-   - 确认定时巡检服务是否运行
-
-2. 检查最新周期历史：
-   - 查看 .runtime/automation_cycle_history.json
-   - 确认 RSI 快照和候选币种数据是否正常
-
-3. 如果有拦截，分析拦截原因：
-   - 查看具体的 failure_reason 和 message
-   - 分析是否需要调整规则门控参数
-
-服务器信息：
-- SSH: ssh -i ~/.ssh/id_aliyun_djy djy@39.106.11.65
-- 项目目录: ~/Quant
-- Docker compose: ~/Quant/infra/deploy
-```
+## 文档索引（新 session 必读顺序）
+1. AGENTS.md（项目规则）
+2. CONTEXT.md（完整进度记录，含所有决策）
+3. 本文档
+4. docs/superpowers/plans/（各期实施计划）
