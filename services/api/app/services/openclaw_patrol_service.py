@@ -883,20 +883,23 @@ class OpenclawPatrolService:
                     "message": f"模型极度看跌（avg={avg_score:.3f}<0.38），已开空 BTCUSDT（模拟盘）",
                 }
             except Exception as exc:
-                # forceenter 可能超时但订单实际成交：查询实际持仓确认真实状态
+                # forceenter 可能超时但订单实际成交（dry-run 有 ~10s 成交落库延迟）：
+                # 稍等后按真实交易历史对齐状态，成功即视为开仓确认，避免假失败
                 try:
-                    trades = sim_client.list_open_trades()
-                    has_short = any(str(t.get("is_short", "")).lower() == "true" for t in trades)
-                    if has_short:
-                        direction_short_service.mark_short_open(symbol="BTCUSDT")
-                        logger.info("方向做空开仓确认（forceenter 超时但持仓已存在）")
+                    import time
+
+                    time.sleep(10)
+                    trades = sim_client.list_trades(limit=5)
+                    direction_short_service.reconcile_with_trades(trades)
+                    if direction_short_service.get_state().get("has_short_position"):
+                        logger.info("方向做空开仓确认（forceenter 超时但成交已落库，状态已对齐）")
                         return {
                             "action_taken": True,
                             "action": "direction_short_open",
-                            "message": f"开空确认成功（avg={avg_score:.3f}，forceenter 超时但持仓已开）",
+                            "message": f"开空确认成功（avg={avg_score:.3f}，forceenter 超时但持仓已成交）",
                         }
-                except Exception:
-                    pass
+                except Exception as inner_exc:
+                    logger.warning("方向做空开仓确认查询失败: %s", inner_exc)
                 logger.warning("方向做空开仓失败: %s", exc)
                 return {"action_taken": False, "action": "direction_short", "message": f"开空失败: {exc}"}
 
