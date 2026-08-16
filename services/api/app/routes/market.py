@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -241,6 +242,9 @@ def refresh_rsi_cache_endpoint(interval: str = "1d") -> dict:
 # 入口条件缓存
 _entry_conditions_cache: dict[str, object] = {"data": None, "ts": 0}
 _ENTRY_CONDITIONS_TTL = 300  # 5分钟
+# 并发保护：过期时用旧值兜底 + 后台刷新，多页面同时请求只计算一次
+_entry_conditions_lock = threading.Lock()
+_entry_conditions_refreshing = False
 
 
 def _fetch_entry_conditions(symbol: str, allowed_symbols: tuple) -> dict | None:
@@ -324,11 +328,34 @@ def get_entry_conditions() -> dict:
     2. 4H 价格 > SMA200（趋势向上）
     3. 4H RSI < 70（不超买）
     4. 成交量 > 过去7天同一时段均量 × 0.6
+
+    缓存 5 分钟；过期时先用旧值响应并后台刷新，
+    只有服务刚启动还没有缓存时才同步计算（并发由锁保证只算一次）。
     """
+    global _entry_conditions_refreshing
     now = time.time()
     cached = _entry_conditions_cache.get("data")
-    if cached is not None and now - _entry_conditions_cache.get("ts", 0) < _ENTRY_CONDITIONS_TTL:
-        return _success(cached, {"source": "cache"})
+
+    with _entry_conditions_lock:
+        if cached is not None and now - _entry_conditions_cache.get("ts", 0) < _ENTRY_CONDITIONS_TTL:
+            return _success(cached, {"source": "cache"})
+
+        # 有旧值：立即返回旧值，并让后台线程去刷新（本次请求不等待币安）
+        if cached is not None:
+            if not _entry_conditions_refreshing:
+                _entry_conditions_refreshing = True
+                threading.Thread(target=_refresh_entry_conditions_in_background, name="entry-conditions-refresh", daemon=True).start()
+            return _success(cached, {"source": "stale-cache"})
+
+        # 无旧值（首次启动）：持锁同步计算，其他并发请求在锁上等待后命中新缓存
+        payload = _compute_entry_conditions_payload()
+        _entry_conditions_cache["data"] = payload
+        _entry_conditions_cache["ts"] = time.time()
+        return _success(payload, {"source": "binance"})
+
+
+def _compute_entry_conditions_payload() -> dict:
+    """现场计算全部监控币种的入场条件（较重，只在缓存缺失/后台刷新时调用）。"""
 
     settings = Settings.from_env()
     symbols = settings.market_symbols
@@ -351,15 +378,24 @@ def get_entry_conditions() -> dict:
     # 计算通过数量
     passed = [r for r in results if r["all_pass"]]
 
-    payload = {
+    return {
         "items": results,
         "total": len(results),
         "passed_count": len(passed),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    _entry_conditions_cache["data"] = payload
-    _entry_conditions_cache["ts"] = now
-    return _success(payload, {"source": "binance"})
+
+
+def _refresh_entry_conditions_in_background() -> None:
+    """后台刷新入场条件缓存，刷新完成或失败都释放刷新标记。"""
+    global _entry_conditions_refreshing
+    try:
+        payload = _compute_entry_conditions_payload()
+        _entry_conditions_cache["data"] = payload
+        _entry_conditions_cache["ts"] = time.time()
+    finally:
+        with _entry_conditions_lock:
+            _entry_conditions_refreshing = False
 
 
 def _build_freqtrade_readiness(settings: Settings) -> dict[str, object]:

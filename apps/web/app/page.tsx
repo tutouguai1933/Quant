@@ -99,6 +99,8 @@ export default function HomePage() {
   useEffect(() => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
+    // 加载指示最长 8 秒：请求再慢也先渲染已有内容，不让首页一直停在"数据加载中"
+    const loadingCapId = setTimeout(() => setIsLoading(false), 8000);
 
     // 4 个数据请求（共用一个 controller），allSettled 处理结果 + race 提前结束加载指示
     const requests = [
@@ -168,6 +170,7 @@ export default function HomePage() {
 
     return () => {
       clearTimeout(timeoutId);
+      clearTimeout(loadingCapId);
       controller.abort();
     };
   }, []);

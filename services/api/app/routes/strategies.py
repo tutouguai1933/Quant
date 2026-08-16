@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from services.api.app.adapters.freqtrade.client import freqtrade_client
 from services.api.app.services.automation_workflow_service import automation_workflow_service
@@ -43,6 +44,46 @@ router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
 _workspace_cache: dict[str, object] | None = None
 _workspace_cache_time: float = 0.0
 
+# 执行器公开状态缓存：首页高频请求，过期后用旧值兜底并后台刷新，
+# 避免在 freqtrade 慢时把请求线程拖住几十秒
+_PUBLIC_STATUS_CACHE_TTL = 5.0
+_public_status_cache: dict | None = None
+_public_status_cache_time: float = 0.0
+_public_status_lock = threading.Lock()
+_public_status_refreshing = False
+
+# 周期历史缓存：首页/任务页按 60s 轮询，5 秒内重复请求直接复用
+_CYCLE_HISTORY_CACHE_TTL = 5.0
+_cycle_history_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _compute_public_status_payload() -> dict:
+    """计算执行器公开状态载荷（可能较慢，只在缓存过期时调用）。"""
+    runtime = sync_service.get_runtime_snapshot()
+    return {
+        "executor": runtime.get("executor", "freqtrade"),
+        "connection_status": runtime.get("connection_status", "error"),
+        "mode": runtime.get("mode", "unknown"),
+        "status": runtime.get("status", "unavailable"),
+        "strategy_count": runtime.get("strategy_count", 0),
+        "order_count": runtime.get("order_count", 0),
+        "position_count": runtime.get("position_count", 0),
+    }
+
+
+def _refresh_public_status_in_background() -> None:
+    """后台刷新执行器状态缓存。"""
+    global _public_status_refreshing
+    try:
+        payload = _compute_public_status_payload()
+        global _public_status_cache, _public_status_cache_time
+        with _public_status_lock:
+            _public_status_cache = payload
+            _public_status_cache_time = time.monotonic()
+    finally:
+        with _public_status_lock:
+            _public_status_refreshing = False
+
 
 def _success(data: dict, meta: dict | None = None) -> dict:
     return {"data": data, "error": None, "meta": meta or {}}
@@ -58,21 +99,29 @@ def _unauthorized() -> dict:
 
 @router.get("/public/status")
 def get_public_status() -> dict:
-    """公开的执行器状态端点，无需认证。用于首页显示系统状态。"""
+    """公开的执行器状态端点，无需认证。用于首页显示系统状态。
+
+    缓存 5 秒；过期时先返回旧值并后台刷新，只有首次访问才同步等待。
+    """
+    global _public_status_cache, _public_status_cache_time, _public_status_refreshing
+    now = time.monotonic()
+    with _public_status_lock:
+        cached = _public_status_cache
+        fresh = cached is not None and now - _public_status_cache_time < _PUBLIC_STATUS_CACHE_TTL
+        if cached is not None and not _public_status_refreshing:
+            # 过期：后台刷新，本次直接用旧值响应（不阻塞首页）
+            _public_status_refreshing = True
+            threading.Thread(target=_refresh_public_status_in_background, name="public-status-refresh", daemon=True).start()
+        if cached is not None:
+            return _success(cached, {"source": "freqtrade", "cache": "fresh" if fresh else "stale"})
+
+    # 首次访问没有缓存：同步计算（慢，但只发生一次；后续请求走缓存）
     try:
-        runtime = sync_service.get_runtime_snapshot()
-        return _success(
-            {
-                "executor": runtime.get("executor", "freqtrade"),
-                "connection_status": runtime.get("connection_status", "error"),
-                "mode": runtime.get("mode", "unknown"),
-                "status": runtime.get("status", "unavailable"),
-                "strategy_count": runtime.get("strategy_count", 0),
-                "order_count": runtime.get("order_count", 0),
-                "position_count": runtime.get("position_count", 0),
-            },
-            {"source": "freqtrade"},
-        )
+        payload = _compute_public_status_payload()
+        with _public_status_lock:
+            _public_status_cache = payload
+            _public_status_cache_time = time.monotonic()
+        return _success(payload, {"source": "freqtrade"})
     except Exception as exc:
         return _success(
             {
@@ -94,13 +143,22 @@ def get_public_cycle_history(limit: int = 50) -> dict:
     """公开的自动化周期历史端点，无需认证。用于查看系统运行记录。"""
     from services.api.app.services.automation_cycle_history_service import automation_cycle_history_service
 
+    # 5 秒内相同 limit 的重复请求直接返回缓存，避免多卡片轮询重复计算
+    cache_key = str(int(limit))
+    now = time.monotonic()
+    cached = _cycle_history_cache.get(cache_key)
+    if cached is not None and now - cached[0] < _CYCLE_HISTORY_CACHE_TTL:
+        return _success(cached[1], {"source": "automation-cycle-history", "cache": "fresh"})
+
     history = automation_cycle_history_service.get_history(limit=limit)
     summary = automation_cycle_history_service.get_summary()
+    payload = {
+        "items": history,
+        "summary": summary,
+    }
+    _cycle_history_cache[cache_key] = (time.monotonic(), payload)
     return _success(
-        {
-            "items": history,
-            "summary": summary,
-        },
+        payload,
         {"source": "automation-cycle-history"},
     )
 
