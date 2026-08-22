@@ -35,7 +35,9 @@ FREQTRADE_HOST = (
 )
 
 # 只读代理缓存：path -> (写入时间, 响应数据)；5 秒内重复请求直接复用
-_PROXY_CACHE_TTL_SECONDS = 5.0
+_PROXY_CACHE_TTL_SECONDS = 30.0
+_PROXY_FAIL_WINDOW_SECONDS = 10.0
+_proxy_fail_until: dict[str, float] = {}
 _proxy_cache: dict[str, tuple[float, Any]] = {}
 # 并发单飞：同一个 path 同时只有一个真实请求，其余等待同一个结果
 _proxy_inflight: dict[str, asyncio.Future[Any]] = {}
@@ -46,6 +48,10 @@ async def _cached_freqtrade_get(path: str, params: dict[str, Any] | None = None)
 
     cache_key = f"{path}?{params}" if params else path
     now = time.monotonic()
+    # 失败冷却：freqtrade 刚失败过（10 秒内）时快速抛错，不排队打它
+    fail_until = _proxy_fail_until.get(cache_key)
+    if fail_until is not None and now < fail_until:
+        raise RuntimeError(f"freqtrade recently failed (cooldown), path={path}")
     cached = _proxy_cache.get(cache_key)
     if cached is not None and now - cached[0] < _PROXY_CACHE_TTL_SECONDS:
         return cached[1]
@@ -69,10 +75,14 @@ async def _cached_freqtrade_get(path: str, params: dict[str, Any] | None = None)
             resp.raise_for_status()
             payload = resp.json()
         _proxy_cache[cache_key] = (time.monotonic(), payload)
+        _proxy_fail_until.pop(cache_key, None)
         future.set_result(payload)
         return payload
     except Exception as exc:
-        # 失败不写缓存；通知等待者后向上抛出，由各接口自行降级
+        # 失败记录失败时间：freqtrade 挂起时 10 秒内的新请求直接快速抛错，
+        # 不再排队打无响应的 freqtrade（曾致线程池占满卡死）。
+        # 各接口自行捕获异常降级（现有逻辑已支持）。
+        _proxy_fail_until[cache_key] = time.monotonic() + 10.0
         if not future.done():
             future.set_exception(exc)
         raise

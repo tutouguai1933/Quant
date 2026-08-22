@@ -92,6 +92,18 @@ async def lifespan(app: FastAPI):
 
     替代已废弃的 @app.on_event("startup"/"shutdown")。
     """
+    # ==================== 线程池扩容（最先执行） ====================
+    # FastAPI 同步路由跑在 anyio 线程池（默认容量仅 40）。
+    # freqtrade/币安慢请求（10~20 秒）并发时会把 40 个线程全部占住，
+    # 后续请求（含 /health）排队等待 -> api 整体"卡死"。扩容到 200 根治。
+    try:
+        import anyio.to_thread
+
+        anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+        logger.info("同步路由线程池已扩容: 40 -> 200")
+    except Exception as exc:
+        logger.warning("线程池扩容失败: %s", exc)
+
     # ==================== 启动逻辑（原 setup_event_loop） ====================
     # 启用文件日志（持久化到挂载卷，容器重建后日志仍可回溯卡死原因）
     try:
