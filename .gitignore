@@ -31,3 +31,4 @@ infra/freqtrade/user_data/*.sqlite-wal
 infra/freqtrade/user_data/data/
 infra/freqtrade/user_data/backtest_results/
 infra/freqtrade/user_data/logs/
+.research/
