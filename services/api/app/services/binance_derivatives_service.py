@@ -44,9 +44,10 @@ class BinanceDerivativesService:
         return self._store_dir / f"{symbol}_{endpoint}.jsonl"
 
     def fetch(self, symbol: str, endpoint: str) -> list[dict[str, Any]]:
-        """拉取端点数据。"""
+        """拉取端点数据（带浏览器 UA，币安对 Python 默认 UA 返回 403）。"""
         url = f"{FAPI}/{endpoint}?symbol={symbol}&period={PERIOD}&limit={LIMIT}"
-        with urllib.request.urlopen(url, timeout=20) as resp:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (quant-derivatives-sync)"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
             return json.load(resp)
 
     def sync_symbol(self, symbol: str) -> int:
