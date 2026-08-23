@@ -58,6 +58,14 @@
 - **修复**：①线程池扩容 40→200（main.py lifespan）②freqtrade 代理缓存 5s→30s + 失败冷却 10s（挂起时快速失败不排队）
 - 验证：health 3ms、页面正常；EP004 比赛方法论落地（OOS 考核基线 TEST auc=0.5287）
 
+
+### 13. 合约实战打通（08-13）
+- **第一笔真实合约空单成交**：XRP/USDT:USDT short 5.99 USDT 1x 杠杆 → forceexit 平仓闭环 ✓
+- **配置踩坑全记录**（都在 git）：期货 pair 格式 BTC/XRP + :USDT；ccxt 4.5 代理用 proxies dict（aiohttp_proxy 失效）；市价单需 entry_pricing.price_side=other；IOC 限价单在快速市场零成交（改 market+GTC）；ETH/BTC 合约最小下单额 22.8/81 USDT 超小额账户限制（XRP/DOGE 无此问题）
+- **合约实例**：quant-freqtrade-sim 容器（9014）已升级为实盘（dry_run=false），stake=9 USDT，白名单 ETH/BTC/XRP/DOGE
+- **密钥安全**：config.private.futures.json 已加 .gitignore；scp+docker cp 部署（不经 git）；服务器文件属主 www 需 docker cp 方式写入
+- **方向做空调度**：openclaw cycle_check → direction_short_service 决策（<0.38 开空/>0.45 平空）→ forceenter/forceexit；开仓超时后查持仓同步状态
+
 ## 上次进度（2026-08-09）
 
 **状态**：UI 统一终端风格完成（18 个组件）；api 卡死可观测性补齐（日志落盘+指标）；ops 页前后端契约 bug 修复
@@ -167,6 +175,14 @@
 - **根因（最终确认）**：FastAPI 同步路由跑在 anyio 线程池（默认容量仅 40），freqtrade/币安慢请求（10~20 秒）并发时占满 40 线程 → 后续请求（含 health）排队 → "卡死"；慢请求完成后自动恢复（解释了所有历史"卡死又自愈"现象）
 - **修复**：①线程池扩容 40→200（main.py lifespan）②freqtrade 代理缓存 5s→30s + 失败冷却 10s（挂起时快速失败不排队）
 - 验证：health 3ms、页面正常；EP004 比赛方法论落地（OOS 考核基线 TEST auc=0.5287）
+
+
+### 13. 合约实战打通（08-13）
+- **第一笔真实合约空单成交**：XRP/USDT:USDT short 5.99 USDT 1x 杠杆 → forceexit 平仓闭环 ✓
+- **配置踩坑全记录**（都在 git）：期货 pair 格式 BTC/XRP + :USDT；ccxt 4.5 代理用 proxies dict（aiohttp_proxy 失效）；市价单需 entry_pricing.price_side=other；IOC 限价单在快速市场零成交（改 market+GTC）；ETH/BTC 合约最小下单额 22.8/81 USDT 超小额账户限制（XRP/DOGE 无此问题）
+- **合约实例**：quant-freqtrade-sim 容器（9014）已升级为实盘（dry_run=false），stake=9 USDT，白名单 ETH/BTC/XRP/DOGE
+- **密钥安全**：config.private.futures.json 已加 .gitignore；scp+docker cp 部署（不经 git）；服务器文件属主 www 需 docker cp 方式写入
+- **方向做空调度**：openclaw cycle_check → direction_short_service 决策（<0.38 开空/>0.45 平空）→ forceenter/forceexit；开仓超时后查持仓同步状态
 
 ## 上次进度（2026-08-08）
 
