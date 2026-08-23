@@ -58,15 +58,15 @@
     "pair_blacklist": []
   },
   "order_types": {
-    "entry": "limit",
-    "exit": "limit",
+    "entry": "market",
+    "exit": "market",
     "emergency_exit": "market",
-    "stoploss": "limit",
+    "stoploss": "market",
     "stoploss_on_exchange": false
   },
   "order_time_in_force": {
-    "entry": "IOC",
-    "exit": "IOC"
+    "entry": "GTC",
+    "exit": "GTC"
   },
   "pairlists": [
     {
