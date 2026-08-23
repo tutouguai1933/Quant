@@ -51,8 +51,10 @@ services:
       HTTP_PROXY: http://127.0.0.1:7890
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: ${NO_PROXY:-127.0.0.1,localhost,freqtrade,mihomo}
+    # 合约实盘（由模拟盘升级）：live 配置 + 私钥（最后覆盖 key/secret）
     command: >
       trade
-      --config /freqtrade/user_data/config.futures.sim.json
+      --config /freqtrade/user_data/config.futures.live.json
       --config /freqtrade/user_data/config.proxy.mihomo.json
+      --config /freqtrade/user_data/config.private.futures.json
       --strategy EnhancedStrategy
