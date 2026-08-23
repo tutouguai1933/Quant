@@ -4,7 +4,7 @@
   "dry_run_wallet": 1000,
   "max_open_trades": 1,
   "stake_currency": "USDT",
-  "stake_amount": 20,
+  "stake_amount": 10,
   "tradable_balance_ratio": 0.95,
   "timeframe": "1h",
   "cancel_open_orders_on_exit": true,
