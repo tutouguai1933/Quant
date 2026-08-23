@@ -25,11 +25,12 @@ PERIOD = "4h"
 LIMIT = "500"
 
 # 端点与提取字段
+# 注意：value 是完整路径（缺 /futures/data 前缀会打到不存在的路径返回 403）
 ENDPOINTS = {
-    "openInterestHist": lambda r: float(r["sumOpenInterest"]),
-    "topLongShortPositionRatio": lambda r: float(r["longShortRatio"]),
-    "globalLongShortAccountRatio": lambda r: float(r["longShortRatio"]),
-    "takerlongshortRatio": lambda r: float(r["buySellRatio"]),
+    "futures/data/openInterestHist": lambda r: float(r["sumOpenInterest"]),
+    "futures/data/topLongShortPositionRatio": lambda r: float(r["longShortRatio"]),
+    "futures/data/globalLongShortAccountRatio": lambda r: float(r["longShortRatio"]),
+    "futures/data/takerlongshortRatio": lambda r: float(r["buySellRatio"]),
 }
 
 
@@ -41,7 +42,8 @@ class BinanceDerivativesService:
         self._store_dir.mkdir(parents=True, exist_ok=True)
 
     def _store_path(self, symbol: str, endpoint: str) -> Path:
-        return self._store_dir / f"{symbol}_{endpoint}.jsonl"
+        # 文件名取端点末段（endpoint 可能是 "futures/data/xxx" 完整路径）
+        return self._store_dir / f"{symbol}_{endpoint.split('/')[-1]}.jsonl"
 
     def fetch(self, symbol: str, endpoint: str) -> list[dict[str, Any]]:
         """拉取端点数据（带浏览器 UA，币安对 Python 默认 UA 返回 403）。"""
