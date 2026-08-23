@@ -80,6 +80,16 @@ class KlineSyncScheduler:
         sync_service.incremental_sync(symbols, timeframes)
         logger.info("K 线增量同步完成: %d 币 × %d 周期, 耗时 %.1fs", len(symbols), len(timeframes), time.time() - started)
 
+        # 顺带同步衍生品另类数据（BTC/ETH 持仓量与多空比，为策略研究积累）
+        try:
+            from services.api.app.services.binance_derivatives_service import binance_derivatives_service
+
+            added = binance_derivatives_service.sync_all()
+            if added:
+                logger.info("衍生品数据新增 %d 条", added)
+        except Exception as exc:
+            logger.warning("衍生品数据同步失败: %s", exc)
+
 
 # 默认实例
 kline_sync_scheduler = KlineSyncScheduler()
