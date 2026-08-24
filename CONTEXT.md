@@ -78,6 +78,13 @@
 - **修复**：全局复用 AsyncClient（limits 20连接）；lifespan 最先预热 httpx/httpcore/anyio import
 - **验证**：freqtrade/status 21s→4ms；Playwright 18 页切换 0 卡死 0 慢请求
 
+
+### 16. 第二次构建卡死 + 部署守卫落地（08-25）
+- **再次失联**：web 构建时叠加 api 重负载（自动化周期）→ 内存耗尽 thrashing → 失联，用户手动重启
+- **沉淀**：safe_deploy.sh 部署守卫（/home/djy/scripts/）：可用内存<500MB 或磁盘<15% 拒绝构建；研究任务 running 时等待
+- **教训**：1.6G 服务器上"构建 + api 重负载并发 = 必卡"；构建前必须检查资源；api 重启可快速释放 ~450MB 内存
+- **首页新增**：方向做空（合约）实时状态卡上线（复用 DirectionShortStatusCard），显示模型平均分数/做空状态/模拟盈亏
+
 ## 上次进度（2026-08-09）
 
 **状态**：UI 统一终端风格完成（18 个组件）；api 卡死可观测性补齐（日志落盘+指标）；ops 页前后端契约 bug 修复
@@ -207,6 +214,13 @@
 - **py-spy 现行抓获**：主线程卡在 httpcore 懒加载 import + 连接池 _close_connections——freqtrade_proxy 的 `_freqtrade_client()` 每次 new httpx.AsyncClient 且 async with 用完即 close → 销毁时在事件循环里触发模块懒加载与池清理（磁盘慢时数秒~数十秒）
 - **修复**：全局复用 AsyncClient（limits 20连接）；lifespan 最先预热 httpx/httpcore/anyio import
 - **验证**：freqtrade/status 21s→4ms；Playwright 18 页切换 0 卡死 0 慢请求
+
+
+### 16. 第二次构建卡死 + 部署守卫落地（08-25）
+- **再次失联**：web 构建时叠加 api 重负载（自动化周期）→ 内存耗尽 thrashing → 失联，用户手动重启
+- **沉淀**：safe_deploy.sh 部署守卫（/home/djy/scripts/）：可用内存<500MB 或磁盘<15% 拒绝构建；研究任务 running 时等待
+- **教训**：1.6G 服务器上"构建 + api 重负载并发 = 必卡"；构建前必须检查资源；api 重启可快速释放 ~450MB 内存
+- **首页新增**：方向做空（合约）实时状态卡上线（复用 DirectionShortStatusCard），显示模型平均分数/做空状态/模拟盈亏
 
 ## 上次进度（2026-08-08）
 
