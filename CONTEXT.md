@@ -72,6 +72,12 @@
 - **修复**：KlineStore 加 get_cached() 全局单例（按 root 缓存）；research_service/kline_sync_scheduler/market_service 三处统一复用
 - **教训**：构造函数里做重 IO 是反模式；多入口创建重量级对象必须走单例缓存
 
+
+### 15. 又一根因：AsyncClient 反复新建销毁（08-13晚第二次卡死）
+- **py-spy 现行抓获**：主线程卡在 httpcore 懒加载 import + 连接池 _close_connections——freqtrade_proxy 的 `_freqtrade_client()` 每次 new httpx.AsyncClient 且 async with 用完即 close → 销毁时在事件循环里触发模块懒加载与池清理（磁盘慢时数秒~数十秒）
+- **修复**：全局复用 AsyncClient（limits 20连接）；lifespan 最先预热 httpx/httpcore/anyio import
+- **验证**：freqtrade/status 21s→4ms；Playwright 18 页切换 0 卡死 0 慢请求
+
 ## 上次进度（2026-08-09）
 
 **状态**：UI 统一终端风格完成（18 个组件）；api 卡死可观测性补齐（日志落盘+指标）；ops 页前后端契约 bug 修复
@@ -195,6 +201,12 @@
 - **py-spy 现行抓获**：训练任务 run_training → _sync_kline_store → **new KlineStore() 构造函数全量重建索引**（16币×4周期 jsonl 解析，CPU/GIL 密集数十秒）→ 进程整体拖慢 → 前端请求超时
 - **修复**：KlineStore 加 get_cached() 全局单例（按 root 缓存）；research_service/kline_sync_scheduler/market_service 三处统一复用
 - **教训**：构造函数里做重 IO 是反模式；多入口创建重量级对象必须走单例缓存
+
+
+### 15. 又一根因：AsyncClient 反复新建销毁（08-13晚第二次卡死）
+- **py-spy 现行抓获**：主线程卡在 httpcore 懒加载 import + 连接池 _close_connections——freqtrade_proxy 的 `_freqtrade_client()` 每次 new httpx.AsyncClient 且 async with 用完即 close → 销毁时在事件循环里触发模块懒加载与池清理（磁盘慢时数秒~数十秒）
+- **修复**：全局复用 AsyncClient（limits 20连接）；lifespan 最先预热 httpx/httpcore/anyio import
+- **验证**：freqtrade/status 21s→4ms；Playwright 18 页切换 0 卡死 0 慢请求
 
 ## 上次进度（2026-08-08）
 
