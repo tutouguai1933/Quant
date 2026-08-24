@@ -900,7 +900,9 @@ class OpenclawPatrolService:
                         }
                 except Exception as inner_exc:
                     logger.warning("方向做空开仓确认查询失败: %s", inner_exc)
-                logger.warning("方向做空开仓失败: %s", exc)
+                # 开仓失败：标记 5 分钟后重试（避免等下一轮巡检的 1 小时空窗）
+                direction_short_service.mark_retry(minutes=5)
+                logger.warning("方向做空开仓失败（5 分钟后重试）: %s", exc)
                 return {"action_taken": False, "action": "direction_short", "message": f"开空失败: {exc}"}
 
         if action == "close_short":

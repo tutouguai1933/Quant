@@ -53,6 +53,7 @@ class DirectionShortService:
             "closed_at": "",
             "last_avg_score": None,
             "last_decision_at": "",
+            "retry_after": None,  # 开仓失败后的重试时间（ISO），未到不重复尝试
         }
         self._load_state()
 
@@ -88,6 +89,17 @@ class DirectionShortService:
             self._state["last_avg_score"] = avg_score
             self._state["last_decision_at"] = _utc_now()
 
+            # 重试冷却：上次开仓失败后 5 分钟内不重复尝试（避免高频打挂的下游）
+            retry_after = self._state.get("retry_after")
+            if retry_after and not position:
+                try:
+                    retry_dt = datetime.fromisoformat(str(retry_after).replace("Z", "+00:00"))
+                    if datetime.now(timezone.utc) < retry_dt:
+                        self._persist()
+                        return {"action": "hold", "reason": f"retry_cooldown_until_{retry_after}"}
+                except (ValueError, TypeError):
+                    pass
+
             if avg_score is None:
                 self._persist()
                 return {"action": "hold", "reason": "no_signal"}
@@ -103,6 +115,20 @@ class DirectionShortService:
                 "action": "hold",
                 "reason": "position_bearish" if position else "score_not_extreme",
             }
+
+    def mark_retry(self, *, minutes: int = 5) -> None:
+        """标记 N 分钟后再重试开空（开仓失败时调用）。"""
+        with self._lock:
+            retry_at = datetime.now(timezone.utc)
+            from datetime import timedelta
+            self._state["retry_after"] = (retry_at + timedelta(minutes=minutes)).isoformat()
+            self._persist()
+
+    def clear_retry(self) -> None:
+        """清除重试标记（开仓成功或转暖平仓时）。"""
+        with self._lock:
+            self._state["retry_after"] = None
+            self._persist()
 
     def mark_short_open(self, *, symbol: str = SHORT_SYMBOL) -> None:
         """标记空仓已开。"""
