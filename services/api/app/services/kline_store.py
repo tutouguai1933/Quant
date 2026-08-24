@@ -19,6 +19,21 @@ class KlineStore:
     读操作无锁；写操作通过 fcntl.flock 保证同一进程内多线程安全。
     """
 
+    # 全局实例缓存：按 root 路径复用，避免重复构造时全量重建索引
+    # （重建需解析全部 jsonl，16 币×4 周期可达数百 MB，曾拖慢整个进程）
+    _instance_cache: dict[str, "KlineStore"] = {}
+    _instance_cache_lock = threading.Lock()
+
+    @classmethod
+    def get_cached(cls, root: str) -> "KlineStore":
+        """获取（或创建）按 root 路径共享的 KlineStore 实例。"""
+        with cls._instance_cache_lock:
+            store = cls._instance_cache.get(root)
+            if store is None:
+                store = cls(root=root)
+                cls._instance_cache[root] = store
+            return store
+
     def __init__(self, root: Path | str | None = None) -> None:
         if root is None:
             root = Path(".runtime/kline_store")

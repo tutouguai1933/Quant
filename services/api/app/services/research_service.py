@@ -316,7 +316,7 @@ class ResearchService:
                 data_config=data_config, whitelist=whitelist,
             )
             selected_timeframes = self._resolve_selected_timeframes(data_config=data_config)
-            store = KlineStore(root=settings.kline_store_root)
+            store = KlineStore.get_cached(settings.kline_store_root)
             sync_service = KlineSyncService(store=store, market_client=BinanceMarketClient())
             sync_service.incremental_sync(selected_symbols, sorted(selected_timeframes))
         except Exception:

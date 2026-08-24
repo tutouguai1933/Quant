@@ -71,7 +71,7 @@ class KlineSyncScheduler:
         if not settings.kline_store_enabled:
             return
 
-        store = KlineStore(root=settings.kline_store_root)
+        store = KlineStore.get_cached(str(settings.kline_store_root))
         sync_service = KlineSyncService(store=store, market_client=BinanceMarketClient())
         symbols = list(settings.market_symbols)
         # 默认同步 1h/4h/15m/1d 四个常用周期（与本地仓库文件一致）
