@@ -66,6 +66,12 @@
 - **密钥安全**：config.private.futures.json 已加 .gitignore；scp+docker cp 部署（不经 git）；服务器文件属主 www 需 docker cp 方式写入
 - **方向做空调度**：openclaw cycle_check → direction_short_service 决策（<0.38 开空/>0.45 平空）→ forceenter/forceexit；开仓超时后查持仓同步状态
 
+
+### 14. 又一次卡死根因（08-13晚，KlineStore重复重建）
+- **py-spy 现行抓获**：训练任务 run_training → _sync_kline_store → **new KlineStore() 构造函数全量重建索引**（16币×4周期 jsonl 解析，CPU/GIL 密集数十秒）→ 进程整体拖慢 → 前端请求超时
+- **修复**：KlineStore 加 get_cached() 全局单例（按 root 缓存）；research_service/kline_sync_scheduler/market_service 三处统一复用
+- **教训**：构造函数里做重 IO 是反模式；多入口创建重量级对象必须走单例缓存
+
 ## 上次进度（2026-08-09）
 
 **状态**：UI 统一终端风格完成（18 个组件）；api 卡死可观测性补齐（日志落盘+指标）；ops 页前后端契约 bug 修复
@@ -183,6 +189,12 @@
 - **合约实例**：quant-freqtrade-sim 容器（9014）已升级为实盘（dry_run=false），stake=9 USDT，白名单 ETH/BTC/XRP/DOGE
 - **密钥安全**：config.private.futures.json 已加 .gitignore；scp+docker cp 部署（不经 git）；服务器文件属主 www 需 docker cp 方式写入
 - **方向做空调度**：openclaw cycle_check → direction_short_service 决策（<0.38 开空/>0.45 平空）→ forceenter/forceexit；开仓超时后查持仓同步状态
+
+
+### 14. 又一次卡死根因（08-13晚，KlineStore重复重建）
+- **py-spy 现行抓获**：训练任务 run_training → _sync_kline_store → **new KlineStore() 构造函数全量重建索引**（16币×4周期 jsonl 解析，CPU/GIL 密集数十秒）→ 进程整体拖慢 → 前端请求超时
+- **修复**：KlineStore 加 get_cached() 全局单例（按 root 缓存）；research_service/kline_sync_scheduler/market_service 三处统一复用
+- **教训**：构造函数里做重 IO 是反模式；多入口创建重量级对象必须走单例缓存
 
 ## 上次进度（2026-08-08）
 
