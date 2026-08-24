@@ -14,6 +14,7 @@ import {
   TerminalCard,
 } from "../components/terminal";
 import { CoreNumberCard, HomeMoreDetails } from "../components/home-workbench-grid";
+import { DirectionShortStatusCard } from "../components/direction-short-status-card";
 import { readFeedback } from "../lib/feedback";
 import { RsiSummaryCard } from "../components/rsi-summary-card";
 import { TradeHistorySummaryCard } from "../components/trade-history-summary-card";
@@ -312,6 +313,9 @@ export default function HomePage() {
             degraded={executorDegraded}
           />
         </div>
+
+        {/* 第三行：方向做空（合约）实时状态——主要交易策略，置顶展示 */}
+        <DirectionShortStatusCard token={session.token} />
 
         {/* 第三行：快速导航 */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
