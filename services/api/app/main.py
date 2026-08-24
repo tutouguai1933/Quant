@@ -96,9 +96,15 @@ async def lifespan(app: FastAPI):
     # 事件循环里首次触发 httpx/httpcore/anyio 的懒加载 import 时，
     # 磁盘慢会阻塞事件循环数秒~数十秒（曾致 api 卡死）。启动时提前加载。
     try:
+        # 深层预热：这些模块若在运行时首次加载，磁盘慢会阻塞事件循环数秒~数十秒
+        import _distutils_hack  # noqa: F401  (setuptools hook, 被 httpcore 间接触发)
         import httpcore  # noqa: F401
+        import httpcore._synchronization  # noqa: F401
+        import httpcore._async.connection_pool  # noqa: F401
         import httpx  # noqa: F401
         import anyio  # noqa: F401
+        import anyio._core._eventloop  # noqa: F401
+        import anyio._core._synchronization  # noqa: F401
         import anyio._backends._asyncio  # noqa: F401
         logger.info("HTTP 客户端模块预热完成")
     except Exception as exc:
