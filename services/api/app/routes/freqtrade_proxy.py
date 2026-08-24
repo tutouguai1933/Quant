@@ -70,10 +70,11 @@ async def _cached_freqtrade_get(path: str, params: dict[str, Any] | None = None)
     _proxy_inflight[cache_key] = future
     try:
         auth = _get_auth()
-        async with _freqtrade_client() as client:
-            resp = await client.get(f"{FREQTRADE_HOST}{path}", params=params, auth=auth)
-            resp.raise_for_status()
-            payload = resp.json()
+        # 全局客户端复用，不用 async with（避免每次请求关闭连接池）
+        client = _freqtrade_client()
+        resp = await client.get(f"{FREQTRADE_HOST}{path}", params=params, auth=auth)
+        resp.raise_for_status()
+        payload = resp.json()
         _proxy_cache[cache_key] = (time.monotonic(), payload)
         _proxy_fail_until.pop(cache_key, None)
         future.set_result(payload)
@@ -90,10 +91,22 @@ async def _cached_freqtrade_get(path: str, params: dict[str, Any] | None = None)
         _proxy_inflight.pop(cache_key, None)
 
 
-def _freqtrade_client() -> httpx.AsyncClient:
-    """创建 Freqtrade 直连客户端，避免本机执行器请求误走系统代理。"""
+# 全局复用的 AsyncClient：每次请求新建/销毁连接池会在事件循环里触发
+# httpcore 懒加载 import 与池初始化（磁盘慢时卡数秒~数十秒，曾致事件循环阻塞卡死）
+_shared_freqtrade_client: httpx.AsyncClient | None = None
 
-    return httpx.AsyncClient(timeout=10.0, trust_env=False)
+
+def _freqtrade_client() -> httpx.AsyncClient:
+    """返回全局复用的 Freqtrade 直连客户端（避免本机执行器请求误走系统代理）。"""
+
+    global _shared_freqtrade_client
+    if _shared_freqtrade_client is None or _shared_freqtrade_client.is_closed:
+        _shared_freqtrade_client = httpx.AsyncClient(
+            timeout=10.0,
+            trust_env=False,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+    return _shared_freqtrade_client
 
 
 def _get_auth() -> tuple[str, str]:

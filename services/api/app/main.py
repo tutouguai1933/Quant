@@ -92,6 +92,18 @@ async def lifespan(app: FastAPI):
 
     替代已废弃的 @app.on_event("startup"/"shutdown")。
     """
+    # ==================== 预热懒加载模块（最先执行） ====================
+    # 事件循环里首次触发 httpx/httpcore/anyio 的懒加载 import 时，
+    # 磁盘慢会阻塞事件循环数秒~数十秒（曾致 api 卡死）。启动时提前加载。
+    try:
+        import httpcore  # noqa: F401
+        import httpx  # noqa: F401
+        import anyio  # noqa: F401
+        import anyio._backends._asyncio  # noqa: F401
+        logger.info("HTTP 客户端模块预热完成")
+    except Exception as exc:
+        logger.warning("模块预热失败: %s", exc)
+
     # ==================== 线程池扩容（最先执行） ====================
     # FastAPI 同步路由跑在 anyio 线程池（默认容量仅 40）。
     # freqtrade/币安慢请求（10~20 秒）并发时会把 40 个线程全部占住，
