@@ -110,7 +110,7 @@ def backtest_symbol(bars: list[dict[str, Any]], symbol: str = "", split_ratio: f
         if close > prior_high:
             position = {"symbol": symbol, "dir": "long", "entry": close, "bar": i}
         elif close < prior_low:
-            position = {"symbol": SYM, "dir": "short", "entry": close, "bar": i}
+            position = {"symbol": symbol, "dir": "short", "entry": close, "bar": i}
 
     # 强制平掉未平仓位（按最后收盘价结算）
     if position is not None:
