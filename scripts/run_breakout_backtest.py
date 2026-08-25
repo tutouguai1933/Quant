@@ -48,7 +48,7 @@ def load_klines(kline_dir: str, symbol: str) -> list[dict[str, Any]]:
     return bars
 
 
-def backtest_symbol(bars: list[dict[str, Any]], split_ratio: float = TRAIN_RATIO) -> dict[str, Any]:
+def backtest_symbol(bars: list[dict[str, Any]], symbol: str = "", split_ratio: float = TRAIN_RATIO) -> dict[str, Any]:
     """单币回测，返回交易列表。返回字段含 train/test 标记。"""
     closes = [float(b["close"]) for b in bars]
     highs = [float(b["high"]) for b in bars]
@@ -110,7 +110,7 @@ def backtest_symbol(bars: list[dict[str, Any]], split_ratio: float = TRAIN_RATIO
         if close > prior_high:
             position = {"symbol": symbol, "dir": "long", "entry": close, "bar": i}
         elif close < prior_low:
-            position = {"symbol": symbol, "dir": "short", "entry": close, "bar": i}
+            position = {"symbol": SYM, "dir": "short", "entry": close, "bar": i}
 
     # 强制平掉未平仓位（按最后收盘价结算）
     if position is not None:
@@ -156,7 +156,7 @@ def main() -> int:
         bars = load_klines(kline_dir, sym)
         if len(bars) < LOOKBACK * 3:
             continue
-        all_trades.extend(backtest_symbol(bars))
+        all_trades.extend(backtest_symbol(bars, symbol=sym))
         print(f"{sym}: 完成", flush=True)
 
     train = [t for t in all_trades if t["segment"] == "train"]
