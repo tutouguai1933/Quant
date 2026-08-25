@@ -92,6 +92,14 @@
 - **修复**：logging 改 QueueHandler+QueueListener 队列化异步写（调用线程只入队微秒级，文件 IO 后台串行）——logging 标准做法
 - **验证**：WebSocket 已连接、页面无卡死无失败提示、方向做空卡正常显示
 
+
+### 18. 第 6 个卡死根因闭环（08-25）：7MB JSON 重复解析的 GIL 风暴
+- **py-spy 现行抓获**：ThreadPoolExecutor 线程持 GIL 做 json/loads 解析 latest_inference.json（4.2MB）+ latest_training.json（3.2MB）→ 主事件循环完全停摆（GIL 是进程级互斥）→ 全站无响应
+- **触发链**：entry-conditions/chart 高频接口 → get_symbol_research → get_latest_result 缓存仅 5 秒 → 过期后每次请求都重新读+解析 7MB JSON
+- **修复**：research_service 缓存 TTL 5→60 秒；训练/推理任务完成后主动 invalidate_result_caches()（新结果立即可见，平时不重复解析）
+- **验证**：Playwright 快速切换 18 页 0 卡死
+- **教训**：Python 的 json.loads 持有 GIL——大 JSON 的高频解析就是"周期性全站冻结"的元凶；缓存 TTL 必须与解析成本匹配
+
 ## 上次进度（2026-08-09）
 
 **状态**：UI 统一终端风格完成（18 个组件）；api 卡死可观测性补齐（日志落盘+指标）；ops 页前后端契约 bug 修复
@@ -235,6 +243,14 @@
 - **根因叠加**：昨天启用的文件日志让每个请求都多了"抢锁+同步写磁盘"路径，磁盘慢时雪崩
 - **修复**：logging 改 QueueHandler+QueueListener 队列化异步写（调用线程只入队微秒级，文件 IO 后台串行）——logging 标准做法
 - **验证**：WebSocket 已连接、页面无卡死无失败提示、方向做空卡正常显示
+
+
+### 18. 第 6 个卡死根因闭环（08-25）：7MB JSON 重复解析的 GIL 风暴
+- **py-spy 现行抓获**：ThreadPoolExecutor 线程持 GIL 做 json/loads 解析 latest_inference.json（4.2MB）+ latest_training.json（3.2MB）→ 主事件循环完全停摆（GIL 是进程级互斥）→ 全站无响应
+- **触发链**：entry-conditions/chart 高频接口 → get_symbol_research → get_latest_result 缓存仅 5 秒 → 过期后每次请求都重新读+解析 7MB JSON
+- **修复**：research_service 缓存 TTL 5→60 秒；训练/推理任务完成后主动 invalidate_result_caches()（新结果立即可见，平时不重复解析）
+- **验证**：Playwright 快速切换 18 页 0 卡死
+- **教训**：Python 的 json.loads 持有 GIL——大 JSON 的高频解析就是"周期性全站冻结"的元凶；缓存 TTL 必须与解析成本匹配
 
 ## 上次进度（2026-08-08）
 
