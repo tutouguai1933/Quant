@@ -88,7 +88,76 @@ class BinanceDerivativesService:
         total = 0
         for symbol in SYMBOLS:
             total += self.sync_symbol(symbol)
+        # 另类数据源（全市场共享，非单币种）
+        try:
+            total += self.sync_funding_rate("BTCUSDT")
+        except Exception as exc:
+            logger.warning("资金费率同步失败: %s", exc)
+        try:
+            total += self.sync_fear_greed()
+        except Exception as exc:
+            logger.warning("恐惧贪婪指数同步失败: %s", exc)
         return total
+
+    def sync_funding_rate(self, symbol: str = "BTCUSDT") -> int:
+        """同步资金费率历史（8 小时一次，反映多空持仓成本与拥挤度）。"""
+        path = self._store_dir / f"{symbol}_fundingRate.jsonl"
+        existing_ts: set[int] = set()
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                try:
+                    existing_ts.add(int(json.loads(line)["fundingTime"]))
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+        url = f"{FAPI}/fapi/v1/fundingRate?symbol={symbol}&limit=1000"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (quant-sync)"})
+        rows = json.load(urllib.request.urlopen(req, timeout=20))
+        new_lines = []
+        for row in rows:
+            ts = int(row["fundingTime"])
+            if ts in existing_ts:
+                continue
+            new_lines.append(json.dumps({
+                "timestamp": ts,
+                "rate": float(row["fundingRate"]),
+                "markPrice": float(row.get("markPrice", 0)),
+                "synced_at": _utc_now(),
+            }, ensure_ascii=False))
+        if new_lines:
+            with path.open("a", encoding="utf-8") as f:
+                f.write("\n".join(new_lines) + "\n")
+            logger.info("资金费率新增 %d 条 (%s)", len(new_lines), symbol)
+        return len(new_lines)
+
+    def sync_fear_greed(self) -> int:
+        """同步 Fear & Greed Index（每日，alternative.me 免费API）。"""
+        path = self._store_dir / "fear_greed_index.jsonl"
+        existing_ts: set[int] = set()
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                try:
+                    existing_ts.add(int(json.loads(line)["timestamp"]))
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+        url = "https://api.alternative.me/fng/?limit=0&format=json"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (quant-sync)"})
+        data = json.load(urllib.request.urlopen(req, timeout=20)).get("data") or []
+        new_lines = []
+        for row in data:
+            ts = int(row["timestamp"])
+            if ts in existing_ts:
+                continue
+            new_lines.append(json.dumps({
+                "timestamp": ts,
+                "value": int(row["value"]),
+                "classification": row.get("value_classification", ""),
+                "synced_at": _utc_now(),
+            }, ensure_ascii=False))
+        if new_lines:
+            with path.open("a", encoding="utf-8") as f:
+                f.write("\n".join(new_lines) + "\n")
+            logger.info("Fear&Greed 新增 %d 条", len(new_lines))
+        return len(new_lines)
 
 
 def _utc_now() -> str:
