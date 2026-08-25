@@ -27,7 +27,9 @@ class ResearchService:
     """负责研究层读写和最小结果转换。"""
 
     # 缓存 TTL（秒）
-    _CACHE_TTL: float = 5.0
+    # 大文件解析（7MB JSON）持 GIL 1-3 秒，TTL 过短会导致高频重复解析
+    # （GIL 风暴阻塞事件循环，曾致 api 整体卡死），故用 60 秒
+    _CACHE_TTL: float = 60.0
 
     def __init__(
         self,
@@ -62,6 +64,14 @@ class ResearchService:
         self._latest_result_cache = result
         self._latest_result_cache_time = now
         return result
+
+    def invalidate_result_caches(self) -> None:
+        """主动失效研究结果相关缓存（训练/推理完成后调用，让新结果立即可见）。"""
+
+        self._latest_result_cache = None
+        self._latest_result_cache_time = 0
+        self._factory_report_cache = None
+        self._factory_report_cache_time = 0
 
     def _compute_latest_result(self) -> dict[str, object]:
         """计算最近一次研究结果（无缓存）。"""

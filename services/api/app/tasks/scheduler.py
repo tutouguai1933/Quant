@@ -260,12 +260,16 @@ class TaskScheduler:
             from services.api.app.services.research_service import research_service
 
             source = str(payload.get("source", "manual"))
-            return research_service.run_training(source=source)
+            result = research_service.run_training(source=source)
+            # 训练/推理会重写 7MB 级 JSON，主动失效缓存让新结果立即可见（避免 TTL 内读到旧数据）
+            research_service.invalidate_result_caches()
+            return result
         if task_type == "research_infer":
             from services.api.app.services.research_service import research_service
 
             result = research_service.run_inference()
             signal_service.refresh_qlib_signals_from_latest_result()
+            research_service.invalidate_result_caches()
             return result
         if task_type == "signal_output":
             return signal_service.refresh_qlib_signals_from_latest_result()
