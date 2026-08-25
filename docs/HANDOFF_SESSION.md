@@ -10,6 +10,28 @@
 
 ## 当前进行中的工作（新 session 从这里接手）
 
+### 最新状态（2026-08-25 补充）
+
+**策略实验全景**（全部 OOS 验证过）：
+- ✅ 标签优化 close_only/2%/2-5d（唯一有效：0.532→0.566）
+- ❌ 排序学习/多周期特征/分组训练/横截面特征/截面选币做空/方向做空(选币)/波动率突破——全部无样本外正期望
+- 脚本留存 scripts/run_*.py，市场环境变化后可重跑
+- 波动率突破回测：TRAIN +62% → TEST -59%（典型过拟合，EP004 教训复现）
+
+**合约实战已打通**：
+- quant-freqtrade-sim 容器（9014）已升级为合约实盘实例（dry_run=false、真实 key、stake=9 USDT、白名单 ETH/BTC/XRP/DOGE）
+- 第一笔真实空单 XRP 已成交并平仓闭环
+- 配置坑全记录：期货 pair 格式 BTC/XRP+:USDT、ccxt proxies 参数、市价单需 price_side=other、api_server 认证
+- ⚠️ 合约账户余额 ~10 USDT；BTC 最小下单额 81U、ETH 22.8U 超出限制，XRP/DOGE 可以下单
+
+**服务器稳定性**：卡死问题累计闭环 6 个根因（rsi缓存风暴/docker阻塞事件循环/磁盘满/KlineStore重建/AsyncClient反复销毁/logging锁竞争+GIL风暴）。部署必须用守卫脚本 /home/djy/scripts/safe_deploy.sh（内存<500MB 拒绝构建）；磁盘每天 03:00 自动清理。
+
+### 待办清单（按优先级）
+1. 方向做空模拟盘观察期收益跟踪（对照预期命中率 77.8%）——数据在 direction_short_state.json + freqtrade-sim trades API
+2. 衍生品另类数据积累（采集服务已上线，15分钟/轮，攒够 2-4 周重跑 scripts/run_derivatives_study.py 有效性研究）
+3. 前端展示完善：首页方向做空状态卡已上线；任务页同款卡片已有
+4. （远期）模型能力提升：链上数据等新信息源调研——OOS 基线 TEST auc=0.5287 是考核标准
+
 ### 1. 方向做空（合约）观察期（进行中）
 
 **已完成**（08-13 前）：
