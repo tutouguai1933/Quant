@@ -64,7 +64,17 @@ def setup_logging(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         file_handler.setFormatter(file_formatter)
-        root_logger.addHandler(file_handler)
+
+        # 队列化异步写入：调用线程只入队（微秒级），文件 IO 由后台线程串行执行。
+        # 同步写曾导致 logging 内部锁被慢 IO 长期占用，主线程等锁阻塞事件循环（api 整体卡死）。
+        import queue
+        from logging.handlers import QueueHandler, QueueListener
+
+        log_queue: "queue.Queue[logging.LogRecord]" = queue.Queue(-1)
+        queue_handler = QueueHandler(log_queue)
+        root_logger.addHandler(queue_handler)
+        listener = QueueListener(log_queue, file_handler, respect_handler_level=True)
+        listener.start()
 
     # 添加控制台输出
     console_handler = logging.StreamHandler()
