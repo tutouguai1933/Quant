@@ -1524,6 +1524,9 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
         });
 
         if (!response.ok) {
+          if (response.status === 401 && token && typeof window !== "undefined") {
+            window.dispatchEvent(new Event("quant:session-expired"));
+          }
           const errorCode = `http_${response.status}`;
           if (isRetryableError({ code: errorCode }) && attempt < MAX_RETRIES) {
             await sleep(RETRY_DELAY_BASE * Math.pow(2, attempt));
@@ -1540,6 +1543,11 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
         }
 
         const result = (await response.json()) as ApiEnvelope<T>;
+        // 后端部分鉴权错误使用HTTP200信封返回，不能只看HTTP状态。
+        if (token && typeof window !== "undefined"
+            && ["unauthorized", "session_not_found"].includes(result.error?.code ?? "")) {
+          window.dispatchEvent(new Event("quant:session-expired"));
+        }
         if (shouldCache && !result.error) {
           responseCache.set(requestKey, {
             data: result,
@@ -2034,7 +2042,9 @@ export async function getAutomationStatus(
     // 接口返回错误：保留兜底数据供页面渲染，但 error 标记降级状态，页面据此显示"数据暂不可用"提示
     return {
       data: getAutomationStatusFallback(),
-      error: { ...DEGRADED_DATA_ERROR },
+      error: ["unauthorized", "session_not_found", "http_401"].includes(response.error.code)
+        ? { code: "session_expired", message: "登录已失效，请重新登录" }
+        : { ...DEGRADED_DATA_ERROR },
       meta: {
         source: "automation-status",
         fallback: true,

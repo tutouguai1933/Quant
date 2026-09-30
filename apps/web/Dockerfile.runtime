@@ -1,0 +1,7 @@
+# 复用服务器现有Next.js依赖，仅编译页面；不安装或升级依赖。
+ARG QUANT_WEB_BASE_IMAGE=deploy-web:latest
+FROM ${QUANT_WEB_BASE_IMAGE}
+WORKDIR /app/apps/web
+COPY apps/web /app/apps/web
+# 小服务器上限制每个构建进程的堆；构建容器仍需额外配置总内存边界。
+RUN NODE_OPTIONS=--max-old-space-size=384 NPM_CONFIG_UPDATE_NOTIFIER=false npm run build

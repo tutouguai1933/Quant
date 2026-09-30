@@ -1,35 +1,57 @@
-/* 会话守卫组件：cookie 存在但后端校验失败时，把页面跳转到登录页，避免误判已登录后展示假数据。 */
+/* 会话守卫：页面切换、重新聚焦和鉴权失败时恢复登录入口，避免展示假数据。 */
 
 "use client";
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-/* 会话守卫 - 挂在根布局里，监听路由变化并做失效会话跳转。 */
+/* 在保留当前页面地址的同时，处理后台部署或会话过期后的重新登录。 */
 export function SessionGuard() {
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
-    // 登录/登出相关页面不跳转，避免死循环
     if (!pathname || pathname === "/login" || pathname.startsWith("/logout")) {
       return;
     }
     let cancelled = false;
-    fetch("/api/control/session", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (cancelled) return;
-        // 只有 cookie 存在但后端校验失败才跳登录；没有 cookie 时保持匿名浏览行为
-        if (data && data.hasSessionCookie && !data.isAuthenticated) {
-          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    let pending = false;
+
+    /* 已确认令牌失效时返回登录，保留用户正在查看的页面。 */
+    const redirectToLogin = () => {
+      if (!cancelled) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    };
+
+    /* 复核当前cookie，网络不可达时等待恢复，不重复发出并发请求。 */
+    const checkSession = async () => {
+      if (pending || cancelled || document.visibilityState === "hidden") return;
+      pending = true;
+      try {
+        const response = await fetch("/api/control/session", {
+          cache: "no-store", signal: AbortSignal.timeout(5000),
+        });
+        const data = await response.json();
+        if (!cancelled && data.status === "expired") {
+          redirectToLogin();
         }
-      })
-      .catch(() => {
-        // 会话接口不可达时保持现状，不做跳转
-      });
+      } catch {
+        // 会话检查暂时不可达时保持页面，等待下一次聚焦或周期检查。
+      } finally {
+        pending = false;
+      }
+    };
+
+    void checkSession();
+    const timer = window.setInterval(() => void checkSession(), 60000);
+    window.addEventListener("focus", checkSession);
+    document.addEventListener("visibilitychange", checkSession);
+    window.addEventListener("quant:session-expired", redirectToLogin);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", checkSession);
+      document.removeEventListener("visibilitychange", checkSession);
+      window.removeEventListener("quant:session-expired", redirectToLogin);
     };
   }, [pathname, router]);
 

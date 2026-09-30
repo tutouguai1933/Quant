@@ -10,6 +10,7 @@ export async function GET() {
       token: session.token,
       isAuthenticated: session.isAuthenticated,
       hasSessionCookie: session.hasSessionCookie,
+      status: session.status,
     });
   } catch (error) {
     return NextResponse.json(

@@ -77,6 +77,7 @@ services:
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,172.17.0.1,api,web,freqtrade,mihomo
       QUANT_LOG_DIR: /app/logs
+      QUANT_SESSION_STATE_PATH: /app/.runtime/auth_sessions.json
       QUANT_LOG_QUEUE_LIMIT: ${QUANT_LOG_QUEUE_LIMIT:-1000}
       QUANT_API_THREAD_LIMIT: ${QUANT_API_THREAD_LIMIT:-40}
       QUANT_KLINE_CACHE_MAX_ROWS: ${QUANT_KLINE_CACHE_MAX_ROWS:-5000}

@@ -7,3 +7,10 @@ services:
       dockerfile: services/api/Dockerfile.runtime
       args:
         QUANT_API_BASE_IMAGE: ${QUANT_API_BASE_IMAGE:-deploy-api:latest}
+  web:
+    image: ${QUANT_WEB_RUNTIME_IMAGE:-quant-web-runtime:local}
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile.runtime
+      args:
+        QUANT_WEB_BASE_IMAGE: ${QUANT_WEB_BASE_IMAGE:-deploy-web:latest}
