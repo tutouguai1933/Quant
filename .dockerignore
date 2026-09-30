@@ -33,3 +33,13 @@ apps/web/tests/playwright-report
 services/api/__pycache__
 services/api/.pytest_cache
 services/api/htmlcov
+
+# 运行资料、历史实验与私钥不进入构建上下文，避免上传数百MB无关文件。
+.runtime
+.worktrees
+.research
+docs/research
+infra/freqtrade/user_data/hyperopt_results
+infra/freqtrade/user_data/config.private.futures.json
+test-results
+reports

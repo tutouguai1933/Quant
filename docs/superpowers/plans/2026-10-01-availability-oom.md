@@ -18,7 +18,7 @@
 wsl -d Ubuntu-22.04 -- bash -lc 'cd /home/djy/Quant; source /home/djy/miniforge3/etc/profile.d/conda.sh; conda activate quant; python -m unittest services.api.tests.test_kline_store_memory services.api.tests.test_kline_store services.api.tests.test_kline_sync_service services.api.tests.test_logging_backpressure -q'
 ```
 
-预期：36 个测试通过；缓存不会截断历史数据，慢控制台日志不会阻塞调用方。
+预期：37 个测试通过；缓存不会截断历史数据，慢控制台日志不会阻塞调用方。
 
 ```powershell
 wsl -d Ubuntu-22.04 -- bash -lc 'cd /home/djy/Quant/apps/web; QUANT_WEB_BASE_URL=http://39.106.11.65:9012 QUANT_API_BASE_URL=http://39.106.11.65:9011 pnpm exec playwright test tests/ui-main-smoke.spec.cjs tests/ui-network.spec.cjs tests/ui-console.spec.cjs --reporter=line'
@@ -26,3 +26,7 @@ wsl -d Ubuntu-22.04 -- bash -lc 'cd /home/djy/Quant/apps/web; QUANT_WEB_BASE_URL
 
 预期：7 个浏览器测试通过；登录、页面切换、脚本与资源加载正常。
 回滚：保留原 deploy-api 镜像；恢复部署配置并只重建 API/Web 容器；不删除数据卷。
+
+实际执行结果：后端157通过/0失败；浏览器7通过/0失败；额外交互与数据验证1通过/0失败。
+独立审查与复审通过；服务已于2026-10-01部署。配置缓存同步和复盘缓存版本检查是验证中发现的关联修复。
+.dockerignore补充排除历史实验和运行文件，减少后续构建上下文。
