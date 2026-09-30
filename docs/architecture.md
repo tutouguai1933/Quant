@@ -398,3 +398,9 @@
 - API/Web有独立RAM与swap边界；API同步路由默认40并发，巡检统一由OpenClaw调度。
 - validation_workflow_service按任务版本与limit复用报告；workbench_config_service写入后立即更新配置缓存。
 - Dockerfile.runtime与docker-compose.runtime.yml复用服务器已安装依赖，只发布services/packages/scripts代码。
+
+## 部署后的会话恢复
+
+auth_service在配置的运行卷中原子保存令牌摘要和有效期，单进程内以锁协调登录/登出。
+session.ts返回明确会话状态；SessionGuard处理聚焦、可见性、周期检查和鉴权错误事件，仅确认失效时跳登录。
+Web Dockerfile.runtime复用已安装Next依赖编译，单构建worker及容器内存边界共同控制构建峰值。

@@ -157,7 +157,7 @@ docker compose build api web && docker compose up -d --no-deps api web
 
 ### 已有服务器的代码层发布
 
-仅在依赖未变化且服务器已有deploy-api镜像时使用，复用已安装依赖，避免在小内存服务器重装依赖。
+仅在依赖未变化且服务器已有deploy-api/deploy-web镜像时使用，复用已安装依赖。Web首次发布需要先按下文编译；之后只改API可用以下命令。
 以下命令必须在服务器、代码已通过Git更新后执行；预期只更新API/Web，保留交易服务和数据：
 
 ```bash
@@ -169,6 +169,29 @@ docker compose -f docker-compose.yml -f docker-compose.runtime.yml up -d --no-de
 
 API默认640MB内存、896MB内存加swap，Web384MB/512MB；通过QUANT_API_MEMORY_LIMIT等环境变量调整。
 巡检默认由OpenClaw统一调度；完整故障证据和其余审查结果见[可用性审查](docs/research/2026-10-01-availability-audit.md)。
+
+### 页面代码的受限编译
+
+在服务器执行，预期复用现有Web依赖并产出quant-web-runtime镜像；构建期间暂时停止API/Web以释放内存。
+先用free检查可用内存至少600MB、可用swap至少512MB；不足时恢复容器并停止构建。
+
+```bash
+cd ~/Quant
+docker stop -t 10 quant-api quant-web
+free -m
+docker build --network=none --pull=false --memory=768m --memory-swap=1536m -f apps/web/Dockerfile.runtime -t quant-web-runtime:local .
+cd infra/deploy
+docker compose -f docker-compose.yml -f docker-compose.runtime.yml up -d --no-deps --no-build --pull never api web
+```
+
+构建失败时用原镜像恢复，预期网站重新可用：
+
+```bash
+QUANT_WEB_RUNTIME_IMAGE=deploy-web:latest docker compose -f docker-compose.yml -f docker-compose.runtime.yml up -d --no-deps --no-build --pull never api web
+```
+
+登录记录通过QUANT_SESSION_STATE_PATH保存在挂载卷，API重建可保留有效登录；已失效的旧登录需重新登录一次。
+会话检查区分短时断网与过期，详见[会话修复记录](docs/research/2026-10-01-session-recovery.md)。
 
 ### 服务器地址
 

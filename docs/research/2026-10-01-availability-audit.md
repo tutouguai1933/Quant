@@ -56,3 +56,8 @@
 - [Docker内存与swap语义](https://docs.docker.com/engine/containers/resource_constraints/)
 - [Compose服务资源与日志配置](https://docs.docker.com/reference/compose-file/services/)
 - [Starlette同步线程池](https://www.starlette.io/threadpool/)
+
+## 后续用户反馈闭环
+用户的自动化状态提示已定位到部署丢失内存登录，并非再次OOM。
+会话持久化、错误语义与失效登录自动返回入口已部署并通过真实API重启验证；详见2026-10-01-session-recovery.md。
+构建上下文还发现约414MB旧Next备份，已补充忽略规则；没有删除服务器历史文件。
