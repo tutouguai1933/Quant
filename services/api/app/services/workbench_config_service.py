@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import time
+
 import json
 import os
 import re
@@ -1165,6 +1167,11 @@ class WorkbenchConfigService:
 
         normalized = self._normalize_config(merged)
         self._write_config_file(normalized)
+        # 写入成功后立即更新缓存，避免连续保存时旧值覆盖刚写入的配置。
+        self._config_cache = normalized
+        self._config_cache_time = time.time()
+        self._controls_cache = None
+        self._controls_cache_time = 0
         return normalized
 
     @staticmethod

@@ -1,0 +1,7 @@
+# 复用服务器已安装的依赖，仅发布代码修复；依赖发生变化时不能使用此文件。
+ARG QUANT_API_BASE_IMAGE=deploy-api:latest
+FROM ${QUANT_API_BASE_IMAGE}
+WORKDIR /app
+COPY services /app/services
+COPY packages /app/packages
+COPY scripts /app/scripts

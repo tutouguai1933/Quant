@@ -1,0 +1,9 @@
+# 仅用于现有服务器的无依赖安装发布；使用 -f docker-compose.yml -f docker-compose.runtime.yml。
+services:
+  api:
+    image: ${QUANT_API_RUNTIME_IMAGE:-quant-api-runtime:local}
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile.runtime
+      args:
+        QUANT_API_BASE_IMAGE: ${QUANT_API_BASE_IMAGE:-deploy-api:latest}

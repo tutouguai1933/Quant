@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
-from logging.handlers import RotatingFileHandler
+import queue
+from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,23 @@ LOG_DIR_FREQTRADE = Path(os.getenv("QUANT_FREQTRADE_LOG_DIR", "/home/djy/Quant/i
 # 日志轮转配置
 MAX_BYTES = 10 * 1024 * 1024  # 10MB
 BACKUP_COUNT = 5  # 保留5个备份
+
+
+
+class BoundedQueueHandler(QueueHandler):
+    """日志输出阻塞时限制积压，避免请求线程跟着等待或无限占用内存。"""
+
+    def __init__(self, log_queue) -> None:
+        """记录被丢弃的日志数量，便于运维查看。"""
+        super().__init__(log_queue)
+        self.dropped_records = 0
+
+    def enqueue(self, record) -> None:
+        """队列已满时仅计数，不向可能同样阻塞的 stderr 写错误。"""
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            self.dropped_records += 1
 
 
 def setup_logging(
@@ -44,8 +62,11 @@ def setup_logging(
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
-    # 清除已有的 handlers
+    # 重复初始化直接复用，避免遗留日志线程和打开的文件。
+    if any(isinstance(handler, BoundedQueueHandler) for handler in root_logger.handlers):
+        return root_logger
     root_logger.handlers.clear()
+    sinks = []
 
     # 确保日志目录存在
     if log_dir:
@@ -65,16 +86,7 @@ def setup_logging(
         )
         file_handler.setFormatter(file_formatter)
 
-        # 队列化异步写入：调用线程只入队（微秒级），文件 IO 由后台线程串行执行。
-        # 同步写曾导致 logging 内部锁被慢 IO 长期占用，主线程等锁阻塞事件循环（api 整体卡死）。
-        import queue
-        from logging.handlers import QueueHandler, QueueListener
-
-        log_queue: "queue.Queue[logging.LogRecord]" = queue.Queue(-1)
-        queue_handler = QueueHandler(log_queue)
-        root_logger.addHandler(queue_handler)
-        listener = QueueListener(log_queue, file_handler, respect_handler_level=True)
-        listener.start()
+        sinks.append(file_handler)
 
     # 添加控制台输出
     console_handler = logging.StreamHandler()
@@ -83,7 +95,15 @@ def setup_logging(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     console_handler.setFormatter(console_formatter)
-    root_logger.addHandler(console_handler)
+    sinks.append(console_handler)
+
+    # 文件和控制台都交给后台消费；Docker 日志管道阻塞也不能卡住事件循环。
+    log_queue = queue.Queue(maxsize=max(1, int(os.getenv("QUANT_LOG_QUEUE_LIMIT", "1000"))))
+    queue_handler = BoundedQueueHandler(log_queue)
+    listener = QueueListener(log_queue, *sinks, respect_handler_level=True)
+    queue_handler.listener = listener
+    root_logger.addHandler(queue_handler)
+    listener.start()
 
     return root_logger
 
@@ -98,6 +118,10 @@ def get_log_config() -> dict[str, Any]:
         "max_bytes": MAX_BYTES,
         "max_bytes_mb": MAX_BYTES / (1024 * 1024),
         "backup_count": BACKUP_COUNT,
+        "dropped_records": sum(
+            handler.dropped_records for handler in logging.getLogger().handlers
+            if isinstance(handler, BoundedQueueHandler)
+        ),
         "log_dir_api": str(LOG_DIR_API),
         "log_dir_freqtrade": str(LOG_DIR_FREQTRADE),
     }

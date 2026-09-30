@@ -390,3 +390,11 @@
   [docs/developer-handbook.md](/home/djy/Quant/docs/developer-handbook.md)
 - 部署手册：  
   [docs/deployment-handbook.md](/home/djy/Quant/docs/deployment-handbook.md)
+
+## 2026-10-01 资源与日志边界
+
+- KlineStore索引流式构建，读取缓存共享5000行上限；临时Future合并大历史并发读取，返回完整数据。
+- logging_config把控制台和文件交给有界后台队列，Docker日志采用非阻塞缓冲，避免输出反压堵住API。
+- API/Web有独立RAM与swap边界；API同步路由默认40并发，巡检统一由OpenClaw调度。
+- validation_workflow_service按任务版本与limit复用报告；workbench_config_service写入后立即更新配置缓存。
+- Dockerfile.runtime与docker-compose.runtime.yml复用服务器已安装依赖，只发布services/packages/scripts代码。

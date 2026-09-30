@@ -107,6 +107,21 @@ cd /home/djy/Quant/apps/web
 pnpm build && pnpm start
 ```
 
+### Windows 编辑与测试
+
+Windows版Codex可以继续编辑WSL内的项目，保留UTF-8编码；Linux专用模块和现有Conda环境仍在WSL执行。
+先确认Windows能找到WSL入口，预期输出wsl.exe路径：
+
+```powershell
+Get-Command wsl
+```
+
+以下命令只运行本地测试，预期通过且不安装依赖、不启动Docker：
+
+```powershell
+wsl -d Ubuntu-22.04 -- bash -lc 'cd /home/djy/Quant; source /home/djy/miniforge3/etc/profile.d/conda.sh; conda activate quant; python -m unittest services.api.tests.test_kline_store_memory services.api.tests.test_logging_backpressure services.api.tests.test_validation_cache_freshness -q'
+```
+
 ### 标准端口
 
 | 服务 | 端口 |
@@ -139,6 +154,21 @@ cd ~/Quant && git pull
 cd infra/deploy
 docker compose build api web && docker compose up -d --no-deps api web
 ```
+
+### 已有服务器的代码层发布
+
+仅在依赖未变化且服务器已有deploy-api镜像时使用，复用已安装依赖，避免在小内存服务器重装依赖。
+以下命令必须在服务器、代码已通过Git更新后执行；预期只更新API/Web，保留交易服务和数据：
+
+```bash
+cd ~/Quant/infra/deploy
+docker compose -f docker-compose.yml -f docker-compose.runtime.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.runtime.yml build --pull=false api
+docker compose -f docker-compose.yml -f docker-compose.runtime.yml up -d --no-deps --no-build --pull never api web
+```
+
+API默认640MB内存、896MB内存加swap，Web384MB/512MB；通过QUANT_API_MEMORY_LIMIT等环境变量调整。
+巡检默认由OpenClaw统一调度；完整故障证据和其余审查结果见[可用性审查](docs/research/2026-10-01-availability-audit.md)。
 
 ### 服务器地址
 

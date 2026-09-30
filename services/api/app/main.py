@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -110,17 +111,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("模块预热失败: %s", exc)
 
-    # ==================== 线程池扩容（最先执行） ====================
-    # FastAPI 同步路由跑在 anyio 线程池（默认容量仅 40）。
-    # freqtrade/币安慢请求（10~20 秒）并发时会把 40 个线程全部占住，
-    # 后续请求（含 /health）排队等待 -> api 整体"卡死"。扩容到 200 根治。
+    # 同步路由并发越多，线程栈和临时结果占用越大；探活已独立于线程池。
+    # 小内存服务器保持 40，并允许通过配置调整，避免把慢上游放大成 200 份积压。
     try:
         import anyio.to_thread
 
-        anyio.to_thread.current_default_thread_limiter().total_tokens = 200
-        logger.info("同步路由线程池已扩容: 40 -> 200")
+        thread_limit = max(1, int(os.getenv("QUANT_API_THREAD_LIMIT", "40")))
+        anyio.to_thread.current_default_thread_limiter().total_tokens = thread_limit
+        logger.info("同步路由线程池上限: %d", thread_limit)
     except Exception as exc:
-        logger.warning("线程池扩容失败: %s", exc)
+        logger.warning("线程池配置失败: %s", exc)
 
     # ==================== 启动逻辑（原 setup_event_loop） ====================
     # 启用文件日志（持久化到挂载卷，容器重建后日志仍可回溯卡死原因）
@@ -141,7 +141,6 @@ async def lifespan(app: FastAPI):
     logger.info("健康监控服务已启动")
 
     # 启动 K 线定时同步（避免页面请求时现场拉币安补缺口导致卡死）
-    import os
     try:
         from services.api.app.services.kline_sync_scheduler import kline_sync_scheduler
 

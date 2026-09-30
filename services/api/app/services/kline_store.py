@@ -10,6 +10,8 @@ import fcntl
 import json
 import os
 import threading
+from collections import OrderedDict
+from concurrent.futures import Future
 from pathlib import Path
 
 
@@ -46,8 +48,13 @@ class KlineStore:
         self._index_lock = threading.Lock()
         # 读缓存：{filepath: (mtime, bars)}，mtime 未变化时直接返回缓存，
         # 避免 read/last_timestamp/gaps 每次全量扫描解析整个 JSONL（图表热路径）
-        self._read_cache: dict[Path, tuple[float, list[dict]]] = {}
+        # 所有币种和周期共享容量，超大历史只返回给调用方，不长期驻留内存。
+        self._cache_max_rows = max(0, int(os.getenv("QUANT_KLINE_CACHE_MAX_ROWS", "5000")))
+        self._read_cache: OrderedDict[Path, tuple[tuple[int, int], list[dict]]] = OrderedDict()
+        self._timestamp_cache: dict[Path, tuple[tuple[int, int], int | None]] = {}
         self._read_cache_lock = threading.Lock()
+        self._parse_lock = threading.Lock()
+        self._inflight: dict[tuple[Path, tuple[int, int]], Future] = {}
         self._rebuild_index()
 
     # ── 公共接口 ──────────────────────────────────────────────────────────
@@ -103,14 +110,23 @@ class KlineStore:
         """返回该符号和周期最新一根 bar 的 open_time，无数据返回 None。"""
 
         filepath = self._filepath(symbol, interval)
-        bars = self._load_bars(filepath)
-        if not bars:
-            return None
-
         try:
-            return int(bars[-1].get("open_time", 0))
-        except (TypeError, ValueError):
+            stat = filepath.stat()
+        except FileNotFoundError:
             return None
+        signature = (stat.st_mtime_ns, stat.st_size)
+        with self._read_cache_lock:
+            cached = self._timestamp_cache.get(filepath)
+            if cached is not None and cached[0] == signature:
+                return cached[1]
+            # 逐行查时间戳，增量同步不再构造并缓存完整历史列表。
+            latest = max(
+                (ot for bar in self._iter_bars(filepath)
+                 if (ot := self._bar_open_time(bar)) is not None),
+                default=None,
+            )
+            self._timestamp_cache[filepath] = (signature, latest)
+            return latest
 
     def gaps(
         self,
@@ -185,9 +201,8 @@ class KlineStore:
                 key = self._parse_key_from_filename(filepath)
                 if key is None:
                     continue
-                bars = self._load_bars(filepath)
                 open_times = {
-                    ot for b in bars
+                    ot for b in self._iter_bars(filepath)
                     if (ot := self._bar_open_time(b)) is not None
                 }
                 if open_times:
@@ -205,55 +220,70 @@ class KlineStore:
         return (symbol, interval)
 
     def _load_bars(self, filepath: Path) -> list[dict]:
-        """从 JSONL 文件加载所有 bar 记录，按 open_time 升序。
-
-        按文件 mtime 做内存缓存：mtime 没变直接返回解析结果，
-        文件变化（upsert 追加）时重新解析。返回列表只读使用，调用方不得原地修改。
-        """
-
-        if not filepath.exists():
-            # 文件不存在时清掉对应缓存，避免误用旧内容
+        """缓存与短期单飞分开：大文件也共享并发结果，但不会长期驻留。"""
+        try:
+            stat = filepath.stat()
+        except FileNotFoundError:
             with self._read_cache_lock:
                 self._read_cache.pop(filepath, None)
             return []
-
-        try:
-            mtime = filepath.stat().st_mtime
-        except OSError:
-            return []
-
-        # 命中缓存直接返回
+        signature = (stat.st_mtime_ns, stat.st_size)
+        flight_key = (filepath, signature)
         with self._read_cache_lock:
             cached = self._read_cache.get(filepath)
-            if cached is not None and cached[0] == mtime:
+            if cached is not None and cached[0] == signature:
+                self._read_cache.move_to_end(filepath)
                 return cached[1]
+            future = self._inflight.get(flight_key)
+            leader = future is None
+            if leader:
+                future = Future()
+                self._inflight[flight_key] = future
+                self._read_cache.pop(filepath, None)
+        if not leader:
+            return future.result()
 
-        bars = self._parse_bars(filepath)
-
-        with self._read_cache_lock:
-            self._read_cache[filepath] = (mtime, bars)
-        return bars
-
-    def _parse_bars(self, filepath: Path) -> list[dict]:
-        """解析 JSONL 文件内容，按 open_time 升序返回。"""
-
-        bars: list[dict] = []
         try:
-            with open(filepath, "r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
+            # 不同文件的全量解析也串行，避免同时放大瞬时内存。
+            with self._parse_lock:
+                bars = self._parse_bars(filepath)
+            with self._read_cache_lock:
+                if bars and len(bars) <= self._cache_max_rows:
+                    cached_rows = sum(len(entry[1]) for entry in self._read_cache.values())
+                    while self._read_cache and cached_rows + len(bars) > self._cache_max_rows:
+                        _, removed = self._read_cache.popitem(last=False)
+                        cached_rows -= len(removed[1])
+                    self._read_cache[filepath] = (signature, bars)
+            future.set_result(bars)
+            return bars
+        except BaseException as exc:
+            # 唤醒所有等待者，解析失败不能遗留一个永远未完成的 Future。
+            future.set_exception(exc)
+            raise
+        finally:
+            with self._read_cache_lock:
+                self._inflight.pop(flight_key, None)
+
+    def _iter_bars(self, filepath: Path):
+        """逐行解析历史文件，供索引与时间戳查询使用，避免全量驻留。"""
+        try:
+            with filepath.open("r", encoding="utf-8") as stream:
+                for line in stream:
+                    if not line.strip():
                         continue
                     try:
                         bar = json.loads(line)
-                        if isinstance(bar, dict) and "open_time" in bar:
-                            bars.append(bar)
                     except json.JSONDecodeError:
                         continue
-        except OSError:
-            return []
+                    if isinstance(bar, dict) and "open_time" in bar:
+                        yield bar
+        except FileNotFoundError:
+            return
 
-        bars.sort(key=lambda b: self._bar_open_time(b) or 0)
+    def _parse_bars(self, filepath: Path) -> list[dict]:
+        """返回完整升序历史，缓存容量不裁剪研究或图表需要的数据。"""
+        bars = list(self._iter_bars(filepath))
+        bars.sort(key=lambda bar: self._bar_open_time(bar) or 0)
         return bars
 
     def _append_bars(self, filepath: Path, bars: list[dict]) -> None:

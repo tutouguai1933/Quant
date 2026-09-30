@@ -29,18 +29,25 @@ class ValidationWorkflowService:
         # build_report() 缓存
         self._report_cache: dict[str, Any] | None = None
         self._report_cache_time: float = 0.0
+        self._report_cache_key: tuple | None = None
 
     def build_report(self, limit: int | None = None) -> dict[str, object]:
         """返回固定验证工作流复盘（带缓存）。"""
 
-        # 检查缓存是否有效
-        if self._report_cache is not None and (time.time() - self._report_cache_time) < self._REPORT_CACHE_TTL:
-            return self._report_cache
-
         if limit is None or int(limit or 0) <= 0:
             limit = self._resolve_review_limit()
-        research_report = self._research_reader.get_factory_report()
+        # 任务列表已有限额，检查版本成本低；只复用昂贵的研究与执行聚合结果。
         raw_recent_tasks = self._scheduler.list_tasks(limit=limit)
+        cache_key = (
+            int(limit),
+            tuple((item.get("id"), item.get("status"), item.get("finished_at"))
+                  for item in raw_recent_tasks),
+        )
+        if (self._report_cache is not None and self._report_cache_key == cache_key
+                and (time.time() - self._report_cache_time) < self._REPORT_CACHE_TTL):
+            return self._report_cache
+
+        research_report = self._research_reader.get_factory_report()
         task_health = self._scheduler.get_health_summary()
         automation_state = automation_service.get_state()
         execution_health = self._sync_reader.get_execution_health_summary(
@@ -93,6 +100,7 @@ class ValidationWorkflowService:
             "account_snapshot": account_snapshot,
         }
         # 保存到缓存（使用当前时间）
+        self._report_cache_key = cache_key
         self._report_cache = result
         self._report_cache_time = time.time()
         return result

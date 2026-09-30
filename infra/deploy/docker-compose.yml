@@ -55,6 +55,9 @@ services:
     build:
       context: ../..
       dockerfile: services/api/Dockerfile
+    # 单个服务只能在自己的资源边界内运行，不能耗尽全机内存和交换空间。
+    mem_limit: ${QUANT_API_MEMORY_LIMIT:-640m}
+    memswap_limit: ${QUANT_API_MEMSWAP_LIMIT:-896m}
     container_name: ${QUANT_API_CONTAINER_NAME:-quant-api}
     restart: unless-stopped
     network_mode: host
@@ -63,6 +66,8 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+        mode: "non-blocking"
+        max-buffer-size: "1m"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ../data/runtime:/app/.runtime
@@ -72,7 +77,16 @@ services:
       HTTPS_PROXY: http://127.0.0.1:7890
       NO_PROXY: 127.0.0.1,localhost,172.17.0.1,api,web,freqtrade,mihomo
       QUANT_LOG_DIR: /app/logs
-      QUANT_PATROL_AUTO_START: "true"
+      QUANT_LOG_QUEUE_LIMIT: ${QUANT_LOG_QUEUE_LIMIT:-1000}
+      QUANT_API_THREAD_LIMIT: ${QUANT_API_THREAD_LIMIT:-40}
+      QUANT_KLINE_CACHE_MAX_ROWS: ${QUANT_KLINE_CACHE_MAX_ROWS:-5000}
+      MALLOC_ARENA_MAX: ${QUANT_MALLOC_ARENA_MAX:-2}
+      OMP_NUM_THREADS: ${QUANT_COMPUTE_THREADS:-1}
+      OPENBLAS_NUM_THREADS: ${QUANT_COMPUTE_THREADS:-1}
+      MKL_NUM_THREADS: ${QUANT_COMPUTE_THREADS:-1}
+      NUMEXPR_NUM_THREADS: ${QUANT_COMPUTE_THREADS:-1}
+      # 巡检由 OpenClaw 统一调度，避免 API 再启动第二套定时任务。
+      QUANT_PATROL_AUTO_START: ${QUANT_PATROL_AUTO_START:-false}
       QUANT_PATROL_INTERVAL_MINUTES: "15"
     env_file:
       - ${QUANT_API_ENV_FILE:-./api.env}
@@ -90,6 +104,8 @@ services:
     build:
       context: ../..
       dockerfile: apps/web/Dockerfile
+    mem_limit: ${QUANT_WEB_MEMORY_LIMIT:-384m}
+    memswap_limit: ${QUANT_WEB_MEMSWAP_LIMIT:-512m}
     container_name: ${QUANT_WEB_CONTAINER_NAME:-quant-web}
     restart: unless-stopped
     network_mode: host
@@ -98,8 +114,11 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+        mode: "non-blocking"
+        max-buffer-size: "1m"
     environment:
       QUANT_API_BASE_URL: http://127.0.0.1:9011/api/v1
+      NODE_OPTIONS: --max-old-space-size=${QUANT_WEB_HEAP_MB:-256}
     depends_on:
       - api
     healthcheck:
