@@ -107,6 +107,9 @@ def _build_backtest_snapshot(value: object) -> dict[str, str]:
     payload = dict(value or {}) if isinstance(value, dict) else {}
     metrics = dict(payload.get("metrics") or {})
     return {
+        "evaluation_status": str(payload.get("evaluation_status", "unavailable")),
+        "evaluation_version": str(payload.get("evaluation_version", "")),
+        "unavailable_reason": str(payload.get("unavailable_reason", "")),
         "total_return_pct": str(metrics.get("total_return_pct", "")),
         "gross_return_pct": str(metrics.get("gross_return_pct", metrics.get("total_return_pct", ""))),
         "net_return_pct": str(metrics.get("net_return_pct", metrics.get("total_return_pct", ""))),

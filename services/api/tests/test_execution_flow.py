@@ -761,7 +761,15 @@ class ExecutionFlowTests(unittest.TestCase):
                     sync_service_module.freqtrade_client = client
                     execution_service_module.signal_service = signal_service
 
-                    dispatch_result = execution_service.dispatch_signal(int(signal["signal_id"]))
+                    # 安全退出金额正向场景也提供合格盘口与真实模拟可用资金。
+                    with patch.object(
+                        execution_service._market_client, "get_order_book",
+                        return_value={"bids": [["0.09068", "10000"]], "asks": [["0.09070", "10000"]]},
+                    ), patch(
+                        "services.api.app.adapters.binance.account_client.binance_account_client.get_balances",
+                        return_value=[{"asset": "USDT", "free": "20", "locked": "0"}],
+                    ):
+                        dispatch_result = execution_service.dispatch_signal(int(signal["signal_id"]))
                 finally:
                     freqtrade_client_module.freqtrade_client = original_client
                     execution_service_module.freqtrade_client = original_execution_client

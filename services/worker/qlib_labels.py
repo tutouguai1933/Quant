@@ -17,6 +17,7 @@ MAX_WINDOW_DAYS = 3
 LABEL_COLUMNS = (
     "symbol",
     "generated_at",
+    "label_end_at",
     "future_return_pct",
     "label",
     "holding_window",
@@ -53,6 +54,7 @@ class LabeledRow:
     future_return_pct: float
     label: str  # buy / sell / watch
     is_trainable: bool
+    label_end_at: int | None = None
 
 
 @dataclass
@@ -130,6 +132,7 @@ class LabelEngine:
                     future_return_pct=float(future_return) if is_trainable else 0.0,
                     label=label,
                     is_trainable=is_trainable,
+                    label_end_at=int(future_window[-1]["close_time"]) if future_window else None,
                 )
             )
         return rows
@@ -215,6 +218,7 @@ def build_label_rows(
             {
                 "symbol": symbol.strip().upper(),
                 "generated_at": int(candle["close_time"]),
+                "label_end_at": int(future_window[-1]["close_time"]) if future_window else None,
                 "future_return_pct": None if future_return is None else _format_decimal(future_return),
                 "label": label,
                 "holding_window": holding_window_label,
@@ -309,6 +313,7 @@ def build_multi_window_label_rows(
                     "symbol": symbol.strip().upper(),
                     "generated_at": int(candle["close_time"]),
                     "future_return_pct": None,
+                    "label_end_at": None,
                     "label": "watch",
                     "holding_window": holding_window_label,
                     "is_trainable": False,
@@ -317,6 +322,7 @@ def build_multi_window_label_rows(
             continue
 
         window_results: list[tuple[int, Decimal, str]] = []
+        label_end_at = None
         for window in windows:
             future_window = _slice_future_window_single(
                 candles=valid_candles,
@@ -325,6 +331,7 @@ def build_multi_window_label_rows(
             )
             if not future_window:
                 continue
+            label_end_at = max(label_end_at or 0, int(future_window[-1]["close_time"]))
             future_return, label = _classify_window_label(
                 entry_close=candle["close"],
                 future_window=future_window,
@@ -341,6 +348,7 @@ def build_multi_window_label_rows(
                     "symbol": symbol.strip().upper(),
                     "generated_at": int(candle["close_time"]),
                     "future_return_pct": None,
+                    "label_end_at": None,
                     "label": "watch",
                     "holding_window": holding_window_label,
                     "is_trainable": False,
@@ -379,6 +387,7 @@ def build_multi_window_label_rows(
                 "symbol": symbol.strip().upper(),
                 "generated_at": int(candle["close_time"]),
                 "future_return_pct": _format_decimal(chosen_return),
+                "label_end_at": label_end_at,
                 "label": chosen_label,
                 "holding_window": holding_window_label,
                 "is_trainable": True,

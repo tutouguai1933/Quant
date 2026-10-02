@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import statistics
 from dataclasses import dataclass
 from typing import Callable
@@ -23,6 +24,8 @@ class WalkForwardConfig:
     gap_bars: int = 18  # 默认 = 标签窗口（防泄漏）
     mode: str = "expanding"  # expanding（滚动扩展）/ rolling（固定窗口）
     step_bars: int | None = None  # rolling 时的窗口长度
+    label_threshold: float = 0.0
+    label_column: str = "future_return_pct"
 
 
 @dataclass
@@ -72,12 +75,15 @@ class WalkForwardValidator:
         """
         if not rows:
             return []
+        if config.gap_bars < 0 or config.n_folds < 1 or config.min_train_bars < 1:
+            raise ValueError("Walk-forward 折数、训练窗口或间隔无效")
 
         # 确保按时间升序
-        sorted_rows = sorted(rows, key=lambda r: int(r.get("open_time", r.get("generated_at", 0))))
+        sorted_rows = sorted(rows, key=_timestamp)
+        timestamps = sorted({_timestamp(row) for row in sorted_rows})
 
         n_folds = config.n_folds
-        total_bars = len(sorted_rows)
+        total_bars = len(timestamps)
         min_train = max(1, config.min_train_bars)
 
         # 自动减少折数：每折至少需要 min_train 训练 + gap 间隔 + 1 根测试
@@ -88,6 +94,9 @@ class WalkForwardValidator:
 
         # 计算每折大小
         fold_size = total_bars // n_folds
+        if n_folds == 1:
+            # 单折仍需保留未来测试段，不能把全部数据都用作训练前缀。
+            fold_size = max(min_train + config.gap_bars, total_bars // 2)
         if fold_size < 2:
             return []
 
@@ -130,17 +139,28 @@ class WalkForwardValidator:
                 # rolling 固定窗口下训练区间为空，跳过该折
                 continue
 
-            train_rows = sorted_rows[train_start:train_end]
-
-            test_rows = sorted_rows[test_start:test_end]
+            train_times = set(timestamps[train_start:train_end])
+            test_times = set(timestamps[test_start:test_end])
+            if not test_times:
+                continue
+            boundary = min(test_times)
+            # 以标签实际成熟时间清除边界重叠；元数据缺失不能证明无泄漏。
+            unsafe_times = {_timestamp(row) for row in sorted_rows if _timestamp(row) in train_times
+                            and (row.get("label_end_at") is None or int(row["label_end_at"]) >= boundary)}
+            train_times -= unsafe_times
+            train_rows = [row for row in sorted_rows if _timestamp(row) in train_times]
+            test_rows = [row for row in sorted_rows if _timestamp(row) in test_times]
+            if len({_timestamp(row) for row in train_rows}) < min_train:
+                logger.warning("Walk-forward 第 %d 折成熟标签不足，跳过", i + 1)
+                continue
 
             if train_rows and test_rows:
                 folds.append(Fold(
                     index=i + 1,
                     train=train_rows,
                     test=test_rows,
-                    test_start_ts=int(test_rows[0].get("open_time", test_rows[0].get("generated_at", 0))),
-                    test_end_ts=int(test_rows[-1].get("open_time", test_rows[-1].get("generated_at", 0))),
+                    test_start_ts=_timestamp(test_rows[0]),
+                    test_end_ts=_timestamp(test_rows[-1]),
                 ))
 
         return folds
@@ -169,11 +189,12 @@ class WalkForwardValidator:
 
             n_test = len(fold.test)
             returns = [_to_float(r.get("future_return_pct", 0)) for r in fold.test]
-            positive_rate = sum(1 for v in returns if v > 0) / max(n_test, 1)
+            labels = [1 if _to_float(row.get(config.label_column)) > config.label_threshold else 0 for row in fold.test]
+            positive_rate = sum(labels) / max(n_test, 1)
             avg_return = sum(returns) / max(n_test, 1)
 
             # 用 predictions 和真实方向计算 AUC
-            auc = self._compute_auc(predictions, [1 if r > 0 else 0 for r in returns])
+            auc = self._compute_auc(predictions, labels)
 
             fold_metrics.append(FoldMetrics(
                 fold=fold.index,
@@ -189,7 +210,11 @@ class WalkForwardValidator:
 
     @staticmethod
     def _compute_auc(predictions: list[float], labels: list[int]) -> float | None:
-        """简化的 AUC 计算。"""
+        """按同分数组累计半分，保持 O(n log n) 且不依赖输入顺序。"""
+        if len(predictions) != len(labels):
+            raise ValueError("预测数量与标签数量不一致")
+        if any(not math.isfinite(float(score)) for score in predictions) or any(label not in (0, 1) for label in labels):
+            raise ValueError("AUC 预测或标签无效")
         n = len(predictions)
         if n < 2:
             return None
@@ -198,15 +223,20 @@ class WalkForwardValidator:
         if pos_count == 0 or neg_count == 0:
             return None
 
-        paired = sorted(zip(predictions, labels), key=lambda x: x[0], reverse=True)
-        correct = 0
+        paired = sorted(zip(predictions, labels), key=lambda x: x[0])
+        correct = 0.0
         total_pairs = pos_count * neg_count
-        seen_pos = 0
-        for _, label in paired:
-            if label == 0:
-                correct += seen_pos
-            else:
-                seen_pos += 1
+        seen_neg = 0
+        index = 0
+        while index < n:
+            end = index + 1
+            while end < n and paired[end][0] == paired[index][0]:
+                end += 1
+            positives = sum(label for _, label in paired[index:end])
+            negatives = end - index - positives
+            correct += positives * (seen_neg + 0.5 * negatives)
+            seen_neg += negatives
+            index = end
         return correct / total_pairs if total_pairs > 0 else None
 
     @staticmethod
@@ -233,6 +263,11 @@ class WalkForwardValidator:
                 std_vals[key] = 0.0
 
         return {"mean": mean_vals, "std": std_vals}
+
+
+def _timestamp(row: dict) -> int:
+    """以特征可用收盘时间为切分时间，兼容仅有 open_time 的外部样本。"""
+    return int(row.get("generated_at", row.get("open_time", 0)))
 
 
 def _to_float(value: object) -> float:

@@ -7,8 +7,7 @@
 
 状态持久化到 JSON 文件（重启不丢），供 openclaw 巡检每轮调用 decide()。
 
-方向做空验证结论（scripts/run_direction_short.py，OOS 隔离验证）：
-TEST 段命中率 77.8%、平均收益 +2.58%/次——模型方向判断可靠。
+上涨超过阈值的低概率不能直接视为下跌概率；开仓须由执行层明确放行。
 """
 
 from __future__ import annotations
@@ -27,6 +26,8 @@ logger = logging.getLogger(__name__)
 SHORT_TRIGGER_SCORE = 0.38
 FLAT_TRIGGER_SCORE = 0.45
 SHORT_SYMBOL = "BTCUSDT"
+SHORT_FUTURES_SYMBOL = "BTC/USDT:USDT"
+DIRECTION_SHORT_ENTRY_TAG_PREFIX = "quant-direction-short:"
 
 
 def _utc_now() -> str:
@@ -49,6 +50,7 @@ class DirectionShortService:
         self._state: dict[str, Any] = {
             "has_short_position": False,
             "symbol": "",
+            "trade_id": None,
             "opened_at": "",
             "closed_at": "",
             "last_avg_score": None,
@@ -77,7 +79,7 @@ class DirectionShortService:
         with self._lock:
             return dict(self._state)
 
-    def decide(self, *, avg_score: float | None, has_short_position: bool | None = None) -> dict[str, Any]:
+    def decide(self, *, avg_score: float | None, has_short_position: bool | None = None, opening_allowed: bool = False) -> dict[str, Any]:
         """根据平均分数决策：open_short / close_short / hold。
 
         Args:
@@ -106,6 +108,8 @@ class DirectionShortService:
 
             if avg_score < SHORT_TRIGGER_SCORE and not position:
                 self._persist()
+                if not opening_allowed:
+                    return {"action": "hold", "reason": "short_model_not_admitted"}
                 return {"action": "open_short", "reason": f"bearish_avg_{avg_score:.3f}"}
             if avg_score > FLAT_TRIGGER_SCORE and position:
                 self._persist()
@@ -130,11 +134,12 @@ class DirectionShortService:
             self._state["retry_after"] = None
             self._persist()
 
-    def mark_short_open(self, *, symbol: str = SHORT_SYMBOL) -> None:
-        """标记空仓已开。"""
+    def mark_short_open(self, *, symbol: str = SHORT_SYMBOL, trade_id: int | str | None = None) -> None:
+        """记录已确认方向空仓的实际符号与交易编号。"""
         with self._lock:
             self._state["has_short_position"] = True
             self._state["symbol"] = symbol
+            self._state["trade_id"] = trade_id
             self._state["opened_at"] = _utc_now()
             self._state["closed_at"] = ""
             self._persist()
@@ -144,31 +149,46 @@ class DirectionShortService:
         """标记空仓已平。"""
         with self._lock:
             self._state["has_short_position"] = False
+            self._state["trade_id"] = None
             self._state["closed_at"] = _utc_now()
             self._persist()
             logger.info("方向做空已平仓")
 
-    def reconcile_with_open_trades(self, open_trades: list[dict[str, Any]]) -> bool:
-        """按模拟盘在场持仓列表（list_open_trades / Freqtrade /status）对齐内部状态。
-
-        空单被止损/策略平仓后，状态文件会残留 has_short_position=true，
-        导致调度永远 hold、观察期僵死；反之亦然。巡检每轮决策前调用本方法，
-        以真实在场持仓为准修正内部状态，返回是否发生了修正。
-        """
-        has_open_short = any(
-            t.get("is_open") and _is_short_value(t.get("is_short")) for t in open_trades
+    @staticmethod
+    def belongs_to_strategy(trade: dict[str, Any]) -> bool:
+        """按 BTC 合约空仓及明确归属标签判断策略来源，兼容已平仓历史。"""
+        symbols = {SHORT_SYMBOL, "BTC/USDT", SHORT_FUTURES_SYMBOL}
+        return (
+            _is_short_value(trade.get("is_short"))
+            and str(trade.get("pair") or "").strip().upper() in symbols
+            and str(trade.get("enter_tag") or "").startswith(DIRECTION_SHORT_ENTRY_TAG_PREFIX)
         )
-        with self._lock:
-            need_close = bool(self._state["has_short_position"]) and not has_open_short
-            need_open = not bool(self._state["has_short_position"]) and has_open_short
 
-        if need_close:
-            self.mark_short_closed()
+    @classmethod
+    def owned_short_trades(cls, open_trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """在明确归属的 BTC 合约空仓中，只返回实际仍在场的仓位。"""
+        return [trade for trade in open_trades
+                if _is_short_value(trade.get("is_open")) and cls.belongs_to_strategy(trade)]
+
+    def reconcile_with_open_trades(self, open_trades: list[dict[str, Any]]) -> bool:
+        """按明确归属的实际空仓同步状态，不认领 RSI 多仓或其他策略空仓。"""
+        owned = self.owned_short_trades(open_trades)
+        with self._lock:
+            if not owned:
+                if self._state["has_short_position"]:
+                    self.mark_short_closed()
+                    return True
+                return False
+            # 优先继续跟踪已持有的交易；存在多个归属仓位时执行层逐个管理。
+            tracked = next((trade for trade in owned
+                            if trade.get("trade_id") == self._state.get("trade_id")), owned[0])
+            trade_id = tracked.get("trade_id")
+            if (self._state["has_short_position"] and
+                    self._state.get("trade_id") == trade_id and
+                    self._state.get("symbol") == SHORT_FUTURES_SYMBOL):
+                return False
+            self.mark_short_open(symbol=SHORT_FUTURES_SYMBOL, trade_id=trade_id)
             return True
-        if need_open:
-            self.mark_short_open(symbol=SHORT_SYMBOL)
-            return True
-        return False
 
 
 def build_sim_client():

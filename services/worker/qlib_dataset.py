@@ -28,6 +28,7 @@ class DatasetBundle:
     testing_rows: list[dict[str, object]]
     data_states: dict[str, dict[str, object]] = field(default_factory=dict)
     cache: dict[str, object] = field(default_factory=dict)
+    all_rows: list[dict[str, object]] = field(default_factory=list)
 
 
 def build_dataset_bundle(
@@ -171,6 +172,12 @@ def _build_dataset_bundle_for_candles(
             holding_window_label=holding_window_label,
         )
     merged_rows = _merge_feature_and_label_rows(feature_rows, label_rows)
+    # 价格是回放元数据，不加入模型特征；保持原始精度，不能用裁剪后的特征代替价格。
+    prices_by_time = {int(c["close_time"]): c for c in candles if c.get("close_time") is not None}
+    for row in merged_rows:
+        candle = prices_by_time.get(int(row["generated_at"]))
+        if candle is not None:
+            row.update({key: candle[key] for key in ("open_time", "close_time", "open", "high", "low", "close") if key in candle})
     if len(merged_rows) < 3:
         raise RuntimeError("样本不足以切成训练/验证/测试三段")
     training_rows, validation_rows, testing_rows = _split_rows(merged_rows, split_ratios=split_ratios)
@@ -180,6 +187,7 @@ def _build_dataset_bundle_for_candles(
         training_rows=training_rows,
         validation_rows=validation_rows,
         testing_rows=testing_rows,
+        all_rows=merged_rows,
         data_states=_build_data_states(
             raw_count=len(candles),
             cleaned_count=min(len(feature_rows), len(label_rows)),
@@ -216,28 +224,54 @@ def _split_rows(
     *,
     split_ratios: tuple[Decimal, Decimal, Decimal],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
-    """把样本按时间升序切成训练、验证和测试三段。
+    """按共享时间切分，并剔除标签直到下一段才成熟的样本。"""
+    return purged_time_split(rows, train_ratio=float(split_ratios[0]),
+                             validation_ratio=float(split_ratios[1]))
 
-    纯时间序切分：整个数据集排序后，前 train_ratio 训练、中间 validation_ratio
-    验证、最后一段回测，保证回测只用更早的数据训练，避免前视偏差。
-    """
 
-    if not rows:
-        raise RuntimeError("研究数据集中没有可切分的样本")
-    if len(rows) < 3:
+def purged_validation_split(rows: list[dict[str, object]], *, validation_ratio: float = .2):
+    """按共享时间切早停验证段，移除标签跨入验证的整组训练样本。"""
+    timestamps = sorted({int(row["generated_at"]) for row in rows})
+    if not 0 < validation_ratio < 1 or len(timestamps) < 2:
+        raise RuntimeError("样本不足以隔离训练与早停验证")
+    boundary_index = max(1, min(len(timestamps) - 1, int(len(timestamps) * (1 - validation_ratio))))
+    boundary = timestamps[boundary_index]
+    bad_times = {int(row["generated_at"]) for row in rows if int(row["generated_at"]) < boundary and (row.get("label_end_at") is None or int(row["label_end_at"]) >= boundary)}
+    train = [row for row in rows if int(row["generated_at"]) < boundary and int(row["generated_at"]) not in bad_times]
+    valid = [row for row in rows if int(row["generated_at"]) >= boundary]
+    if not train or not valid:
+        raise RuntimeError("样本不足以隔离训练与早停验证")
+    return train, valid
+
+
+def purged_time_split(rows: list[dict[str, object]], *, train_ratio: float = 0.6,
+                      validation_ratio: float = 0.2, gap_bars: int = 0
+                      ) -> tuple[list[dict], list[dict], list[dict]]:
+    """在全币共享时间线上切三段；gap 按唯一时点计，label_end_at 必须早于下一段。"""
+    ordered = sorted(rows, key=lambda row: int(row["generated_at"]))
+    times = sorted({int(row["generated_at"]) for row in ordered})
+    if len(times) < 3:
         raise RuntimeError("样本不足以切成训练/验证/测试三段")
-
-    train_ratio, validation_ratio, _ = split_ratios
-
-    # 按时间升序排列（调用方一般已排序，这里再确保一次）
-    sorted_rows = sorted(rows, key=lambda item: int(item["generated_at"]))
-
-    # 前 train_ratio 训练、中间 validation_ratio 验证、最后一段回测
-    train_end = max(1, int(len(sorted_rows) * float(train_ratio)))
-    valid_end = max(train_end + 1, int(len(sorted_rows) * float(train_ratio + validation_ratio)))
-    if valid_end >= len(sorted_rows):
-        valid_end = len(sorted_rows) - 1
-    return sorted_rows[:train_end], sorted_rows[train_end:valid_end], sorted_rows[valid_end:]
+    if not 0 < train_ratio < 1 or not 0 < validation_ratio < 1 or train_ratio + validation_ratio >= 1 or gap_bars < 0:
+        raise ValueError("时间切分比例或间隔无效")
+    train_end = min(len(times) - 2, max(1, int(len(times) * train_ratio)))
+    valid_end = min(len(times) - 1, max(train_end + 1, int(len(times) * (train_ratio + validation_ratio))))
+    validation_start, test_start = times[train_end], times[valid_end]
+    train_allowed = set(times[:max(0, train_end - gap_bars)])
+    valid_allowed = set(times[train_end:max(train_end, valid_end - gap_bars)])
+    # 同时点整组剔除，以免同一 K 线的不同资产落入不同角色。
+    unsafe_train = {int(row["generated_at"]) for row in ordered if int(row["generated_at"]) in train_allowed
+                    and (row.get("label_end_at") is None or int(row["label_end_at"]) >= validation_start)}
+    unsafe_valid = {int(row["generated_at"]) for row in ordered if int(row["generated_at"]) in valid_allowed
+                    and (row.get("label_end_at") is None or int(row["label_end_at"]) >= test_start)}
+    train_allowed -= unsafe_train
+    valid_allowed -= unsafe_valid
+    training = [row for row in ordered if int(row["generated_at"]) in train_allowed]
+    validation = [row for row in ordered if int(row["generated_at"]) in valid_allowed]
+    testing = [row for row in ordered if int(row["generated_at"]) >= test_start]
+    if not training or not validation or not testing:
+        raise RuntimeError("样本不足以切成训练/验证/测试三段")
+    return training, validation, testing
 
 
 def _resolve_split_ratios(
@@ -427,6 +461,7 @@ def serialize_dataset_bundle(bundle: DatasetBundle) -> dict[str, object]:
         "testing_rows": bundle.testing_rows,
         "data_states": bundle.data_states,
         "cache": bundle.cache,
+        "all_rows": bundle.all_rows,
     }
 
 
@@ -441,4 +476,5 @@ def deserialize_dataset_bundle(payload: dict[str, object]) -> DatasetBundle:
         testing_rows=list(payload.get("testing_rows") or []),
         data_states=dict(payload.get("data_states") or {}),
         cache=dict(payload.get("cache") or {}),
+        all_rows=list(payload.get("all_rows") or []),
     )

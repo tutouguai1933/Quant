@@ -16,9 +16,10 @@ if str(REPO_ROOT) not in sys.path:
 
 import services.api.app.routes.signals as signals_route  # noqa: E402
 from services.api.app.routes.signals import get_direction_short_status  # noqa: E402
+from services.api.app.services.direction_short_service import DirectionShortService  # noqa: E402
 
 
-class _FakeStateService:
+class _FakeStateService(DirectionShortService):
     """测试用状态服务：返回固定状态。"""
 
     def __init__(self, state: dict) -> None:
@@ -92,7 +93,7 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
                         "profit_abs": 0.79,
                         "profit_pct": 0.79,
                         "open_date": "2026-08-16 01:00:00",
-                        "enter_tag": "quant-control-plane",
+                        "enter_tag": "quant-direction-short:production-model",
                     }
                 ]
             ),
@@ -103,7 +104,9 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
         self.assertIsNone(response["error"])
         data = response["data"]
         self.assertAlmostEqual(data["market"]["avg_score"], 0.37)
-        self.assertTrue(data["market"]["short_trigger"])
+        self.assertFalse(data["market"]["short_trigger"])
+        self.assertEqual(data["market"]["direction"], "unknown")
+        self.assertFalse(data["market"]["execution_guard"]["passed"])
         self.assertTrue(data["state"]["has_short_position"])
         self.assertTrue(data["simulation"]["connected"])
         self.assertEqual(data["simulation"]["open_position"]["trade_id"], 2)
@@ -124,6 +127,7 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
                         "open_date": "2026-08-12 19:26:17",
                         "close_date": "2026-08-13 05:07:29",
                         "exit_reason": "stop_loss",
+                        "enter_tag": "quant-direction-short:production-model",
                     }
                 ]
             ),
@@ -174,6 +178,40 @@ class DirectionShortStatusRouteTests(unittest.TestCase):
         self.assertTrue(data["state"]["has_short_position"])
         # 模拟盘不可达时不能断言“状态不一致”（真实持仓未知）
         self.assertFalse(data["position_state_mismatch"])
+
+    def test_unowned_positions_and_history_are_excluded(self) -> None:
+        """自然RSI仓位、异币空仓及无归属BTC空仓不作为方向模型持仓或历史。"""
+        unrelated = [
+            {"trade_id": 11, "pair": "BTC/USDT:USDT", "is_short": False, "enter_tag": "rsi-entry"},
+            {"trade_id": 12, "pair": "XRP/USDT:USDT", "is_short": True, "enter_tag": "quant-direction-short:model"},
+            {"trade_id": 13, "pair": "BTC/USDT:USDT", "is_short": True, "enter_tag": "force_entry"},
+        ]
+        self._patch_route(
+            state={"has_short_position": False},
+            client=_FakeSimClient(
+                open_trades=[dict(row, is_open=True) for row in unrelated],
+                closed_trades=[dict(row, is_open=False) for row in unrelated],
+            ),
+        )
+        data = get_direction_short_status()["data"]
+        self.assertTrue(data["simulation"]["connected"])
+        self.assertIsNone(data["simulation"]["open_position"])
+        self.assertIsNone(data["simulation"]["last_closed_trade"])
+        self.assertFalse(data["position_state_mismatch"])
+
+    def test_owned_history_selected_after_unrelated_latest_trade(self) -> None:
+        """最新自然RSI成交不遮盖方向模型自身的最近平仓记录。"""
+        self._patch_route(
+            state={"has_short_position": False},
+            client=_FakeSimClient(closed_trades=[
+                {"trade_id": 20, "pair": "BTC/USDT:USDT", "is_open": False,
+                 "is_short": False, "enter_tag": "rsi-entry"},
+                {"trade_id": 19, "pair": "BTC/USDT:USDT", "is_open": False,
+                 "is_short": True, "enter_tag": "quant-direction-short:model"},
+            ]),
+        )
+        data = get_direction_short_status()["data"]
+        self.assertEqual(data["simulation"]["last_closed_trade"]["trade_id"], 19)
 
 
 if __name__ == "__main__":

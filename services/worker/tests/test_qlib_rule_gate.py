@@ -29,7 +29,9 @@ class QlibRuleGateTests(unittest.TestCase):
         )
 
         self.assertFalse(decision["allowed"])
-        self.assertEqual(decision["reason"], "trend_broken")
+        self.assertEqual(decision["reason"].split(" (", 1)[0], "trend_broken")
+        self.assertIn(" (", decision["reason"])
+        self.assertTrue(decision["reason"].endswith(")"))
 
     def test_rule_gate_blocks_when_volatility_is_too_high(self) -> None:
         decision = evaluate_rule_gate(
@@ -42,7 +44,9 @@ class QlibRuleGateTests(unittest.TestCase):
         )
 
         self.assertFalse(decision["allowed"])
-        self.assertEqual(decision["reason"], "volatility_too_high")
+        self.assertEqual(decision["reason"].split(" (", 1)[0], "volatility_too_high")
+        self.assertIn(" (", decision["reason"])
+        self.assertTrue(decision["reason"].endswith(")"))
 
     def test_rule_gate_blocks_when_volume_is_not_confirmed(self) -> None:
         decision = evaluate_rule_gate(
@@ -51,11 +55,14 @@ class QlibRuleGateTests(unittest.TestCase):
                 "ema55_gap_pct": "2.2000",
                 "atr_pct": "2.8000",
                 "volume_ratio": "0.9200",
-            }
+            },
+            thresholds={"rule_min_volume_ratio": "1.0"}
         )
 
         self.assertFalse(decision["allowed"])
-        self.assertEqual(decision["reason"], "volume_not_confirmed")
+        self.assertEqual(decision["reason"].split(" (", 1)[0], "volume_not_confirmed")
+        self.assertIn(" (", decision["reason"])
+        self.assertTrue(decision["reason"].endswith(")"))
 
     def test_rule_gate_allows_when_trend_and_volume_confirm(self) -> None:
         decision = evaluate_rule_gate(
@@ -82,7 +89,9 @@ class QlibRuleGateTests(unittest.TestCase):
         )
 
         self.assertFalse(decision["allowed"])
-        self.assertEqual(decision["reason"], "strict_template_not_confirmed")
+        self.assertEqual(decision["reason"].split(" (", 1)[0], "strict_template_not_confirmed")
+        self.assertIn(" (", decision["reason"])
+        self.assertTrue(decision["reason"].endswith(")"))
 
     def test_rule_gate_accepts_runtime_threshold_overrides(self) -> None:
         decision = evaluate_rule_gate(

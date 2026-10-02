@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timezone
+from unittest import mock
 from pathlib import Path
 
 from services.worker.qlib_config import load_qlib_config
@@ -19,15 +21,28 @@ from services.worker.qlib_features import (
 )
 from services.worker.qlib_runner import QlibRunner
 
+TEST_NOW = datetime.now(timezone.utc)
 
 class QlibFactorLayerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        """固定行情时钟并隔离生产注册表，协议测试不访问真实模型。"""
+        registry = mock.Mock()
+        registry.get_production_model.return_value = None
+        registry_patch = mock.patch("services.worker.model_registry.get_model_registry", return_value=registry)
+        clock_patch = mock.patch("services.worker.qlib_runner._utc_now", return_value=TEST_NOW)
+        registry_patch.start()
+        clock_patch.start()
+        self.addCleanup(registry_patch.stop)
+        self.addCleanup(clock_patch.stop)
+
     def test_feature_protocol_groups_primary_and_auxiliary_factors(self) -> None:
         self.assertIn("trend", FEATURE_PROTOCOL["categories"])
         self.assertIn("momentum", FEATURE_PROTOCOL["categories"])
         self.assertIn("oscillator", FEATURE_PROTOCOL["categories"])
         self.assertIn("volume", FEATURE_PROTOCOL["categories"])
         self.assertIn("volatility", FEATURE_PROTOCOL["categories"])
-        self.assertIn("roc6", PRIMARY_FEATURE_COLUMNS)
+        self.assertNotIn("roc6", PRIMARY_FEATURE_COLUMNS)
+        self.assertEqual(tuple(FEATURE_PROTOCOL["roles"]["primary"]), PRIMARY_FEATURE_COLUMNS)
         self.assertIn("cci20", AUXILIARY_FEATURE_COLUMNS)
         self.assertIn("stoch_k14", AUXILIARY_FEATURE_COLUMNS)
         self.assertTrue(FEATURE_PROTOCOL["roles"]["primary"])
@@ -47,7 +62,7 @@ class QlibFactorLayerTests(unittest.TestCase):
         rows = build_feature_rows("ETHUSDT", _sample_timing_candles(step_hours=4))
 
         self.assertEqual(tuple(rows[-1].keys()), FEATURE_COLUMNS)
-        self.assertIn("roc6", rows[-1])
+        self.assertNotIn("roc6", rows[-1])
         self.assertIn("cci20", rows[-1])
         self.assertIn("stoch_k14", rows[-1])
 
@@ -68,6 +83,10 @@ class QlibFactorLayerTests(unittest.TestCase):
 
         self.assertNotEqual(clipped_rows[-1]["ema20_gap_pct"], normalized_rows[-1]["ema20_gap_pct"])
         self.assertNotEqual(clipped_rows[-1]["volume_ratio"], normalized_rows[-1]["volume_ratio"])
+        # 标准化参数随已见历史更新，追加未来行情不应回写已输出的特征。
+        prefix = build_feature_rows("ETHUSDT", candles[:40], outlier_policy="raw", normalization_policy="zscore_by_symbol")
+        self.assertEqual(prefix, normalized_rows[:40])
+        self.assertTrue(all(value == "0.0000" for name, value in normalized_rows[0].items() if name not in {"symbol", "generated_at"}))
 
     def test_feature_builder_drops_warmup_rows_in_strict_drop_mode(self) -> None:
         candles = _sample_timing_candles(step_hours=4)
@@ -80,13 +99,13 @@ class QlibFactorLayerTests(unittest.TestCase):
     def test_training_and_inference_share_same_factor_protocol(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = load_qlib_config(
-                env={"QUANT_QLIB_RUNTIME_ROOT": str(Path(temp_dir))},
+                env={"QUANT_QLIB_RUNTIME_ROOT": str(Path(temp_dir)), "QUANT_QLIB_MODEL_TYPE": "heuristic"},
                 require_explicit=True,
             )
             runner = QlibRunner(config=config)
             dataset = {
-                "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
-                "ETHUSDT": _sample_timing_candles(step_hours=4, count=120),
+                "BTCUSDT": _sample_timing_candles(step_hours=4, count=300),
+                "ETHUSDT": _sample_timing_candles(step_hours=4, count=300),
             }
 
             training_result = runner.train(dataset)
@@ -110,6 +129,7 @@ class QlibFactorLayerTests(unittest.TestCase):
             config = load_qlib_config(
                 env={
                     "QUANT_QLIB_RUNTIME_ROOT": str(Path(temp_dir)),
+                    "QUANT_QLIB_MODEL_TYPE": "heuristic",
                     "QUANT_QLIB_WINDOW_MODE": "rolling",
                     "QUANT_QLIB_MISSING_POLICY": "strict_drop",
                     "QUANT_QLIB_OUTLIER_POLICY": "raw",
@@ -119,8 +139,8 @@ class QlibFactorLayerTests(unittest.TestCase):
             )
             runner = QlibRunner(config=config)
             dataset = {
-                "BTCUSDT": _sample_timing_candles(step_hours=4, count=240),
-                "ETHUSDT": _sample_timing_candles(step_hours=4, count=240),
+                "BTCUSDT": _sample_timing_candles(step_hours=4, count=360),
+                "ETHUSDT": _sample_timing_candles(step_hours=4, count=360),
             }
 
             training_result = runner.train(dataset)
@@ -128,7 +148,7 @@ class QlibFactorLayerTests(unittest.TestCase):
 
         self.assertEqual(training_result["factor_protocol"]["preprocessing"]["missing_policy"], "窗口不足时直接丢弃")
         self.assertEqual(training_result["factor_protocol"]["preprocessing"]["outlier_policy"], "保留原始极值")
-        self.assertEqual(training_result["factor_protocol"]["preprocessing"]["normalization_policy"], "按单币样本做 z-score 标准化")
+        self.assertEqual(training_result["factor_protocol"]["preprocessing"]["normalization_policy"], "按单币当时已见历史做在线 z-score 标准化")
         self.assertEqual(
             inference_result["factor_protocol"]["preprocessing"],
             training_result["factor_protocol"]["preprocessing"],
@@ -137,8 +157,8 @@ class QlibFactorLayerTests(unittest.TestCase):
 
 def _sample_timing_candles(*, step_hours: int, count: int = 72) -> list[dict[str, object]]:
     candles: list[dict[str, object]] = []
-    base_open_time = 1712016000000
     step_ms = step_hours * 60 * 60 * 1000
+    base_open_time = int(TEST_NOW.timestamp() * 1000) - 60000 - count * step_ms
     previous_close = 100.0
     for index in range(count):
         close_price = previous_close + 0.8

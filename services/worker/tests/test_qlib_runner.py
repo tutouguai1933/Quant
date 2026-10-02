@@ -1,6 +1,9 @@
+"""验证研究管线、实时输出和生产准入；模型训练用低层桩隔离。"""
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from types import SimpleNamespace
 import sys
 import tempfile
 import unittest
@@ -14,10 +17,13 @@ if str(REPO_ROOT) not in sys.path:
 
 from services.worker.qlib_config import QlibConfigurationError, load_qlib_config  # noqa: E402
 from services.worker.qlib_dataset import DatasetBundle  # noqa: E402
-from services.worker.qlib_features import AUXILIARY_FEATURE_COLUMNS, PRIMARY_FEATURE_COLUMNS  # noqa: E402
+from services.worker.qlib_features import AUXILIARY_FEATURE_COLUMNS, PRIMARY_FEATURE_COLUMNS, FEATURE_PROTOCOL  # noqa: E402
 from services.worker.qlib_features import FEATURE_COLUMNS, build_feature_rows  # noqa: E402
 from services.worker.qlib_labels import LABEL_COLUMNS, build_label_rows  # noqa: E402
 from services.worker.qlib_runner import QlibRunner, TrainingBundle  # noqa: E402
+
+
+TEST_NOW = datetime.now(timezone.utc).replace(minute=1, second=0, microsecond=0)
 
 
 class QlibConfigTests(unittest.TestCase):
@@ -164,15 +170,17 @@ class QlibFeatureTests(unittest.TestCase):
         self.assertEqual(len(rows), 4)
         self.assertEqual(tuple(rows[0].keys()), FEATURE_COLUMNS)
         self.assertEqual(rows[-1]["symbol"], "BTCUSDT")
-        self.assertEqual(rows[0]["close_return_pct"], "0.0000")
-        self.assertEqual(rows[1]["close_return_pct"], "3.9216")
+        self.assertNotIn("close_return_pct", rows[0])
+        self.assertEqual(rows[0]["body_pct"], "2.0000")
+        self.assertEqual(rows[1]["body_pct"], "3.9216")
 
     def test_feature_builder_outputs_timing_columns(self) -> None:
         rows = build_feature_rows("BTCUSDT", _sample_timing_candles(step_hours=4))
 
         self.assertIn("ema20_gap_pct", rows[-1])
         self.assertIn("ema55_gap_pct", rows[-1])
-        self.assertIn("atr_pct", rows[-1])
+        self.assertNotIn("atr_pct", rows[-1])
+        self.assertEqual(set(rows[-1]), set(FEATURE_COLUMNS))
         self.assertIn("rsi14", rows[-1])
         self.assertIn("breakout_strength", rows[-1])
 
@@ -264,7 +272,7 @@ class QlibFeatureTests(unittest.TestCase):
     def test_feature_builder_supports_timeframe_profile_override(self) -> None:
         rows = build_feature_rows(
             "BTCUSDT",
-            _sample_timing_candles(step_hours=4),
+            _sample_timing_candles(step_hours=4, count=80),
             timeframe_profiles={
                 "4h": {
                     "trend_window": 5,
@@ -300,7 +308,39 @@ class QlibFeatureTests(unittest.TestCase):
 
 
 class QlibRunnerTests(unittest.TestCase):
-    def test_filter_backtest_rows_returns_empty_when_ml_has_no_buy_samples(self) -> None:
+
+    def setUp(self):
+        """固定时钟并隔离实际训练、模型注册，保留真实数据与报告管线。"""
+        self.addCleanup(mock.patch.stopall)
+        mock.patch("services.worker.qlib_runner._utc_now", return_value=TEST_NOW).start()
+        mock.patch.object(QlibRunner, "_register_model", return_value=None).start()
+        self.model_registry = mock.Mock()
+        self.model_registry.get_production_model.return_value = None
+        mock.patch("services.worker.model_registry.get_model_registry", return_value=self.model_registry).start()
+        original = load_qlib_config
+
+        def test_config(*, env=None, **kwargs):
+            """普通管线测试用启发式；模式与 walk-forward 测试保留 ML 路由。"""
+            values = dict(env or {})
+            if "model_mode" not in self._testMethodName and "walk_forward" not in self._testMethodName:
+                values.setdefault("QUANT_QLIB_MODEL_TYPE", "heuristic")
+            return original(env=values, **kwargs)
+
+        mock.patch(__name__ + ".load_qlib_config", side_effect=test_config).start()
+        if "model_mode" in self._testMethodName:
+            def fake_train(trainer, **kwargs):
+                """以确定结果代替低层拟合，验证 runner 确实调用训练接口。"""
+                columns = list(kwargs["feature_columns"])
+                return SimpleNamespace(
+                    model=SimpleNamespace(save=lambda path: Path(path).write_text("fixture-model", encoding="utf-8")),
+                    model_version="fixture-model",
+                    metrics={"train_auc": .7, "val_auc": .6, "val_f1": .6},
+                    training_context={"label_threshold": trainer.label_threshold},
+                    training_curve=SimpleNamespace(steps=[1], train_scores=[.7], validation_scores=[.6]),
+                    feature_importance=SimpleNamespace(feature_names=columns, importances=[1 / len(columns)] * len(columns)))
+            self.trainer_call = mock.patch("services.worker.ml.trainer.ModelTrainer.train", autospec=True, side_effect=fake_train).start()
+
+    def test_filter_backtest_rows_keeps_price_path_when_ml_has_no_buy_samples(self) -> None:
         class SellOnlyPredictor:
             def predict_batch(self, *, feature_rows: list[dict[str, object]], feature_columns: object, include_contributions: bool) -> list[object]:
                 return [mock.Mock(score=0.49) for _ in feature_rows]
@@ -319,7 +359,9 @@ class QlibRunnerTests(unittest.TestCase):
                 ml_predictor=SellOnlyPredictor(),
             )
 
-        self.assertEqual(filtered, [])
+        self.assertEqual(len(filtered), len(rows))
+        self.assertEqual([row["prediction_score"] for row in filtered], [0.49, 0.49])
+        self.assertEqual([{k: v for k, v in row.items() if k != "prediction_score"} for row in filtered], rows)
 
     def test_scoring_and_rule_gate_change_when_strict_template_is_selected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -360,7 +402,7 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertGreater(relaxed_score, strict_score)
         self.assertEqual(relaxed_gate["status"], "passed")
         self.assertEqual(strict_gate["status"], "failed")
-        self.assertIn("strict_template_not_confirmed", strict_gate["reasons"])
+        self.assertTrue(any(r.startswith("strict_template_not_confirmed (") for r in strict_gate["reasons"]))
 
     def test_scoring_respects_configured_category_weights(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -520,13 +562,14 @@ class QlibRunnerTests(unittest.TestCase):
             )
             runner = QlibRunner(config=config)
             candles_1h = _sample_timing_candles(step_hours=1, count=96)
-            candles_4h = _sample_timing_candles(step_hours=4, count=80)
+            candles_4h = _sample_timing_candles(step_hours=4, count=300)
             bundle = DatasetBundle(
                 symbol="BTCUSDT",
                 timeframe="4h",
                 training_rows=[_sample_training_row(1), _sample_training_row(2), _sample_training_row(3)],
                 validation_rows=[_sample_training_row(4)],
                 testing_rows=[_sample_training_row(5), _sample_training_row(6)],
+                all_rows=[_sample_training_row(index) for index in range(1, 7)],
             )
 
             with mock.patch("services.worker.qlib_runner.build_dataset_bundle", return_value=bundle) as mocked_bundle:
@@ -543,6 +586,7 @@ class QlibRunnerTests(unittest.TestCase):
             symbol="BTCUSDT",
             candles_1h=candles_1h,
             candles_4h=candles_4h,
+            candles_15m=[],
             lookback_days=config.lookback_days,
             label_target_pct=config.label_target_pct,
             label_stop_pct=config.label_stop_pct,
@@ -560,6 +604,8 @@ class QlibRunnerTests(unittest.TestCase):
             train_split_ratio=config.train_split_ratio,
             validation_split_ratio=config.validation_split_ratio,
             test_split_ratio=config.test_split_ratio,
+            multi_window_labels_enabled=config.multi_window_labels_enabled,
+            label_windows=tuple(config.label_windows),
         )
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["sample_count"], 3)
@@ -583,6 +629,8 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertGreater(result["sample_count"], 0)
         self.assertIn("validation", result)
         self.assertIn("backtest", result)
+        self.assertEqual(result["backtest"]["evaluation_version"], "ml_price_replay_v2")
+        self.assertEqual(result["backtest"]["evaluation_status"], "available")
         self.assertIn("assumptions", result["backtest"])
         self.assertIn("training_context", result)
         self.assertEqual(result["training_context"]["feature_version"], "v2")
@@ -601,6 +649,7 @@ class QlibRunnerTests(unittest.TestCase):
             runner = QlibRunner(config=config)
             result = runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4)})
         self.assertEqual(result.get("model_mode"), "binary")
+        self.assertEqual(self.trainer_call.call_count, 1)
         self.assertIn("val_auc", (result.get("metrics") or {}).get("ml_metrics", {}) or result.get("ml_metrics", {}))
 
     def test_training_records_model_mode_ranking(self) -> None:
@@ -618,6 +667,8 @@ class QlibRunnerTests(unittest.TestCase):
             runner = QlibRunner(config=config)
             result = runner.train(dataset={"BTCUSDT": _sample_timing_candles(step_hours=4), "ETHUSDT": _sample_timing_candles(step_hours=4)})
         self.assertEqual(result.get("model_mode"), "ranking")
+        self.assertEqual(self.trainer_call.call_count, 1)
+        self.assertEqual(self.trainer_call.call_args.args[0].model_params["objective"], "lambdarank")
 
     def test_training_writes_dataset_snapshot_and_experiment_index(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -735,6 +786,8 @@ class QlibRunnerTests(unittest.TestCase):
                 "model_version",
                 "source",
                 "generated_at",
+                "ml_prediction", "feature_asof", "expires_at", "feature_timeframe_ms",
+                "prediction_semantics", "executable",
             },
         )
 
@@ -950,7 +1003,10 @@ class QlibRunnerTests(unittest.TestCase):
                 )
 
         candidates = {item["symbol"]: item for item in result["candidates"]["items"]}
-        self.assertTrue(candidates["BTCUSDT"]["allowed_to_dry_run"])
+        self.assertFalse(candidates["BTCUSDT"]["allowed_to_dry_run"])
+        self.assertFalse(result["model_admission"]["passed"])
+        self.assertFalse(result["signals"][0]["executable"])
+        self.assertEqual(candidates["BTCUSDT"]["dry_run_gate"]["status"], "blocked")
         self.assertFalse(candidates["DOGEUSDT"]["allowed_to_dry_run"])
 
     def test_inference_applies_rule_gate_before_candidate_can_enter_dry_run(self) -> None:
@@ -963,7 +1019,7 @@ class QlibRunnerTests(unittest.TestCase):
             )
             runner = QlibRunner(config=config)
             candles_1h = _sample_timing_candles(step_hours=1, count=96)
-            candles_4h = _sample_timing_candles(step_hours=4, count=80)
+            candles_4h = _sample_timing_candles(step_hours=4, count=300)
             dataset = {
                 "BTCUSDT": {
                     "candles_1h": candles_1h,
@@ -984,7 +1040,7 @@ class QlibRunnerTests(unittest.TestCase):
         self.assertEqual(candidate["rule_gate"]["status"], "failed")
         self.assertEqual(candidate["rule_gate"]["reasons"], ["trend_broken"])
 
-    def test_inference_applies_training_validation_gate_before_candidate_can_enter_dry_run(self) -> None:
+    def test_inference_applies_validation_gate_before_candidate_can_enter_dry_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             runtime_root = Path(temp_dir)
             runtime_root.mkdir(exist_ok=True)
@@ -994,8 +1050,8 @@ class QlibRunnerTests(unittest.TestCase):
             )
             runner = QlibRunner(config=config)
             dataset = {
-                "BTCUSDT": _sample_timing_candles(step_hours=4, count=120),
-                "ETHUSDT": _sample_negative_timing_candles(step_hours=4, count=120),
+                "BTCUSDT": _sample_timing_candles(step_hours=4, count=300),
+                "ETHUSDT": _sample_negative_timing_candles(step_hours=4, count=300),
             }
             runner.train(dataset=dataset)
             latest_training_path = runtime_root / "latest_training.json"
@@ -1008,12 +1064,133 @@ class QlibRunnerTests(unittest.TestCase):
             }
             latest_training_path.write_text(__import__("json").dumps(training_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-            result = runner.infer(dataset=dataset)
+            with mock.patch("services.worker.qlib_runner._build_per_symbol_validation", return_value=training_payload["validation"]):
+                result = runner.infer(dataset=dataset)
 
         candidate = result["candidates"]["items"][0]
         self.assertEqual(candidate["research_validation_gate"]["status"], "failed")
         self.assertEqual(candidate["next_action"], "continue_research")
         self.assertFalse(candidate["allowed_to_dry_run"])
+
+    def test_authenticated_production_with_fresh_replay_can_enter_dry_run(self):
+        """真实准入与价格回放全部通过时放行，低层预测桩无需重复训练。"""
+        from services.worker.qlib_live_policy import EVALUATION_VERSION, UPSIDE_PROBABILITY
+        from services.worker.ml.predictor import PredictionResult
+        from services.worker.model_registry import ModelRegistry
+        with tempfile.TemporaryDirectory() as directory:
+            config = load_qlib_config(env={
+                "QUANT_QLIB_RUNTIME_ROOT": directory,
+                "QUANT_QLIB_LOOKBACK_DAYS": "240",
+                "QUANT_QLIB_HOLDING_WINDOW_MIN_DAYS": "1",
+                "QUANT_QLIB_HOLDING_WINDOW_MAX_DAYS": "1",
+            }, require_explicit=True)
+            runner = QlibRunner(config=config)
+            candles = _sample_timing_candles(step_hours=4, count=1200)
+            price = 100.
+            for candle in candles:
+                candle.update(open=str(price), close=str(price * 1.01), high=str(price * 1.012), low=str(price * .998))
+                price *= 1.01
+            runner.train({"BTCUSDT": candles})
+            bundle = runner._build_symbol_dataset_bundle(symbol="BTCUSDT", market_payload=candles)
+            registry = ModelRegistry(Path(directory) / "registry")
+            model_path = Path(directory) / "production.model"
+            model_path.write_text("fixture-model", encoding="utf-8")
+            version = registry.register(model_path=model_path, model_type="lightgbm",
+                                        metrics={"val_auc": .8, "val_f1": .7}, training_context={
+                                            "evaluation_version": EVALUATION_VERSION, "evaluation_available": True,
+                                            "prediction_semantics": UPSIDE_PROBABILITY, "feature_columns": list(PRIMARY_FEATURE_COLUMNS),
+                                            "input_protocol": runner._model_input_protocol(timeframes=["4h"]),
+                                            "validation_summary": runner._build_validation_summary(bundle.validation_rows),
+                                            "trained_label_until": max(row["label_end_at"] for row in bundle.training_rows + bundle.validation_rows),
+                                        })
+            self.assertTrue(registry.promote(version, "production"))
+            record = registry.get_production_model()
+            prediction = PredictionResult(symbol="BTCUSDT", score=.95, signal="long", confidence=.95,
+                                          feature_values={}, model_version=record.version_id, feature_contributions=[])
+            predictor = mock.Mock()
+            predictor.predict.return_value = prediction
+            predictor.predict_batch.side_effect = lambda **kwargs: [prediction] * len(kwargs["feature_rows"])
+            with mock.patch("services.worker.model_registry.get_model_registry", return_value=registry), \
+                 mock.patch("services.worker.ml.predictor.ModelPredictor", return_value=predictor), \
+                 mock.patch.object(runner, "_track_ml_prediction"):
+                result = runner.infer({"BTCUSDT": candles})
+        self.assertTrue(result["model_admission"]["passed"])
+        self.assertTrue(result["signals"][0]["executable"])
+        candidate = result["candidates"]["items"][0]
+        self.assertEqual(candidate["backtest"]["evaluation_version"], EVALUATION_VERSION)
+        self.assertEqual(candidate["backtest"]["evaluation_status"], "available")
+        self.assertTrue(candidate["execution_guard"]["passed"])
+        self.assertTrue(candidate["allowed_to_dry_run"], candidate["dry_run_gate"])
+        self.assertEqual(tuple(predictor.predict.call_args.kwargs["feature_columns"]), tuple(record.training_context["feature_columns"]))
+        self.assertEqual(tuple(predictor.predict_batch.call_args.kwargs["feature_columns"]), tuple(record.training_context["feature_columns"]))
+
+    def test_walk_forward_early_stop_purges_shared_timestamp_labels(self):
+        """外层测试集之外，内层早停验证也必须按共享时间与标签成熟隔离。"""
+        import numpy as np
+        with tempfile.TemporaryDirectory() as directory:
+            runner = QlibRunner(config=load_qlib_config(env={"QUANT_QLIB_RUNTIME_ROOT": directory}, require_explicit=True))
+            rows = []
+            for index in range(100):
+                for symbol in ("BTCUSDT", "ETHUSDT"):
+                    row = {**_sample_training_row(1), "symbol": symbol,
+                           "generated_at": index, "label_end_at": index + 10}
+                    if index == 69 and symbol == "ETHUSDT":
+                        row["label_end_at"] = 82
+                    rows.append(row)
+            final_test = [{**_sample_training_row(1), "generated_at": 200}]
+            frozen_model = SimpleNamespace(predict_proba=lambda matrix: np.tile([.3, .7], (len(matrix), 1)))
+            with mock.patch("services.worker.ml.trainer.ModelTrainer.train", return_value=SimpleNamespace(model=frozen_model)) as trainer:
+                scores = runner._walk_forward_model_predict(rows, final_test, "lightgbm")
+            self.assertEqual(scores, [.7])
+            self.assertEqual(trainer.call_count, 1)
+            training = trainer.call_args.kwargs["training_rows"]
+            validation = trainer.call_args.kwargs["validation_rows"]
+            boundary = min(row["generated_at"] for row in validation)
+            self.assertLess(max(row["label_end_at"] for row in training), boundary)
+            self.assertFalse(any(row["generated_at"] == 69 for row in training))
+            self.assertTrue(all(sum(row["generated_at"] == timestamp for row in segment) == 2
+                                for segment in (training, validation)
+                                for timestamp in {row["generated_at"] for row in segment}))
+            self.assertNotIn(final_test[0], training + validation)
+
+    def test_validation_summary_uses_model_positive_threshold(self):
+        """标签收益未超过模型阈值不能计为正类，测试段也不应参与验证摘要。"""
+        from services.worker.qlib_runner import _build_per_symbol_validation
+        rows = [{"future_return_pct": 1}, {"future_return_pct": 2}, {"future_return_pct": 3}]
+        result = _build_per_symbol_validation(rows, label_threshold=2)
+        self.assertAlmostEqual(float(result["positive_rate"]), 1 / 3, places=4)
+
+    def test_changed_feature_input_protocol_blocks_existing_production(self):
+        """归一化或时间周期参数改变后，旧生产模型不得继续执行。"""
+        from services.worker.model_registry import ModelRegistry
+        from services.worker.qlib_live_policy import EVALUATION_VERSION, UPSIDE_PROBABILITY, inference_execution_guard
+        with tempfile.TemporaryDirectory() as directory:
+            base_env = {"QUANT_QLIB_RUNTIME_ROOT": directory}
+            runner = QlibRunner(config=load_qlib_config(env=base_env, require_explicit=True))
+            registry = ModelRegistry(Path(directory) / "registry")
+            model_path = Path(directory) / "production.model"
+            model_path.write_text("fixture-model", encoding="utf-8")
+            version = registry.register(model_path=model_path, model_type="lightgbm",
+                                        metrics={"val_auc": .8, "val_f1": .7}, training_context={
+                                            "evaluation_version": EVALUATION_VERSION, "evaluation_available": True,
+                                            "prediction_semantics": UPSIDE_PROBABILITY,
+                                            "input_protocol": runner._model_input_protocol(timeframes=["4h"]),
+                                        })
+            self.assertTrue(registry.promote(version, "production"))
+            with mock.patch("services.worker.model_registry.get_model_registry", return_value=registry):
+                self.assertTrue(runner._resolve_production_model()[1]["passed"])
+                changes = [
+                    {"QUANT_QLIB_NORMALIZATION_POLICY": "zscore_by_symbol"},
+                    {"QUANT_QLIB_TIMEFRAME_PROFILES": json.dumps({"4h": {"trend_window": 5}})},
+                ]
+                for changed_env in changes:
+                    with self.subTest(changed_env=changed_env):
+                        changed_runner = QlibRunner(config=load_qlib_config(env={**base_env, **changed_env}, require_explicit=True))
+                        record, admission = changed_runner._resolve_production_model()
+                        self.assertEqual(record.version_id, version)
+                        self.assertFalse(admission["passed"])
+                        self.assertTrue(any("输入配置" in reason for reason in admission["reasons"]))
+                        self.assertFalse(inference_execution_guard({"model_admission": admission, "signals": []}, now=TEST_NOW)["passed"])
 
     def test_training_skips_dirty_candles_without_label_misalignment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1052,7 +1229,7 @@ class QlibRunnerTests(unittest.TestCase):
             with self.assertRaises(RuntimeError) as ctx:
                 runner.train(
                     dataset={
-                        "BTCUSDT": _sample_timing_candles(step_hours=4)[:20],
+                        "BTCUSDT": _sample_timing_candles(step_hours=4)[-20:],
                     }
                 )
 
@@ -1072,6 +1249,9 @@ class QlibRunnerTests(unittest.TestCase):
             rows = [
                 {
                     "generated_at": 1712000000000 + i * 3600000,
+                    "label_end_at": 1712000000000 + i * 3600000,
+                    "open_time": 1712000000000 + i * 3600000 - 3599999,
+                    "close_time": 1712000000000 + i * 3600000,
                     "future_return_pct": "1.5" if i % 2 == 0 else "0.5",
                     "ema20_gap_pct": str(1 + (i % 10) * 0.1),
                     "ema55_gap_pct": str(2 + (i % 7) * 0.1),
@@ -1099,7 +1279,9 @@ class QlibRunnerTests(unittest.TestCase):
                 label_columns=("future_return_pct",),
                 factor_protocol={},
             )
-            report = runner._build_walk_forward_report(bundle, {})
+            with mock.patch.object(runner, "_walk_forward_model_predict", side_effect=lambda train, test, model_type: [.6] * len(test)) as predictor:
+                report = runner._build_walk_forward_report(bundle, {})
+            self.assertTrue(predictor.called)
             self.assertIsNotNone(report)
             self.assertTrue(report["folds"])
             # 预测必须接入真模型，而非恒等正比例
@@ -1148,11 +1330,11 @@ def _sample_candles() -> list[dict[str, object]]:
 
 
 
-def _sample_timing_candles(*, step_hours: int, count: int = 80) -> list[dict[str, object]]:
+def _sample_timing_candles(*, step_hours: int, count: int = 300) -> list[dict[str, object]]:
     candles: list[dict[str, object]] = []
-    base_open_time = 1712016000000
-    base_close_time = 1712019599999
     step_ms = step_hours * 60 * 60 * 1000
+    base_open_time = int(TEST_NOW.timestamp() * 1000) - 60000 - count * step_ms
+    base_close_time = base_open_time + step_ms - 1
     price = 100.0
     for index in range(count):
         open_price = price
@@ -1175,17 +1357,17 @@ def _sample_timing_candles(*, step_hours: int, count: int = 80) -> list[dict[str
     return candles
 
 
-def _sample_negative_timing_candles(*, step_hours: int, count: int = 80) -> list[dict[str, object]]:
+def _sample_negative_timing_candles(*, step_hours: int, count: int = 300) -> list[dict[str, object]]:
     candles: list[dict[str, object]] = []
-    base_open_time = 1712016000000
-    base_close_time = 1712019599999
     step_ms = step_hours * 60 * 60 * 1000
+    base_open_time = int(TEST_NOW.timestamp() * 1000) - 60000 - count * step_ms
+    base_close_time = base_open_time + step_ms - 1
     price = 100.0
     for index in range(count):
         open_price = price
-        close_price = price - (0.7 + (index % 4) * 0.25)
+        close_price = price * (1 - (0.003 + (index % 4) * 0.001))
         high_price = max(open_price, close_price) + 1.2
-        low_price = min(open_price, close_price) - 1.4
+        low_price = min(open_price, close_price) * .99
         volume = 900 + index * 6
         candles.append(
             {
@@ -1320,6 +1502,10 @@ def _sample_training_row(index: int) -> dict[str, object]:
     return {
         "symbol": "BTCUSDT",
         "generated_at": index,
+        "label_end_at": index,
+        "open_time": index,
+        "close_time": index,
+        "open": "100", "high": "101", "low": "99", "close": "100",
         "close_return_pct": f"{0.2 * index:.4f}",
         "range_pct": "1.0000",
         "body_pct": "0.5000",

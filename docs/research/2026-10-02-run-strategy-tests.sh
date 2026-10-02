@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+export LANG=C.UTF-8
+cd /home/djy/Quant
+source /home/djy/miniforge3/etc/profile.d/conda.sh
+conda activate quant
+python -m pytest services/worker/tests/test_qlib_features_causality.py services/worker/tests/test_qlib_factor_layer.py services/api/tests/test_automation_service.py services/api/tests/test_end_to_end_automation_flow.py services/worker/tests/test_qlib_backtest.py services/worker/tests/test_qlib_dataset.py services/worker/tests/test_qlib_walk_forward.py services/worker/tests/test_qlib_evaluation_integrity.py services/worker/tests/test_qlib_live_integrity.py services/worker/tests/test_qlib_runner.py services/worker/tests/test_qlib_ranking.py services/worker/tests/test_qlib_rule_gate.py services/worker/tests/test_qlib_runner_factor_registry.py services/worker/tests/test_qlib_runner_disabled_recheck.py services/worker/tests/test_qlib_runner_labels.py services/worker/tests/test_qlib_runner_factor_correlation.py services/worker/tests/test_qlib_experiment_report.py services/api/tests/test_execution_flow.py services/api/tests/test_signal_service.py services/api/tests/test_openclaw_services.py services/api/tests/test_freqtrade_rest_client.py services/api/tests/test_ml_execution_admission.py services/api/tests/test_direction_short_service.py services/api/tests/test_direction_short_status_route.py services/api/tests/test_rsi_execution_risk.py services/api/tests/test_research_service.py -q --tb=short

@@ -314,7 +314,7 @@ export default function HomePage() {
           />
         </div>
 
-        {/* 第三行：方向做空（合约）实时状态——主要交易策略，置顶展示 */}
+        {/* 自动化模型方向状态，与 RSI 主策略分开展示。 */}
         <DirectionShortStatusCard token={session.token} />
 
         {/* 第三行：快速导航 */}

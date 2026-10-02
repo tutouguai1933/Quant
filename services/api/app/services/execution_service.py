@@ -16,6 +16,7 @@ from services.api.app.core.settings import Settings
 from services.api.app.domain.contracts import ExecutionActionContract, ExecutionActionType
 from services.api.app.services.signal_service import signal_service
 from services.api.app.services.workbench_config_service import workbench_config_service
+from services.worker.qlib_live_policy import ML_ENTRY_TAG_PREFIX, inference_execution_guard
 
 
 class ExecutionService:
@@ -47,11 +48,20 @@ class ExecutionService:
             strategy_id=signal.get("strategy_id") or strategy_context_id,
             account_id=1,
         )
-        return action.to_dict()
+        payload = action.to_dict()
+        if str(signal.get("source", "")) == "qlib":
+            context = dict(dict(signal.get("payload") or {}).get("ml_context") or {})
+            version = str(dict(context.get("model_admission") or {}).get("model_version", "research"))
+            payload.update(execution_owner="automation_ml", entry_tag=f"{ML_ENTRY_TAG_PREFIX}{version}:{signal_id}")
+        return payload
 
     def dispatch_signal(self, signal_id: int, strategy_context_id: int | None = None) -> dict[str, object]:
         settings = Settings.from_env()
         runtime_mode = settings.runtime_mode
+        signal = signal_service.get_signal(signal_id)
+        target_trade_id = None
+        if signal is not None:
+            target_trade_id = self._guard_ml_signal(signal, runtime_mode=runtime_mode)
         runtime_snapshot = freqtrade_client.get_runtime_snapshot()
         if runtime_mode == "dry-run":
             if settings.has_freqtrade_rest_config():
@@ -65,6 +75,8 @@ class ExecutionService:
                 raise PermissionError("dry-run 模式下执行器没有切到 dry-run 运行模式")
 
         action = self.build_execution_action(signal_id, strategy_context_id=strategy_context_id)
+        if target_trade_id is not None:
+            action.update(trade_id=target_trade_id, execution_owner="automation_ml")
         reference_price = None
         if runtime_mode == "live":
             self._guard_live_execution(action=action, settings=settings, runtime_snapshot=runtime_snapshot)
@@ -296,6 +308,27 @@ class ExecutionService:
         base_quantity = Decimal("0.0400000000")
         quantity = max(Decimal("0.0010000000"), weight * base_quantity)
         return quantity.quantize(Decimal("0.0000000001"))
+
+    @staticmethod
+    def _guard_ml_signal(signal, *, runtime_mode):
+        """在实际下单入口检查 ML 来源，普通 RSI/规则信号不依赖模型准入。"""
+        if str(signal.get("source", "")) != "qlib":
+            return
+        reducing = str(signal.get("side", "")) == "flat"
+        payload = dict(signal.get("payload") or {})
+        guard = inference_execution_guard(dict(payload.get("ml_context") or {}), symbol=str(signal.get("symbol", "")),
+                                          opening_short=signal.get("side") == "short", verify_current_production=not reducing, reducing_position=reducing)
+        if not guard["passed"]:
+            raise PermissionError("自动化模型执行被阻止: " + "；".join(guard["reasons"]))
+        if reducing:
+            symbol = str(signal.get("symbol", "")).replace("/", "").upper()
+            owned = [t for t in freqtrade_client.list_open_trades() if t.get("is_open") and str(t.get("pair", "")).replace("/", "").upper() == symbol
+                     and str(t.get("enter_tag", "")).startswith(ML_ENTRY_TAG_PREFIX)]
+            if len(owned) != 1 or owned[0].get("trade_id") is None:
+                raise PermissionError("未找到唯一且明确归属自动化模型的退出仓位")
+            return owned[0]["trade_id"]
+        if runtime_mode == "live" and dict(payload.get("candidate") or {}).get("allowed_to_live") is not True:
+            raise PermissionError("自动化候选尚未通过实盘门槛")
 
     def _guard_live_execution(
         self,

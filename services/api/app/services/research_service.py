@@ -81,8 +81,9 @@ class ResearchService:
             return self._build_unavailable_result(config)
 
         try:
-            training_payload = self._read_json(config.paths.latest_training_path)
-            inference_payload = self._read_json(config.paths.latest_inference_path)
+            from services.worker.qlib_live_policy import hide_legacy_evaluation
+            training_payload = hide_legacy_evaluation(self._read_json(config.paths.latest_training_path))
+            inference_payload = hide_legacy_evaluation(self._read_json(config.paths.latest_inference_path))
             experiment_index = self._read_json(config.paths.experiment_index_path)
         except RuntimeError as exc:
             return {

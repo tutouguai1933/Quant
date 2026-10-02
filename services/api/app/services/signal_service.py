@@ -22,6 +22,7 @@ from decimal import Decimal
 
 from services.api.app.domain.contracts import SignalContract, SignalSide, SignalSource, SignalStatus
 from services.api.app.services.research_service import research_service
+from services.worker.qlib_live_policy import inference_execution_guard
 from services.api.app.services.strategy_catalog import strategy_catalog_service
 
 
@@ -281,6 +282,7 @@ class SignalService:
             )
             candidate = candidate_by_symbol.get(normalized_symbol, {})
             self._signal_metadata[signal_id] = {
+                "ml_context": {"model_admission": dict(inference.get("model_admission") or {}), "signals": [dict(item)]},
                 "candidate": candidate,
                 "dry_run_gate": dict(candidate.get("dry_run_gate") or {}),
                 "allowed_to_dry_run": bool(candidate.get("allowed_to_dry_run")),
@@ -396,6 +398,8 @@ class SignalService:
         if signal.source != SignalSource.QLIB:
             return True
         metadata = dict(self._signal_metadata.get(signal.signal_id or 0, {}))
+        if not inference_execution_guard(dict(metadata.get("ml_context") or {}), symbol=signal.symbol)["passed"]:
+            return False
         if bool(metadata.get("forced_for_validation")):
             return True
         gate = dict(metadata.get("dry_run_gate") or {})

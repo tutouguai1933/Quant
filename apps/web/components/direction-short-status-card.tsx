@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * 方向做空（模拟盘）状态卡
+ * 自动化模型的方向状态卡，与 RSI 主策略独立展示。
  * 显示：模型 16 币平均分数、做空状态（已开空/等待中/已平仓）、
- * 开空时间与模拟盘盈亏。数据来自 /signals/research/direction-short-status，
+ * 开空时间与该策略盈亏。数据来自 /signals/research/direction-short-status，
  * 默认每 60 秒自动刷新，供观察期随时查看。
  */
 
@@ -78,12 +78,12 @@ export function DirectionShortStatusCard({ token, refreshInterval = 60_000 }: Di
   const positionView = resolvePositionView(data);
 
   return (
-    <TerminalCard title="方向做空（模拟盘）">
+    <TerminalCard title="AI 方向策略（自动化）">
       <div className="space-y-3 text-sm">
         {/* 状态不一致提示：状态文件说已开空但模拟盘实际无空仓 */}
         {data.position_state_mismatch && (
           <div className="rounded border border-[var(--terminal-yellow)]/40 bg-[var(--terminal-yellow)]/10 p-2 text-xs text-[var(--terminal-yellow)]">
-            状态记录为已开空，但模拟盘当前无空仓（可能已被止损/策略平仓），调度状态待同步。
+            状态记录为已开空，但执行器当前没有该策略的空仓，调度状态待同步。
           </div>
         )}
 
@@ -94,11 +94,17 @@ export function DirectionShortStatusCard({ token, refreshInterval = 60_000 }: Di
           </div>
         )}
 
+          <div data-testid="direction-model-admission" hidden={!market.execution_guard || market.execution_guard.passed} className="rounded border border-[var(--terminal-yellow)]/40 bg-[var(--terminal-yellow)]/10 p-2 text-xs text-[var(--terminal-yellow)]">
+            {market.prediction_semantics === "return_above_threshold_probability"
+              ? "当前模型评估上涨条件，不能据低分自动做空。"
+              : "模型或行情尚未通过校验，自动开仓暂未放行。"}
+          </div>
+
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <InfoBlock label="模型平均分数" value={market.avg_score !== null ? market.avg_score.toFixed(4) : "--"} />
+          <InfoBlock label="模型上涨评分" value={market.avg_score !== null ? market.avg_score.toFixed(4) : "--"} />
           <InfoBlock label="做空状态" value={positionView.label} />
           <InfoBlock label="开空时间" value={formatOpenTime(openPosition, state.opened_at)} />
-          <InfoBlock label="模拟盈亏" value={formatProfit(openPosition, simulation.last_closed_trade)} />
+          <InfoBlock label="策略盈亏" value={formatProfit(openPosition, simulation.last_closed_trade)} />
         </div>
 
         {/* 补充信息：信号方向 / 持仓详情 / 最近决策 */}
@@ -138,7 +144,7 @@ export function DirectionShortStatusCard({ token, refreshInterval = 60_000 }: Di
         {/* 底部：连接状态与刷新时间 */}
         <div className="flex items-center justify-between border-t border-[var(--terminal-border)]/30 pt-2 text-[11px] text-[var(--terminal-dim)]">
           <span>
-            模拟盘连接：
+            执行器连接：
             {isLoading ? (
               <span className="text-[var(--terminal-muted)]">检查中</span>
             ) : simulation.connected ? (

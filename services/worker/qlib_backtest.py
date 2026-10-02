@@ -1,360 +1,241 @@
-"""Qlib 最小回测工具。
-
-这个文件负责根据未来收益样本输出稳定的核心回测指标。
-"""
-
+"""ML 策略价格回放：只用模型信号和真实 OHLC，供 runner 与模型准入读取。"""
 from __future__ import annotations
 
 import math
-from decimal import Decimal, InvalidOperation
+from collections import defaultdict
+from datetime import datetime, timezone
+from decimal import Decimal
+
+EVALUATION_VERSION = "ml_price_replay_v2"
 
 
-def run_backtest(
-    *,
-    rows: list[dict[str, object]],
-    holding_window: str,
-    fee_bps: Decimal | str | float | int = Decimal("0"),
-    slippage_bps: Decimal | str | float | int = Decimal("0"),
-    cost_model: str = "round_trip_basis_points",
-) -> dict[str, object]:
-    """运行一次最小回测并返回统一指标（基于逐 K 线真实交易模拟）。"""
-
-    gross_returns = [_to_float(item.get("future_return_pct")) for item in rows]
-    fee_bps_decimal = _to_decimal(fee_bps)
-    slippage_bps_decimal = _to_decimal(slippage_bps)
-    round_trip_cost_pct = _resolve_cost_pct(
-        fee_bps=fee_bps_decimal,
-        slippage_bps=slippage_bps_decimal,
-        cost_model=cost_model,
-    )
-    net_returns = [item - round_trip_cost_pct for item in gross_returns]
-
-    # 单边手续费合计（simulate 内部开仓、平仓各扣一次 → 等价双边成本）
-    sim_fee_pct = (
-        0.0
-        if cost_model == "zero_cost_baseline"
-        else float(fee_bps_decimal + slippage_bps_decimal) / 100.0
-    )
-    # 逐 K 线真实交易模拟：信号开仓，止损/止盈/窗口结束平仓
-    simulation = simulate_trades(
-        rows,
-        stop_loss_pct=-8.0,
-        take_profit_pct=8.0,
-        fee_pct=sim_fee_pct,
-        max_holding_bars=18,
-    )
+def run_backtest(*, rows: list[dict[str, object]], holding_window: str,
+                 fee_bps: Decimal | str | float | int = Decimal("0"),
+                 slippage_bps: Decimal | str | float | int = Decimal("0"),
+                 cost_model: str = "round_trip_basis_points",
+                 signal_threshold: float = 0.5, stop_loss_pct: float = -8.0,
+                 take_profit_pct: float = 8.0, max_holding_bars: int = 18,
+                 max_positions: int | None = None) -> dict[str, object]:
+    """验证输入后按价格回放，缺失必要数据时拒绝输出绩效。"""
+    report = dict(holding_window=holding_window, evaluation_version=EVALUATION_VERSION,
+                  evaluation_status="unavailable", metrics={}, series={"performance": []})
+    try:
+        fee, slippage = float(fee_bps), float(slippage_bps)
+        if not all(math.isfinite(v) and 0 <= v < 10000 for v in (fee, slippage)):
+            raise ValueError("手续费或滑点无效")
+        if cost_model not in {"zero_cost_baseline", "single_side_basis_points", "round_trip_basis_points"}:
+            raise ValueError("未知成本模型")
+        # 每次成交均扣成本；单边模型把给定总成本平分到买卖两次。
+        side_fee = 0 if cost_model == "zero_cost_baseline" else (fee + slippage) / 100
+        if cost_model == "single_side_basis_points":
+            side_fee /= 2
+        normalized = _validated_rows(rows, signal_threshold)
+        options = dict(stop_loss_pct=stop_loss_pct, take_profit_pct=take_profit_pct,
+                       max_holding_bars=max_holding_bars, max_positions=max_positions)
+        simulation = _replay(normalized, fee_pct=side_fee, **options)
+        gross = _replay(normalized, fee_pct=0, **options)
+    except (ValueError, TypeError, OverflowError) as exc:
+        report["unavailable_reason"] = str(exc)
+        return report
     trades = simulation["trades"]
-    net_trade_return = sum(float(t["return_pct"]) for t in trades)
-    # 毛收益 = 净收益 + 每笔双边手续费；成本影响 = 手续费总额
-    cost_impact = len(trades) * 2 * sim_fee_pct
-    gross_trade_return = net_trade_return + cost_impact
-
-    # 计算净值序列（strategy_nav 用模拟后的净值序列）
-    performance_series = _build_performance_series(
-        rows, net_returns, nav_series=simulation["nav_series"]
-    )
-
-    # 统计各平仓原因数量（四种原因都保留 0 计数）
-    exit_reasons = {
-        "stop_loss": 0,
-        "take_profit": 0,
-        "window_end": 0,
-        "end_of_series": 0,
-    }
+    returns = simulation["bar_returns"]
+    net_return = (simulation["final_nav"] - 1) * 100
+    gross_return = (gross["final_nav"] - 1) * 100
+    reasons = dict.fromkeys(("stop_loss", "take_profit", "signal_exit", "window_end", "end_of_series"), 0)
     for trade in trades:
-        reason = str(trade["exit_reason"])
-        if reason in exit_reasons:
-            exit_reasons[reason] += 1
-
-    metrics = {
-        "total_return_pct": _format_float(net_trade_return),
-        "gross_return_pct": _format_float(gross_trade_return),
-        "net_return_pct": _format_float(net_trade_return),
-        "cost_impact_pct": _format_float(cost_impact),
-        # 兼容旧约定：回撤输出负值（下游回撤门按 max_drawdown_pct < -阈值 判断）
-        "max_drawdown_pct": _format_float(-simulation["max_drawdown_pct"]),
-        "sharpe": _format_float(simulation["sharpe"]),
-        "win_rate": _format_float(simulation["win_rate"]),
-        "turnover": _format_float(_turnover_ratio(rows)),
-        "sample_count": str(len(rows)),
-        "max_loss_streak": str(_max_loss_streak(net_returns)),
-        "action_segment_count": str(_action_segment_count(rows)),
-        "direction_switch_count": str(_direction_switch_count(rows)),
-        "trades_count": str(simulation["trades_count"]),
-        "final_nav": _format_float(simulation["final_nav"]),
-        "exit_reasons": exit_reasons,
-    }
-    return {
-        "holding_window": holding_window,
-        "assumptions": {
-            "fee_bps": str(fee_bps_decimal),
-            "slippage_bps": str(slippage_bps_decimal),
-            "round_trip_cost_pct": _format_float(round_trip_cost_pct),
-            "cost_model": str(cost_model),
-            "switch_rule": "signal_flip_only",
-            "segment_turnover_mode": "watch_to_action_segments",
-        },
-        "metrics": metrics,
-        "series": {
-            "performance": performance_series,
-        },
-    }
+        reasons[trade["exit_reason"]] += 1
+    segments, switches = _signal_counts(normalized)
+    report.update(evaluation_status="available", assumptions={
+        "fee_bps": str(fee_bps), "slippage_bps": str(slippage_bps),
+        "round_trip_cost_pct": _fmt(2 * side_fee), "cost_model": cost_model,
+        "execution_rule": "next_asset_open", "switch_rule": "signal_flip_only",
+        "segment_turnover_mode": "watch_to_action_segments", "position_mode": "long_only_shared_cash",
+        "intrabar_rule": "stop_first_when_both_hit", "max_holding_bars": max_holding_bars,
+        "max_positions": max_positions or len({r["symbol"] for r in normalized}),
+        "signal_threshold": signal_threshold,
+    }, metrics={
+        "total_return_pct": _fmt(net_return), "gross_return_pct": _fmt(gross_return),
+        "net_return_pct": _fmt(net_return), "cost_impact_pct": _fmt(gross_return - net_return),
+        "max_drawdown_pct": _fmt(-simulation["max_drawdown_pct"]),
+        "sharpe": _fmt(simulation["sharpe"]), "win_rate": _fmt(simulation["win_rate"]),
+        "turnover": _fmt(len(trades) / len(normalized)), "sample_count": str(len(normalized)),
+        "max_loss_streak": str(_max_loss_streak(returns)), "action_segment_count": str(segments),
+        "direction_switch_count": str(switches), "trades_count": str(len(trades)),
+        "final_nav": _fmt(simulation["final_nav"]), "exit_reasons": reasons,
+    }, series={"performance": simulation["performance"]}, trades=trades)
+    return report
 
 
-def simulate_trades(
-    rows: list[dict[str, object]],
-    *,
-    stop_loss_pct: float = -8.0,
-    take_profit_pct: float = 8.0,
-    fee_pct: float = 0.1,
-    max_holding_bars: int = 18,
-) -> dict[str, object]:
-    """逐 K 线模拟交易：信号开仓，止损/止盈/窗口结束平仓。
+def simulate_trades(rows: list[dict[str, object]], *, stop_loss_pct: float = -8.0,
+                    take_profit_pct: float = 8.0, fee_pct: float = 0.1,
+                    max_holding_bars: int = 18, signal_threshold: float = 0.5,
+                    max_positions: int | None = None) -> dict[str, object]:
+    """以独立币种持仓和共享现金回放；非法输入直接报错。"""
+    return _replay(_validated_rows(rows, signal_threshold), stop_loss_pct=stop_loss_pct,
+                   take_profit_pct=take_profit_pct, fee_pct=fee_pct,
+                   max_holding_bars=max_holding_bars, max_positions=max_positions)
 
-    每行样本的 future_return_pct 视为"持有一根 K 线的收益率"。
-    遇到 label=buy 开仓，后续每根累计收益；触达 stop_loss 或 take_profit
-    平仓，或持有 max_holding_bars 根后按窗口结束平仓。
-    """
 
-    trades: list[dict[str, object]] = []
-    position: dict[str, object] | None = None
-    nav = 1.0
-    nav_series: list[float] = []
-    peak_nav = 1.0
-    max_drawdown = 0.0
-    wins = 0
+def _validated_rows(rows: list[dict[str, object]], threshold: float) -> list[dict]:
+    """拒绝缺价格、缺预测、不合法时间或重复币种 K 线。"""
+    if not rows:
+        raise ValueError("缺少价格回放样本")
+    if not math.isfinite(float(threshold)) or not 0 <= threshold <= 1:
+        raise ValueError("预测阈值无效")
+    normalized, previous = [], {}
+    for raw in rows:
+        try:
+            row = {k: float(raw[k]) for k in ("open", "high", "low", "close")}
+            row.update(symbol=str(raw["symbol"]).strip(), open_time=int(raw["open_time"]),
+                       close_time=int(raw["close_time"]), generated_at=int(raw["generated_at"]))
+            if not row["symbol"] or not all(math.isfinite(row[k]) and row[k] > 0 for k in ("open", "high", "low", "close")):
+                raise ValueError("币种或真实价格无效")
+            if row["low"] > min(row["open"], row["close"]) or row["high"] < max(row["open"], row["close"]) or row["high"] < row["low"]:
+                raise ValueError("OHLC 价格范围无效")
+            if row["open_time"] > row["close_time"] or row["generated_at"] != row["close_time"]:
+                raise ValueError("预测必须在当前 K 线收盘生成")
+            score = float(raw["prediction_score"]) if "prediction_score" in raw else 0.
+            if not math.isfinite(score) or not 0 <= score <= 1:
+                raise ValueError("模型概率无效")
+            row["prediction_score"] = score
+            if "model_signal" in raw:
+                signal = str(raw["model_signal"])
+                if signal not in {"buy", "sell", "watch"}:
+                    raise ValueError("模型信号无效")
+            else:
+                if "prediction_score" not in raw:
+                    raise ValueError("缺少模型预测字段：prediction_score")
+                # 低概率只退出已有多仓，不能解释为做空信号。
+                signal = "buy" if score >= threshold else "sell"
+            row["model_signal"] = signal
+            normalized.append(row)
+        except KeyError as exc:
+            raise ValueError(f"缺少真实价格或模型预测字段：{exc.args[0]}") from exc
+    normalized.sort(key=lambda r: (r["open_time"], r["symbol"]))
+    for row in normalized:
+        prior = previous.get(row["symbol"])
+        if prior is not None and row["open_time"] <= prior:
+            raise ValueError("同币 K 线重复或时间重叠")
+        previous[row["symbol"]] = row["close_time"]
+    return normalized
 
+
+def _replay(rows: list[dict], *, stop_loss_pct: float, take_profit_pct: float,
+            fee_pct: float, max_holding_bars: int, max_positions: int | None) -> dict:
+    """在开盘/收盘事件回放成交、逐币风险和账户净值。"""
+    if not all(math.isfinite(float(v)) for v in (stop_loss_pct, take_profit_pct, fee_pct)) or not -100 < stop_loss_pct < 0 or take_profit_pct <= 0 or not 0 <= fee_pct < 100:
+        raise ValueError("风险或成本参数无效")
+    if max_holding_bars < 1 or (max_positions is not None and max_positions < 1):
+        raise ValueError("持仓窗口或数量无效")
+    capacity = max_positions or len({r["symbol"] for r in rows})
+    events, last = defaultdict(lambda: {"open": [], "close": []}), {}
     for row in rows:
-        ret = float(row.get("future_return_pct", 0.0) or 0.0)
-        if position is None and str(row.get("label", "")) == "buy":
-            position = {
-                "entry_bar": row.get("generated_at"),
-                "bars_held": 0,
-                "cum_return": -fee_pct,  # 开仓手续费
-            }
-            nav_series.append(nav)  # 开仓当根净值不变，保证序列与样本行数对齐
-            continue
-        if position is not None:
-            position["bars_held"] += 1
-            position["cum_return"] += ret
-            cum = float(position["cum_return"])
-            exit_reason = None
-            if cum <= stop_loss_pct:
-                exit_reason = "stop_loss"
-            elif cum >= take_profit_pct:
-                exit_reason = "take_profit"
-            elif position["bars_held"] >= max_holding_bars:
-                exit_reason = "window_end"
-            if exit_reason:
-                cum -= fee_pct  # 平仓手续费
-                profit = cum
-                nav *= 1 + profit / 100.0
-                if profit > 0:
-                    wins += 1
-                trades.append({
-                    "entry_bar": position["entry_bar"],
-                    "exit_bar": row.get("generated_at"),
-                    "bars_held": position["bars_held"],
-                    "return_pct": round(profit, 4),
-                    "exit_reason": exit_reason,
-                })
-                position = None
-        nav_series.append(nav)
-        peak_nav = max(peak_nav, nav)
-        max_drawdown = max(max_drawdown, (peak_nav - nav) / peak_nav * 100)
+        events[row["open_time"]]["open"].append(row)
+        events[row["close_time"]]["close"].append(row)
+        last[row["symbol"]] = row["close_time"]
+    cash, peak, previous_nav, max_dd = 1., 1., 1., 0.
+    positions, pending, marks = {}, {}, {}
+    trades, performance, returns = [], [], []
+    cost = fee_pct / 100
 
-    if position is not None:
-        # 序列结束时仍持仓：按当前累计收益平仓
-        profit = float(position["cum_return"]) - fee_pct
-        nav *= 1 + profit / 100.0
-        if profit > 0:
-            wins += 1
-        trades.append({
-            "entry_bar": position["entry_bar"],
-            "exit_bar": "end",
-            "bars_held": position["bars_held"],
-            "return_pct": round(profit, 4),
-            "exit_reason": "end_of_series",
-        })
+    def equity():
+        """按各币最新已知价格计价，未成交现金不会获得收益。"""
+        return cash + sum(p["quantity"] * marks[s] for s, p in positions.items())
 
-    total = len(trades)
-    return {
-        "trades": trades,
-        "trades_count": total,
-        "final_nav": round(nav, 4),
-        "max_drawdown_pct": round(max_drawdown, 4),
-        "win_rate": round(wins / total, 4) if total else 0.0,
-        "sharpe": _sharpe_ratio([t["return_pct"] for t in trades]) if total else 0.0,
-        "nav_series": nav_series,
-    }
+    def close_position(symbol, price, ts, reason):
+        """按卖出价扣成本结算一笔独立持仓。"""
+        nonlocal cash
+        position = positions.pop(symbol)
+        proceeds = position["quantity"] * price * (1 - cost)
+        cash += proceeds
+        trades.append(dict(symbol=symbol, entry_bar=position["entry_bar"], exit_bar=ts,
+                           bars_held=position["bars_held"],
+                           return_pct=(proceeds / position["budget"] - 1) * 100,
+                           exit_reason=reason))
 
-
-def _resolve_cost_pct(*, fee_bps: Decimal, slippage_bps: Decimal, cost_model: str) -> float:
-    """按成本模型计算净收益扣减比例。"""
-
-    if cost_model == "zero_cost_baseline":
-        return 0.0
-    if cost_model == "single_side_basis_points":
-        return float((fee_bps + slippage_bps) / Decimal("100"))
-    return float((fee_bps + slippage_bps) * Decimal("2") / Decimal("100"))
-
-
-def _build_performance_series(
-    rows: list[dict[str, object]],
-    net_returns: list[float],
-    nav_series: list[float] | None = None,
-) -> list[dict[str, object]]:
-    """构建净值序列数据。
-
-    Args:
-        rows: 原始样本行
-        net_returns: 扣除成本后的净收益列表
-        nav_series: 模拟交易后的净值序列（与 rows 逐行对齐），为空时退回按净收益累计
-
-    Returns:
-        净值序列列表，包含 date, strategy_nav, benchmark_nav, drawdown_pct
-    """
-    if not rows or not net_returns:
-        return []
-
-    series: list[dict[str, object]] = []
-    strategy_nav = 1.0  # 策略净值，初始为 1
-    benchmark_nav = 1.0  # 基准净值，初始为 1
-    peak_nav = 1.0  # 用于计算回撤的峰值净值
-
-    for index, (row, net_return) in enumerate(zip(rows, net_returns)):
-        # 更新净值：优先使用模拟后的净值序列，否则按净收益累计
-        if nav_series is not None and index < len(nav_series):
-            strategy_nav = nav_series[index]
-        else:
-            strategy_nav *= 1 + (net_return / 100.0)
-        benchmark_nav *= 1 + (0.0 / 100.0)  # 基准净值保持不变或按需调整
-
-        # 更新峰值并计算回撤
-        peak_nav = max(peak_nav, strategy_nav)
-        drawdown_pct = ((strategy_nav / peak_nav) - 1.0) * 100.0
-
-        # 解析日期
-        generated_at = row.get("generated_at")
-        if generated_at is not None:
-            try:
-                from datetime import datetime, timezone
-                ts = int(generated_at) / 1000
-                date_str = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-            except (TypeError, ValueError, OSError):
-                date_str = ""
-        else:
-            date_str = ""
-
-        series.append({
-            "date": date_str,
-            "strategy_nav": round(strategy_nav, 4),
-            "benchmark_nav": round(benchmark_nav, 4),
-            "drawdown_pct": round(drawdown_pct, 4),
-            "daily_return_pct": round(net_return, 4),
-            "turnover": round(_to_float(row.get("turnover", 0)), 4),
-        })
-
-    return series
+    for ts, event in sorted(events.items()):
+        # 同时点先结算退出再分配预算，结果不依赖输入币种顺序。
+        for row in event["open"]:
+            symbol = row["symbol"]
+            marks[symbol] = row["open"]
+            if symbol in positions and pending.get(symbol) == "sell":
+                close_position(symbol, row["open"], ts, "signal_exit")
+        target_budget = equity() / capacity
+        # 当前开盘只能读取上一根已收盘的分数，不能用本根收盘才生成的预测排名。
+        for row in sorted(event["open"], key=lambda r: (-pending.get((r["symbol"], "score"), 0), r["symbol"])):
+            symbol = row["symbol"]
+            if pending.get(symbol) == "buy" and symbol not in positions and len(positions) < capacity and cash > 1e-12:
+                budget = min(cash, target_budget)
+                positions[symbol] = dict(quantity=budget / (row["open"] * (1 + cost)),
+                                         entry_price=row["open"], budget=budget,
+                                         entry_bar=ts, bars_held=0)
+                cash -= budget
+        # 收盘时采用本根已完成 OHLC；双触发保守按止损先成交，跳空按较差开盘价。
+        for row in event["close"]:
+            symbol = row["symbol"]
+            marks[symbol] = row["close"]
+            if symbol in positions:
+                pos = positions[symbol]
+                pos["bars_held"] += 1
+                stop = pos["entry_price"] * (1 + stop_loss_pct / 100)
+                take = pos["entry_price"] * (1 + take_profit_pct / 100)
+                if row["low"] <= stop:
+                    close_position(symbol, min(row["open"], stop), ts, "stop_loss")
+                elif row["high"] >= take:
+                    close_position(symbol, take, ts, "take_profit")
+                elif pos["bars_held"] >= max_holding_bars:
+                    close_position(symbol, row["close"], ts, "window_end")
+                elif ts == last[symbol]:
+                    close_position(symbol, row["close"], ts, "end_of_series")
+            pending[symbol] = row["model_signal"]
+            pending[(symbol, "score")] = row["prediction_score"]
+        nav = equity()
+        peak = max(peak, nav)
+        drawdown = (nav / peak - 1) * 100
+        max_dd = max(max_dd, -drawdown)
+        if event["close"]:
+            ret = (nav / previous_nav - 1) * 100
+            returns.append(ret)
+            performance.append(dict(date=datetime.fromtimestamp(ts / 1000, timezone.utc).strftime("%Y-%m-%d"),
+                                    generated_at=ts, strategy_nav=round(nav, 8), benchmark_nav=1.,
+                                    drawdown_pct=round(drawdown, 4), daily_return_pct=round(ret, 4), turnover=0.))
+            previous_nav = nav
+    final_nav = equity()
+    return dict(trades=trades, trades_count=len(trades), final_nav=final_nav,
+                max_drawdown_pct=max_dd, win_rate=sum(t["return_pct"] > 0 for t in trades) / len(trades) if trades else 0.,
+                sharpe=_sharpe_ratio(returns), nav_series=[p["strategy_nav"] for p in performance],
+                performance=performance, bar_returns=returns)
 
 
-def _sharpe_ratio(returns: list[float]) -> float:
-    """计算最小 Sharpe。"""
+def _signal_counts(rows):
+    """独立统计每币模型信号的动作段与买卖切换。"""
+    previous, segments, switches = {}, 0, 0
+    for row in rows:
+        old, new = previous.get(row["symbol"], "watch"), row["model_signal"]
+        segments += int(new != "watch" and new != old)
+        switches += int(old in {"buy", "sell"} and new in {"buy", "sell"} and new != old)
+        previous[row["symbol"]] = new
+    return segments, switches
 
+
+def _sharpe_ratio(returns):
+    """计算逐时间段非年化 Sharpe，不把多日标签当逐根收益。"""
     if len(returns) < 2:
-        return 0.0
-    average = sum(returns) / len(returns)
-    variance = sum((item - average) ** 2 for item in returns) / len(returns)
-    if variance <= 0:
-        return 0.0
-    return average / math.sqrt(variance)
+        return 0.
+    mean = sum(returns) / len(returns)
+    variance = sum((v - mean) ** 2 for v in returns) / len(returns)
+    return mean / math.sqrt(variance) if variance > 0 else 0.
 
 
-def _turnover_ratio(rows: list[dict[str, object]]) -> float:
-    """按动作段数量计算最小换手。"""
-
-    if not rows:
-        return 0.0
-
-    turnover_count = 0
-    previous_direction = "watch"
-    for row in rows:
-        raw_direction = str(row.get("label", "")).strip() or "watch"
-        current_direction = raw_direction if raw_direction in {"buy", "sell"} else "watch"
-        if current_direction != "watch" and previous_direction == "watch":
-            turnover_count += 1
-        previous_direction = current_direction
-    return turnover_count / len(rows)
-
-
-def _action_segment_count(rows: list[dict[str, object]]) -> int:
-    """统计从空档进入动作段的次数。"""
-
-    if not rows:
-        return 0
-    count = 0
-    previous_direction = "watch"
-    for row in rows:
-        current_direction = _normalize_direction(row.get("label"))
-        if current_direction != "watch" and current_direction != previous_direction:
-            count += 1
-        previous_direction = current_direction
-    return count
-
-
-def _direction_switch_count(rows: list[dict[str, object]]) -> int:
-    """统计动作段内部从买切到卖或从卖切到买的次数。"""
-
-    switch_count = 0
-    previous_direction = "watch"
-    for row in rows:
-        current_direction = _normalize_direction(row.get("label"))
-        if previous_direction in {"buy", "sell"} and current_direction in {"buy", "sell"} and current_direction != previous_direction:
-            switch_count += 1
-        previous_direction = current_direction
-    return switch_count
-
-
-def _max_loss_streak(returns: list[float]) -> int:
-    """计算最长连续亏损段。"""
-
-    longest = 0
-    current = 0
-    for item in returns:
-        if item < 0:
-            current += 1
-            longest = max(longest, current)
-            continue
-        current = 0
+def _max_loss_streak(returns):
+    """统计账户净值的最长连续亏损段。"""
+    longest = current = 0
+    for value in returns:
+        current = current + 1 if value < 0 else 0
+        longest = max(longest, current)
     return longest
 
 
-def _normalize_direction(value: object) -> str:
-    """把标签统一成动作方向。"""
-
-    raw = str(value or "").strip()
-    return raw if raw in {"buy", "sell"} else "watch"
-
-
-def _to_float(value: object) -> float:
-    """把任意值尽量转成 float。"""
-
-    try:
-        return float(Decimal(str(value)))
-    except (TypeError, ValueError, InvalidOperation):
-        return 0.0
-
-
-def _to_decimal(value: object) -> Decimal:
-    """把任意值尽量转成 Decimal。"""
-
-    try:
-        return Decimal(str(value))
-    except (TypeError, ValueError, InvalidOperation):
-        return Decimal("0")
-
-
-def _format_float(value: float) -> str:
-    """把浮点数转成统一字符串。"""
-
+def _fmt(value):
+    """保留下游使用的指标字符串格式。"""
     return f"{value:.4f}"

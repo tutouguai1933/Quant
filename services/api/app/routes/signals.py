@@ -142,7 +142,7 @@ def get_research_runtime() -> dict:
 
 
 def _market_direction_item() -> dict[str, Any]:
-    """汇总最近一次推理的 16 币平均上涨概率（市场方向判断）。
+    """汇总自动化模型概率及准入，低上涨评分不等于看跌。
 
     market-direction 与 direction-short-status 两个接口共用，
     保证前端看到的平均分数和调度器使用的口径完全一致。
@@ -162,24 +162,26 @@ def _market_direction_item() -> dict[str, Any]:
         }
     scores = [float(str(s.get("score", "0"))) for s in signals]
     avg_score = sum(scores) / len(scores)
+    from services.worker.qlib_live_policy import inference_execution_guard
+    guard = inference_execution_guard(inference, verify_current_production=True)
+    downside_model = all(s.get("prediction_semantics") == "downside_probability" for s in signals)
+    direction_score = 1 - avg_score if downside_model else avg_score
     return {
         "avg_score": round(avg_score, 4),
-        "direction": "bearish" if avg_score < 0.38 else ("bullish" if avg_score > 0.55 else "neutral"),
+        "direction": "unknown" if not guard["passed"] else ("bearish" if downside_model and direction_score < 0.38 else ("bullish" if direction_score > 0.55 else "neutral")),
         "signal_count": len(scores),
         "model_version": str(inference.get("model_version", "")),
         "generated_at": str(inference.get("generated_at", "")),
-        "short_trigger": avg_score < 0.38,
-        "flat_trigger": avg_score > 0.45,
+        "short_trigger": bool(guard["passed"] and downside_model and direction_score < 0.38),
+        "flat_trigger": bool(guard["passed"] and direction_score > 0.45),
+        "execution_guard": inference_execution_guard(inference, opening_short=True, verify_current_production=True),
+        "prediction_semantics": inference.get("prediction_semantics", "unknown"),
     }
 
 
 @router.get("/research/market-direction")
 def get_market_direction() -> dict:
-    """返回模型的市场方向判断（16 币平均上涨概率）。
-
-    供方向做空调度使用：平均分数 < 0.38 视为极度看跌（做空信号），
-    > 0.45 视为转暖（平空信号）。数据来自最近一次推理的 signals。
-    """
+    """返回可解释的概率状态，未准入或缺少下跌目标时不产生做空触发。"""
     item = _market_direction_item()
     status = "ok" if item.get("signal_count") else "no_signals"
     return _success(item, {"source": "control-plane-api", "action": "market-direction", "status": status})
@@ -246,7 +248,7 @@ def get_direction_short_status() -> dict:
         try:
             open_trades = sim_client.list_open_trades()
             simulation["connected"] = True
-            short_open = [t for t in open_trades if _is_short_trade(t)]
+            short_open = direction_short_service.owned_short_trades(open_trades)
             simulation["open_position"] = _summarize_trade(short_open[0]) if short_open else None
         except Exception as status_exc:
             logger.warning("方向做空状态接口读取在场持仓失败: %s", status_exc)
@@ -254,6 +256,7 @@ def get_direction_short_status() -> dict:
                 simulation["message"] = f"在场持仓读取失败: {status_exc}"
         try:
             closed_trades = sim_client.list_trades(limit=10)
+            closed_trades = [t for t in closed_trades if direction_short_service.belongs_to_strategy(t)]
             simulation["last_closed_trade"] = _summarize_trade(closed_trades[0]) if closed_trades else None
         except Exception as trades_exc:
             logger.warning("方向做空状态接口读取平仓历史失败: %s", trades_exc)

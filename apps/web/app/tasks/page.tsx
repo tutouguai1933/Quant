@@ -263,7 +263,7 @@ export default function TasksPage() {
         <>
           <MetricStrip metrics={statusMetrics} />
 
-          {/* 方向做空（模拟盘）观察期状态卡 */}
+          {/* 自动化模型方向状态，不替代 RSI 主策略。 */}
           <DirectionShortStatusCard token={session.token} />
 
           <div className="grid gap-4 lg:grid-cols-2">

@@ -5,7 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -560,8 +560,8 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["failure_policy"]["research_train"], "manual_takeover")
         self.assertIn("runtime_window", status)
         self.assertIn("resume_status", status)
-        self.assertEqual(status["runtime_window"]["daily_limit"], 8)
-        self.assertEqual(status["runtime_window"]["remaining_daily_cycle_count"], 8)
+        self.assertNotIn("daily_limit", status["runtime_window"])
+        self.assertNotIn("remaining_daily_cycle_count", status["runtime_window"])
         self.assertEqual(status["runtime_window"]["next_action"], "run_next_cycle")
         self.assertEqual(status["runtime_window"]["story"]["headline"], "当前已经可以继续下一轮")
         self.assertIn("不在等冷却窗口", status["runtime_window"]["story"]["what_waiting_for"])
@@ -584,7 +584,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["operations"]["review_limit"], 10)
         self.assertEqual(status["operations"]["comparison_run_limit"], 5)
         self.assertEqual(status["operations"]["cycle_cooldown_minutes"], 15)
-        self.assertEqual(status["operations"]["max_daily_cycle_count"], 8)
+        self.assertEqual(status["operations"]["max_daily_cycle_count"], 999)
         self.assertIn("automation_config", status)
         self.assertEqual(status["automation_config"]["long_run_seconds"], 300)
         self.assertEqual(status["automation_config"]["alert_cleanup_minutes"], 15)
@@ -638,7 +638,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(status["execution_policy"]["live_allowed_symbols"], [])
         self.assertIn("还没有统一候选池", status["execution_policy"]["headline"])
 
-    def test_status_exposes_runtime_window_when_cooldown_or_daily_limit_is_active(self) -> None:
+    def test_status_exposes_runtime_window_when_cooldown_is_active(self) -> None:
         scheduler = _FakeScheduler()
         automation = AutomationService()
         automation.configure_mode("auto_dry_run", actor="tester")
@@ -656,7 +656,7 @@ class AutomationServiceTests(unittest.TestCase):
 
         self.assertEqual(status["runtime_window"]["cooldown_remaining_minutes"], 15)
         self.assertEqual(status["runtime_window"]["current_cycle_count"], 1)
-        self.assertEqual(status["runtime_window"]["remaining_daily_cycle_count"], 7)
+        self.assertNotIn("remaining_daily_cycle_count", status["runtime_window"])
         self.assertEqual(status["runtime_window"]["next_action"], "wait_cooldown")
         self.assertTrue(status["runtime_window"]["next_run_at"])
         self.assertEqual(status["runtime_window"]["blocked_reason"], "cooldown_active")
@@ -726,7 +726,7 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertTrue(status["recovery_review"]["blockers"])
         self.assertIn("人工接管", status["recovery_review"]["headline"])
 
-    def test_runtime_window_marks_daily_limit_as_waiting_not_resume(self) -> None:
+    def test_runtime_window_ignores_legacy_daily_limit_after_cooldown(self) -> None:
         scheduler = _FakeScheduler()
         automation = AutomationService()
         automation.configure_mode("auto_dry_run", actor="tester")
@@ -737,6 +737,8 @@ class AutomationServiceTests(unittest.TestCase):
             },
         )
         automation.record_cycle({"status": "succeeded", "next_action": "continue_dry_run"})
+        # 已有轮次超过旧限额，但冷却已过去，仍可继续且不需要恢复操作。
+        automation._last_cycle["recorded_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         workflow = AutomationWorkflowService(
             scheduler=scheduler,
             automation=automation,
@@ -748,15 +750,14 @@ class AutomationServiceTests(unittest.TestCase):
 
         status = workflow.get_status()
 
-        self.assertEqual(status["runtime_window"]["blocked_reason"], "daily_limit_reached")
-        self.assertEqual(status["resume_status"]["waiting_for"], "next_daily_window")
+        self.assertEqual(status["runtime_window"]["blocked_reason"], "")
+        self.assertTrue(status["runtime_window"]["ready_for_cycle"])
+        self.assertEqual(status["runtime_window"]["current_cycle_count"], 1)
+        self.assertNotIn("daily_limit", status["runtime_window"])
+        self.assertEqual(status["resume_status"]["waiting_for"], "none")
         self.assertFalse(status["resume_status"]["resume_needed"])
         self.assertFalse(status["resume_status"]["resume_ready"])
-        self.assertIn("下一日窗口", status["resume_status"]["cannot_resume_reason"])
-        self.assertEqual(status["recovery_review"]["status"], "waiting")
-        self.assertEqual(status["recovery_review"]["next_action"], "wait_next_window")
-        self.assertEqual(status["recovery_review"]["waiting_for"], "next_daily_window")
-        self.assertIn("下一日窗口", status["recovery_review"]["detail"])
+        self.assertEqual(status["recovery_review"]["status"], "ready")
 
     def test_runtime_window_marks_paused_review_as_resume_flow(self) -> None:
         scheduler = _FakeScheduler()
@@ -1140,9 +1141,10 @@ class AutomationServiceTests(unittest.TestCase):
         self.assertEqual(health["run_health"]["sync_failure_count"], 1)
         self.assertEqual(health["run_health"]["stale_sync_state"], "fresh")
 
-    def test_run_cycle_waits_when_daily_cycle_limit_is_reached(self) -> None:
+    def test_run_cycle_continues_beyond_legacy_daily_limit_after_cooldown(self) -> None:
         scheduler = _FakeScheduler()
         automation = AutomationService()
+        automation.configure_mode("auto_dry_run", actor="tester")
         automation_workflow_module.workbench_config_service.update_section(
             "operations",
             {
@@ -1150,6 +1152,8 @@ class AutomationServiceTests(unittest.TestCase):
             },
         )
         automation.record_cycle({"status": "succeeded", "next_action": "continue_dry_run"})
+        # 不使用当日轮次封顶；仅等待最近一轮的真实冷却窗口结束。
+        automation._last_cycle["recorded_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         workflow = AutomationWorkflowService(
             scheduler=scheduler,
             automation=automation,
@@ -1161,11 +1165,10 @@ class AutomationServiceTests(unittest.TestCase):
 
         result = workflow.run_cycle(source="tester")
 
-        self.assertEqual(result["status"], "waiting")
-        self.assertEqual(result["failure_reason"], "daily_cycle_limit_reached")
-        self.assertIn("今日轮次上限", result["message"])
-        self.assertEqual(scheduler.named_calls, [])
-        self.assertEqual(automation.get_status(task_health={})["daily_summary"]["cycle_count"], 1)
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["next_action"], "continue_dry_run")
+        self.assertEqual(automation.get_state()["daily_summary"]["cycle_count"], 2)
+        self.assertFalse(automation.get_state()["paused"])
 
     def test_run_cycle_waits_when_cooldown_is_active(self) -> None:
         scheduler = _FakeScheduler()

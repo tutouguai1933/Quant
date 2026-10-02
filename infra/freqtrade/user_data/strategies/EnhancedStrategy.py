@@ -11,9 +11,11 @@ Features:
 from freqtrade.strategy import IStrategy, IntParameter, DecimalParameter, informative
 from pandas import DataFrame
 import talib.abstract as ta
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Optional
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
+from math import isfinite
+from freqtrade.persistence import Trade
 import logging
 
 
@@ -58,12 +60,111 @@ class EnhancedStrategy(IStrategy):
     max_day_loss_pct = DecimalParameter(0.03, 0.10, default=0.045, space="buy", optimize=True)  # 日亏损上限4.5%
     max_consecutive_losses = IntParameter(3, 8, default=5, space="buy", optimize=True)  # 连续亏损5次暂停
 
-    # 内部状态
-    _daily_loss_count: int = 0
-    _daily_start_balance: Optional[Decimal] = None
-    _consecutive_losses: int = 0
-    _last_trade_date: Optional[str] = None
-    _atr_stoploss_cache: dict = {}  # 缓存每个交易对的ATR止损值
+    # ATR 只保存止损辅助数据；成交风险每次从框架持久化事实重建。
+    _atr_stoploss_cache: dict = {}
+
+    def _entry_can_exit(self, pair: str, amount: float, rate: float) -> bool:
+        """验证费用和步长扣减后，在基础止损价仍满足交易所退出限制。"""
+        try:
+            market = self.dp.market(pair)
+            if not market or market.get("active") is False:
+                raise ValueError("交易对不存在或已停用")
+            cost_limits = market.get("limits", {}).get("cost", {})
+            amount_limits = market.get("limits", {}).get("amount", {})
+            minimum_cost = cost_limits.get("min")
+            if minimum_cost is None or float(minimum_cost) <= 0:
+                raise ValueError("缺少交易所最小成交金额")
+            if not isfinite(amount) or not isfinite(rate) or amount <= 0 or rate <= 0:
+                raise ValueError("价格或数量无效")
+            contract_size = float(market.get("contractSize") or 1)
+            if not isfinite(contract_size) or contract_size <= 0:
+                raise ValueError("合约单位无效")
+            fees = [market.get("maker"), market.get("taker"), self.config.get("fee")]
+            fees = [float(fee) for fee in fees if fee is not None]
+            if not fees or any(not isfinite(fee) or fee < 0 or fee >= 1 for fee in fees):
+                raise ValueError("缺少有效手续费率")
+            fee = max(fees)
+            exchange = self.dp._exchange
+            # 合约精度按张数处理；现货假定最保守的基础币扣费方式。
+            entry_amount = exchange.amount_to_precision(pair, amount / contract_size) * contract_size
+            is_spot = self.config.get("trading_mode", "spot") == "spot"
+            after_fee = entry_amount * (1 - fee) if is_spot else entry_amount
+            exit_amount = exchange.amount_to_precision(pair, after_fee / contract_size) * contract_size
+            min_amount = float(amount_limits.get("min") or 0) * contract_size
+            max_amount = amount_limits.get("max")
+            max_amount = float(max_amount) * contract_size if max_amount is not None else None
+            max_cost = cost_limits.get("max")
+            # CCXT 常规精度可能只含 LOT_SIZE，市场止损另须满足 MARKET_LOT_SIZE。
+            for rule in (market.get("info") or {}).get("filters", []):
+                if rule.get("filterType") not in ("LOT_SIZE", "MARKET_LOT_SIZE"):
+                    continue
+                min_amount = max(min_amount, float(rule.get("minQty") or 0) * contract_size)
+                rule_max = float(rule.get("maxQty") or 0) * contract_size
+                if rule_max > 0:
+                    max_amount = min(max_amount, rule_max) if max_amount is not None else rule_max
+                step = Decimal(str(rule.get("stepSize") or 0)) * Decimal(str(contract_size))
+                if step > 0:
+                    exit_amount = float((Decimal(str(exit_amount)) / step).to_integral_value(rounding=ROUND_DOWN) * step)
+            stop_rate = rate * (1 - abs(self.stoploss))
+            valid = (entry_amount > 0 and exit_amount > 0 and
+                     entry_amount >= min_amount and exit_amount >= min_amount and
+                     entry_amount * rate >= float(minimum_cost) and
+                     exit_amount * stop_rate >= float(minimum_cost))
+            if max_amount is not None:
+                valid = valid and entry_amount <= max_amount
+            if max_cost is not None:
+                valid = valid and entry_amount * rate <= float(max_cost)
+            if not valid:
+                self.logger.warning("RSI拒绝入场 %s：扣费后止损退出数量=%s 金额=%s，最小金额=%s",
+                                    pair, exit_amount, exit_amount * stop_rate, minimum_cost)
+            return bool(valid)
+        except Exception as exc:
+            self.logger.warning("RSI拒绝入场 %s：退出约束检查不可用：%s", pair, exc)
+            return False
+
+    def _realized_risk_allows_entry(self, current_time: datetime) -> bool:
+        """从已平仓净收益重建日亏损和连续亏损，失败退出与重启均不改变事实。"""
+        try:
+            now = current_time.replace(tzinfo=timezone.utc) if current_time.tzinfo is None else current_time.astimezone(timezone.utc)
+            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            facts = {}
+            for trade in Trade.get_trades_proxy(is_open=False):
+                if trade.is_open or trade.strategy != self.__class__.__name__:
+                    continue
+                closed_at = trade.close_date_utc
+                profit = trade.close_profit_abs
+                if closed_at is None or profit is None:
+                    raise ValueError("已平仓记录缺少成交时间或净收益")
+                if closed_at.tzinfo is None:
+                    closed_at = closed_at.replace(tzinfo=timezone.utc)
+                profit = Decimal(str(profit))
+                if not profit.is_finite():
+                    raise ValueError("已平仓净收益无效")
+                if day_start <= closed_at <= now:
+                    facts[trade.id] = (closed_at, profit)
+            ordered = sorted(facts.values(), key=lambda item: item[0])
+            daily_profit = sum((profit for closed_at, profit in ordered if closed_at >= day_start), Decimal(0))
+            balance = Decimal(str(self.wallets.get_total_stake_amount()))
+            # 框架交易权益包含持仓成本；去除本日已实现收益得到日初风险分母。
+            start_balance = balance - daily_profit
+            if not start_balance.is_finite() or start_balance <= 0:
+                raise ValueError("账户交易权益无效")
+            if daily_profit / start_balance <= -Decimal(str(self.max_day_loss_pct.value)):
+                self.logger.warning("RSI日已实现净亏损达到限制：%s / %s", daily_profit, start_balance)
+                return False
+            consecutive = 0
+            # 保持原有 UTC 跨日恢复规则，同日重启仍由成交事实重建。
+            for _, profit in reversed(ordered):
+                if profit >= 0:
+                    break
+                consecutive += 1
+            if consecutive >= self.max_consecutive_losses.value:
+                self.logger.warning("RSI连续已成交亏损达到限制：%s", consecutive)
+                return False
+            return True
+        except Exception as exc:
+            self.logger.warning("RSI拒绝入场：成交风控事实不可用：%s", exc)
+            return False
 
     @informative('4h')
     def populate_indicators_4h(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -138,31 +239,9 @@ class EnhancedStrategy(IStrategy):
         side: str,
         **kwargs
     ) -> bool:
-        """风控检查：日亏损限额和连续亏损暂停"""
-
-        # 获取当前日期
-        today = current_time.strftime("%Y-%m-%d")
-
-        # 新的一天，重置计数
-        if self._last_trade_date != today:
-            self._last_trade_date = today
-            self._daily_loss_count = 0
-            self._consecutive_losses = 0
-
-        # 检查日亏损限额（通过wallet_balance估算）
-        # 注意：dry_run模式下使用模拟余额
-        total_profit_today = Decimal(str(self._daily_loss_count)) * Decimal(str(self.stoploss))
-
-        if total_profit_today <= -self.max_day_loss_pct.value:
-            self.logger.warning(f"Daily loss limit reached: {total_profit_today:.2%}")
-            return False
-
-        # 检查连续亏损暂停
-        if self._consecutive_losses >= self.max_consecutive_losses.value:
-            self.logger.warning(f"Consecutive loss limit reached: {self._consecutive_losses}")
-            return False
-
-        return True
+        """同时检查未来可卖约束及实际成交风险，不改变 RSI 信号。"""
+        return (side == "long" and self._entry_can_exit(pair, amount, rate) and
+                self._realized_risk_allows_entry(current_time))
 
     def confirm_trade_exit(
         self,
@@ -176,20 +255,7 @@ class EnhancedStrategy(IStrategy):
         current_time: datetime,
         **kwargs
     ) -> bool:
-        """记录交易结果用于风控"""
-
-        # 计算本次交易盈亏（使用calc_profit代替calc_profit_pct）
-        profit = trade.calc_profit(rate)
-        stake_amount = trade.stake_amount
-        profit_pct = profit / stake_amount if stake_amount > 0 else 0
-
-        # 更新连续亏损计数
-        if profit_pct < 0:
-            self._consecutive_losses += 1
-            self._daily_loss_count += 1
-        else:
-            self._consecutive_losses = 0  # 盈利后重置
-
+        """允许退出请求；请求未必成交，成交风险由框架已平仓事实读取。"""
         return True
 
     def custom_stoploss(
@@ -297,8 +363,8 @@ class EnhancedStrategy(IStrategy):
         """
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
 
-        if len(dataframe) < 1:
-            return proposed_stake
+        if dataframe is None or len(dataframe) < 1:
+            return self._validated_stake(pair, current_rate, proposed_stake, min_stake, max_stake, leverage)
 
         last_candle = dataframe.iloc[-1]
         rsi = last_candle.get("rsi", 50)
@@ -335,21 +401,17 @@ class EnhancedStrategy(IStrategy):
                 f"stake x{stake_multiplier}"
             )
 
-        # 最低有效仓位，避免 NOTIONAL filter 导致无法平仓
-        MIN_EFFECTIVE_STAKE = 6.0
+        # 信号仓位与最大预算是上限，交易所最小值不能覆盖风险预算。
+        adjusted_stake = min(proposed_stake * stake_multiplier, max_stake)
+        return self._validated_stake(pair, current_rate, adjusted_stake, min_stake, max_stake, leverage)
 
-        # 计算最终仓位
-        adjusted_stake = proposed_stake * stake_multiplier
-
-        # 确保不超过max_stake
-        adjusted_stake = min(adjusted_stake, max_stake)
-
-        # 确保不低于min_stake（如果设置）
-        if min_stake is not None:
-            adjusted_stake = max(adjusted_stake, min_stake)
-
-        # 确保不低于最低有效值（防止 Binance NOTIONAL filter）
-        if adjusted_stake < MIN_EFFECTIVE_STAKE:
-            adjusted_stake = MIN_EFFECTIVE_STAKE
-
-        return adjusted_stake
+    def _validated_stake(self, pair: str, rate: float, stake: float,
+                         min_stake: Optional[float], max_stake: float, leverage: float) -> float:
+        """仓位不足以安全退出时拒绝交易，不自动增加资金。"""
+        if not all(isfinite(value) and value > 0 for value in (rate, stake, max_stake, leverage)):
+            return 0.0
+        stake = min(stake, max_stake)
+        if min_stake is not None and stake < min_stake:
+            self.logger.warning("RSI拒绝入场 %s：预算 %s 低于框架最小仓位 %s", pair, stake, min_stake)
+            return 0.0
+        return stake if self._entry_can_exit(pair, stake * leverage / rate, rate) else 0.0

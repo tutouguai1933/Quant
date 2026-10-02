@@ -842,8 +842,9 @@ class OpenclawPatrolService:
         """
         import os
 
-        from services.api.app.services.direction_short_service import build_sim_client, direction_short_service
+        from services.api.app.services.direction_short_service import DIRECTION_SHORT_ENTRY_TAG_PREFIX, build_sim_client, direction_short_service
         from services.api.app.services.research_service import research_service
+        from services.worker.qlib_live_policy import inference_execution_guard
 
         # 1. 读取模型平均分数（最近一次推理）
         latest = research_service.get_latest_result()
@@ -852,6 +853,10 @@ class OpenclawPatrolService:
         if not signals:
             return {"action_taken": False, "action": "direction_short", "message": "无推理信号，跳过方向做空"}
         avg_score = sum(float(str(s.get("score", "0"))) for s in signals) / len(signals)
+        # 只有真实下跌概率才能用于新空仓；上涨阈值模型的补集不代表下跌。
+        opening_guard = inference_execution_guard(inference, opening_short=True, verify_current_production=True)
+        if all(s.get("prediction_semantics") == "downside_probability" for s in signals):
+            avg_score = 1 - avg_score
 
         # 2. 构建独立客户端（默认模拟盘 9014，与实盘隔离），
         #    并在决策前先用在场持仓对齐状态文件（自愈：止损平仓后状态文件残留会僵死观察期）
@@ -865,7 +870,7 @@ class OpenclawPatrolService:
             logger.warning("方向做空状态同步查询失败，沿用内部状态: %s", exc)
 
         # 3. 决策（内部状态已按真实持仓对齐）
-        decision = direction_short_service.decide(avg_score=avg_score)
+        decision = direction_short_service.decide(avg_score=avg_score, opening_allowed=opening_guard["passed"])
         action = str(decision.get("action", "hold"))
 
         if action == "open_short":
@@ -874,8 +879,12 @@ class OpenclawPatrolService:
                     "symbol": "BTC/USDT:USDT",
                     "side": "short",
                     "quantity": 1,
+                    "entry_tag": DIRECTION_SHORT_ENTRY_TAG_PREFIX + str(inference.get("model_version", "")),
                 })
-                direction_short_service.mark_short_open(symbol="BTCUSDT")
+                # 请求成功不代表成交，状态以执行器实际在场持仓为准。
+                direction_short_service.reconcile_with_open_trades(sim_client.list_open_trades())
+                if not direction_short_service.get_state().get("has_short_position"):
+                    return {"action_taken": False, "action": "direction_short_pending", "message": "开仓请求已提交，等待实际成交确认"}
                 logger.info("方向做空开仓(模拟盘 %s): avg=%.4f", sim_url, avg_score)
                 return {
                     "action_taken": True,
@@ -906,12 +915,20 @@ class OpenclawPatrolService:
                 return {"action_taken": False, "action": "direction_short", "message": f"开空失败: {exc}"}
 
         if action == "close_short":
+            closing_guard = inference_execution_guard(inference, reducing_position=True)
+            if not closing_guard["passed"]:
+                return {"action_taken": False, "action": "direction_short", "message": "方向退出等待有效行情: " + "；".join(closing_guard["reasons"])}
             try:
-                sim_client.submit_execution_action({
-                    "symbol": "BTCUSDT",
-                    "side": "flat",
-                })
-                direction_short_service.mark_short_closed()
+                targets = direction_short_service.owned_short_trades(sim_client.list_open_trades())
+                if not targets:
+                    direction_short_service.reconcile_with_open_trades([])
+                    return {"action_taken": False, "action": "direction_short", "message": "没有归属方向策略的在场空仓"}
+                for trade in targets:
+                    sim_client.submit_execution_action({"symbol": "BTC/USDT:USDT", "side": "flat",
+                                                        "trade_id": trade["trade_id"], "execution_owner": "direction_short"})
+                direction_short_service.reconcile_with_open_trades(sim_client.list_open_trades())
+                if direction_short_service.get_state().get("has_short_position"):
+                    return {"action_taken": False, "action": "direction_short_pending", "message": "平仓请求已提交，等待实际成交确认"}
                 logger.info("方向做空平仓(模拟盘 %s): avg=%.4f", sim_url, avg_score)
                 return {
                     "action_taken": True,
@@ -922,7 +939,8 @@ class OpenclawPatrolService:
                 logger.warning("方向做空平仓失败: %s", exc)
                 return {"action_taken": False, "action": "direction_short", "message": f"平空失败: {exc}"}
 
-        return {"action_taken": False, "action": "direction_short", "message": f"方向做空保持（avg={avg_score:.3f}）"}
+        reason = "；".join(opening_guard["reasons"]) if not opening_guard["passed"] else f"avg={avg_score:.3f}"
+        return {"action_taken": False, "action": "direction_short", "message": f"方向做空保持: {reason}"}
 
     def _check_auto_dispatch(self, snapshot: dict) -> dict[str, Any]:
         """检查是否需要自动派发信号。

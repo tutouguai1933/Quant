@@ -4,6 +4,8 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,8 +24,20 @@ from services.api.app.services.research_service import ResearchService  # noqa: 
 from services.worker.qlib_config import QlibConfigurationError  # noqa: E402
 
 
+TEST_NOW = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+
+
 class ResearchServiceTests(unittest.TestCase):
     def setUp(self) -> None:
+        # 固定可见行情时点，普通 API 管线仅使用启发式，不拟合实际 ML 模型。
+        for patcher in (
+            patch("services.worker.qlib_runner._utc_now", return_value=TEST_NOW),
+            patch.object(research_service_module.ResearchService, "_register_model", return_value=None),
+            patch.object(research_service_module.QlibRunner, "_register_model", return_value=None),
+            patch("services.worker.model_registry.get_model_registry", return_value=Mock(get_production_model=Mock(return_value=None))),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self._temp_dir = tempfile.TemporaryDirectory()
         self.runtime_root = Path(self._temp_dir.name)
         self.runtime_root.mkdir(exist_ok=True)
@@ -52,7 +66,7 @@ class ResearchServiceTests(unittest.TestCase):
 
     def _load_config(self):
         return research_service_module.load_qlib_config(
-            env={"QUANT_QLIB_RUNTIME_ROOT": str(self.runtime_root)},
+            env={"QUANT_QLIB_RUNTIME_ROOT": str(self.runtime_root), "QUANT_QLIB_MODEL_TYPE": "heuristic"},
             require_explicit=True,
         )
 
@@ -131,11 +145,11 @@ class ResearchServiceTests(unittest.TestCase):
         )
 
         with self.assertRaises(QlibConfigurationError):
-            service.run_training()
+            service._prepare_dataset()
 
-        result = service.run_training()
+        result = service._prepare_dataset()
 
-        self.assertEqual(result["status"], "completed")
+        self.assertIn("BTCUSDT", result[0])
         self.assertEqual(service._market_reader.calls, [("BTCUSDT", "4h", 180), ("BTCUSDT", "4h", 180)])
 
     def test_research_service_returns_symbol_candidate_summary(self) -> None:
@@ -203,6 +217,7 @@ class ResearchServiceTests(unittest.TestCase):
             self.runtime_root / "latest_inference.json",
             {
                 "run_id": "infer-1",
+                "model_admission": {"passed": True, "stage": "production", "model_version": "qlib-minimal-1", "evaluation_version": "ml_price_replay_v2", "reasons": []},
                 "status": "completed",
                 "generated_at": "2026-04-03T11:00:00+00:00",
                 "model_version": "qlib-minimal-1",
@@ -217,7 +232,7 @@ class ResearchServiceTests(unittest.TestCase):
                             "symbol": "BTCUSDT",
                             "strategy_template": "trend_breakout_timing",
                             "score": "0.7200",
-                            "backtest": {"metrics": {}},
+                            "backtest": {"evaluation_version": "ml_price_replay_v2", "evaluation_status": "available", "metrics": {}},
                             "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
                             "allowed_to_dry_run": False,
                             "allowed_to_live": False,
@@ -230,7 +245,7 @@ class ResearchServiceTests(unittest.TestCase):
                             "symbol": "ETHUSDT",
                             "strategy_template": "trend_pullback_timing",
                             "score": "0.8100",
-                            "backtest": {"metrics": {}},
+                            "backtest": {"evaluation_version": "ml_price_replay_v2", "evaluation_status": "available", "metrics": {}},
                             "dry_run_gate": {"status": "passed", "reasons": []},
                             "live_gate": {"status": "failed", "reasons": ["live_score_too_low"]},
                             "allowed_to_dry_run": True,
@@ -319,8 +334,8 @@ class ResearchServiceTests(unittest.TestCase):
                 "data": {
                     "selected_symbols": ["BTCUSDT"],
                     "timeframes": ["4h"],
-                    "sample_limit": 120,
-                    "lookback_days": 30,
+                    "sample_limit": 540,
+                    "lookback_days": 90,
                     "window_mode": "rolling",
                     "start_date": "",
                     "end_date": "",
@@ -425,10 +440,10 @@ class ResearchServiceTests(unittest.TestCase):
     def test_research_service_prepares_both_1h_and_4h_samples_for_runner(self) -> None:
         self.service.run_training()
 
-        self.assertIn(("BTCUSDT", "1h", 720), self.service._market_reader.calls)
-        self.assertIn(("BTCUSDT", "4h", 180), self.service._market_reader.calls)
-        self.assertIn(("ETHUSDT", "1h", 720), self.service._market_reader.calls)
-        self.assertIn(("ETHUSDT", "4h", 180), self.service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "1h", 2160), self.service._market_reader.calls)
+        self.assertIn(("BTCUSDT", "4h", 540), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "1h", 2160), self.service._market_reader.calls)
+        self.assertIn(("ETHUSDT", "4h", 540), self.service._market_reader.calls)
 
     def test_research_service_reuses_cached_kline_batch_between_training_and_inference(self) -> None:
         training_result = self.service.run_training()
@@ -455,7 +470,7 @@ class ResearchServiceTests(unittest.TestCase):
             runtime_override_provider=lambda: {},
         )
 
-        controlled_service.run_training()
+        controlled_service._prepare_dataset()
 
         self.assertEqual(controlled_service._market_reader.calls, [("ETHUSDT", "4h", 180)])
 
@@ -475,7 +490,7 @@ class ResearchServiceTests(unittest.TestCase):
             runtime_override_provider=lambda: {},
         )
 
-        controlled_service.run_training()
+        controlled_service._prepare_dataset()
 
         self.assertIn(("BTCUSDT", "1h", 480), controlled_service._market_reader.calls)
         self.assertIn(("BTCUSDT", "4h", 120), controlled_service._market_reader.calls)
@@ -649,6 +664,7 @@ class ResearchServiceTests(unittest.TestCase):
             self.runtime_root / "latest_inference.json",
             {
                 "run_id": "infer-1",
+                "model_admission": {"passed": True, "stage": "production", "model_version": "qlib-minimal-1", "evaluation_version": "ml_price_replay_v2", "reasons": []},
                 "status": "completed",
                 "generated_at": "2026-04-03T11:00:00+00:00",
                 "model_version": "qlib-minimal-1",
@@ -660,7 +676,7 @@ class ResearchServiceTests(unittest.TestCase):
                             "symbol": "BTCUSDT",
                             "strategy_template": "trend_breakout_timing",
                             "score": "0.7300",
-                            "backtest": {"metrics": {}},
+                            "backtest": {"evaluation_version": "ml_price_replay_v2", "evaluation_status": "available", "metrics": {}},
                             "dry_run_gate": {"status": "passed", "reasons": []},
                             "allowed_to_dry_run": True,
                         },
@@ -669,7 +685,7 @@ class ResearchServiceTests(unittest.TestCase):
                             "symbol": "ETHUSDT",
                             "strategy_template": "trend_pullback_timing",
                             "score": "0.6100",
-                            "backtest": {"metrics": {}},
+                            "backtest": {"evaluation_version": "ml_price_replay_v2", "evaluation_status": "available", "metrics": {}},
                             "dry_run_gate": {"status": "failed", "reasons": ["drawdown_too_large"]},
                             "allowed_to_dry_run": False,
                         },
@@ -734,7 +750,7 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertFalse(recommendation["allowed_to_dry_run"])
         self.assertEqual(recommendation["next_action"], "continue_research")
 
-    def test_research_recommendation_exposes_forced_validation_candidate(self) -> None:
+    def test_legacy_forced_validation_candidate_remains_research_only(self) -> None:
         self._write_json(
             self.runtime_root / "latest_training.json",
             {
@@ -780,11 +796,11 @@ class ResearchServiceTests(unittest.TestCase):
 
         self.assertIsNotNone(recommendation)
         assert recommendation is not None
-        self.assertTrue(recommendation["allowed_to_dry_run"])
-        self.assertTrue(recommendation["forced_for_validation"])
-        self.assertEqual(recommendation["review_status"], "forced_validation")
-        self.assertTrue(report["overview"]["forced_validation"])
-        self.assertEqual(report["overview"]["forced_symbol"], "ETHUSDT")
+        self.assertFalse(recommendation["allowed_to_dry_run"])
+        self.assertFalse(recommendation["forced_for_validation"])
+        self.assertEqual(recommendation["next_action"], "continue_research")
+        self.assertFalse(report["overview"]["forced_validation"])
+        self.assertEqual(report["overview"]["forced_symbol"], "")
 
     def test_signals_route_returns_unified_research_report(self) -> None:
         self.service.run_training()
@@ -817,6 +833,18 @@ class ResearchServiceTests(unittest.TestCase):
 
     @staticmethod
     def _write_json(path: Path, payload: dict[str, object]) -> None:
+        # 仅明确声明生产准入的正向队列夹具补齐实时协议，旧历史夹具保持原样。
+        if "model_admission" in payload:
+            payload["generated_at"] = TEST_NOW.isoformat()
+            for signal in payload.get("signals", []):
+                signal.update({
+                    "generated_at": TEST_NOW.isoformat(),
+                    "feature_asof": (TEST_NOW - timedelta(minutes=5)).isoformat(),
+                    "expires_at": (TEST_NOW + timedelta(hours=1)).isoformat(),
+                    "model_version": payload["model_admission"]["model_version"],
+                    "executable": True,
+                    "prediction_semantics": "return_above_threshold_probability",
+                })
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -836,17 +864,20 @@ class _FakeMarketReader:
         base_price = 100 if symbol == "BTCUSDT" else 50
         items = []
         step_ms = 4 * 3600000 if interval == "4h" else 3600000
-        for index in range(120):
+        count = min(limit, 540)
+        end_ms = int(TEST_NOW.timestamp() * 1000) // step_ms * step_ms
+        start_ms = end_ms - count * step_ms
+        for index in range(count):
             close = base_price + index * 0.8
             items.append(
                 {
-                    "open_time": 1712016000000 + (index * step_ms),
+                    "open_time": start_ms + (index * step_ms),
                     "open": str(close - 1),
                     "high": str(close + 2),
                     "low": str(close - 2),
                     "close": str(close),
                     "volume": str(1000 + (index * 100)),
-                    "close_time": 1712019599999 + (index * step_ms),
+                    "close_time": start_ms + ((index + 1) * step_ms) - 1,
                 }
             )
         return {"items": items, "overlays": {}, "markers": {"signals": [], "entries": [], "stops": []}}
@@ -893,17 +924,20 @@ class _EmptyThenReadyMarketReader(_AlwaysEmptyMarketReader):
 
         step_ms = 4 * 3600000 if interval == "4h" else 3600000
         items = []
-        for index in range(120):
+        count = min(limit, 540)
+        end_ms = int(TEST_NOW.timestamp() * 1000) // step_ms * step_ms
+        start_ms = end_ms - count * step_ms
+        for index in range(count):
             close = 100 + index * 0.8
             items.append(
                 {
-                    "open_time": 1712016000000 + (index * step_ms),
+                    "open_time": start_ms + (index * step_ms),
                     "open": str(close - 1),
                     "high": str(close + 2),
                     "low": str(close - 2),
                     "close": str(close),
                     "volume": str(1000 + (index * 100)),
-                    "close_time": 1712019599999 + (index * step_ms),
+                    "close_time": start_ms + ((index + 1) * step_ms) - 1,
                 }
             )
         return {"items": items, "overlays": {}, "markers": {"signals": [], "entries": [], "stops": []}}
@@ -914,8 +948,8 @@ def _default_workbench_config() -> dict[str, object]:
         "data": {
             "selected_symbols": ["BTCUSDT", "ETHUSDT"],
             "timeframes": ["1h", "4h"],
-            "sample_limit": 120,
-            "lookback_days": 30,
+            "sample_limit": 540,
+            "lookback_days": 90,
         },
         "research": {
             "research_preset_key": "baseline_balanced",

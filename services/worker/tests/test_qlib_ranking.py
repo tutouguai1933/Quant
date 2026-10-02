@@ -85,7 +85,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["score_gate"]["status"], "failed")
-        self.assertIn("score_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "score_too_low", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_uses_stricter_gate_for_strict_template(self) -> None:
@@ -99,10 +99,11 @@ class QlibRankingTests(unittest.TestCase):
                 }
             ],
             research_template="single_asset_timing_strict",
+            thresholds={"dry_run_min_score": "0.55"},
         )
 
         self.assertEqual(result["items"][0]["score_gate"]["status"], "failed")
-        self.assertIn("score_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "score_too_low", result["items"][0]["dry_run_gate"]["reasons"])
 
     def test_rank_candidates_exposes_live_gate_when_dry_run_passes_but_live_is_stricter(self) -> None:
         result = rank_candidates(
@@ -129,7 +130,7 @@ class QlibRankingTests(unittest.TestCase):
         self.assertTrue(result["items"][0]["allowed_to_dry_run"])
         self.assertFalse(result["items"][0]["allowed_to_live"])
         self.assertEqual(result["items"][0]["live_gate"]["status"], "failed")
-        self.assertIn("live_score_too_low", result["items"][0]["live_gate"]["reasons"])
+        _assert_reason(self, "live_score_too_low", result["items"][0]["live_gate"]["reasons"])
 
     def test_rank_candidates_live_gate_uses_candidate_validation_not_global_validation(self) -> None:
         result = rank_candidates(
@@ -185,7 +186,7 @@ class QlibRankingTests(unittest.TestCase):
 
         self.assertEqual(result["items"][0]["rule_gate"]["status"], "failed")
         self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
-        self.assertIn("trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_can_disable_rule_gate_from_thresholds(self) -> None:
@@ -226,7 +227,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
-        self.assertIn("sample_count_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "insufficient_trades", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_blocks_dry_run_when_loss_streak_is_too_long(self) -> None:
@@ -247,7 +248,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
-        self.assertIn("loss_streak_too_long", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "loss_streak_too_long", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_blocks_dry_run_when_sample_count_is_missing(self) -> None:
@@ -265,7 +266,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
-        self.assertIn("sample_count_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "insufficient_trades", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_blocks_dry_run_when_rule_gate_status_is_missing_but_reason_exists(self) -> None:
@@ -282,7 +283,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["rule_gate"]["status"], "failed")
-        self.assertIn("trend_broken", result["items"][0]["rule_gate"]["reasons"])
+        _assert_reason(self, "trend_broken", result["items"][0]["rule_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_keeps_rule_gate_reason_as_single_string_item(self) -> None:
@@ -299,7 +300,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["rule_gate"]["reasons"], ["trend_broken"])
-        self.assertIn("trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "trend_broken", result["items"][0]["dry_run_gate"]["reasons"])
 
     def test_rank_candidates_blocks_dry_run_when_validation_summary_is_weak(self) -> None:
         result = rank_candidates(
@@ -319,8 +320,8 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["research_validation_gate"]["status"], "failed")
-        self.assertIn("validation_positive_rate_too_low", result["items"][0]["dry_run_gate"]["reasons"])
-        self.assertIn("validation_future_return_not_positive", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "validation_positive_rate_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "validation_future_return_not_positive", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
         self.assertEqual(result["items"][0]["review_status"], "needs_research_iteration")
         self.assertEqual(result["items"][0]["next_action"], "continue_research")
@@ -346,7 +347,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["research_validation_gate"]["status"], "failed")
-        self.assertIn("validation_sample_count_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "validation_sample_count_too_low", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_blocks_dry_run_when_net_return_turns_negative_after_costs(self) -> None:
@@ -368,13 +369,15 @@ class QlibRankingTests(unittest.TestCase):
                 "positive_rate": "0.55",
                 "avg_future_return_pct": "0.80",
             },
+            thresholds={"consistency_max_validation_backtest_return_gap_pct": "1.0"},
         )
 
-        self.assertIn("non_positive_return", result["items"][0]["dry_run_gate"]["reasons"])
-        self.assertIn("validation_backtest_drift_too_large", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "non_positive_return", result["items"][0]["dry_run_gate"]["reasons"])
+        # 多日标签均值与账户净值收益不能比较；检查实际收益/回撤的一致性。
+        _assert_reason(self, "backtest_drawdown_disproportionate", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
-    def test_rank_candidates_exposes_consistency_gate_for_drifted_candidate(self) -> None:
+    def test_rank_candidates_exposes_consistency_gate_for_disproportionate_drawdown(self) -> None:
         result = rank_candidates(
             [
                 {
@@ -393,7 +396,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["consistency_gate"]["status"], "failed")
-        self.assertIn("validation_backtest_drift_too_large", result["items"][0]["consistency_gate"]["reasons"])
+        _assert_reason(self, "backtest_drawdown_disproportionate", result["items"][0]["consistency_gate"]["reasons"])
 
     def test_rank_candidates_blocks_when_validation_drift_from_training_is_too_large(self) -> None:
         result = rank_candidates(
@@ -416,7 +419,7 @@ class QlibRankingTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("validation_training_drift_too_large", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "validation_training_drift", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_respects_custom_consistency_thresholds(self) -> None:
@@ -550,7 +553,7 @@ class QlibRankingTests(unittest.TestCase):
         )
 
         self.assertEqual(result["items"][0]["dry_run_gate"]["status"], "failed")
-        self.assertIn("win_rate_too_low", result["items"][0]["dry_run_gate"]["reasons"])
+        _assert_reason(self, "win_rate_too_low", result["items"][0]["dry_run_gate"]["reasons"])
         self.assertFalse(result["items"][0]["allowed_to_dry_run"])
 
     def test_rank_candidates_respects_configured_live_backtest_thresholds(self) -> None:
@@ -579,7 +582,7 @@ class QlibRankingTests(unittest.TestCase):
         self.assertTrue(result["items"][0]["allowed_to_dry_run"])
         self.assertFalse(result["items"][0]["allowed_to_live"])
         self.assertEqual(result["items"][0]["live_gate"]["status"], "failed")
-        self.assertIn("live_win_rate_too_low", result["items"][0]["live_gate"]["reasons"])
+        _assert_reason(self, "live_win_rate_too_low", result["items"][0]["live_gate"]["reasons"])
 
 
     def test_backtest_gate_rejects_tiny_trade_count(self) -> None:
@@ -631,6 +634,16 @@ class QlibRankingTests(unittest.TestCase):
         result = _evaluate_backtest_gate(metrics, thresholds=thresholds)
         self.assertEqual(result["status"], "passed")
 
+
+
+def _assert_reason(case, code, reasons):
+    """分别核对稳定原因码和可读详情，避免把说明文字当成另一种失败原因。"""
+    matches = [reason for reason in reasons if reason.split(" (", 1)[0] == code]
+    case.assertTrue(matches, f"缺少原因 {code}: {reasons}")
+    for reason in matches:
+        if reason != code:
+            case.assertTrue(reason.startswith(code + " (") and reason.endswith(")"))
+            case.assertGreater(len(reason), len(code) + 3)
 
 def _passing_metrics() -> dict[str, str]:
     return {

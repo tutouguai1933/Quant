@@ -215,11 +215,23 @@ class FreqtradeRestClient:
 
         symbol = _normalize_symbol(str(action["symbol"]))
         side = str(action["side"])
-        quantity = Decimal(str(action["quantity"]))
+        # 全平按已存在的交易执行，不要求新开仓的数量字段。
+        quantity = Decimal(str(action.get("quantity", 0))) if side == "flat" else Decimal(str(action["quantity"]))
         if side == "flat":
             explicit_trade_id = action.get("trade_id") or action.get("venue_trade_id")
             target_trades = self._resolve_flat_trades(symbol, trade_id=explicit_trade_id)
+            # 自动化退出必须按明确归属的实际交易，不能平掉同币 RSI 自然仓位。
+            owner = action.get("execution_owner")
+            if owner == "automation_ml":
+                from services.worker.qlib_live_policy import ML_ENTRY_TAG_PREFIX
+                if explicit_trade_id is None or any(not str(t.get("enter_tag", "")).startswith(ML_ENTRY_TAG_PREFIX) for t in target_trades):
+                    raise FreqtradeRestError("平仓目标不明确归属自动化模型")
+            elif owner == "direction_short":
+                from services.api.app.services.direction_short_service import DirectionShortService
+                if explicit_trade_id is None or len(DirectionShortService.owned_short_trades(target_trades)) != len(target_trades):
+                    raise FreqtradeRestError("平仓目标不明确归属方向空仓")
             primary_trade = target_trades[0]
+            quantity = Decimal(str(primary_trade.get("amount") or quantity))
             response: dict[str, object] = {}
             hydrated_trade: dict[str, object] | None = None
             for target_trade in target_trades:
@@ -289,7 +301,7 @@ class FreqtradeRestClient:
             "pair": pair,
             "side": side,
             "stakeamount": float(stake_amount),
-            "entry_tag": "quant-control-plane",
+            "entry_tag": str(action.get("entry_tag") or "quant-control-plane"),
         }
 
         if order_type == "limit":
@@ -672,13 +684,13 @@ class FreqtradeRestClient:
             "venueOrderId": str(order_id),
             "runtimeMode": self._get_remote_mode(default="unknown"),
             "symbol": symbol,
-            "side": "flat" if side == "flat" else "long",
+            "side": side,
             "orderType": str(order_type_value),
             "status": str(status_value),
             "quantity": _to_decimal_string(quantity_value),
             "executedQty": _to_decimal_string(quantity_value),
             "avgPrice": _to_decimal_string(price_value),
-            "sourceSignalId": action["source_signal_id"],
+            "sourceSignalId": action.get("source_signal_id"),
             "strategyId": action.get("strategy_id"),
             "updatedAt": timestamp,
         }

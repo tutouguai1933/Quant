@@ -575,6 +575,8 @@ export type DirectionShortMarketModel = {
   generated_at: string;
   short_trigger: boolean;
   flat_trigger: boolean;
+  execution_guard?: { passed: boolean; reasons: string[] };
+  prediction_semantics?: string;
 };
 
 export type DirectionShortStatusModel = {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -214,7 +215,8 @@ class SignalServiceTests(unittest.TestCase):
         self.assertEqual(items[0]["payload"]["review_status"], "needs_research_iteration")
         self.assertEqual(items[0]["payload"]["recommended_for_execution"], False)
 
-    def test_qlib_pipeline_allows_forced_validation_candidate_to_enter_dispatch(self) -> None:
+    def test_forced_validation_without_model_admission_is_blocked(self) -> None:
+        """强制研究验证不能绕过生产模型与实时行情准入。"""
         original_research_service = signal_service_module.research_service
         signal_service_module.research_service = _ForcedValidationResearchService()
         try:
@@ -222,12 +224,42 @@ class SignalServiceTests(unittest.TestCase):
             claimed = self.service.claim_latest_dispatchable_signal(1)
         finally:
             signal_service_module.research_service = original_research_service
+        self.assertIsNone(claimed)
 
+    def test_admitted_forced_validation_candidate_can_be_claimed(self) -> None:
+        """合格模型的强制研究验证可被认领，实盘执行仍由独立执行准入检查。"""
+        original_research_service = signal_service_module.research_service
+        signal_service_module.research_service = _AdmittedForcedValidationResearchService()
+        try:
+            self.service.run_pipeline("qlib")
+            claimed = self.service.claim_latest_dispatchable_signal(1)
+        finally:
+            signal_service_module.research_service = original_research_service
         self.assertIsNotNone(claimed)
-        assert claimed is not None
         self.assertEqual(claimed["symbol"], "ETHUSDT")
         self.assertTrue(claimed["payload"]["forced_for_validation"])
         self.assertEqual(claimed["payload"]["review_status"], "forced_validation")
+        self.assertEqual(claimed["payload"]["ml_context"]["model_admission"]["stage"], "production")
+
+
+def _admitted_inference(payload: dict[str, object]) -> dict[str, object]:
+    """构造按新协议准入且行情仍有效的推理，不把历史分数标为可执行。"""
+    from services.worker.qlib_live_policy import EVALUATION_VERSION, UPSIDE_PROBABILITY
+    now = datetime.now(timezone.utc)
+    version = "qlib-production-fixture-v2"
+    payload["model_admission"] = {
+        "passed": True, "reasons": [], "stage": "production", "model_version": version,
+        "evaluation_version": EVALUATION_VERSION, "prediction_semantics": UPSIDE_PROBABILITY,
+    }
+    for signal in payload["signals"]:
+        signal.update({
+            "generated_at": now.isoformat(),
+            "feature_asof": (now - timedelta(minutes=5)).isoformat(),
+            "expires_at": (now + timedelta(minutes=55)).isoformat(),
+            "model_version": version, "executable": True,
+            "prediction_semantics": UPSIDE_PROBABILITY,
+        })
+    return payload
 
 
 class _PassingResearchService:
@@ -235,7 +267,7 @@ class _PassingResearchService:
         return {"model_version": "qlib-minimal-test", "status": "completed"}
 
     def run_inference(self) -> dict[str, object]:
-        return {
+        payload = {
             "backend": "qlib-fallback",
             "signals": [
                 {
@@ -258,6 +290,8 @@ class _PassingResearchService:
             },
         }
 
+        return _admitted_inference(payload)
+
 
 class _BlockedResearchService(_PassingResearchService):
     def run_inference(self) -> dict[str, object]:
@@ -277,7 +311,7 @@ class _FailingResearchService:
 
 class _MultiCandidateResearchService(_PassingResearchService):
     def run_inference(self) -> dict[str, object]:
-        return {
+        payload = {
             "backend": "qlib-fallback",
             "signals": [
                 {
@@ -314,6 +348,8 @@ class _MultiCandidateResearchService(_PassingResearchService):
                 ]
             },
         }
+
+        return _admitted_inference(payload)
 
 
 class _BlockedRecommendationResearchService(_PassingResearchService):
@@ -378,9 +414,15 @@ class _ForcedValidationResearchService(_PassingResearchService):
         }
 
 
+class _AdmittedForcedValidationResearchService(_ForcedValidationResearchService):
+    def run_inference(self) -> dict[str, object]:
+        """为强制研究候选提供独立完整生产准入。"""
+        return _admitted_inference(super().run_inference())
+
+
 class _TemplateMatchedResearchService(_PassingResearchService):
     def run_inference(self) -> dict[str, object]:
-        return {
+        payload = {
             "backend": "qlib-fallback",
             "signals": [
                 {
@@ -407,6 +449,8 @@ class _TemplateMatchedResearchService(_PassingResearchService):
                 ]
             },
         }
+
+        return _admitted_inference(payload)
 
 
 if __name__ == "__main__":

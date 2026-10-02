@@ -29,6 +29,7 @@ from services.api.app.services.strategy_engine_service import (
 )
 from services.api.app.services.sync_service import sync_service
 from services.api.app.tasks.scheduler import task_scheduler
+from services.worker.qlib_live_policy import inference_execution_guard
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,13 @@ class StrategyDispatchService:
             }
 
         # 策略引擎入场评分验证
+        # 只有 Qlib 自动化信号检查模型准入；RSI 在 Freqtrade 中独立运行。
+        if str(latest.get("source", "")) == "qlib" and str(latest.get("side", "")) != "flat":
+            ml_context = dict(dict(latest.get("payload") or {}).get("ml_context") or {})
+            guard = inference_execution_guard(ml_context, symbol=str(latest.get("symbol", "")), opening_short=str(latest.get("side", "")) == "short")
+            if not guard["passed"]:
+                signal_service.release_dispatch_claim(int(latest["signal_id"]))
+                return {"status": "blocked", "error_code": "ml_execution_not_admitted", "message": "；".join(guard["reasons"]), "risk_task": None, "sync_task": None}
         symbol = str(latest.get("symbol", ""))
         signal_side = str(latest.get("side", "long"))
         signal_score = self._parse_signal_score(latest.get("score"))

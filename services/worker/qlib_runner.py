@@ -24,12 +24,21 @@ from services.worker.qlib_dataset import (
     build_dataset_bundle,
     deserialize_dataset_bundle,
     serialize_dataset_bundle,
+    purged_time_split,
+    purged_validation_split,
+    _filter_candles_by_fixed_window,
+)
+from services.worker.qlib_live_policy import (
+    EVALUATION_VERSION, UPSIDE_PROBABILITY, latest_closed_feature,
+    load_live_policy, production_admission, inference_execution_guard,
+    hide_legacy_evaluation,
 )
 from services.worker.qlib_experiment_report import build_experiment_report
 from services.worker.qlib_experiment_report import _build_dataset_snapshot_summary
 from services.worker.qlib_features import (
     AUXILIARY_FEATURE_COLUMNS,
     FEATURE_PROTOCOL,
+    FEATURE_ENGINE_VERSION,
     FACTOR_METADATA,
     MISSING_POLICY_LABELS,
     NORMALIZATION_POLICY_LABELS,
@@ -56,7 +65,7 @@ PRUNE_CACHE_KEEP = max(1, int(os.getenv("QUANT_PRUNE_CACHE_KEEP", "20")))
 _PRUNE_EXCLUDE_NAMES = frozenset({"experiment_index.json"})
 
 
-def _prune_directory(directory: Path, *, keep: int, label: str) -> None:
+def _prune_directory(directory: Path, *, keep: int, label: str, protected_paths: set[Path] | None = None) -> None:
     """按数量清理目录：只保留最近 keep 个文件，删除前记录日志。
 
     按文件修改时间倒序排列，保留最新的 keep 个，其余删除。
@@ -68,6 +77,7 @@ def _prune_directory(directory: Path, *, keep: int, label: str) -> None:
             path
             for path in directory.iterdir()
             if path.is_file()
+            and path not in (protected_paths or set())
             and not path.name.startswith(".")
             and path.name not in _PRUNE_EXCLUDE_NAMES
         ),
@@ -115,13 +125,21 @@ class QlibRunner:
         )
         metrics = self._fit_model(bundle.training_rows, bundle.validation_rows)
         validation = self._build_validation_summary(bundle.validation_rows)
-        backtest = run_backtest(
-            rows=bundle.backtest_rows,
-            holding_window=self._config.holding_window_label,
-            fee_bps=self._config.backtest_fee_bps,
-            slippage_bps=self._config.backtest_slippage_bps,
-            cost_model=self._config.backtest_cost_model,
-        )
+        backtest = self._build_candidate_backtest(rows=self._predict_backtest_rows(bundle.backtest_rows, metrics))
+        # 晋升必须在价格回放之后，不能仅凭训练验证 AUC 跳过新评估协议。
+        if metrics.get("model_type") in {"lightgbm", "xgboost"} and metrics.get("model_path"):
+            context = {**dict(metrics.get("training_context") or {}),
+                       "evaluation_version": EVALUATION_VERSION,
+                       "evaluation_available": backtest.get("evaluation_status") == "available",
+                       "prediction_semantics": UPSIDE_PROBABILITY,
+                       "input_protocol": self._model_input_protocol(timeframes=sorted({b.timeframe for b in bundle.symbol_bundles.values()})),
+                       "validation_summary": validation,
+                       "trained_label_until": max(int(row["label_end_at"]) for row in bundle.training_rows + bundle.validation_rows),
+                       "backtest_metrics": dict(backtest.get("metrics") or {})}
+            registration = self._register_model(model_path=Path(str(metrics["model_path"])), model_type=str(metrics["model_type"]),
+                                                model_version=str(metrics.get("model_version", "")), metrics=dict(metrics.get("ml_metrics") or {}), training_context=context)
+            if registration:
+                metrics.update(registry_version_id=registration["version_id"], promotion=registration["promotion"])
 
         # 计算因子评估
         all_rows = bundle.training_rows + bundle.validation_rows + bundle.backtest_rows
@@ -144,7 +162,7 @@ class QlibRunner:
         }
         artifact_path = self._config.paths.artifacts_dir / f"{model_version}.json"
         self._write_json(artifact_path, model_payload)
-        _prune_directory(self._config.paths.artifacts_dir, keep=PRUNE_ARTIFACTS_KEEP, label="训练产物")
+        _prune_directory(self._config.paths.artifacts_dir, keep=PRUNE_ARTIFACTS_KEEP, label="训练产物", protected_paths=self._production_artifact_paths())
 
         result = {
             "run_id": run_id,
@@ -209,7 +227,7 @@ class QlibRunner:
 
         self._config.ensure_ready()
         self._ensure_runtime_directories()
-        training_payload = self._read_json(self._config.paths.latest_training_path)
+        training_payload = hide_legacy_evaluation(self._read_json(self._config.paths.latest_training_path))
         if not training_payload:
             raise RuntimeError("研究层还没有可用训练结果，不能直接推理")
 
@@ -217,6 +235,12 @@ class QlibRunner:
         candidates: list[dict[str, object]] = []
         symbol_bundles: dict[str, DatasetBundle] = {}
         metrics = dict(training_payload.get("metrics") or {})
+        production, admission = self._resolve_production_model()
+        if admission["passed"]:
+            training_payload = {**training_payload, "model_version": production.version_id}
+            training_payload["validation"] = dict(production.training_context.get("validation_summary") or {})
+            metrics = {"model_type": production.model_type, "model_path": str(production.model_path),
+                       "training_context": production.training_context, "ml_metrics": production.metrics}
         model_type = str(metrics.get("model_type", "heuristic"))
         model_path = str(metrics.get("model_path", ""))
 
@@ -226,28 +250,45 @@ class QlibRunner:
             from services.worker.ml.predictor import ModelPredictor
             try:
                 ml_predictor = ModelPredictor(model_path=Path(model_path))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("模型加载失败，仅保留研究结果: %s", exc)
+                admission = {**admission, "passed": False, "reasons": [*admission["reasons"], "模型加载失败"]}
 
+        inference_warnings = []
         for symbol in list(dataset.keys()):
             market_payload = dataset[symbol]
-            bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
-            symbol_bundles[symbol] = bundle
-            latest = self._pick_latest_row(bundle)
-            if latest is None:
+            try:
+                latest, freshness = self._pick_live_feature(symbol=symbol, market_payload=market_payload)
+            except ValueError as exc:
+                inference_warnings.append(str(exc))
                 continue
+            try:
+                bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
+            except RuntimeError as exc:
+                inference_warnings.append(f"{symbol} 历史评估不可用: {exc}")
+                bundle = DatasetBundle(symbol=symbol, timeframe=str(self._config.selected_timeframes[0]), training_rows=[], validation_rows=[], testing_rows=[])
+            symbol_bundles[symbol] = bundle
+            if admission["passed"]:
+                protocol = dict(production.training_context.get("input_protocol") or {})
+                allowed_intervals = {"1h": 3600000, "4h": 14400000, "15m": 900000}
+                compatible = freshness["feature_timeframe_ms"] in [allowed_intervals.get(tf) for tf in protocol.get("timeframes", [])]
+                compatible = compatible and all(column in latest for column in self._model_feature_columns(metrics))
+                compatible = compatible and bundle.timeframe in protocol.get("timeframes", [])
+                if not compatible:
+                    inference_warnings.append(f"{symbol} 实时特征与生产模型输入协议不兼容")
+                    continue
 
             # 尝试获取完整的 ML 预测结果
             ml_prediction = None
             if model_type in ("lightgbm", "xgboost") and model_path:
                 try:
-                    ml_prediction = self._get_ml_prediction(latest, model_path)
-                except Exception:
-                    pass
+                    ml_prediction = ml_predictor.predict(feature_row=latest, feature_columns=self._model_feature_columns(metrics)) if ml_predictor else None
+                except Exception as exc:
+                    logger.warning("%s 模型预测失败: %s", symbol, exc)
 
             # 计算分数
             score = ml_prediction.score if ml_prediction else self._score_signal(latest, metrics)
-            confidence = max(score, 1 - score)
+            confidence = score
             signal = self._classify_signal(score)
             target_weight = self._target_weight(signal, score)
             rule_gate = self._build_rule_gate(latest)
@@ -284,6 +325,9 @@ class QlibRunner:
                     "source": "qlib",
                     "generated_at": _utc_now().isoformat(),
                     "ml_prediction": ml_prediction_data,
+                    **freshness,
+                    "prediction_semantics": UPSIDE_PROBABILITY,
+                    "executable": bool(admission["passed"] and ml_prediction_data),
                 }
             )
 
@@ -297,19 +341,22 @@ class QlibRunner:
                     signal_source="ml" if model_type in ("lightgbm", "xgboost") else "heuristic",
                 )
             backtest_rows = self._filter_backtest_rows(
-                testing_rows=bundle.testing_rows,
+                testing_rows=[r for r in bundle.testing_rows if not admission["passed"] or int(r["generated_at"]) > int(production.training_context.get("trained_label_until", 0))],
                 ml_predictor=ml_predictor,
+                feature_columns=self._model_feature_columns(metrics),
             )
             backtest = self._build_candidate_backtest(rows=backtest_rows)
 
             # 为每个候选生成 per-symbol validation 数据
-            per_symbol_validation = _build_per_symbol_validation(backtest_rows)
+            per_symbol_validation = _build_per_symbol_validation(bundle.validation_rows, label_threshold=float(self._config.model_label_threshold))
 
             candidates.append(
                 {
                     "symbol": symbol,
                     "strategy_template": strategy_template,
                     "score": _format_float(score),
+                    "model_admission": admission,
+                    **freshness,
                     "backtest": backtest,
                     "rule_gate": rule_gate,
                     "recommendation_context": recommendation_context,
@@ -325,7 +372,7 @@ class QlibRunner:
         ranked_candidates = rank_candidates(
             candidates,
             validation=dict(training_payload.get("validation") or {}),
-            training_metrics=dict(training_payload.get("metrics") or {}),
+            training_metrics=metrics,
             force_validation_top_candidate=self._config.force_validation_top_candidate,
             research_template=self._config.research_template,
             thresholds={
@@ -362,6 +409,21 @@ class QlibRunner:
                 "live_min_sample_count": self._config.live_min_sample_count,
             },
         )
+        # 研究门、强制验证开关均不能覆盖生产模型与时效硬约束。
+        for candidate in ranked_candidates["items"]:
+            signal = next((s for s in signals if s["symbol"] == candidate["symbol"]), None)
+            guard = inference_execution_guard({"model_admission": admission, "signals": [signal] if signal else []}, now=_utc_now())
+            if candidate.get("backtest", {}).get("evaluation_status") != "available":
+                guard = {"passed": False, "reasons": [*guard["reasons"], "缺少可信价格回放"]}
+            candidate["execution_guard"] = guard
+            if not guard["passed"]:
+                candidate.update(allowed_to_live=False, allowed_to_dry_run=False, forced_for_validation=False,
+                                 review_status="blocked", next_action="continue_research")
+                for gate_name in ("dry_run_gate", "live_gate"):
+                    candidate[gate_name] = {"status": "blocked", "reasons": guard["reasons"]}
+        ranked_candidates["summary"].update(ready_count=sum(bool(c["allowed_to_dry_run"]) for c in ranked_candidates["items"]),
+                                              live_ready_count=sum(bool(c["allowed_to_live"]) for c in ranked_candidates["items"]),
+                                              blocked_count=sum(not c["allowed_to_dry_run"] for c in ranked_candidates["items"]))
         dataset_snapshot_path, dataset_snapshot = self._write_dataset_snapshot(
             symbol_bundles=symbol_bundles,
             generated_at=_utc_now(),
@@ -387,7 +449,9 @@ class QlibRunner:
                 "short_count": sum(1 for item in signals if item["signal"] == "short"),
             },
             "candidates": ranked_candidates,
-            "warnings": self._build_warnings(),
+            "model_admission": admission,
+            "prediction_semantics": UPSIDE_PROBABILITY,
+            "warnings": [*self._build_warnings(), *inference_warnings],
             "dataset_snapshot": dataset_snapshot,
             "dataset_snapshot_path": str(dataset_snapshot_path),
             "inference_context": self._build_inference_context(
@@ -419,42 +483,24 @@ class QlibRunner:
         backtest_rows: list[dict[str, object]] = []
         for symbol in list(dataset.keys()):
             market_payload = dataset[symbol]
+            if self._config.window_mode == "rolling":
+                frames = self._extract_timeframe_candles(market_payload)
+                source = next((rows for rows in (frames[0], frames[2], frames[1]) if rows), [])
+                closed = self._prepare_research_candles(source)
+                if not closed or int(_utc_now().timestamp() * 1000) - int(closed[-1]["close_time"]) > self._backtest_interval_ms(closed) * load_live_policy().max_feature_age_bars:
+                    logger.warning("%s 行情已过期，不参与当下滚动训练", symbol)
+                    continue
             bundle = self._build_symbol_dataset_bundle(symbol=symbol, market_payload=market_payload)
             symbol_bundles[symbol] = bundle
-            training_rows.extend(bundle.training_rows)
-            validation_rows.extend(bundle.validation_rows)
-            backtest_rows.extend(bundle.testing_rows)
+            training_rows.extend(bundle.all_rows)
         if not training_rows:
             raise RuntimeError("研究层没有拿到可训练样本")
 
-        # walk-forward 分支：用 WalkForwardValidator 重切分
-        if self._config.enable_walk_forward:
-            all_rows = training_rows + validation_rows + backtest_rows
-            all_rows.sort(key=lambda r: int(r.get("generated_at", 0)))
-            wf_config = WalkForwardConfig(
-                n_folds=4,
-                min_train_bars=120,
-                gap_bars=self._config.label_window_bars,
-            )
-            validator = WalkForwardValidator()
-            folds = validator.split(all_rows, wf_config)
-            if folds:
-                # 使用倒数第二折（expanding 模式训练集越滚越大，覆盖最早到该折之前
-                # 的所有数据 = 前 75%），其 test 段覆盖最后 25%（验证/回测各半），
-                # 时间严格在训练集之后，无泄漏。最后一折的 test 只剩尾部余量（几行），
-                # 无法拆分验证/回测，故不用。
-                fold = folds[-2] if len(folds) >= 2 else folds[-1]
-                wf_training = list(fold.train)
-                wf_test = list(fold.test)
-                wf_test.sort(key=lambda r: int(r.get("generated_at", 0)))
-                split_mid = len(wf_test) // 2
-                wf_validation = wf_test[:split_mid] if split_mid > 0 else wf_test
-                wf_backtest = wf_test[split_mid:] if split_mid < len(wf_test) else wf_test[-1:]
-                if wf_training and wf_validation and wf_backtest:
-                    training_rows = wf_training
-                    validation_rows = wf_validation
-                    backtest_rows = wf_backtest
-
+        # 跨币种统一按时间切分，任何跨越下一段的标签都不能留在训练/验证。
+        training_rows, validation_rows, backtest_rows = purged_time_split(
+            training_rows + validation_rows + backtest_rows,
+            train_ratio=float(self._config.train_split_ratio), validation_ratio=float(self._config.validation_split_ratio),
+        )
         if not validation_rows or not backtest_rows:
             raise RuntimeError("研究层样本不足，无法生成完整验证和回测结果")
         return TrainingBundle(
@@ -496,28 +542,23 @@ class QlibRunner:
         *,
         testing_rows: list[dict[str, object]],
         ml_predictor: object | None,
+        feature_columns: tuple[str, ...] | None = None,
     ) -> list[dict[str, object]]:
-        """过滤测试集，只保留 ML 模型预测为"买入"的样本。
-
-        如果没有 ML 模型或测试集为空，返回全部行（保持向后兼容）。
-        如果 ML 模型没有给出任何买入样本，返回空列表，避免把无信号样本误算成可交易回测。
-        """
+        """保留全部价格路径并附模型预测，不能删除不买入的中间行情。"""
         if not testing_rows or ml_predictor is None:
             return testing_rows
 
         try:
             predictions = ml_predictor.predict_batch(
                 feature_rows=testing_rows,
-                feature_columns=self._active_primary_feature_columns(),
+                feature_columns=feature_columns or self._active_primary_feature_columns(),
                 include_contributions=False,
             )
-            filtered = [
-                testing_rows[i]
-                for i, p in enumerate(predictions)
-                if p.score >= 0.5
-            ]
-            return filtered
-        except Exception:
+            if len(predictions) != len(testing_rows):
+                raise ValueError("预测数量与价格路径不一致")
+            return [{**row, "prediction_score": p.score} for row, p in zip(testing_rows, predictions)]
+        except Exception as exc:
+            logger.warning("模型历史预测失败，回测将标记为不可用: %s", exc)
             return testing_rows
 
     def _build_candidate_backtest(self, *, rows: list[dict[str, object]]) -> dict[str, object]:
@@ -529,16 +570,94 @@ class QlibRunner:
             fee_bps=self._config.backtest_fee_bps,
             slippage_bps=self._config.backtest_slippage_bps,
             cost_model=self._config.backtest_cost_model,
+            signal_threshold=float(self._config.signal_confidence_floor),
+            max_holding_bars=max(1, int(self._config.holding_window_max_days * 86400000 / self._backtest_interval_ms(rows))),
+            max_positions=1,
         )
+
+    @staticmethod
+    def _backtest_interval_ms(rows):
+        """按真实行情周期转换持仓窗口，不将跨币行数当成时间。"""
+        if rows and rows[0].get("close_time") is not None and rows[0].get("open_time") is not None:
+            return max(1, int(rows[0]["close_time"]) - int(rows[0]["open_time"]) + 1)
+        return 14400000
+
+    def _predict_backtest_rows(self, rows, metrics):
+        """为离线真实价格路径加训练模型的预测，绝不读取真实标签选择开仓。"""
+        if metrics.get("model_type") in {"lightgbm", "xgboost"}:
+            from services.worker.ml.predictor import ModelPredictor
+            try:
+                predictor = ModelPredictor(model_path=Path(str(metrics["model_path"])))
+                predictions = predictor.predict_batch(feature_rows=rows, feature_columns=self._model_feature_columns(metrics), include_contributions=False)
+                if len(predictions) != len(rows):
+                    raise ValueError("历史预测数量不一致")
+                return [{**r, "prediction_score": p.score} for r, p in zip(rows, predictions)]
+            except Exception as exc:
+                logger.warning("历史预测不可用: %s", exc)
+                return rows
+        return [{**r, "prediction_score": self._score_with_heuristic(r, metrics)} for r in rows]
+
+    def _model_feature_columns(self, metrics):
+        """生产模型使用训练时保存的列及顺序，避免新因子设置改变旧模型输入。"""
+        return tuple(dict(metrics.get("training_context") or {}).get("feature_columns") or self._active_primary_feature_columns())
+
+    def _model_input_protocol(self, *, timeframes=None):
+        """记录会改变特征含义的输入配置，不能用新预处理默默喂旧模型。"""
+        return {"feature_engine_version": FEATURE_ENGINE_VERSION,
+                "lookback_days": self._config.lookback_days, "window_mode": self._config.window_mode,
+                "start_date": self._config.start_date, "end_date": self._config.end_date,
+                "missing_policy": self._config.missing_policy, "outlier_policy": self._config.outlier_policy,
+                "normalization_policy": self._config.normalization_policy, "timeframe_profiles": self._config.timeframe_profiles,
+                "timeframes": timeframes or list(self._config.selected_timeframes), "model_label_threshold": str(self._config.model_label_threshold),
+                "model_mode": str(self._config.model_mode), "label_mode": self._config.label_mode,
+                "label_trigger_basis": self._config.label_trigger_basis,
+                "label_target_pct": str(self._config.label_target_pct), "label_stop_pct": str(self._config.label_stop_pct),
+                "holding_window_min_days": self._config.holding_window_min_days, "holding_window_max_days": self._config.holding_window_max_days,
+                "multi_window_labels_enabled": self._config.multi_window_labels_enabled,
+                "label_windows": list(self._config.label_windows), "label_window_bars": self._config.label_window_bars,
+                "label_neutral_pct": str(self._config.label_neutral_pct)}
+
+    def _resolve_production_model(self):
+        """只选择经过新协议评估的生产模型，失败时继续研究而不下单。"""
+        from services.worker.model_registry import get_model_registry
+        try:
+            record = get_model_registry().get_production_model()
+            admission = production_admission(record)
+            if admission["passed"]:
+                protocol = dict(record.training_context.get("input_protocol") or {})
+                current = self._model_input_protocol()
+                if any(protocol.get(key) != value for key, value in current.items() if key != "timeframes"):
+                    admission = {**admission, "passed": False, "reasons": ["当前输入配置与生产模型不兼容，需重新训练"]}
+            return record, admission
+        except Exception as exc:
+            logger.warning("生产模型准入读取失败: %s", exc)
+            return None, {"passed": False, "stage": "research", "model_version": "", "reasons": ["生产模型准入不可用"]}
+
+    def _production_artifact_paths(self):
+        """清理实验文件时保护生产模型及其配套元数据。"""
+        record, _ = self._resolve_production_model()
+        if record is None:
+            return set()
+        path = Path(record.model_path)
+        return {path, path.with_suffix(".txt"), path.with_suffix(".meta.json"), path.with_suffix(".pkl")}
+
+    def _pick_live_feature(self, *, symbol, market_payload):
+        """实时推理直接选最新完整 K 线，独立于训练标签和测试切分。"""
+        one, four, fifteen = self._extract_timeframe_candles(market_payload)
+        candidates = [rows for rows in (one, fifteen, four) if rows]
+        if not candidates:
+            raise ValueError(f"{symbol} 无实时行情")
+        return latest_closed_feature(symbol=symbol, candles=self._prepare_research_candles(candidates[0]), config=self._config, now=_utc_now())
 
     def _build_symbol_dataset_bundle(self, *, symbol: str, market_payload: object) -> DatasetBundle:
         """把单个币种的输入统一转换成数据集包。"""
 
         candles_1h, candles_4h, candles_15m = self._extract_timeframe_candles(market_payload)
+        candles_1h, candles_4h, candles_15m = [self._prepare_research_candles(rows) for rows in (candles_1h, candles_4h, candles_15m)]
         cache_key = self._build_dataset_cache_key(symbol=symbol, candles_1h=candles_1h, candles_4h=candles_4h, candles_15m=candles_15m)
         cache_path = self._config.paths.dataset_cache_dir / f"{cache_key}.json"
         cached_payload = self._read_json(cache_path)
-        if cached_payload:
+        if cached_payload and cached_payload.get("all_rows") and all(row.get("label_end_at") is not None for key in ("training_rows", "validation_rows", "testing_rows") for row in cached_payload.get(key, [])):
             bundle = deserialize_dataset_bundle(cached_payload)
             bundle.cache = {
                 "key": cache_key,
@@ -589,6 +708,23 @@ class QlibRunner:
         self._write_json(cache_path, serialize_dataset_bundle(bundle))
         _prune_directory(self._config.paths.dataset_cache_dir, keep=PRUNE_CACHE_KEEP, label="数据集缓存")
         return bundle
+
+    def _prepare_research_candles(self, rows):
+        """训练和历史评估统一去重、只读已收盘数据，滚动窗口以研究当前时间为准。"""
+        now_ms = int(_utc_now().timestamp() * 1000)
+        start = now_ms - self._config.lookback_days * 86400000 if self._config.window_mode == "rolling" else 0
+        unique = {}
+        for row in rows:
+            try:
+                opened, closed = int(row["open_time"]), int(row["close_time"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if start <= opened <= closed <= now_ms:
+                unique[opened] = row
+        closed = [unique[key] for key in sorted(unique)]
+        if self._config.window_mode == "fixed":
+            return _filter_candles_by_fixed_window(closed, start_date=self._config.start_date, end_date=self._config.end_date)
+        return closed
 
     def _pick_latest_row(self, bundle: DatasetBundle) -> dict[str, object] | None:
         """优先从测试段挑最新样本，没有则回退到验证和训练。"""
@@ -656,6 +792,9 @@ class QlibRunner:
         """根据输入 K 线构造稳定缓存键。"""
 
         payload = {
+            "evaluation_version": EVALUATION_VERSION,
+            "feature_engine_version": FEATURE_ENGINE_VERSION,
+            "input_protocol": self._model_input_protocol(),
             "symbol": symbol.strip().upper(),
             "candles_1h": candles_1h,
             "candles_4h": candles_4h,
@@ -794,7 +933,7 @@ class QlibRunner:
         # 保存模型
         model_path = self._config.paths.artifacts_dir / f"{result.model_version}.model"
         result.model.save(model_path)
-        _prune_directory(self._config.paths.artifacts_dir, keep=PRUNE_ARTIFACTS_KEEP, label="模型文件")
+        _prune_directory(self._config.paths.artifacts_dir, keep=PRUNE_ARTIFACTS_KEEP, label="模型文件", protected_paths=self._production_artifact_paths())
 
         # 构建训练曲线数据
         training_curve = [
@@ -853,18 +992,6 @@ class QlibRunner:
             "best_params_source": best_params_source,
         }
 
-        # 注册模型到版本管理
-        registry_result = self._register_model(
-            model_path=model_path,
-            model_type=model_type,
-            model_version=result.model_version,
-            metrics=result.metrics,
-            training_context=result.training_context,
-        )
-        if registry_result:
-            base_result["registry_version_id"] = registry_result.get("version_id")
-            base_result["promotion"] = registry_result.get("promotion")
-
         return base_result
 
     def _register_model(
@@ -917,20 +1044,31 @@ class QlibRunner:
         new_metrics: dict[str, float],
     ) -> dict[str, object]:
         """评估是否应该提升新模型到生产环境。"""
-        promote_threshold = 0.01  # AUC 提升 1%
+        policy = load_live_policy()
+        promote_threshold = policy.promotion_improvement
 
         new_auc = new_metrics.get("val_auc", 0.0)
+        if not math.isfinite(float(new_auc)) or new_auc < policy.min_auc or float(new_metrics.get("val_f1", 0)) <= 0:
+            return {"should_promote": False, "reason": "验证质量不足", "promoted": False, "improvement": None}
+        record = registry.get_model(new_version_id)
+        admission = production_admission(record, policy=policy) if record is not None else {"passed": False, "reasons": ["模型记录缺失"]}
+        # staging 是晋升前的正常状态，其余证据必须真实且完整。
+        reasons = [reason for reason in admission["reasons"] if reason != "模型未晋升生产"]
+        if not math.isfinite(float(new_auc)) or new_auc < policy.min_auc or float(new_metrics.get("val_f1", 0)) <= 0:
+            reasons.append("验证质量不足")
+        if reasons:
+            return {"should_promote": False, "reason": "；".join(reasons), "promoted": False, "improvement": None}
 
         # 获取当前生产模型
         production_model = registry.get_production_model()
 
-        # 没有生产模型，直接提升
-        if production_model is None:
-            registry.promote(new_version_id, "production")
+        # 首个模型或旧协议生产模型也必须先满足上述绝对准入条件。
+        if production_model is None or production_model.training_context.get("evaluation_version") != EVALUATION_VERSION:
+            promoted = registry.promote(new_version_id, "production")
             return {
                 "should_promote": True,
-                "reason": "无生产模型，直接提升",
-                "promoted": True,
+                "reason": "新模型通过可信评估与质量检查",
+                "promoted": bool(promoted),
                 "improvement": None,
             }
 
@@ -1056,7 +1194,7 @@ class QlibRunner:
     def _build_validation_summary(self, rows: list[dict[str, object]]) -> dict[str, object]:
         """构造最小验证摘要。"""
 
-        return _build_per_symbol_validation(rows)
+        return _build_per_symbol_validation(rows, label_threshold=float(self._config.model_label_threshold))
 
     def _build_walk_forward_report(self, bundle: TrainingBundle, metrics: dict[str, object]) -> dict[str, object] | None:
         """构造 walk-forward 汇总报告。
@@ -1074,7 +1212,8 @@ class QlibRunner:
         wf_config = WalkForwardConfig(
             n_folds=4,
             min_train_bars=120,
-            gap_bars=self._config.label_window_bars,
+            gap_bars=max(self._config.label_window_bars, int(self._config.holding_window_max_days * 86400000 / self._backtest_interval_ms(all_rows))),
+            label_threshold=float(self._config.model_label_threshold),
         )
         validator = WalkForwardValidator()
 
@@ -1137,12 +1276,8 @@ class QlibRunner:
         if not feature_columns:
             raise ValueError("无可用因子列")
 
-        # 末尾切出约 20% 作为验证集供早停；样本太少则不分验证集
-        val_cut = max(10, len(train_rows) // 5)
-        if len(train_rows) > val_cut * 2:
-            wf_train, wf_val = train_rows[:-val_cut], train_rows[-val_cut:]
-        else:
-            wf_train, wf_val = train_rows, []
+        # 早停验证也必须按共享时间和成熟标签隔离，不能按混币行数切尾部。
+        wf_train, wf_val = purged_validation_split(train_rows)
 
         trainer = ModelTrainer(
             model_type=model_type,
@@ -1662,8 +1797,6 @@ class QlibRunner:
         floor = float(self._config.signal_confidence_floor)
         if score >= floor:
             return "long"
-        if score <= (1 - floor):
-            return "short"
         return "flat"
 
     def _target_weight(self, signal: str, score: float) -> float:
@@ -1895,7 +2028,7 @@ class QlibRunner:
         return ["qlib_not_installed_using_minimal_fallback"]
 
 
-def _build_per_symbol_validation(rows: list[dict[str, object]]) -> dict[str, object]:
+def _build_per_symbol_validation(rows: list[dict[str, object]], *, label_threshold: float = 0.0) -> dict[str, object]:
     """为单个币种构造 per-symbol 验证摘要。
 
     用于 Validation Gate 和 Consistency Gate 的正确比较。
@@ -1907,7 +2040,7 @@ def _build_per_symbol_validation(rows: list[dict[str, object]]) -> dict[str, obj
             "avg_future_return_pct": "0.0000",
         }
     future_returns = [_to_float(item.get("future_return_pct")) for item in rows]
-    positive_rate = sum(1 for value in future_returns if value > 0) / len(future_returns)
+    positive_rate = sum(1 for value in future_returns if value > label_threshold) / len(future_returns)
     return {
         "sample_count": len(rows),
         "positive_rate": _format_float(positive_rate),

@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
+import math
 from collections import deque
 from decimal import Decimal, InvalidOperation
-from statistics import mean, pstdev
 
 
+FEATURE_ENGINE_VERSION = "causal_features_v2"
 DEFAULT_OUTLIER_POLICY = "clip"
 DEFAULT_NORMALIZATION_POLICY = "fixed_4dp"
 DEFAULT_MISSING_POLICY = "neutral_fill"
@@ -19,7 +20,7 @@ OUTLIER_POLICY_LABELS = {
 }
 NORMALIZATION_POLICY_LABELS = {
     "fixed_4dp": "统一输出四位小数字符串",
-    "zscore_by_symbol": "按单币样本做 z-score 标准化",
+    "zscore_by_symbol": "按单币当时已见历史做在线 z-score 标准化",
 }
 MISSING_POLICY_LABELS = {
     "neutral_fill": "窗口不足时用中性值补齐",
@@ -309,7 +310,11 @@ def build_feature_rows(
     """把 K 线样本转成统一因子行。"""
 
     normalized = [_normalize_candle(item) for item in candles]
-    valid_candles = [item for item in normalized if item is not None]
+    # BTC 路径与原始输入索引同步；过滤脏币种 K 线时也过滤对应 BTC 行，不能错位。
+    valid_indices = [index for index, item in enumerate(normalized) if item is not None]
+    valid_candles = [normalized[index] for index in valid_indices]
+    aligned_btc = [_valid_btc_close(btc_closes[index]) if btc_closes is not None and index < len(btc_closes) else None
+                   for index in valid_indices]
     if not valid_candles:
         return []
 
@@ -320,12 +325,6 @@ def build_feature_rows(
     rolling_volumes: list[Decimal] = []
     rolling_highs: list[Decimal] = []
     previous_close = valid_candles[0]["close"]
-
-    # btc_correlation 语义是整段序列与 BTC 的收益率相关性（只看最后 20 根），
-    # 与当前 K 线位置无关，循环外只算一次即可
-    btc_correlation = compute_btc_correlation(
-        [float(c["close"]) for c in valid_candles], btc_closes or []
-    )
 
     # 滚动窗口状态（增量维护，结果与逐根调用 _atr/_rsi/_volatility_contraction 完全一致）
     atr_period = int(profile["atr_period"])
@@ -434,6 +433,10 @@ def build_feature_rows(
         momentum_accel = _momentum_accel(rolling_closes, 6)
         volume_price_divergence = _volume_price_divergence(rolling_closes, rolling_volumes, 10)
         bull_bear_ratio = _bull_bear_ratio(valid_candles[max(0, index - 9): index + 1], 10)
+        # 当前收盘只可见前缀；21 个同步收盘价产生最近 20 个收益，不读取未来 BTC。
+        btc_window = aligned_btc[max(0, index - 20):index + 1]
+        btc_correlation = (compute_btc_correlation([float(value) for value in rolling_closes[-21:]], btc_window)
+                           if all(value is not None for value in btc_window) else 0.0)
 
         raw_row = {
             "symbol": symbol.strip().upper(),
@@ -502,15 +505,25 @@ def compute_taker_buy_ratio(volume: float, taker_buy: float | None) -> float:
 
 def compute_btc_correlation(coin_closes: list[float], btc_closes: list[float]) -> float:
     """最近 20 根该币与 BTC 的收益率相关性，值域 [-1, 1]，数据不足返回 0。"""
-    if len(coin_closes) < 3 or len(btc_closes) < 3:
+    if len(coin_closes) < 3 or len(btc_closes) != len(coin_closes):
         return 0.0
-    n = min(len(coin_closes), len(btc_closes))
-    coin_ret = [coin_closes[i] / coin_closes[i - 1] - 1 for i in range(max(1, n - 20), n) if coin_closes[i - 1]]
-    btc_ret = [btc_closes[i] / btc_closes[i - 1] - 1 for i in range(max(1, n - 20), n) if btc_closes[i - 1]]
-    if len(coin_ret) < 2 or len(btc_ret) != len(coin_ret):
+    coin = [_valid_btc_close(value) for value in coin_closes[-21:]]
+    btc = [_valid_btc_close(value) for value in btc_closes[-21:]]
+    if any(value is None for value in coin + btc):
         return 0.0
+    coin_ret = [coin[index] / coin[index - 1] - 1 for index in range(1, len(coin))]
+    btc_ret = [btc[index] / btc[index - 1] - 1 for index in range(1, len(btc))]
     corr = _compute_ic(coin_ret, btc_ret)
     return round(corr or 0.0, 4)
+
+
+def _valid_btc_close(value: object) -> float | None:
+    """不可用的同步价格保持缺失，不能把不同时点的收益拼接为相关性。"""
+    try:
+        price = float(value)
+        return price if math.isfinite(price) and price > 0 else None
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _apply_feature_protocol(
@@ -659,18 +672,16 @@ def _format_decimal(value: Decimal) -> str:
 
 
 def _zscore_series(values: list[Decimal]) -> list[Decimal]:
-    """按单币样本把一列值转成 z-score。"""
-
-    if not values:
-        return []
-    float_values = [float(item) for item in values]
-    if len(float_values) < 2:
-        return [Decimal("0") for _ in values]
-    std = pstdev(float_values)
-    if std == 0:
-        return [Decimal("0") for _ in values]
-    avg = mean(float_values)
-    return [Decimal(str((item - avg) / std)) for item in float_values]
+    """Welford 在线人口方差：每行只使用直到本行的历史，首行或常量前缀为零。"""
+    scores: list[Decimal] = []
+    average = second_moment = Decimal("0")
+    for count, value in enumerate(values, start=1):
+        delta = value - average
+        average += delta / Decimal(count)
+        second_moment += delta * (value - average)
+        variance = max(second_moment / Decimal(count), Decimal("0"))
+        scores.append((value - average) / variance.sqrt() if variance else Decimal("0"))
+    return scores
 
 
 def _to_decimal(value: object, *, default: Decimal) -> Decimal:

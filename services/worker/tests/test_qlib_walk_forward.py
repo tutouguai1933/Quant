@@ -29,6 +29,7 @@ def _sample_rows(count: int, *, base_ts: int = 1712016000000) -> list[dict]:
         rows.append({
             "open_time": base_ts + i * step_ms,
             "generated_at": base_ts + i * step_ms,
+            "label_end_at": base_ts + i * step_ms,
             "future_return_pct": (i % 3 - 1) * 0.5,  # -0.5, 0.0, 0.5, ...
             "label": "buy" if i % 3 == 2 else ("sell" if i % 3 == 0 else "watch"),
             "is_trainable": True,
@@ -182,6 +183,7 @@ def test_run_with_model_predictor_uses_predictions():
         rows.append({
             "open_time": 1712000000000 + i * 3600000,
             "generated_at": 1712000000000 + i * 3600000,
+            "label_end_at": 1712000000000 + i * 3600000,
             "future_return_pct": str((i % 10) - 4),
         })
 

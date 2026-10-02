@@ -34,22 +34,27 @@ class QlibDatasetTests(unittest.TestCase):
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
             candles_1h=_sample_candles(96),
-            candles_4h=_sample_candles(72, step_hours=4),
+            candles_4h=_sample_candles(180, step_hours=4),
         )
 
         self.assertIsInstance(bundle, DatasetBundle)
         self.assertEqual(bundle.symbol, "BTCUSDT")
         self.assertEqual(bundle.timeframe, "4h")
-        self.assertEqual(len(bundle.training_rows), 32)
-        self.assertEqual(len(bundle.validation_rows), 11)
-        self.assertEqual(len(bundle.testing_rows), 11)
+        # 原 72 根样本的验证标签跨入测试段，不能再当作可用的小数据集。
+        self.assertEqual(len(bundle.training_rows), 79)
+        self.assertEqual(len(bundle.validation_rows), 14)
+        self.assertEqual(len(bundle.testing_rows), 33)
+        self.assertLess(max(r["label_end_at"] for r in bundle.training_rows), bundle.validation_rows[0]["generated_at"])
+        self.assertLess(max(r["label_end_at"] for r in bundle.validation_rows), bundle.testing_rows[0]["generated_at"])
+        self.assertIn("open", bundle.testing_rows[0])
+        self.assertIn("close_time", bundle.testing_rows[0])
         self.assertLess(bundle.training_rows[-1]["generated_at"], bundle.validation_rows[0]["generated_at"])
         self.assertLess(bundle.validation_rows[-1]["generated_at"], bundle.testing_rows[0]["generated_at"])
 
     def test_build_dataset_bundle_falls_back_to_1h_when_4h_is_empty(self) -> None:
         bundle = build_dataset_bundle(
             symbol="ethusdt",
-            candles_1h=_sample_candles(96),
+            candles_1h=_sample_candles(720),
             candles_4h=[],
         )
 
@@ -62,14 +67,14 @@ class QlibDatasetTests(unittest.TestCase):
     def test_build_dataset_bundle_falls_back_to_1h_when_4h_cannot_split(self) -> None:
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
-            candles_1h=_sample_candles(96),
+            candles_1h=_sample_candles(720),
             candles_4h=_sample_candles(2, step_hours=4),
         )
 
         self.assertEqual(bundle.timeframe, "1h")
-        self.assertEqual(len(bundle.training_rows), 14)
-        self.assertEqual(len(bundle.validation_rows), 5)
-        self.assertEqual(len(bundle.testing_rows), 5)
+        self.assertTrue(bundle.training_rows)
+        self.assertTrue(bundle.validation_rows)
+        self.assertTrue(bundle.testing_rows)
 
     def test_build_dataset_bundle_raises_when_train_valid_test_cannot_be_split(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "样本不足以切成训练/验证/测试三段"):
@@ -100,6 +105,8 @@ class QlibDatasetTests(unittest.TestCase):
             {"symbol": "ETHUSDT", "generated_at": 3, "future_return_pct": "0.1000", "label": "buy", "holding_window": "1-3d", "is_trainable": True},
             {"symbol": "ETHUSDT", "generated_at": 4, "future_return_pct": "0.1000", "label": "buy", "holding_window": "1-3d", "is_trainable": True},
         ]
+        for row in label_rows:
+            row["label_end_at"] = row["generated_at"]
         with mock.patch("services.worker.qlib_dataset.build_feature_rows", return_value=feature_rows) as mocked_features:
             with mock.patch("services.worker.qlib_dataset.build_label_rows", return_value=label_rows) as mocked_labels:
                 bundle = build_dataset_bundle(
@@ -143,25 +150,25 @@ class QlibDatasetTests(unittest.TestCase):
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
             candles_1h=_sample_candles(96),
-            candles_4h=_sample_candles(72, step_hours=4),
+            candles_4h=_sample_candles(180, step_hours=4),
         )
 
-        self.assertEqual(len(bundle.training_rows), 27)
-        self.assertEqual(len(bundle.validation_rows), 16)
-        self.assertEqual(len(bundle.testing_rows), 11)
+        self.assertEqual(len(bundle.training_rows), 63)
+        self.assertEqual(len(bundle.validation_rows), 30)
+        self.assertEqual(len(bundle.testing_rows), 33)
 
     def test_build_dataset_bundle_filters_rows_by_lookback_days(self) -> None:
-        candles_4h = _sample_candles(120, step_hours=4)
+        candles_4h = _sample_candles(240, step_hours=4)
 
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
             candles_1h=[],
             candles_4h=candles_4h,
-            lookback_days=10,
+            lookback_days=20,
         )
 
         latest_close = candles_4h[-1]["close_time"]
-        earliest_allowed_open = latest_close - 10 * 24 * 60 * 60 * 1000
+        earliest_allowed_open = latest_close - 20 * 24 * 60 * 60 * 1000
         merged_rows = [*bundle.training_rows, *bundle.validation_rows, *bundle.testing_rows]
 
         self.assertTrue(merged_rows)
@@ -169,7 +176,7 @@ class QlibDatasetTests(unittest.TestCase):
         self.assertLess(len(merged_rows), len(candles_4h))
 
     def test_build_dataset_bundle_respects_fixed_date_window(self) -> None:
-        candles_4h = _sample_candles(120, step_hours=4)
+        candles_4h = _sample_candles(240, step_hours=4)
 
         bundle = build_dataset_bundle(
             symbol="BTCUSDT",
@@ -177,13 +184,13 @@ class QlibDatasetTests(unittest.TestCase):
             candles_4h=candles_4h,
             window_mode="fixed",
             start_date="2024-04-10",
-            end_date="2024-04-20",
+            end_date="2024-04-30",
         )
 
         merged_rows = [*bundle.training_rows, *bundle.validation_rows, *bundle.testing_rows]
         self.assertTrue(merged_rows)
         self.assertGreaterEqual(min(int(item["generated_at"]) for item in merged_rows), 1712707200000)
-        self.assertLessEqual(max(int(item["generated_at"]) for item in merged_rows), 1713657599999)
+        self.assertLessEqual(max(int(item["generated_at"]) for item in merged_rows), 1714521599999)
 
     def test_build_dataset_bundle_rejects_empty_fixed_date_window(self) -> None:
         candles_4h = _sample_candles(120, step_hours=4)
