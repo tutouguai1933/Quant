@@ -23,17 +23,18 @@ test("真实页面包含独立 AI 状态与准入节点，脚本及状态接口�
 });
 
 test("自动刷新会更新页面准入状态，恢复真实数据后仍保持阻断提示", async ({ page }) => {
+  const initial = page.waitForResponse(response => response.url().includes("/signals/research/direction-short-status") && response.request().method() === "GET");
   await loginAsAdmin(page, "/tasks");
+  const response = await initial;
+  expect(response.ok()).toBeTruthy();
+  const body = await response.json();
   await expect(page.getByTestId("direction-model-admission")).toBeVisible();
   await page.clock.install();
-  await page.route("**/signals/research/direction-short-status*", async route => {
-    const response = await route.fetch();
-    const body = await response.json();
-    const item = body.item || body.data;
-    item.market.execution_guard = { passed: true, reasons: [] };
-    item.market.prediction_semantics = "downside_probability";
-    await route.fulfill({ response, json: body });
-  });
+  const item = body.item || body.data;
+  item.market.execution_guard = { passed: true, reasons: [] };
+  item.market.prediction_semantics = "downside_probability";
+  // 使用刚读取的真实返回验证状态变化，避免虚拟时钟同时触发额外网络等待。
+  await page.route("**/signals/research/direction-short-status*", route => route.fulfill({ status: 200, json: body }));
   const updated = page.waitForResponse(response => response.url().includes("/signals/research/direction-short-status"));
   await page.clock.runFor(61000);
   await updated;
