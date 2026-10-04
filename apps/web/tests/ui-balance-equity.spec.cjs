@@ -39,3 +39,19 @@ test("账户读取失败时不显示部分余额为总额，刷新恢复真实�
   await page.reload();
   await expect(page.getByTestId("balance-account-total")).toContainText("USDT");
 });
+
+test("旧分类接口失败仍保留完整资产，未登录接口不泄露总额", async ({page}) => {
+  await page.route("**/api/control/balances", route => route.fulfill({
+    status: 503, json: {data: null, error: {code: "unavailable", message: "分类信息暂不可用"}, meta: {}}
+  }));
+  await loginAsAdmin(page, "/balances");
+  await expect(page.getByTestId("balance-account-total")).toContainText("USDT");
+  await expect(page.getByRole("cell", {name: "DOGE", exact: true})).toBeVisible();
+  await expect(page.getByRole("cell", {name: "SHIB", exact: true})).toBeVisible();
+  const card = page.getByText("现货可交易价值", {exact: true}).locator("..");
+  await expect(card).toContainText("暂不可用");
+  const response = await page.request.get(WEB_BASE_URL + "/api/control/balances/summary", {headers: {authorization: "Bearer invalid-check-token"}});
+  const body = await response.json();
+  expect(body.data).toBeNull();
+  expect(body.error.code).toBe("unauthorized");
+});

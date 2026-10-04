@@ -111,3 +111,17 @@ def test_summary_non_live_never_reads_real_accounts(monkeypatch):
     result = balances.get_balance_summary(authorization="Bearer test")
     assert result["data"]["total_equity"] is None
     assert result["data"]["status"] == "unavailable"
+
+
+def test_default_lazy_account_client_exposes_equity_reads(monkeypatch):
+    """默认惰性客户端必须把两类账户读取转接到真实客户端。"""
+    from services.api.app.adapters.binance import account_client
+    from services.api.app.services.balance_equity_service import BalanceEquityService
+    client = Mock()
+    client.get_spot_account.return_value = {"balances": [{"asset": "USDT", "free": "5", "locked": "0"}]}
+    client.get_futures_account.return_value = {"totalMarginBalance": "9.4", "totalUnrealizedProfit": "0"}
+    monkeypatch.setattr(account_client, "create_binance_account_client", lambda: client)
+    result = BalanceEquityService(market_client=Mock()).get_summary()
+    assert result["total_equity"] == "14.4"
+    client.get_spot_account.assert_called_once()
+    client.get_futures_account.assert_called_once()

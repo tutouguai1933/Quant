@@ -209,6 +209,14 @@ class LazyBinanceAccountClient:
     def base_url(self) -> str:
         return self._client().base_url
 
+    def get_spot_account(self) -> dict:
+        """按当前配置转接严格现货读取。"""
+        return self._client().get_spot_account()
+
+    def get_futures_account(self) -> dict:
+        """按当前配置转接只读合约权益。"""
+        return self._client().get_futures_account()
+
     def get_balances(self) -> list[dict[str, object]]:
         return self._client().get_balances()
 
