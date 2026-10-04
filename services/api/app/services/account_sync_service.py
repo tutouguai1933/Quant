@@ -155,7 +155,8 @@ class AccountSyncService:
 
         settings = Settings.from_env()
         balances = self._call_client_list("get_balances")
-        normalized = [normalize_balance_row(row) for row in balances[:limit]]
+        normalized = [normalize_balance_row(row) for row in balances]
+        normalized = [row for row in normalized if _read_decimal(row["available"]) + _read_decimal(row["locked"]) > 0][:max(0, limit)]
         return self._annotate_balances(normalized, settings=settings)
 
     def list_orders(self, limit: int = 100, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:

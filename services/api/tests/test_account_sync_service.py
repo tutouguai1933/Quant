@@ -125,6 +125,10 @@ class ExplodingAccountSyncService:
 
 
 class FakeSyncService:
+    def list_balances(self, limit=100):
+        """模拟余额来自执行器，不能混入实盘账户。"""
+        return [{"asset": "USDT", "available": "12.5000000000", "tradeStatus": "tradable"}]
+
     def list_orders(self, limit: int = 100) -> list[dict[str, object]]:
         return [{"id": "ft-1", "symbol": "BTCUSDT", "status": "filled"}]
 
@@ -404,10 +408,10 @@ class AccountSyncServiceTests(unittest.TestCase):
         self.assertEqual(orders_result[0]["status"], "NEW")
         self.assertEqual(orders_result[0]["lifecycle"], "pending_exit")
 
-    def test_dry_run_mode_uses_binance_only_for_balances(self) -> None:
+    def test_dry_run_mode_uses_freqtrade_for_balances(self) -> None:
         with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):
             service = AccountSyncService(FakeBinanceAccountClient(), market_client=FakeBalanceMarketClient())
-            with patch.object(balances, "account_sync_service", service), patch.object(
+            with patch.object(balances, "sync_service", FakeSyncService()), patch.object(balances, "account_sync_service", ExplodingAccountSyncService()), patch.object(
                 orders, "sync_service", FakeSyncService()
             ), patch.object(
                 orders, "account_sync_service", ExplodingAccountSyncService()
@@ -418,7 +422,7 @@ class AccountSyncServiceTests(unittest.TestCase):
                 order_response = orders.list_orders(limit=5)
                 position_response = positions.list_positions(limit=5)
 
-        self.assertEqual(balance_response["meta"]["source"], "binance-account-sync")
+        self.assertEqual(balance_response["meta"]["source"], "freqtrade-sync")
         self.assertEqual(balance_response["data"]["items"][0]["available"], "12.5000000000")
         self.assertEqual(balance_response["data"]["items"][0]["tradeStatus"], "tradable")
         self.assertEqual(order_response["meta"]["source"], "freqtrade-sync")
@@ -626,7 +630,7 @@ class AccountSyncServiceTests(unittest.TestCase):
             def list_balances(self, limit: int = 100) -> list[dict[str, object]]:
                 raise RuntimeError("account sync unavailable")
 
-        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "dry-run"}):
+        with patch.dict(os.environ, {"QUANT_RUNTIME_MODE": "live", "BINANCE_API_KEY": "test-key", "BINANCE_API_SECRET": "test-secret"}):
             with patch.object(balances, "account_sync_service", UnavailableAccountSyncService()):
                 response = balances.list_balances(limit=5)
 

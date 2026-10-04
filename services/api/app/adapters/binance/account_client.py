@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 from decimal import Decimal
 from dataclasses import dataclass
 from time import time
@@ -15,7 +16,7 @@ from urllib.parse import urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from services.api.app.core.settings import Settings
+from services.api.app.core.settings import Settings, DEFAULT_BINANCE_FUTURES_BASE_URL
 
 
 @dataclass(slots=True)
@@ -52,6 +53,29 @@ class BinanceAccountClient:
         """判断当前实例是否具备可签名请求所需的凭据。"""
 
         return bool(self.api_key and self.api_secret)
+
+    def get_spot_account(self) -> dict:
+        """严格读取现货快照，失败不能变成空余额。"""
+        if not self._has_credentials():
+            raise ValueError("现货账户凭据未配置")
+        result = self._signed_get("/api/v3/account").body
+        if not isinstance(result, dict) or not isinstance(result.get("balances"), list):
+            raise ValueError("现货账户响应不完整")
+        return result
+
+    def get_futures_account(self) -> dict:
+        """只读U本位合约权益，沿用当前账户的签名与代理。"""
+        client = BinanceAccountClient(
+            api_key=self.api_key, api_secret=self.api_secret,
+            base_url=os.getenv("QUANT_BINANCE_FUTURES_BASE_URL", DEFAULT_BINANCE_FUTURES_BASE_URL),
+            timeout_seconds=self._timeout_seconds, opener=self._opener,
+        )
+        if not client._has_credentials():
+            raise ValueError("合约账户凭据未配置")
+        result = client._signed_get("/fapi/v3/account").body
+        if not isinstance(result, dict) or "totalMarginBalance" not in result:
+            raise ValueError("合约账户响应不完整")
+        return result
 
     def get_balances(self) -> list[dict[str, object]]:
         """读取账户资产余额。"""

@@ -1482,6 +1482,7 @@ const CACHE_TTL_MS = 15_000;
 
 // 需要实时性的接口不缓存（轮询、任务状态等）
 const NO_CACHE_PATHS: string[] = [
+  "/balances",
   "/signals/research/runtime",
   "/signals/research/direction-short-status",
   "/tasks/automation",
@@ -1512,7 +1513,8 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
     responseCache.delete(requestKey);
   }
 
-  if (inflightRequests.has(requestKey)) {
+  const accountRequest = path.startsWith("/balances");
+  if (!accountRequest && inflightRequests.has(requestKey)) {
     return inflightRequests.get(requestKey)! as Promise<ApiEnvelope<T>>;
   }
 
@@ -1598,9 +1600,9 @@ export async function fetchJson<T>(path: string, token?: string, signal?: AbortS
     };
   })();
 
-  inflightRequests.set(requestKey, requestPromise);
+  if (!accountRequest) inflightRequests.set(requestKey, requestPromise);
   requestPromise.finally(() => {
-    inflightRequests.delete(requestKey);
+    if (!accountRequest) inflightRequests.delete(requestKey);
   });
   return requestPromise;
 }
@@ -1863,6 +1865,21 @@ export async function getDirectionShortStatus(token?: string, signal?: AbortSign
     };
   }
   return response;
+}
+
+export type BalanceEquitySummary = {
+  status: string;
+  total_equity: string | null;
+  spot_equity: string | null;
+  futures_equity: string | null;
+  assets: Array<{ asset: string; available: string; locked: string; price_usdt: string | null; equity_usdt: string | null }>;
+  issues: string[];
+  scope: string;
+};
+
+/* 账户权益由后端统一估值，缺一个账户时不能把剩余金额当作总额。 */
+export async function getBalanceEquitySummary(signal?: AbortSignal): Promise<ApiEnvelope<BalanceEquitySummary>> {
+  return fetchJson<BalanceEquitySummary>("/balances/summary", undefined, signal);
 }
 
 export async function listBalances(signal?: AbortSignal): Promise<

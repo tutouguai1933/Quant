@@ -12,7 +12,7 @@ import {
   TerminalCard,
   MetricCard,
 } from "../../components/terminal";
-import { listBalances, listMarketSnapshots } from "../../lib/api";
+import { listBalances, getBalanceEquitySummary, type BalanceEquitySummary } from "../../lib/api";
 import { LoadingBanner } from "../../components/loading-banner";
 
 interface BalanceItem {
@@ -45,6 +45,8 @@ export default function BalancesPage() {
   const [session, setSession] = useState<{ isAuthenticated: boolean }>({
     isAuthenticated: false,
   });
+  const [classificationAvailable, setClassificationAvailable] = useState(false);
+  const [equity, setEquity] = useState<BalanceEquitySummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [model, setModel] = useState<BalancesModel>({
     items: [],
@@ -68,34 +70,33 @@ export default function BalancesPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     // 并行获取余额和市场价格
     Promise.allSettled([
       listBalances(controller.signal),
-      listMarketSnapshots(),
+      getBalanceEquitySummary(controller.signal),
     ])
-      .then(([balancesRes, marketRes]) => {
+      .then(([balancesRes, equityRes]) => {
         clearTimeout(timeoutId);
 
-        // 构建价格映射
+        const summary = equityRes.status === "fulfilled" && !equityRes.value.error ? equityRes.value.data : null;
+        setEquity(summary);
+        // 估值取完整现货快照，不受策略行情列表或展示分页影响。
         const priceMap = new Map<string, number>();
-        if (marketRes.status === "fulfilled" && !marketRes.value.error) {
-          marketRes.value.data.items.forEach((item) => {
-            priceMap.set(item.symbol, parseFloat(item.last_price) || 0);
-          });
+        for (const item of summary?.assets ?? []) {
+          if (item.price_usdt !== null) priceMap.set(item.asset, Number(item.price_usdt));
         }
 
-        // USDT价格固定为1
-        priceMap.set("USDT", 1);
-        // BNB价格（如果没获取到）
-        if (!priceMap.has("BNBUSDT")) {
-          priceMap.set("BNB", priceMap.get("BNBUSDT") || 0);
-        }
+        if (summary || (balancesRes.status === "fulfilled" && !balancesRes.value.error)) {
+          const balances = balancesRes.status === "fulfilled" && !balancesRes.value.error ? balancesRes.value.data.items : [];
+          const metadata = new Map(balances.map(item => [item.asset, item]));
+          const rawItems = summary?.assets.length ? summary.assets.map(item => ({
+            id: `balance-${item.asset.toLowerCase()}`, tradeStatus: "untracked", tradeHint: "完整账户余额",
+            sellableQuantity: "0", dustQuantity: "0", ...metadata.get(item.asset), ...item,
+          })) : balances;
 
-        if (balancesRes.status === "fulfilled" && !balancesRes.value.error) {
-          const rawItems = balancesRes.value.data.items;
-
+          setClassificationAvailable(rawItems.every(item => ["tradable", "dust", "locked"].includes(item.tradeStatus)));
           // 计算每个资产的USD价值
           const itemsWithPrice: BalanceWithPrice[] = rawItems.map((item) => {
             const available = parseFloat(item.available) || 0;
@@ -135,8 +136,8 @@ export default function BalancesPage() {
 
           setModel({
             items: itemsWithPrice,
-            source: balancesRes.value.data.source,
-            truthSource: balancesRes.value.data.truthSource,
+            source: "binance-account-equity",
+            truthSource: "binance",
             totalValue,
             tradableValue,
             dustValue,
@@ -175,32 +176,37 @@ export default function BalancesPage() {
       {/* 总价值概览 */}
       <TerminalCard title="资产总览">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard
+          <div data-testid="balance-account-total"><MetricCard
             label="总资产价值"
-            value={`$${model.totalValue.toFixed(2)}`}
+            value={equity?.total_equity != null ? `${Number(equity.total_equity).toFixed(2)} USDT` : "暂不可用"}
+            colorType={equity?.status === "available" ? "positive" : "neutral"}
+          /></div>
+          <MetricCard label="现货权益" value={equity?.spot_equity != null ? `${Number(equity.spot_equity).toFixed(2)} USDT` : "暂不可用"} colorType="neutral" />
+          <MetricCard label="合约权益" value={equity?.futures_equity != null ? `${Number(equity.futures_equity).toFixed(2)} USDT` : "暂不可用"} colorType="neutral" />
+          <MetricCard
+            label="现货可交易价值"
+            value={classificationAvailable && equity?.spot_equity != null ? `${model.tradableValue.toFixed(2)} USDT` : "暂不可用"}
             colorType="positive"
           />
           <MetricCard
-            label="可交易价值"
-            value={`$${model.tradableValue.toFixed(2)}`}
-            colorType="positive"
-          />
-          <MetricCard
-            label="零头价值"
-            value={`$${model.dustValue.toFixed(2)}`}
+            label="现货零头价值"
+            value={classificationAvailable && equity?.spot_equity != null ? `${model.dustValue.toFixed(2)} USDT` : "暂不可用"}
             colorType="neutral"
           />
           <MetricCard
-            label="资产数量"
+            label="现货资产数量"
             value={String(nonZeroItems.length)}
             colorType="neutral"
           />
         </div>
 
+        <p data-testid="balance-equity-status" className="mt-3 text-xs text-[var(--terminal-muted)]">
+          {equity?.status === "available" ? "总额包含完整现货和U本位合约权益（含合约浮盈），不含资金及理财账户。" : equity?.issues?.join("；") || "账户权益读取失败，总额暂不可用。"}
+        </p>
         {/* 资产分布 */}
-        {nonZeroItems.length > 0 && (
+        {nonZeroItems.length > 0 && equity?.spot_equity != null && (
           <div className="mt-4 pt-4 border-t border-[var(--terminal-border)]/30">
-            <div className="text-xs text-[var(--terminal-muted)] mb-2">资产分布</div>
+            <div className="text-xs text-[var(--terminal-muted)] mb-2">现货资产分布</div>
             <div className="h-4 rounded-full bg-[var(--terminal-border)]/30 overflow-hidden flex">
               {nonZeroItems.map((item) => {
                 const percentage = (item.usdValue / model.totalValue) * 100;
@@ -286,7 +292,7 @@ export default function BalancesPage() {
                       {item.asset === "USDT" ? "$1.00" : item.price > 0 ? `$${item.price.toFixed(4)}` : "--"}
                     </td>
                     <td className="py-2 px-3 text-right text-[var(--terminal-text)] font-mono">
-                      ${item.usdValue.toFixed(2)}
+                      {item.price > 0 ? `${item.usdValue.toFixed(2)} USDT` : "--"}
                     </td>
                     <td className="py-2 px-3 text-center">
                       <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${

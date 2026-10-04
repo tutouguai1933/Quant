@@ -65,6 +65,10 @@ class BinanceMarketClient:
 
         return default
 
+    def get_prices(self) -> list[dict[str, object]]:
+        """读取轻量全市场现价，账户估值不受策略交易对名单限制。"""
+        return self._safe_public_get(f"{self.base_url}/api/v3/ticker/price", [])
+
     def get_tickers(self, symbols: tuple[str, ...] | None = None) -> list[dict[str, object]]:
         """读取 24 小时行情汇总。"""
 
