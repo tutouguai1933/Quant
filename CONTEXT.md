@@ -527,3 +527,9 @@ state['consecutive_failure_count']=0
 print(json.dumps(state,indent=2))
 \" > /tmp/as.json && mv /tmp/as.json ~/Quant/infra/data/runtime/automation_state.json"
 ```
+
+
+## 2026-10-08 自动训练模型等待修复
+- 原因：新研究模型的预测混用了旧生产模型的准入原因；当前新模型验证质量不足，仍禁止交易。
+- 修复：准入原因绑定实际模型；无合格模型时继续研究、显示等待，保留真实风控拦阻。历史明确区分自动训练策略与 RSI 参考快照。
+- 验证：相关后端测试 145 项通过，前端类型检查通过；正在部署并验证真实页面。

@@ -61,6 +61,8 @@ class ResearchFactoryService:
         return {
             "status": str(snapshot.get("status", "unavailable")),
             "backend": str(snapshot.get("backend", "qlib-fallback")),
+            "strategy_family": "automation_ml",
+            "model_admission": dict(inference.get("model_admission") or {}),
             "config_alignment": dict(latest.get("config_alignment") or {}),
             "factor_protocol": dict(report.get("factor_protocol") or {}),
             "overview": {

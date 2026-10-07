@@ -181,12 +181,17 @@ export type AutomationCycleCandidate = {
 export type AutomationCycleTaskSummary = {
   status: string;
   duration_seconds: number;
+  skipped?: boolean;
+  message?: string;
 };
 
 export type AutomationCycleRecord = {
   recorded_at: string;
   status: string;
   display_status: string;
+  strategy_family?: string;
+  display_message?: string;
+  waiting_reason?: string;
   mode: string;
   recommended_symbol: string;
   next_action: string;

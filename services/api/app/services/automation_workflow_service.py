@@ -497,6 +497,14 @@ class AutomationWorkflowService:
             recommended_symbol = ""
             recommended_strategy_id = 0
             cycle_message = "当前处于手动模式，请先人工确认再继续。"
+        elif not active_candidate and bool(dict(priority_queue_payload.get("summary") or {}).get("model_waiting")):
+            # 全局AI模型尚未合格属于研究等待，不把单币当作执行故障重复告警。
+            next_action = "continue_research"
+            dispatch_status = "waiting"
+            failure_reason = "awaiting_model"
+            recommended_symbol = ""
+            recommended_strategy_id = 0
+            cycle_message = str(dict(priority_queue_payload.get("summary") or {}).get("detail") or "等待合格AI模型")
         elif not active_candidate:
             next_action = "continue_dry_run" if mode == "auto_live" else (next_action or "continue_research")
             dispatch_status = "blocked"
@@ -618,6 +626,9 @@ class AutomationWorkflowService:
         summary = {
             "status": status,
             "mode": mode,
+            "source": source,
+            "strategy_family": "automation_ml",
+            "waiting_reason": "awaiting_model" if failure_reason == "awaiting_model" else "",
             "recommended_symbol": recommended_symbol,
             "recommended_strategy_id": recommended_strategy_id,
             "next_action": next_action,

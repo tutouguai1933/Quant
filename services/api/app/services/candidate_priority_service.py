@@ -25,6 +25,11 @@ class CandidatePriorityService:
         source_items = self._resolve_source_items(report=report, candidate_by_symbol=candidate_by_symbol)
         queue_items: list[dict[str, object]] = []
         first_ready_symbol = ""
+        admission = report.get("model_admission")
+        # 仅显式全局准入失败进入等待；旧报告缺字段仍沿用原候选门禁。
+        model_waiting = isinstance(admission, dict) and admission.get("passed") is False
+        model_reasons = [str(reason).strip() for reason in (admission.get("reasons") or []) if str(reason).strip()] if model_waiting else []
+        waiting_detail = "等待合格AI模型" + (f"：{'；'.join(model_reasons)}" if model_reasons else "。")
 
         for index, row in enumerate(source_items, start=1):
             item = self._build_queue_item(
@@ -32,6 +37,17 @@ class CandidatePriorityService:
                 priority_rank=index,
                 candidate_scope=candidate_scope,
             )
+            if model_waiting:
+                item.update(
+                    queue_status="waiting_model", recommended_stage="research", requested_stage="research",
+                    allowed_to_dry_run=False, allowed_to_live=False, forced_for_validation=False,
+                    forced_reason="", next_action="continue_research", target_page="/research",
+                    review_status="waiting_model", blocked_by="model_admission",
+                    why_selected="", why_blocked="", why_waiting=waiting_detail, skip_reason=waiting_detail,
+                    failure_reasons=model_reasons,
+                    dry_run_gate={"status": "blocked", "reasons": [waiting_detail]},
+                    live_gate={"status": "blocked", "reasons": [waiting_detail]},
+                )
             if item["queue_status"] == "ready" and not first_ready_symbol:
                 first_ready_symbol = str(item.get("symbol", ""))
             queue_items.append(item)
@@ -45,10 +61,10 @@ class CandidatePriorityService:
                     continue
                 item["skip_reason"] = f"前面还有更高优先级候选 {first_ready_symbol}。"
 
-        return {
-            "items": queue_items,
-            "summary": self._build_priority_summary(queue_items=queue_items),
-        }
+        summary = self._build_priority_summary(queue_items=queue_items)
+        if model_waiting:
+            summary.update(model_waiting=True, headline="等待合格AI模型", detail=waiting_detail, focus_symbol="")
+        return {"items": queue_items, "summary": summary}
 
     def build_dispatch_queue(
         self,
@@ -77,7 +93,11 @@ class CandidatePriorityService:
             recommended_stage = str(row.get("recommended_stage", "research") or "research")
             symbol = str(row.get("symbol", "")).strip().upper()
 
-            if normalized_mode == "manual":
+            if row.get("queue_status") == "waiting_model":
+                dispatch_status = "waiting"
+                dispatch_code = "awaiting_model"
+                dispatch_reason = str(row.get("why_waiting") or "等待合格AI模型。")
+            elif normalized_mode == "manual":
                 if row.get("queue_status") == "ready":
                     dispatch_status = "skipped"
                     dispatch_code = "manual_mode"
@@ -143,14 +163,14 @@ class CandidatePriorityService:
             row["dispatch_reason"] = dispatch_reason
             dispatch_items.append(row)
 
-        return {
-            "items": dispatch_items,
-            "summary": self._build_dispatch_summary(
-                items=dispatch_items,
-                mode=normalized_mode,
-                armed_symbol=target_armed_symbol,
-            ),
-        }
+        summary = self._build_dispatch_summary(items=dispatch_items, mode=normalized_mode, armed_symbol=target_armed_symbol)
+        source_summary = dict(priority_queue.get("summary") or {})
+        if source_summary.get("model_waiting"):
+            # 没有单币候选时也传递全局等待，不能制造某个币被淘汰的误导。
+            summary.update(model_waiting=True, dispatch_status="waiting", dispatch_code="awaiting_model",
+                           headline="等待合格AI模型", detail=str(source_summary.get("detail") or "等待合格AI模型。"),
+                           active_symbol="", next_symbol="", focus_symbol="")
+        return {"items": dispatch_items, "summary": summary}
 
     def _resolve_source_items(
         self,
@@ -310,6 +330,7 @@ class CandidatePriorityService:
             "next_symbol": next_symbol,
             "ready_count": len(ready_items),
             "blocked_count": len(blocked_items),
+            "waiting_model_count": sum(item.get("queue_status") == "waiting_model" for item in queue_items),
         }
 
     def _build_dispatch_summary(
@@ -346,6 +367,7 @@ class CandidatePriorityService:
             "ready_count": len(candidate_items),
             "skipped_count": len(skipped_items),
             "blocked_count": len(blocked_items),
+            "waiting_model_count": sum(item.get("dispatch_code") == "awaiting_model" for item in items),
             "mode": mode,
         }
 

@@ -78,7 +78,9 @@ class AutomationCycleHistoryService:
             "candidates": candidates,
             "rsi_snapshot": rsi_snapshot,
             "task_summary": task_summary,
-        }
+            "strategy_family": str(summary.get("strategy_family") or "automation_ml"),
+            "source": str(summary.get("source") or ""),
+            "waiting_reason": str(summary.get("waiting_reason") or ""),        }
 
         with self._lock:
             self._records.insert(0, record)
@@ -93,6 +95,8 @@ class AutomationCycleHistoryService:
             return "succeeded"
         if raw_status in ("failed", "attention_required"):
             return "failed"
+        if failure_reason == "awaiting_model":
+            return "waiting_model"
         if failure_reason == "candidate_blocked":
             return "blocked"
         if failure_reason == "cycle_cooldown_active":
@@ -202,6 +206,8 @@ class AutomationCycleHistoryService:
                 task_summary[task_name] = {
                     "status": str(task.get("status", "")),
                     "duration_seconds": self._compute_duration(task),
+                    "skipped": bool(task.get("skipped")),
+                    "message": str(task.get("message") or ""),
                 }
 
         return task_summary
@@ -231,7 +237,33 @@ class AutomationCycleHistoryService:
         # 每次都从文件重新加载，确保获取最新数据
         self._load()
         with self._lock:
-            return list(self._records[:limit])
+            return [self._present_record(record) for record in self._records[:limit]]
+
+    @staticmethod
+    def _present_record(record: dict[str, Any]) -> dict[str, Any]:
+        """历史只读规范呈现：模型等待与真实风控拦阻分开，保留原始消息。"""
+        result = dict(record)
+        result.setdefault("strategy_family", "automation_ml")
+        reason = str(record.get("failure_reason") or "")
+        text = str(record.get("message") or "")
+        candidates = [item for item in record.get("candidates", []) if isinstance(item, dict)]
+        messages = [text]
+        for item in candidates:
+            messages.extend(str(value) for value in item.get("dry_run_gate_reasons", []))
+            messages.extend(str(value) for value in item.get("live_gate_reasons", []))
+            messages.append(str(item.get("blocked_reason") or ""))
+        model_markers = ("模型使用旧评估", "模型未晋升生产", "没有合格生产模型",
+                         "模型验证质量不足", "模型缺少训练输入协议", "自动化模型尚未通过生产准入")
+        risk_markers = ("risk_blocked", "风险预算", "风控", "资金不足", "insufficient_balance", "kill_switch")
+        has_risk = any(marker in message for marker in risk_markers for message in messages)
+        legacy_wait = reason == "candidate_blocked" and any(
+            marker in message for marker in model_markers for message in messages)
+        actual_failure = str(record.get("status")) in {"failed", "attention_required"}
+        if result["strategy_family"] == "automation_ml" and not actual_failure and not has_risk and (reason == "awaiting_model" or legacy_wait):
+            result["display_status"] = "waiting_model"
+            result["waiting_reason"] = "awaiting_model"
+            result["display_message"] = text if reason == "awaiting_model" else "当时没有合格AI模型，候选未执行；属于自动训练策略的等待状态"
+        return result
 
     def get_summary(self) -> dict[str, Any]:
         """获取历史记录摘要。"""
@@ -258,7 +290,7 @@ class AutomationCycleHistoryService:
             waiting_count = 0
 
             for r in self._records:
-                display_status = r.get("display_status", "waiting")
+                display_status = self._present_record(r).get("display_status", "waiting")
                 if display_status == "succeeded":
                     succeeded_count += 1
                 elif display_status == "blocked":
@@ -279,7 +311,7 @@ class AutomationCycleHistoryService:
                 "waiting_count": waiting_count,
                 "last_run_at": self._records[0].get("recorded_at", "") if self._records else "",
                 "last_status": self._records[0].get("status", "") if self._records else "",
-                "last_display_status": self._records[0].get("display_status", "") if self._records else "",
+                "last_display_status": self._present_record(self._records[0]).get("display_status", "") if self._records else "",
             }
 
     def clear(self) -> None:

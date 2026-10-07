@@ -241,6 +241,10 @@ class QlibRunner:
             training_payload["validation"] = dict(production.training_context.get("validation_summary") or {})
             metrics = {"model_type": production.model_type, "model_path": str(production.model_path),
                        "training_context": production.training_context, "ml_metrics": production.metrics}
+        else:
+            # 实际预测回退到最新研究模型，说明也必须归属于它而不是旧生产指针。
+            admission = self._resolve_research_admission(training_payload, rejected_production=admission)
+            training_payload = {**training_payload, "model_version": admission["model_version"]}
         model_type = str(metrics.get("model_type", "heuristic"))
         model_path = str(metrics.get("model_path", ""))
 
@@ -632,6 +636,38 @@ class QlibRunner:
         except Exception as exc:
             logger.warning("生产模型准入读取失败: %s", exc)
             return None, {"passed": False, "stage": "research", "model_version": "", "reasons": ["生产模型准入不可用"]}
+
+    def _resolve_research_admission(self, payload, *, rejected_production):
+        """研究模型身份与门禁说明一致，保留拒绝生产指针的审计信息而不放行。"""
+        from services.worker.model_registry import get_model_registry
+        metrics = dict(payload.get("metrics") or {})
+        version = str(metrics.get("registry_version_id") or payload.get("model_version") or "")
+        rejected = {key: rejected_production.get(key) for key in
+                    ("model_version", "stage", "evaluation_version", "reasons")}
+        record = None
+        if metrics.get("registry_version_id"):
+            try:
+                record = get_model_registry().get_model(version)
+            except Exception as exc:
+                logger.warning("研究模型登记读取失败: %s", type(exc).__name__)
+        if record is None:
+            return {"passed": False, "stage": "research", "model_version": version,
+                    "selected_model_kind": "research", "evaluation_version": None,
+                    "reasons": ["研究模型未登记，等待训练完成并通过生产验证"],
+                    "rejected_production": rejected}
+        admission = production_admission(record)
+        reasons = list(admission["reasons"])
+        expected_path = str(metrics.get("model_path") or "")
+        if expected_path and Path(expected_path).resolve() != Path(record.model_path).resolve():
+            reasons.append("研究模型记录与实际模型文件不一致")
+        protocol = dict(record.training_context.get("input_protocol") or {})
+        if protocol and any(protocol.get(key) != value for key, value in self._model_input_protocol().items() if key != "timeframes"):
+            reasons.append("当前输入配置与研究模型不兼容，需重新训练验证")
+        if not reasons:
+            reasons.append("研究模型尚未作为本轮合格生产模型选用")
+        return {**admission, "passed": False, "reasons": reasons,
+                "selected_model_kind": "research", "rejected_production": rejected,
+                "validation_metrics": dict(record.metrics)}
 
     def _production_artifact_paths(self):
         """清理实验文件时保护生产模型及其配套元数据。"""

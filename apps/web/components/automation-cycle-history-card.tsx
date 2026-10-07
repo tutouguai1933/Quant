@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * 自动化周期历史卡片
- * 显示每轮自动化运行的历史记录，支持点击查看详情
+ * 自动训练策略周期历史：展示模型等待与任务摘要，RSI 快照只作行情参考。
+ * 与首页 RSI 自然入场卡片独立，支持点击查看每轮原始原因。
  */
 
 import { useEffect, useState } from "react";
@@ -40,6 +40,8 @@ function getDisplayStatusColor(displayStatus: string): string {
       return "text-orange-500";
     case "cooldown":
       return "text-blue-400";
+    case "waiting_model":
+      return "text-yellow-500";
     case "failed":
       return "text-red-500";
     case "limited":
@@ -62,6 +64,8 @@ function getDisplayStatusLabel(displayStatus: string): string {
       return "❌ 失败";
     case "limited":
       return "📊 限额";
+    case "waiting_model":
+      return "⏳ 等待模型";
     default:
       return "⏳ 等待";
   }
@@ -129,6 +133,8 @@ function translateGateReason(reason: string): string {
 // 状态说明
 function getStatusDescription(displayStatus: string, failureReason: string, message: string): string {
   switch (displayStatus) {
+    case "waiting_model":
+      return message || "等待合格AI模型，当前候选继续研究。";
     case "succeeded":
       return "候选通过，已执行交易";
     case "blocked":
@@ -238,7 +244,7 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
 
   if (isLoading) {
     return (
-      <TerminalCard title="自动化周期历史">
+      <TerminalCard title="自动训练策略周期历史">
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-5 h-5 animate-spin text-[var(--terminal-cyan)]" />
           <span className="ml-2 text-[var(--terminal-muted)]">加载中...</span>
@@ -249,14 +255,14 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
 
   if (error) {
     return (
-      <TerminalCard title="自动化周期历史">
+      <TerminalCard title="自动训练策略周期历史">
         <div className="text-red-500 text-sm">{error}</div>
       </TerminalCard>
     );
   }
 
   return (
-    <TerminalCard title="自动化周期历史">
+    <TerminalCard title="自动训练策略周期历史">
       {/* 摘要 */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-3 pb-3 border-b border-[var(--terminal-border)]">
         <span className="text-[var(--terminal-muted)]">
@@ -301,10 +307,10 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
             const displayStatus = computeDisplayStatus(item);
             const statusColor = getDisplayStatusColor(displayStatus);
             const statusLabel = getDisplayStatusLabel(displayStatus);
-            const statusDesc = getStatusDescription(displayStatus, item.failure_reason, item.message);
+            const statusDesc = getStatusDescription(displayStatus, item.failure_reason, item.display_message || item.message);
 
             return (
-              <div key={`${item.recorded_at}-${idx}`} className="border border-[var(--terminal-border)]/50 rounded">
+              <div key={`${item.recorded_at}-${idx}`} data-testid="automation-cycle-record" className="border border-[var(--terminal-border)]/50 rounded">
                 {/* 主行 - 可点击 */}
                 <button
                   onClick={() => setExpandedIndex(isExpanded ? null : globalIdx)}
@@ -325,7 +331,7 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                       </span>
                     )}
                     <span className="text-xs text-[var(--terminal-muted)] max-w-[150px] truncate hidden sm:block">
-                      {item.message || item.failure_reason}
+                      {item.display_message || item.message || item.failure_reason}
                     </span>
                     {isExpanded ? (
                       <ChevronUp className="w-4 h-4 text-[var(--terminal-muted)] flex-shrink-0" />
@@ -341,10 +347,10 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                     {/* 标签页导航 */}
                     <div className="flex gap-1 mb-3 pb-2 border-b border-[var(--terminal-border)]/30">
                       {[
-                        { key: "basic", label: "基础" },
-                        { key: "candidates", label: "候选" },
-                        { key: "tasks", label: "任务" },
-                        { key: "rsi", label: "RSI" },
+                        { key: "basic", label: "基础信息" },
+                        { key: "candidates", label: "AI候选" },
+                        { key: "tasks", label: "训练任务" },
+                        { key: "rsi", label: "RSI指标快照" },
                       ].map((tab) => (
                         <button
                           key={tab.key}
@@ -371,7 +377,9 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
 
                         {/* 详细信息 */}
                         <div className="space-y-1 text-[var(--terminal-muted)]">
+                          <div>策略: <span className="text-[var(--terminal-text)]">自动训练策略</span></div>
                           <div>模式: <span className="text-[var(--terminal-text)]">{item.mode}</span></div>
+                          {displayStatus === "waiting_model" && item.message && <div>原始原因: <span className="text-[var(--terminal-text)]">{item.message}</span></div>}
                           {item.failure_reason && <div>原因: <span className="text-[var(--terminal-text)]">{item.failure_reason}</span></div>}
                           {item.next_action && <div>建议: <span className="text-[var(--terminal-text)]">{item.next_action}</span></div>}
                         </div>
@@ -450,27 +458,32 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                             {Object.entries(item.task_summary).map(([name, task]) => (
                               <div
                                 key={name}
-                                className="flex items-center justify-between px-2 py-1.5 rounded border border-[var(--terminal-border)]/50"
+                                className="px-2 py-1.5 rounded border border-[var(--terminal-border)]/50"
                               >
-                                <span className="text-[var(--terminal-text)]">{name}</span>
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={
-                                      task.status === "succeeded"
-                                        ? "text-green-500"
-                                        : task.status === "failed"
-                                        ? "text-red-500"
-                                        : "text-yellow-500"
-                                    }
-                                  >
-                                    {task.status}
-                                  </span>
-                                  {task.duration_seconds > 0 && (
-                                    <span className="text-[var(--terminal-muted)]">
-                                      {Math.round(task.duration_seconds)}s
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[var(--terminal-text)]">{name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={
+                                        task.skipped
+                                          ? "text-blue-400"
+                                          : task.status === "succeeded"
+                                          ? "text-green-500"
+                                          : task.status === "failed"
+                                          ? "text-red-500"
+                                          : "text-yellow-500"
+                                      }
+                                    >
+                                      {task.skipped ? "本轮跳过重训" : task.status}
                                     </span>
-                                  )}
+                                    {!task.skipped && task.duration_seconds > 0 && (
+                                      <span className="text-[var(--terminal-muted)]">
+                                        {Math.round(task.duration_seconds)}s
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
+                                {task.message && <div className="mt-1 text-[var(--terminal-muted)]">{task.message}</div>}
                               </div>
                             ))}
                           </div>
@@ -483,6 +496,7 @@ export function AutomationCycleHistoryCard({ refreshInterval = 60000 }: Automati
                     {/* RSI 快照标签页 */}
                     {activeTab[globalIdx] === "rsi" && (
                       <div>
+                        <p className="mb-2 text-[var(--terminal-muted)]">日线 RSI 参考指标，不是 RSI 自然策略的执行记录。</p>
                         {item.rsi_snapshot && Object.keys(item.rsi_snapshot).length > 0 ? (
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                             {Object.entries(item.rsi_snapshot).map(([symbol, value]) => {

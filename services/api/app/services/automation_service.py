@@ -490,7 +490,8 @@ class AutomationService:
         for key in [
             "status", "mode", "recommended_symbol", "recommended_strategy_id",
             "next_action", "message", "failure_reason", "failure_policy_action",
-            "armed_symbol", "priority_queue_summary", "dispatch", "review_overview"
+            "armed_symbol", "priority_queue_summary", "dispatch", "review_overview",
+            "source", "strategy_family", "waiting_reason"
         ]:
             if key in payload:
                 result[key] = payload[key]
@@ -506,6 +507,8 @@ class AutomationService:
                         "status": task.get("status"),
                         "started_at": task.get("started_at"),
                         "finished_at": task.get("finished_at"),
+                        "skipped": bool(task.get("skipped")),
+                        "message": str(task.get("message") or ""),
                     }
 
         return result
